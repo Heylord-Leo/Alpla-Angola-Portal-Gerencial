@@ -4,9 +4,20 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.208.3
+v2.208.4
 
 ## [Unreleased]
+
+## [v2.208.4] - 2026-07-21
+
+### Fixed — API: Rota Duplicada Causando HTTP 500 ao Salvar Cotação
+
+- **Causa raiz**: `AuthorizeQuotationReuse` tinha dois atributos `[HttpPost]` empilhados — um resquício de copy-paste (`{id:guid}/quotations`, introduzido no mesmo commit `7e021d5` que criou o endpoint) e o atributo correto (`{id:guid}/quotations/{quotationId:guid}/authorize-reuse`). O ASP.NET Core registrava a rota `{id:guid}/quotations` tanto para `AuthorizeQuotationReuse` quanto para `SaveQuotation`, causando `AmbiguousMatchException` (HTTP 500, corpo vazio) em toda tentativa de salvar cotação desde o deploy daquele commit em TEST.
+- **Correção**: removida apenas a linha de atributo duplicada e a linha em branco associada em `RequestsController.cs`. Nenhuma rota, autorização ou lógica de reuso de cotação foi alterada.
+- **Frontend**: nenhuma alteração necessária — o único chamador (`api.ts`) já usava a rota correta `.../quotations/{quotationId}/authorize-reuse`.
+- Verificado com build Release (0 erros) e teste de roteamento ao vivo local: ambas as rotas passam a resolver para uma única action cada (HTTP 401 por falta de autenticação, sem `AmbiguousMatchException`).
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.3] - 2026-07-19
 

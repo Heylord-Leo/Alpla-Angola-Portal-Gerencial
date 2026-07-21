@@ -3144,8 +3144,6 @@ public class RequestsController : BaseController
         }
     }
 
-    [HttpPost("{id:guid}/quotations")]
-    
     /// <summary>
     /// Option C — explicit Buyer authorization to reuse quotation items previously used in a
     /// CANCELLED approval batch. One authorization record per item (partial reuse/revocation,

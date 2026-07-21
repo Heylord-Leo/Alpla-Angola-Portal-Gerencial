@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.208.3
+v2.208.4
+
+## [v2.208.4] - 2026-07-21
+
+### Fixed — API: Duplicate Route Causing HTTP 500 on Quotation Save
+
+- `AuthorizeQuotationReuse` carried two stacked `[HttpPost]` attributes: a copy-paste leftover (`{id:guid}/quotations`, introduced in commit `7e021d5` alongside the endpoint itself) and the intended one (`{id:guid}/quotations/{quotationId:guid}/authorize-reuse`). ASP.NET Core registered the `{id:guid}/quotations` route for both `AuthorizeQuotationReuse` and `SaveQuotation`, causing an `AmbiguousMatchException` (HTTP 500, empty body) on every quotation-save attempt since that commit was deployed to TEST.
+- Removed only the stray duplicate attribute line and its blank line in `RequestsController.cs`. No route, authorization rule, or reuse-authorization logic was changed.
+- No frontend change required — the only caller (`api.ts`) already used the intended route.
+- Verified with a Release build (0 errors) and a live local routing smoke test: both routes now resolve to a single action each (HTTP 401 for missing auth, no `AmbiguousMatchException`).
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.208.3] - 2026-07-19
 
