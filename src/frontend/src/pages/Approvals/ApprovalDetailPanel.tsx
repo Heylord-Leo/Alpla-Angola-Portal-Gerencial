@@ -1280,37 +1280,98 @@ export function ApprovalDetailPanel({
             </div>
 
             {/* Sticky Action Footer
-                 Area-approval stage: the drawer is informative only — the single
-                 operational action is opening the Approval Batch Wizard, where the
-                 actual approve/reject/adjustment happens against the active batch.
-                 Final-approval stage (no Wizard equivalent yet) keeps the original
-                 three-button footer unchanged. */}
-            <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
+                 Area-approval stage: primary action is the wizard; secondary
+                 quick-actions (Reject / Adjustment) are shown when scope is
+                 clear — i.e. an activeBatch exists (QUOTATION) or the request
+                 is a PAYMENT (which never has batches, so request-level is
+                 correct). QUOTATION without an active batch falls back to
+                 wizard-only to prevent accidental request-level operations.
+                 Final-approval stage keeps the original three-button footer. */}
+            <div data-tour="approval-drawer-actions" style={{ position: 'sticky', bottom: 0, zIndex: 50, backgroundColor: 'var(--color-bg-page)', borderTop: '1px solid var(--color-border)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', boxShadow: '0 -4px 12px -2px rgba(0,0,0,0.08)', width: '100%' }}>
                 {isAreaApprovalStage ? (
-                    <button
-                        onClick={() => setIsWizardOpen(true)}
-                        style={{
-                            padding: '12px 32px',
-                            borderRadius: 'var(--radius-lg)',
-                            fontWeight: 800,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            fontSize: '0.75rem',
-                            transition: 'all 0.2s ease',
-                            border: 'none',
-                            backgroundColor: '#16A34A',
-                            color: 'white',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)'
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}
-                    >
-                        <ShieldCheck size={16} /> Revisar Pedido
-                    </button>
+                    <>
+                        {/* Guard G1: Only show quick-actions when scope is deterministic */}
+                        {(!!activeBatch || isPayment) && showAdjustmentAction && !!activeBatch && (
+                            <button
+                                onClick={() => setShowApprovalModal({ show: true, type: 'REQUEST_ADJUSTMENT' })}
+                                disabled={approvalProcessing}
+                                style={{
+                                    padding: '12px 24px',
+                                    backgroundColor: 'rgba(217, 119, 6, 0.06)',
+                                    color: '#92400E',
+                                    fontWeight: 800,
+                                    border: '1.5px solid rgba(217, 119, 6, 0.3)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em',
+                                    fontSize: '0.75rem',
+                                    cursor: approvalProcessing ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    opacity: approvalProcessing ? 0.6 : 1
+                                }}
+                                onMouseEnter={(e) => { if (!approvalProcessing) { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.12)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(217, 119, 6, 0.15)'; } }}
+                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.06)'; e.currentTarget.style.borderColor = 'rgba(217, 119, 6, 0.3)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                            >
+                                <ArrowRightLeft size={16} /> Reajuste
+                            </button>
+                        )}
+                        {(!!activeBatch || isPayment) && (
+                            <button
+                                onClick={() => setShowApprovalModal({ show: true, type: 'REJECT' })}
+                                disabled={approvalProcessing}
+                                style={{
+                                    padding: '12px 24px',
+                                    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                                    color: '#991B1B',
+                                    fontWeight: 800,
+                                    border: '1.5px solid rgba(239, 68, 68, 0.25)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em',
+                                    fontSize: '0.75rem',
+                                    cursor: approvalProcessing ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    opacity: approvalProcessing ? 0.6 : 1
+                                }}
+                                onMouseEnter={(e) => { if (!approvalProcessing) { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.15)'; } }}
+                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.06)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                            >
+                                <AlertTriangle size={16} /> Rejeitar
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setIsWizardOpen(true)}
+                            disabled={approvalProcessing}
+                            style={{
+                                padding: '12px 32px',
+                                borderRadius: 'var(--radius-lg)',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontSize: '0.75rem',
+                                transition: 'all 0.2s ease',
+                                border: 'none',
+                                backgroundColor: '#16A34A',
+                                color: 'white',
+                                cursor: approvalProcessing ? 'not-allowed' : 'pointer',
+                                boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)',
+                                opacity: approvalProcessing ? 0.6 : 1
+                            }}
+                            onMouseEnter={(e) => { if (!approvalProcessing) { e.currentTarget.style.backgroundColor = '#15803D'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(22, 163, 74, 0.4)'; } }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16A34A'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)'; }}
+                        >
+                            <ShieldCheck size={16} /> Revisar Pedido
+                        </button>
+                    </>
                 ) : (
                     <>
                         {showAdjustmentAction && (
@@ -1389,7 +1450,6 @@ export function ApprovalDetailPanel({
                 )}
             </div>
 
-            {/* APPROVAL MODAL (For simple approval workflows) */}
             <ApprovalModal
                 show={showApprovalModal.show}
                 type={showApprovalModal.type}
@@ -1406,6 +1466,8 @@ export function ApprovalDetailPanel({
                 feedback={modalFeedback}
                 onCloseFeedback={() => setModalFeedback({ type: 'error', message: null })}
                 selectedQuotationName={selectedQuotation?.supplierNameSnapshot || null}
+                batchNumber={activeBatch?.batchNumber ?? null}
+                batchItemCount={activeBatch?.items?.length ?? null}
             />
 
             {/* WIZARD MODAL (For Area Approval Quotes) */}

@@ -3,10 +3,13 @@ import type { TourStep } from '../guidedTourTypes';
 /**
  * Approval Drawer — Area Approval Tour
  *
- * Reflects the batch/partial-approval model: the area drawer is INFORMATIVE
- * only — every operational action (financial allocation, batch item review,
- * budget check, approve/reject/adjust) happens inside the Approval Wizard,
- * opened via the "Revisar Pedido" button.
+ * Reflects the batch/partial-approval model: the area drawer provides both
+ * informational context and quick-action shortcuts. When an active batch
+ * exists (or the request is a Payment), Rejeitar and Reajuste buttons appear
+ * for fast rejection/adjustment without entering the full wizard. The primary
+ * action remains "Revisar Pedido", which opens the Approval Wizard for
+ * detailed review (financial allocation, batch item review, budget check,
+ * approve/reject/adjust).
  *
  * All targets use stable `data-tour` attributes.
  * Missing targets are skipped gracefully by `filterActiveSteps()` — e.g. the
@@ -16,7 +19,7 @@ export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
     {
         target: '[data-tour="approval-drawer-header"]',
         title: 'Resumo do Pedido',
-        content: 'Aqui você vê o número do pedido, o estado atual, o tipo e o valor total. Esta tela é informativa — a aprovação em si será feita no Wizard, aberto pelo botão "Revisar Pedido".',
+        content: 'Aqui você vê o número do pedido, o estado atual, o tipo e o valor total. A aprovação pode ser feita pelo Wizard ("Revisar Pedido") ou, quando disponíveis, pelas ações rápidas de rejeição e reajuste na barra inferior.',
         placement: 'bottom',
     },
     {
@@ -51,8 +54,8 @@ export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
     },
     {
         target: '[data-tour="approval-drawer-actions"]',
-        title: 'Revisar Pedido',
-        content: 'Clique em "Revisar Pedido" para abrir o Wizard de Aprovação. É nele que você fará a atribuição financeira (planta e centro de custo), a revisão dos itens do lote, a análise orçamental e a decisão final: aprovar, rejeitar ou solicitar reajuste.',
+        title: 'Ações de Aprovação',
+        content: 'Use "Revisar Pedido" para abrir o Wizard completo (atribuição financeira, revisão dos itens, análise orçamental e decisão final). Se o pedido já tiver um lote ativo, você também pode rejeitar ou solicitar reajuste diretamente por aqui — essas ações rápidas aplicam-se apenas ao lote em revisão, sem afetar os demais itens.',
         placement: 'top',
     },
 ];

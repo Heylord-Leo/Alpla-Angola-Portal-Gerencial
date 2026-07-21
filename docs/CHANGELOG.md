@@ -4,9 +4,27 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.208.4
+v2.209.0
 
 ## [Unreleased]
+
+## [v2.209.0] - 2026-07-21
+
+### Added — Approval Drawer Quick Actions
+
+- **Rejeitar e Solicitar Reajuste restaurados**: botões de ação rápida no rodapé do drawer de Aprovação de Área, permitindo rejeição e solicitação de reajuste sem abrir o Wizard completo.
+- **Guard G1 — Visibilidade condicional**: Reajuste e Rejeitar são exibidos apenas quando o escopo é determinístico — Cotação com lote ativo mostra os 3 botões; Pagamento mostra Rejeitar + Revisar Pedido; Cotação sem lote mostra apenas Revisar Pedido (fallback para o Wizard).
+- **Guard G2 — Descrições batch-aware**: o modal de confirmação (ApprovalModal) exibe o número do lote e a contagem de itens nas descrições de rejeição e reajuste, informando claramente ao utilizador que a ação é aplicada apenas ao lote em revisão.
+- **Guard G3 — Layout responsivo**: `flexWrap: 'wrap'` adicionado ao container do rodapé para segurança em larguras mínimas (520px).
+- **Comportamento disabled**: todos os 3 botões de área incluem `disabled={approvalProcessing}` com feedback visual (opacity + cursor).
+- **Tour atualizado**: `approvalDrawerAreaTour.ts` atualizado para refletir os novos botões de ação rápida.
+
+**Ficheiros alterados:**
+- `src/frontend/src/components/ApprovalModal.tsx` — props `batchNumber` e `batchItemCount` + descrições condicionais.
+- `src/frontend/src/pages/Approvals/ApprovalDetailPanel.tsx` — rodapé de área com 3 botões guardados + props de batch no modal.
+- `src/frontend/src/features/guided-tour/tours/approvalDrawerAreaTour.ts` — tour step e comentário atualizados.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.208.4] - 2026-07-21
 
