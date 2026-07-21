@@ -2,7 +2,11 @@
 
 ## Current Version
 
-v2.208.4
+v2.209.0
+
+## [v2.209.0] - 2026-07-21
+
+- **Approval Drawer Quick Actions**: Restored `Rejeitar` and `Solicitar Reajuste` as quick-access buttons in the Area Approval drawer footer. Visibility is guarded by batch/payment scope: QUOTATION with active batch shows all 3 buttons, PAYMENT shows Rejeitar + Revisar Pedido, and QUOTATION without batch shows Revisar Pedido only (wizard fallback). Modal descriptions are batch-scope-aware when a batch exists. Footer layout includes `flexWrap` for responsive safety. Guided Tour updated.
 
 ## [v2.208.4] - 2026-07-21
 

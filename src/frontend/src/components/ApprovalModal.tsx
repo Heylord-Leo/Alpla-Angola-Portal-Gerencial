@@ -44,6 +44,9 @@ interface ApprovalModalProps {
     isLastItem?: boolean;
     isPartial?: boolean;
     selectedQuotationName?: string | null;
+    /** Batch-scope context: when provided, REJECT/ADJUSTMENT descriptions inform the user the action targets only this batch. */
+    batchNumber?: number | null;
+    batchItemCount?: number | null;
     children?: React.ReactNode;
 }
 
@@ -62,6 +65,8 @@ export function ApprovalModal({
     isLastItem,
     isPartial,
     selectedQuotationName,
+    batchNumber,
+    batchItemCount,
     children
 }: ApprovalModalProps) {
     if (!show) return null;
@@ -103,7 +108,9 @@ export function ApprovalModal({
                 return selectedQuotationName 
                     ? `${baseDesc}\n\nVencedora selecionada: ${selectedQuotationName}`
                     : baseDesc;
-            case 'REJECT': return 'Tem certeza que deseja rejeitar este pedido? Esta ação é irreversível.';
+            case 'REJECT': return batchNumber
+                ? `Esta ação será aplicada apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Esta ação é irreversível.`
+                : 'Tem certeza que deseja rejeitar este pedido? Esta ação é irreversível.';
             case 'SAVE': return 'Deseja salvar as alterações realizadas neste pedido?';
             case 'SUBMIT': return isReworkStatus ? 'Deseja reenviar este pedido para o fluxo de aprovação?' : 'Deseja enviar este pedido para o fluxo de aprovação?';
             case 'DELETE': return 'Tem certeza de que deseja excluir este rascunho? Esta ação não poderá ser desfeita.';
@@ -117,7 +124,9 @@ export function ApprovalModal({
             case 'FINALIZE': 
                 return 'Deseja finalizar este pedido? O recibo do fornecedor será registrado e o pedido será encerrado permanentemente.';
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
-            case 'REQUEST_ADJUSTMENT': return 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
+            case 'REQUEST_ADJUSTMENT': return batchNumber
+                ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Informe o que precisa ser ajustado.`
+                : 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
             case 'ITEM_STATUS_CHANGE': 
                 return isLastItem 
                     ? 'Este é o último item pendente do pedido. Ao confirmar, todos os itens estarão recebidos e o pedido será finalizado.' 
