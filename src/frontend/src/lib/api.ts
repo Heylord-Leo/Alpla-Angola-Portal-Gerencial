@@ -714,7 +714,7 @@ export const api = {
                 method: 'POST',
                 body: formData,
             });
-            if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.');
+            if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.', 'OcrDirectExtract');
             return response.json();
         },
         /** Option C — explicit Buyer authorization to reuse quotation items previously used in a cancelled batch. */

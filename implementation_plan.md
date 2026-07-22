@@ -136,3 +136,66 @@ No reset/rebase/amend/force; no branch deletion; additive/safe migrations only; 
 no general role expansion; no adjustment-state expansion; never copy proforma price to requested value;
 session UUID is not a complete cross-session dedup; no CHANGELOG/VERSION before publish; no commit before
 tests+review; no push without explicit authorization.
+
+---
+
+## Phase 6 — PO OCR null-safety & error-handling fix (RegisterPoModal / CorrectPoModal)
+
+> Status: **Implemented and manually validated (Musoland PO test document).** Ready for commit.
+> Unrelated to Phases 1–5 above (separate investigation: PO-systemic OCR flow, confirmed
+> HTTP 200 / client-side crash contradiction on a real Primavera PO — REQ Serviços Ministério
+> 2026/0041, MUSOLAND supplier).
+
+### Confirmed bug
+`RegisterPoModal.tsx`'s `requestData.supplierName` (sourced from the nullable
+`RequestPoGroupDto.supplierNameSnapshot`, passed through unguarded by `RequestEdit.tsx`) could be
+`null`/`undefined` at runtime despite its non-nullable prop type. Comparing it via
+`calculateSimilarity` → `normalizeForComparison` → `s.normalize('NFD')` threw a `TypeError` while
+processing an already-successful (HTTP 200) `direct-ocr` response, which the modal's blanket
+`catch` then mislabeled as "Documento ilegível ou em formato não suportado."
+
+### Fix
+- Extracted the previously-duplicated `calculateSimilarity`/`normalizeForComparison` plus the OCR
+  response/mismatch-processing logic into `src/frontend/src/lib/ocrPoValidation.ts` (pure, shared
+  by both modals — eliminates the duplication and the divergence between them).
+- `RegisterPoModal.tsx`/`CorrectPoModal.tsx`: null-safe expected supplier/total via
+  `resolveExpectedSupplierName`/`resolveExpectedTotalAmount`; split `runOcrValidation` into a
+  transport/backend-error catch (real `err.detail`/`err.message`/`correlationId`, logged via
+  `logger` with `componentKey: 'OcrDirectExtract'`) and a client-processing-error catch (shows
+  "Os dados foram extraídos do documento, mas ocorreu um erro ao processar o resultado.", logged as
+  `OCR_CLIENT_PROCESSING_ERROR`) — never conflating the two again.
+- Removed the dead `suggestions?.purchaseOrderNumber?.value` read (no such backend DTO field
+  exists); PO number is now explicitly sourced from `documentNumber` only.
+- `lib/logger.ts`: added `'OcrDirectExtract'` component key and `'OCR_CLIENT_PROCESSING_ERROR'`
+  event type. `lib/api.ts`: `directOcrExtract`'s error path now logs (previously silent).
+- **Follow-up correction**: the initial fix used a `'---'` display placeholder as the comparison
+  value passed into `calculateSimilarity`, which — combined with `String.includes('')` being
+  vacuously true — scored a missing expected supplier as a 0.9 near-match instead of a divergence.
+  Corrected by separating the comparison value from the display value:
+  `resolveExpectedSupplierName` now returns `string | null` (never a placeholder);
+  `resolveSupplierDisplay` renders `'Não definido'` for UI only. `calculateSimilarity` now returns
+  `number | null` and refuses to score when either side is null/blank/strips to empty content.
+  `buildOcrMismatchResult` reports a missing expected supplier as its own explicit "not comparable"
+  divergence (never a silent match). `RegisterPoModalProps.requestData`'s
+  `supplierName`/`totalAmount` widened to `string | null` / `number | null` to match runtime
+  reality (the shared `RequestDetailsDto.supplierName` used by `CorrectPoModal` was already
+  correctly nullable; its `estimatedTotalAmount` was deliberately left non-nullable in the shared
+  DTO to avoid a disproportionate ripple across its many other consumers — the existing runtime
+  guard already covers it).
+
+### Tests
+No test runner existed in the frontend project (no vitest/jest, no test script). Per explicit
+user decision, added `src/frontend/src/lib/ocrPoValidation.test.mjs` — 36 cases run via Node's
+built-in `node --test` (Node 24, zero new dependencies), covering the exact confirmed HTTP 200
+fixture (null optional fields, ADVANCE_FULL + null advance percent, PO number from
+documentNumber, total 855000, ALPLA-vs-MUSOLAND supplier divergence, transport-error message
+resolution with/without correlationId, and the full nullable-supplier comparison matrix: null/
+undefined/empty/whitespace on either side, both empty, identical names, slightly different names,
+and an explicit regression guard proving placeholder-like strings no longer score as matches).
+Full component-render assertions (e.g. "message absent from the DOM") are **not** covered — that
+needs React Testing Library, which was explicitly declined for this phase.
+
+### Scope limits observed
+No changes to `OpenAiDocumentExtractionProvider`, no dedicated PO extractor/prompt/schema, no
+broader OCR pipeline refactor. The ALPLA/MUSOLAND supplier-role inversion remains a separate,
+un-actioned extraction-quality issue for a later phase.
