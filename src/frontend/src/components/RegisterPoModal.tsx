@@ -6,6 +6,16 @@ import { DropdownPortal } from './ui/DropdownPortal';
 import { Z_INDEX } from '../constants/ui';
 import { api } from '../lib/api';
 import { formatCurrencyAO } from '../lib/utils';
+import { logger } from '../lib/logger';
+import {
+    resolveExpectedSupplierName,
+    resolveExpectedTotalAmount,
+    resolveSupplierDisplay,
+    extractOcrHeaderSuggestions,
+    buildOcrMismatchResult,
+    resolveTransportErrorDetails,
+    CLIENT_PROCESSING_ERROR_MESSAGE,
+} from '../lib/ocrPoValidation';
 
 interface SupplierRegistrationCheck {
     id: number;
@@ -23,8 +33,8 @@ interface RegisterPoModalProps {
     poGroupId: string;
     supplierId?: number | null;
     requestData: {
-        totalAmount: number;
-        supplierName: string;
+        totalAmount?: number | null;
+        supplierName?: string | null;
         currencyCode: string;
     };
     onClose: () => void;
@@ -107,29 +117,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     const isBlocked = regCheck?.blocked === true;
     const isWarning = regCheck?.warning === true && !isBlocked;
 
-    // Helper: robust supplier name similarity (case-insensitive, accent-insensitive, token-based)
-    const normalizeForComparison = (s: string) =>
-        s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-
-    const calculateSimilarity = (a: string, b: string) => {
-        const na = normalizeForComparison(a);
-        const nb = normalizeForComparison(b);
-
-        // Exact match after normalization (covers pure case differences)
-        const stripped1 = na.replace(/[^a-z0-9]/g, '');
-        const stripped2 = nb.replace(/[^a-z0-9]/g, '');
-        if (stripped1 === stripped2) return 1.0;
-        if (stripped1.includes(stripped2) || stripped2.includes(stripped1)) return 0.9;
-
-        // Token-based overlap: compare word-by-word
-        const tokens1 = na.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(t => t.length > 1);
-        const tokens2 = nb.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(t => t.length > 1);
-        if (tokens1.length === 0 || tokens2.length === 0) return 0.0;
-
-        const set2 = new Set(tokens2);
-        const matchCount = tokens1.filter(t => set2.has(t)).length;
-        return matchCount / Math.max(tokens1.length, tokens2.length);
-    };
+    // Null-safe expected values: requestData.supplierName/totalAmount can be null/undefined at
+    // runtime (RequestPoGroupDto.supplierNameSnapshot is nullable). expectedSupplierName is the
+    // COMPARISON value (null when unset — never a placeholder string, so it can never be fed into
+    // calculateSimilarity as if it were a real name); expectedSupplierDisplay is UI-only text.
+    const expectedSupplierName = resolveExpectedSupplierName(requestData?.supplierName);
+    const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
+    const expectedTotalAmount = resolveExpectedTotalAmount(requestData?.totalAmount);
 
     const runOcrValidation = async (selectedFile: File) => {
         setOcrLoading(true);
@@ -137,51 +131,47 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         setOverrideConfirmed(false);
         setFeedback({ type: 'error', message: null });
 
+        // Step 1: the API call itself. Failures here are transport/network/backend errors —
+        // distinct from a client-side exception while processing a successful response.
+        let ocrData: any;
         try {
             // directOcrExtract handles generic layout detection & extraction
             // Response shape: { integration: { headerSuggestions: { supplierName: { value }, grandTotal: { value } } } }
-            const ocrData = await api.requests.directOcrExtract(selectedFile);
-            const suggestions = ocrData?.integration?.headerSuggestions;
-            
-            const extractedTotal = Number(suggestions?.grandTotal?.value) || 0;
-            const extractedSupplier = suggestions?.supplierName?.value || '';
-            const extractedPoNumber = suggestions?.purchaseOrderNumber?.value || suggestions?.documentNumber?.value || '';
+            ocrData = await api.requests.directOcrExtract(selectedFile);
+        } catch (err: any) {
+            setOcrResult({ hasMismatches: true, details: resolveTransportErrorDetails(err) });
+            logger.log({
+                level: 'Error',
+                eventType: 'API_REQUEST_FAILED',
+                message: err?.detail || err?.message || 'directOcrExtract failed',
+                componentKey: 'OcrDirectExtract',
+                statusCode: err?.status,
+                correlationId: err?.correlationId
+            });
+            setOcrLoading(false);
+            return;
+        }
+
+        // Step 2: processing a successful (HTTP 200) response. Any exception here means the
+        // extraction itself worked — it must never be reported as an unreadable/unsupported document.
+        try {
+            const { extractedTotal, extractedSupplier, extractedPoNumber, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
+                extractOcrHeaderSuggestions(ocrData);
 
             if (extractedPoNumber && !purchaseOrderNumber) {
                 setPurchaseOrderNumber(extractedPoNumber);
             }
 
-            const mismatches: string[] = [];
-            let hasMismatches = false;
-
-            // 1. Math check (tolerance 1 unit due to weird IVA roundings on ERPs)
-            if (Math.abs(extractedTotal - requestData.totalAmount) > 1.0) {
-                mismatches.push(`Total divergente: Identificado ${extractedTotal.toFixed(2)} (Esperado: ${requestData.totalAmount.toFixed(2)})`);
-                hasMismatches = true;
-            }
-
-            // 2. Similarity supplier
-            if (extractedSupplier) {
-                const sim = calculateSimilarity(extractedSupplier, requestData.supplierName);
-                if (sim < 0.6) {
-                    mismatches.push(`Fornecedor divergente: Identificado "${extractedSupplier}" (Esperado: "${requestData.supplierName}")`);
-                    hasMismatches = true;
-                }
-            } else {
-                mismatches.push(`Fornecedor não identificado claramente no documento.`);
-                hasMismatches = true;
-            }
+            const { hasMismatches, details } = buildOcrMismatchResult(extractedTotal, expectedTotalAmount, extractedSupplier, expectedSupplierName);
 
             setOcrResult({
                 hasMismatches,
-                details: mismatches,
+                details,
                 extractedTotal,
                 extractedSupplier
             });
 
             // OCR Payment Condition Detection
-            const ocrPaymentCondition = suggestions?.paymentCondition?.value;
-            const ocrAdvancePercent = suggestions?.paymentConditionAdvancePercent?.value;
             if (ocrPaymentCondition && ['POST_PAID', 'ADVANCE_FULL', 'ADVANCE_PARTIAL'].includes(ocrPaymentCondition)) {
                 setPaymentCondition(ocrPaymentCondition);
                 setPaymentConditionSource('OCR_DETECTED');
@@ -193,11 +183,17 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 setOcrDetectedPaymentCondition(null);
             }
 
-        } catch (err: any) {
-             setOcrResult({
+        } catch (procErr: any) {
+            setOcrResult({
                 hasMismatches: true,
-                details: ["Falha ao extrair dados do OCR. Documento ilegível ou em formato não suportado."],
-             });
+                details: [CLIENT_PROCESSING_ERROR_MESSAGE],
+            });
+            logger.log({
+                level: 'Error',
+                eventType: 'OCR_CLIENT_PROCESSING_ERROR',
+                message: procErr?.message || 'Unknown client-side OCR processing error in RegisterPoModal',
+                componentKey: 'OcrDirectExtract'
+            });
         } finally {
             setOcrLoading(false);
         }
@@ -450,13 +446,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Valor Esperado</div>
                                 <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                                    {formatCurrencyAO(requestData.totalAmount)} {requestData.currencyCode}
+                                    {formatCurrencyAO(expectedTotalAmount)} {requestData.currencyCode}
                                 </div>
                             </div>
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Fornecedor Esperado</div>
                                 <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                    {requestData.supplierName}
+                                    {expectedSupplierDisplay}
                                 </div>
                             </div>
                         </div>
@@ -844,7 +840,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
                                         <span>1%</span>
                                         <span style={{ color: 'var(--color-primary)', fontWeight: 900 }}>
-                                            {formatCurrencyAO(requestData.totalAmount * advancePercent / 100)} {requestData.currencyCode}
+                                            {formatCurrencyAO(expectedTotalAmount * advancePercent / 100)} {requestData.currencyCode}
                                         </span>
                                         <span>99%</span>
                                     </div>
@@ -854,7 +850,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                             {paymentCondition === 'ADVANCE_FULL' && (
                                 <div style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <AlertTriangle size={14} />
-                                    O valor total de {formatCurrencyAO(requestData.totalAmount)} {requestData.currencyCode} será exigido como adiantamento.
+                                    O valor total de {formatCurrencyAO(expectedTotalAmount)} {requestData.currencyCode} será exigido como adiantamento.
                                 </div>
                             )}
                         </div>
