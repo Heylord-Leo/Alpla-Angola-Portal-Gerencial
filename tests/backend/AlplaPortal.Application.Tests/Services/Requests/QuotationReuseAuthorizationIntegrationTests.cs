@@ -36,17 +36,9 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// </summary>
 public class QuotationReuseAuthorizationIntegrationTests
 {
-    private const string Conn =
-        @"Server=(localdb)\MSSQLLocalDB;Database=AlplaPortalV1;Trusted_Connection=True;TrustServerCertificate=True";
+    private static bool CanConnect() => IntegrationTestDatabase.CanConnect();
 
-    private static bool CanConnect()
-    {
-        try { using var c = new SqlConnection(Conn); c.Open(); return true; }
-        catch { return false; }
-    }
-
-    private static DbContextOptions<ApplicationDbContext> Options()
-        => new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlServer(Conn).Options;
+    private static DbContextOptions<ApplicationDbContext> Options() => IntegrationTestDatabase.CreateOptions();
 
     // ── Seed: mirrors REQ-024 (2 lines; AB items in CANCELLED Batch #1; QD items free) ──
     private sealed record Seed(

@@ -1,4 +1,20 @@
 #!/usr/bin/env dotnet-script
+// ═══════════════════════════════════════════════════════════════════
+// DEPRECATED: Historical one-time migration script. Do NOT re-run.
+// Applied: AddContractDocumentSoftDelete migration.
+// The target database AlplaPortalV1 has been decommissioned.
+// The canonical dev database is Portal-Gerencial-Dev-ProdClone.
+// Schema changes must use EF Core migrations:
+//   execution/update_dev_database.ps1 -Apply -Confirmation 'APPLY-MIGRATIONS-TO-DEV-CLONE'
+// ═══════════════════════════════════════════════════════════════════
+Console.ForegroundColor = ConsoleColor.Red;
+Console.WriteLine("[BLOCKED] This script is deprecated and must not be executed.");
+Console.WriteLine("[BLOCKED] Target database AlplaPortalV1 has been decommissioned.");
+Console.WriteLine("[BLOCKED] Use EF Core migrations for schema changes.");
+Console.ResetColor();
+return;
+
+// --- Original code preserved below for historical reference ---
 #r "nuget: Microsoft.Data.SqlClient, 5.2.0"
 using Microsoft.Data.SqlClient;
 

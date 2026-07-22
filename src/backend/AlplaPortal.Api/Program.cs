@@ -295,9 +295,75 @@ using (var scope = app.Services.CreateScope())
 
         if (app.Environment.IsDevelopment())
         {
-            // --- Development: automatic migration (unchanged behavior) ---
+            // --- Development-only: fail-closed database identity guard ---
+            // This guard MUST run BEFORE Database.Migrate() to prevent
+            // EF Core from applying schema changes to a wrong database.
+            // Does not affect TEST or PROD.
+            const string canonicalDevDb = "Portal-Gerencial-Dev-ProdClone";
+
+            // Step 1: Resolve and open the actual DbConnection
+            var devConn = context.Database.GetDbConnection();
+            if (devConn.State != System.Data.ConnectionState.Open)
+                devConn.Open();
+
+            // Step 2: Query DB_NAME() and server identity BEFORE any migration
+            using (var preCheckCmd = devConn.CreateCommand())
+            {
+                preCheckCmd.CommandText = "SELECT DB_NAME(), @@SERVERNAME";
+                using var preReader = preCheckCmd.ExecuteReader();
+                if (preReader.Read())
+                {
+                    var preDb     = preReader.GetString(0);
+                    var preServer = preReader.GetString(1);
+
+                    Console.WriteLine($"[STARTUP] PRE-MIGRATION identity: Server={preServer}, Database={preDb}");
+                    Console.WriteLine($"[STARTUP] Environment: {app.Environment.EnvironmentName}");
+
+                    // Step 3: Abort immediately if DB_NAME() is not the canonical clone
+                    if (!string.Equals(preDb, canonicalDevDb, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException(
+                            $"[STARTUP] FATAL: Development DB_NAME() is '{preDb}' — " +
+                            $"expected '{canonicalDevDb}'. " +
+                            "The API will not start against a non-canonical Development database. " +
+                            "NO MIGRATIONS WERE APPLIED. " +
+                            "Update appsettings.Development.json or set " +
+                            "ConnectionStrings__DefaultConnection to point to the canonical clone.");
+                    }
+
+                    Console.WriteLine($"[STARTUP] PRE-MIGRATION identity guard PASSED.");
+                }
+            }
+
+            // Step 4: Only after the pre-migration guard passes, apply migrations
             context.Database.Migrate();
-            Console.WriteLine("[STARTUP] Database initialized and migrations applied successfully (Development).");
+            Console.WriteLine("[STARTUP] Database migrations applied successfully (Development).");
+
+            // Step 5: Post-migration verification — query DB_NAME(), server, latest migration
+            using (var postCheckCmd = devConn.CreateCommand())
+            {
+                postCheckCmd.CommandText =
+                    "SELECT DB_NAME(), @@SERVERNAME, " +
+                    "(SELECT TOP 1 MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC)";
+                using var postReader = postCheckCmd.ExecuteReader();
+                if (postReader.Read())
+                {
+                    var postDb     = postReader.GetString(0);
+                    var postServer = postReader.GetString(1);
+                    var latestMig  = postReader.IsDBNull(2) ? "(none)" : postReader.GetString(2);
+
+                    // Step 6: Log both pre-migration and post-migration verification
+                    Console.WriteLine($"[STARTUP] POST-MIGRATION identity: Server={postServer}, Database={postDb}");
+                    Console.WriteLine($"[STARTUP] POST-MIGRATION latest migration: {latestMig}");
+
+                    if (!string.Equals(postDb, canonicalDevDb, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException(
+                            $"[STARTUP] FATAL: Post-migration DB_NAME() is '{postDb}' — " +
+                            $"expected '{canonicalDevDb}'. Database identity changed during migration.");
+                    }
+                }
+            }
         }
         else
         {
