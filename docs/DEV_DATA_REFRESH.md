@@ -134,7 +134,7 @@ Net effect: under normal success and under ordinary failure paths, no Production
 
 ### Step 1 — Export (GitHub Actions, requires `production` environment approval)
 
-Dispatch **"Export PROD Data for Dev"** from `Portal-Gerencial-rev1` with:
+Dispatch **"Export PROD Data for Dev"** from `main` with:
 - `confirm_export` = `EXPORT_PROD_FOR_LOCAL_DEV`
 - `release_version` = current value in `docs/VERSION.md` (e.g. `v2.209.0`)
 

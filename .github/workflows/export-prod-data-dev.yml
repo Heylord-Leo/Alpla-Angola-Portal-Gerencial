@@ -2,8 +2,10 @@
 # Alpla Angola - Portal Gerencial
 # GitHub Actions Workflow: Export PROD Data for Dev (Manual)
 # =============================================================================
-# Maintained in Portal-Gerencial-rev1 (the official continuous development
-# branch). Must be dispatched with "Use workflow from: Portal-Gerencial-rev1".
+# Developed on Portal-Gerencial-rev1 (the official continuous development
+# branch) and merged to main for execution. The `production` GitHub
+# Environment permits only main, so this workflow must be dispatched with
+# "Use workflow from: main".
 #
 # This workflow is READ-ONLY against Production: the only statement it runs
 # against Portal-Gerencial is BACKUP DATABASE, which never modifies PROD data.
@@ -75,7 +77,7 @@ jobs:
             -ConfirmExport $env:CONFIRM_EXPORT `
             -ReleaseVersion $env:RELEASE_VERSION `
             -RefName "${{ github.ref_name }}" `
-            -RequiredRefName "Portal-Gerencial-rev1" `
+            -RequiredRefName "main" `
             -VersionFilePath "${{ github.workspace }}\docs\VERSION.md" `
             -SourceDbName "Portal-Gerencial" `
             -ResolvedCommitSha "${{ steps.commit_meta.outputs.resolved_sha }}" `
