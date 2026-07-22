@@ -14,6 +14,25 @@ class Program
 {
     public static async Task Main(string[] args)
     {
+        // ═══════════════════════════════════════════════════════════════════
+        // DEPRECATED — This tool was created for AlplaPortalV1 demo data.
+        // The canonical Development database is now Portal-Gerencial-Dev-ProdClone
+        // (a Production snapshot) and must NOT be polluted by demo seeding.
+        // If this tool is ever needed again, it must target a separate
+        // sandbox database and require explicit --confirm-sandbox.
+        // ═══════════════════════════════════════════════════════════════════
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[DEPRECATED] DemoDataGenerator is deprecated and will not execute.");
+        Console.WriteLine("[DEPRECATED] The canonical dev database is Portal-Gerencial-Dev-ProdClone.");
+        Console.WriteLine("[DEPRECATED] Demo seeding is not safe against Production-clone data.");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.WriteLine("If you need to seed demo data, create a separate sandbox database and");
+        Console.WriteLine("update this tool to target it with --confirm-sandbox.");
+        return;
+
+        // --- Original code preserved below for historical reference ---
+        #pragma warning disable CS0162 // Unreachable code detected
         bool isDryRun = args.Contains("--dry-run");
         bool isCleanAndSeed = args.Contains("--clean") && args.Contains("--seed");
         bool isRepairAttachments = args.Contains("--repair-attachments");

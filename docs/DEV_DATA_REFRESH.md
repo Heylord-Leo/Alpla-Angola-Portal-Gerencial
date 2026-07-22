@@ -19,7 +19,6 @@ The refresh is split into two independent halves:
 
 > **This workflow does NOT:**
 > - Modify, restore over, or read from `Portal-Gerencial-Test`
-> - Modify, drop, detach, or back up `AlplaPortalV1` (the database already used by `appsettings.Development.json`)
 > - Modify `appsettings.Development.json` in any way
 > - Pseudonymize or scrub Users, Suppliers, Requests, or any other transactional/business data (see [§8 Residual PII Risk](#8-residual-pii-risk))
 > - Leave the exported `.bak`/`.bak.sha256` behind on the Production runner under normal success or failure (see [§5 Cleanup Guarantees](#5-cleanup-guarantees))
@@ -174,17 +173,15 @@ Preview mode always prints: the backup path, the checksum source, the computed l
 
 Attachment sync is always additive: it copies files that do not already exist locally (`/E /XC /XN /XO`), and never uses `/MIR` or `/PURGE`. It will never overwrite or delete the 383 files already present in `data\attachments` in this repository checkout. The target path is validated to resolve inside a normalized `...\data\attachments` directory, and can never resolve to a drive root, the Windows/Program Files trees, the repository root itself, or the same path as the source.
 
-### Step 5 — Point the local API at the clone
+### Step 5 — Verify the local API connects to the clone
 
-The script prints this line only if every safety check passed — the checksum match, the restore, `dev-safety-neutralization.sql`'s fail-closed verification, and the post-restore `ONLINE` state check:
+`appsettings.Development.json` already points to `Portal-Gerencial-Dev-ProdClone` as the canonical Development database. No environment-variable override is needed for normal startup.
 
-```powershell
-$env:ConnectionStrings__DefaultConnection = "Server=(localdb)\MSSQLLocalDB;Database=Portal-Gerencial-Dev-ProdClone;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True"
-```
+The canonical startup script `execution/restart_services.ps1` validates `DB_NAME()` before launching the backend. The API's own Development startup guard (`Program.cs`) also verifies `DB_NAME()` and throws if it is not the canonical clone.
 
-**Do not start the local API against this database unless the import script printed "Import completed successfully" and this connection-string line.** If the script stopped earlier with an error, the database is not safe to use yet.
+**Do not start the local API against this database unless the import script printed "Import completed successfully".** If the script stopped earlier with an error, the database is not safe to use yet.
 
-Set the variable in the same shell session before running `dotnet run` for `AlplaPortal.Api`. This does not modify `appsettings.Development.json`, and unsetting the variable (or closing the shell) reverts to the existing `AlplaPortalV1` LocalDB database.
+> **Note:** `AlplaPortalV1` has been decommissioned and is no longer a valid Development database.
 
 ### Step 6 — Clean up your local downloads
 
@@ -198,7 +195,7 @@ Because `Portal-Gerencial-Dev-ProdClone` is disposable local Development data (n
 
 - **If the previous clone must be restored:** `import-prod-data-dev.ps1` automatically backs up an existing `Portal-Gerencial-Dev-ProdClone` to `-LocalBackupDir` (default `%USERPROFILE%\AlplaPortalDevCloneBackups`) before any `WITH REPLACE` restore, named `Portal-Gerencial-Dev-ProdClone_<timestamp>_pre-replace.bak`. Restore that file manually via SSMS/`sqlcmd` (`RESTORE DATABASE ... WITH REPLACE`) if you need to undo a bad import.
 - **If the clone is simply unwanted:** drop it directly (`DROP DATABASE [Portal-Gerencial-Dev-ProdClone]` against `(localdb)\MSSQLLocalDB`) and re-run the import from a fresh export whenever needed — there is no environment or deployment dependent on this database.
-- **`AlplaPortalV1` is never touched by any part of this pipeline**, so no rollback is ever needed for it as a result of running this refresh.
+- **`AlplaPortalV1` has been decommissioned** and is no longer a valid Development database. It must not be recreated.
 
 ---
 

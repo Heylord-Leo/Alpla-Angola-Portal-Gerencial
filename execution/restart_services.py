@@ -1,43 +1,30 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# execution/restart_services.py — Compatibility wrapper
+#
+# DEPRECATED: This script delegates entirely to execution/restart_services.ps1.
+# It does NOT independently build, stop, or start services.
+# It does NOT perform database validation.
+#
+# The canonical startup script is: execution/restart_services.ps1
+# ═══════════════════════════════════════════════════════════════════════════════
 import subprocess
-import os
-import signal
-import time
 import sys
+import os
 
-def kill_process_by_port(port):
-    try:
-        # Find PID using port
-        result = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode()
-        for line in result.splitlines():
-            if "LISTENING" in line:
-                pid = line.strip().split()[-1]
-                print(f"Killing process {pid} on port {port}...")
-                subprocess.run(f"taskkill /F /PID {pid}", shell=True, check=False)
-                # Give it a moment to release the port
-                time.sleep(1)
-    except subprocess.CalledProcessError:
-        print(f"No process found on port {port}.")
+def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    ps1_path = os.path.join(script_dir, "restart_services.ps1")
 
-def restart_services():
-    # 1. Kill existing processes
-    print("Stopping existing services...")
-    kill_process_by_port(5000) # Backend
-    kill_process_by_port(5173) # Frontend
+    if not os.path.isfile(ps1_path):
+        print(f"[FATAL] Canonical script not found: {ps1_path}", file=sys.stderr)
+        sys.exit(1)
 
-    # 2. Start Backend
-    backend_dir = r"c:\dev\alpla-portal\src\backend\AlplaPortal.Api"
-    print(f"Starting backend in {backend_dir}...")
-    # Use start to run in a new window so it doesn't block
-    cmd = 'start cmd /k "dotnet build && set ASPNETCORE_ENVIRONMENT=Development&& dotnet bin\\Debug\\net8.0\\AlplaPortal.Api.dll"'
-    subprocess.Popen(cmd, cwd=backend_dir, shell=True)
-
-    # 3. Start Frontend
-    frontend_dir = r"c:\dev\alpla-portal\src\frontend"
-    print(f"Starting frontend in {frontend_dir}...")
-    subprocess.Popen("start npm run dev", cwd=frontend_dir, shell=True)
-
-    print("Services restart initiated in separate windows.")
-    print("Please check the new terminal windows for output.")
+    print("[INFO] Delegating to canonical startup script: execution/restart_services.ps1")
+    result = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps1_path],
+        cwd=script_dir
+    )
+    sys.exit(result.returncode)
 
 if __name__ == "__main__":
-    restart_services()
+    main()

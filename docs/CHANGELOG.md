@@ -4,9 +4,23 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.210.0
+v2.210.1
 
 ## [Unreleased]
+
+## [v2.210.1] - 2026-07-22
+
+### Changed — Standardized Development Database to Portal-Gerencial-Dev-ProdClone
+
+- **Canonical database**: `Portal-Gerencial-Dev-ProdClone` is now the only supported local Development database. `AlplaPortalV1` was backed up (27.43 MB, `RESTORE VERIFYONLY` passed) and dropped.
+- **Pre-migration identity guard** (`Program.cs`, Development-only): queries `DB_NAME()` and `@@SERVERNAME` **before** `Database.Migrate()` and aborts with `InvalidOperationException` if the database is not the canonical clone. A post-migration re-verification confirms identity and logs the latest `MigrationId`. Does not affect TEST or PROD.
+- **Canonical startup script** (`execution/restart_services.ps1`): validates `DB_NAME()` via direct SQL before launching backend/frontend. All alternative startup routes (`restart_services.py`, `scripts/start-all.ps1`) now delegate to this script.
+- **Protected migration script** (`execution/update_dev_database.ps1`): preview-by-default with `DB_NAME()` preflight; application requires explicit `-Apply -Confirmation 'APPLY-MIGRATIONS-TO-DEV-CLONE'`.
+- **Isolated integration tests**: shared `IntegrationTestDatabase` helper targets `Portal-Gerencial-IntegrationTests` with a forbidden-database guard that aborts if the resolved DB is the clone, `AlplaPortalV1`, or any production/test database. CI fail-loud mode via `CI_FAIL_ON_MISSING_DB`.
+- **Fail-closed legacy tooling**: `DemoDataGenerator`, `run-sql.csx`, `apply-soft-delete-migration.csx`, and `apply-dec110-migration.ps1` exit immediately with deprecation messages.
+- **Agent directive**: `directives/RULE_DEV_DATABASE.md` registered in AGENTS.md, CLAUDE.md, and GEMINI.md.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.210.0] - 2026-07-22
 

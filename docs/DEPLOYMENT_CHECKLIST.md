@@ -325,13 +325,14 @@ src/backend/AlplaPortal.Api/appsettings.Development.json
 
 Default connection:
 ```
-Server=(localdb)\MSSQLLocalDB;Database=AlplaPortalV1;Trusted_Connection=True;...
+Server=(localdb)\MSSQLLocalDB;Database=Portal-Gerencial-Dev-ProdClone;Trusted_Connection=True;...
 ```
 
 To verify your local database name, check the `ConnectionStrings.DefaultConnection` value in that file.
 
 > [!CAUTION]
 > Never commit changes to `appsettings.Development.json` that contain real passwords, server names, or production connection strings.
+> `AlplaPortalV1` has been decommissioned and must not be used.
 
 ### Check Current Local Database State
 
@@ -339,10 +340,10 @@ Before deciding how to update, check if your local database exists and has data:
 
 ```powershell
 # Check if the database exists
-sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "SELECT name FROM sys.databases WHERE name = 'AlplaPortalV1'"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "SELECT name FROM sys.databases WHERE name = 'Portal-Gerencial-Dev-ProdClone'"
 
 # Check migration history (if database exists)
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d AlplaPortalV1 -Q "SELECT COUNT(*) AS MigrationCount FROM __EFMigrationsHistory"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Portal-Gerencial-Dev-ProdClone -Q "SELECT COUNT(*) AS MigrationCount FROM __EFMigrationsHistory"
 ```
 
 ### Option A: Clean Recreate (Recommended if no important local data)
@@ -375,12 +376,12 @@ If your local database contains test data you want to preserve:
 New-Item -Path "C:\dev\alpla-portal\.tmp\backups" -ItemType Directory -Force
 
 # Back up LocalDB (adjust database name if different)
-sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "BACKUP DATABASE [AlplaPortalV1] TO DISK = 'C:\dev\alpla-portal\.tmp\backups\AlplaPortalV1_pre_v2.156.0.bak' WITH FORMAT"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "BACKUP DATABASE [Portal-Gerencial-Dev-ProdClone] TO DISK = 'C:\dev\alpla-portal\.tmp\backups\Portal-Gerencial-Dev-ProdClone_pre_v2.156.0.bak' WITH FORMAT"
 ```
 
 **Step 2: Register the consolidated baseline**
 ```powershell
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d AlplaPortalV1 -Q "
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Portal-Gerencial-Dev-ProdClone -Q "
 IF NOT EXISTS (
     SELECT 1 FROM __EFMigrationsHistory
     WHERE MigrationId = '20260225000000_ConsolidatedBaseline'
@@ -415,7 +416,7 @@ After updating the local database (either option), validate the schema:
 
 ```powershell
 # Run the validation script against your local database
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d AlplaPortalV1 -i "C:\dev\alpla-portal\docs\POST_INSTALL_DATABASE_VALIDATION.sql"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Portal-Gerencial-Dev-ProdClone -i "C:\dev\alpla-portal\docs\POST_INSTALL_DATABASE_VALIDATION.sql"
 ```
 
 All critical tables should show `OK`. Seed data counts should meet minimums.
@@ -446,7 +447,7 @@ dotnet ef database drop --force
 dotnet ef database update
 
 # 3. Validate
-sqlcmd -S "(localdb)\MSSQLLocalDB" -d AlplaPortalV1 -i "C:\dev\alpla-portal\docs\POST_INSTALL_DATABASE_VALIDATION.sql"
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Portal-Gerencial-Dev-ProdClone -i "C:\dev\alpla-portal\docs\POST_INSTALL_DATABASE_VALIDATION.sql"
 
 # 4. Start backend
 dotnet run

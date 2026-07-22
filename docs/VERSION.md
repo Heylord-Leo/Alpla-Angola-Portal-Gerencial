@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.210.0
+v2.210.1
+
+## [v2.210.1] - 2026-07-22
+
+### Changed — Standardized Development Database to Portal-Gerencial-Dev-ProdClone
+
+- Canonical database changed to `Portal-Gerencial-Dev-ProdClone`; `AlplaPortalV1` backed up and dropped.
+- Pre-migration `DB_NAME()` identity guard in `Program.cs` (Development-only) runs **before** `Database.Migrate()`.
+- Canonical startup script (`restart_services.ps1`) with `DB_NAME()` SQL validation; wrappers delegate to it.
+- Protected migration script (`update_dev_database.ps1`) with preview-by-default and explicit apply confirmation.
+- Isolated integration-test database (`Portal-Gerencial-IntegrationTests`) with forbidden-database guard.
+- Fail-closed deprecation on legacy tooling (`DemoDataGenerator`, legacy scripts).
+- Agent directive `RULE_DEV_DATABASE.md` registered.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.210.0] - 2026-07-22
 

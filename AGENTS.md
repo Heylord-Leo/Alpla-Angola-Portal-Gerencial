@@ -22,6 +22,7 @@ All task execution in this repository MUST follow the standard operating procedu
     - `RULE_KPI_DASHBOARD.md` (UI Consistency)
     - `RULE_ORDER_NUMBERING.md` (Business Identifiers)
     - `RULE_REGRESSION_DEBUGGING.md` (Fix Analysis)
+    - `RULE_DEV_DATABASE.md` (Local Database Safety)
 - **Document Integrity**: Update `docs/` and `CHANGELOG.md` following Documentation Hygiene rules.
 - **Stop & Validate**: Stop implementation and wait for manual user validation.
 

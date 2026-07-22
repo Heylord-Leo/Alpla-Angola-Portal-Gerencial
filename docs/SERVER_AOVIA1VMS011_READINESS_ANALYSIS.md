@@ -255,7 +255,7 @@ D:\PortalGerencial-Test\
 A comparative audit of `appsettings.json` and `appsettings.Development.json` was conducted to isolate required production changes:
 
 ### 1. Database Connection String
-*   **Current Development:** `Server=(localdb)\\MSSQLLocalDB;Database=AlplaPortalV1;...`
+*   **Current Development:** `Server=(localdb)\\MSSQLLocalDB;Database=Portal-Gerencial-Dev-ProdClone;...`
 *   **Production (If Option B selected):** 
     `Server=localhost;Database=Portal-Gerencial;User Id=usr_portalgerencial;Password=[REDACTED];Trusted_Connection=False;MultipleActiveResultSets=true;TrustServerCertificate=True`
     *(Password must be securely injected via environment variable).*
