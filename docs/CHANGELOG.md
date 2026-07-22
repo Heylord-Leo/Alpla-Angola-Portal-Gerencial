@@ -4,9 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.209.0
+v2.210.0
 
 ## [Unreleased]
+
+## [v2.210.0] - 2026-07-22
+
+### Added — Atualização de Dados PROD → Desenvolvimento Local (Export/Import)
+
+- **Workflow `Export PROD Data for Dev`** (`export-prod-data-dev.yml`, self-hosted `AOVIA1VMS011`, environment `production`): executa somente `BACKUP DATABASE` em `Portal-Gerencial` (nunca escreve em PROD), calcula o checksum SHA-256 do `.bak` e publica ambos os arquivos (`.bak` + `.bak.sha256`) como artifact com retenção de 1 dia. Um step dedicado de limpeza (`if: always()`) remove os dois arquivos exatos do runner após o upload, falhando explicitamente se a remoção não puder ser confirmada. `permissions: contents: read` (least-privilege).
+- **`scripts/db/import-prod-data-dev.ps1`** (executado manualmente, localmente, fora do GitHub Actions): restaura o backup em uma base LocalDB isolada e descartável (`Portal-Gerencial-Dev-ProdClone`), nunca `Portal-Gerencial`, `Portal-Gerencial-Test` ou `AlplaPortalV1`. Exige verificação de checksum SHA-256 bem-sucedida (`-ChecksumFilePath`/`-ExpectedSha256`) antes de qualquer conexão SQL quando `-Apply` é usado; modo Preview (padrão) é somente leitura.
+- **`scripts/db/dev-safety-neutralization.sql`**: neutraliza e verifica (fail-closed) `EmailOutbox`, `SmtpSettings`, `IntegrationProviders`, `IntegrationProviderSettings` e `Users.PasswordResetToken`/`PasswordResetTokenExpiryUtc` após cada restore, usando checagens defensivas `OBJECT_ID`/`COL_LENGTH` e SQL dinâmico.
+- **Sincronização de anexos** (`-AttachmentMode FullClone|Incremental|None`): sempre aditiva (`/E /XC /XN /XO`), nunca `/MIR`/`/PURGE`, nunca sobrescreve ou apaga arquivo local existente; caminho de destino validado contra raiz de disco, `Windows`/`Program Files`, raiz do repositório e caminhos de deploy PROD/TEST.
+- **`docs/DEV_DATA_REFRESH.md`**: runbook completo (arquitetura, sensibilidade do artifact, sequência de comandos, procedimento de rollback, matriz de neutralização).
+- **`scripts/db/validate-export-prod-data-dev-inputs.ps1`**: validação não-destrutiva de ref/confirmação/versão antes de qualquer operação no export.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.209.0] - 2026-07-21
 

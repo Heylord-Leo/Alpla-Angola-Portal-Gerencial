@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.209.0
+v2.210.0
+
+## [v2.210.0] - 2026-07-22
+
+### Added — PROD → Local Development Data Refresh (Export/Import)
+
+- **`Export PROD Data for Dev` workflow** (self-hosted `AOVIA1VMS011`, `environment: production`, `permissions: contents: read`): read-only against Production — the only statement executed is `BACKUP DATABASE` on `Portal-Gerencial`. Computes a SHA-256 checksum for the `.bak`, uploads both `.bak` and `.bak.sha256` as a 1-day-retention artifact, and runs a dedicated `if: always()` cleanup step that deletes exactly those two files from the runner (failing the job if removal cannot be confirmed).
+- **`scripts/db/import-prod-data-dev.ps1`** (run manually, locally, outside GitHub Actions): restores the backup into an isolated, disposable LocalDB database (`Portal-Gerencial-Dev-ProdClone`); hard-forbids `Portal-Gerencial`, `Portal-Gerencial-Test`, and `AlplaPortalV1` as targets. `-Apply` requires a passing SHA-256 checksum verification (`-ChecksumFilePath`/`-ExpectedSha256`) before any SQL connection is opened; default Preview mode is read-only.
+- **`scripts/db/dev-safety-neutralization.sql`**: neutralizes and fail-closed-verifies `EmailOutbox`, `SmtpSettings`, `IntegrationProviders`, `IntegrationProviderSettings`, and `Users.PasswordResetToken`/`PasswordResetTokenExpiryUtc` after every restore, using `OBJECT_ID`/`COL_LENGTH`-guarded dynamic SQL.
+- **Attachment sync** (`-AttachmentMode FullClone|Incremental|None`): always additive (`/E /XC /XN /XO`), never `/MIR`/`/PURGE`, never overwrites or deletes an existing local file; target path validated against drive roots, the Windows/Program Files trees, the repository root, and known PROD/TEST deployment paths.
+- **`scripts/db/validate-export-prod-data-dev-inputs.ps1`**: non-destructive ref/confirmation-phrase/version validation before any export operation runs.
+- **`docs/DEV_DATA_REFRESH.md`**: full runbook (architecture, artifact sensitivity, command sequence, rollback procedure, neutralization matrix).
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.209.0] - 2026-07-21
 

@@ -6,6 +6,7 @@ import { ConfirmDiscardModal } from '../../components/ui/ConfirmDiscardModal';
 import { WizardStepOverview } from './WizardStepOverview';
 import { WizardStepAllocation, ItemAllocation, ItemAssignment } from './WizardStepAllocation';
 import { WizardStepSelection } from './WizardStepSelection';
+import { WizardStepBatchReview } from './WizardStepBatchReview';
 import { WizardStepReview } from './WizardStepReview';
 import { WizardStepBudget, AllocationReassignmentDto } from './WizardStepBudget';
 import { useWizardValidation } from './hooks/useWizardValidation';
@@ -31,6 +32,7 @@ interface ApprovalWizardModalProps {
     onDownloadAttachment?: (attachmentId: string, fileName: string) => void;
     intelligence?: ApprovalIntelligenceDto | null;
     approvalStage?: 'AREA' | 'FINAL';
+    activeBatch?: any | null;
 }
 
 type WizardStepKey = 'OVERVIEW' | 'ALLOCATION' | 'COMPARISON' | 'SINGLE_QUOTE_REVIEW' | 'BUDGET' | 'REVIEW';
@@ -46,7 +48,8 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
     isSubmitting,
     onDownloadAttachment,
     intelligence,
-    approvalStage
+    approvalStage,
+    activeBatch
 }) => {
     const [currentStep, setCurrentStep] = useState(1);
     const [itemAwards, setItemAwards] = useState<Record<string, string>>({});
@@ -74,6 +77,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
 
     const isPayment = request?.requestTypeCode === 'PAYMENT';
     const isSingleQuotation = !isPayment && quotations.length === 1;
+    const isBatchReviewMode = Boolean(activeBatch);
 
     const dynamicSteps = useMemo(() => {
         const steps = [
@@ -82,7 +86,9 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         ];
 
         if (!isPayment) {
-            if (isSingleQuotation) {
+            if (isBatchReviewMode) {
+                steps.push({ key: 'SINGLE_QUOTE_REVIEW' as WizardStepKey, title: 'Cotação Selecionada', icon: Scale });
+            } else if (isSingleQuotation) {
                 steps.push({ key: 'SINGLE_QUOTE_REVIEW' as WizardStepKey, title: 'Cotação Única', icon: Scale });
             } else {
                 steps.push({ key: 'COMPARISON' as WizardStepKey, title: 'Comparação e Seleção', icon: Scale });
@@ -93,7 +99,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         steps.push({ key: 'REVIEW' as WizardStepKey, title: 'Revisão Final', icon: ClipboardCheck });
 
         return steps;
-    }, [isPayment, isSingleQuotation]);
+    }, [isPayment, isSingleQuotation, isBatchReviewMode]);
 
     const totalSteps = dynamicSteps.length;
     const currentStepConfig = dynamicSteps[currentStep - 1] || dynamicSteps[0];
@@ -209,7 +215,9 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         isPayment,
         extraItemDecisions,
         extraItemsCount,
-        approvedExtraItems
+        approvedExtraItems,
+        isBatchReviewMode,
+        quotations
     );
 
     // --- Close handling ---
@@ -570,19 +578,28 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                     )}
 
                     {(currentStepConfig.key === 'COMPARISON' || currentStepConfig.key === 'SINGLE_QUOTE_REVIEW') && (
-                        <WizardStepSelection
-                            request={request}
-                            quotations={quotations}
-                            itemAwards={itemAwards}
-                            onChangeAward={handleAwardChange}
-                            onSelectAll={handleSelectAllFromQuotation}
-                            onSelectLowestPrices={handleSelectLowestPrices}
-                            awardedCount={step3AwardedCount}
-                            totalCount={activeItems.length}
-                            isSingleQuotation={isSingleQuotation}
-                            extraItemDecisions={extraItemDecisions}
-                            onChangeExtraItemDecision={handleExtraItemDecisionChange}
-                        />
+                        isBatchReviewMode ? (
+                            <WizardStepBatchReview
+                                request={request}
+                                quotations={quotations}
+                                activeBatch={activeBatch}
+                                onDownloadAttachment={onDownloadAttachment}
+                            />
+                        ) : (
+                            <WizardStepSelection
+                                request={request}
+                                quotations={quotations}
+                                itemAwards={itemAwards}
+                                onChangeAward={handleAwardChange}
+                                onSelectAll={handleSelectAllFromQuotation}
+                                onSelectLowestPrices={handleSelectLowestPrices}
+                                awardedCount={step3AwardedCount}
+                                totalCount={activeItems.length}
+                                isSingleQuotation={isSingleQuotation}
+                                extraItemDecisions={extraItemDecisions}
+                                onChangeExtraItemDecision={handleExtraItemDecisionChange}
+                            />
+                        )
                     )}
 
                     {currentStepConfig.key === 'BUDGET' && (

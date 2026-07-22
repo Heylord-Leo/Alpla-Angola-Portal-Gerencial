@@ -1,0 +1,193 @@
+# =============================================================================
+# Alpla Angola - Portal Gerencial
+# GitHub Actions Workflow: Export PROD Data for Dev (Manual)
+# =============================================================================
+# Developed on Portal-Gerencial-rev1 (the official continuous development
+# branch) and merged to main for execution. The `production` GitHub
+# Environment permits only main, so this workflow must be dispatched with
+# "Use workflow from: main".
+#
+# This workflow is READ-ONLY against Production: the only statement it runs
+# against Portal-Gerencial is BACKUP DATABASE, which never modifies PROD data.
+# It does not touch TEST, does not touch IIS, does not touch attachments, and
+# does not restore anything anywhere. The resulting backup file (plus a paired
+# SHA-256 checksum file) is uploaded as a 1-day-retention build artifact so a
+# developer can download it and run scripts/db/import-prod-data-dev.ps1
+# LOCALLY against their own LocalDB instance (that import step is never
+# executed by this workflow). A dedicated cleanup step then deletes the exact
+# two files this run produced from the Production runner's local disk,
+# regardless of whether the run succeeded or failed.
+# =============================================================================
+name: Export PROD Data for Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_export:
+        description: 'Digite "EXPORT_PROD_FOR_LOCAL_DEV" para confirmar a exportacao de backup da PROD'
+        required: true
+        type: string
+      release_version:
+        description: 'Current release version from docs/VERSION.md, for example v2.209.0.'
+        required: true
+        type: string
+
+concurrency:
+  group: export-prod-data-dev
+  cancel-in-progress: false
+
+# Least-privilege: this workflow only checks out the repository and uploads a
+# build artifact. actions/upload-artifact does not use the GITHUB_TOKEN's
+# `actions` scope (it authenticates against the run's own Actions Results
+# service), so contents: read - the same permission actions/checkout needs -
+# is sufficient. No write access to contents, issues, pull requests, packages,
+# or deployments is requested.
+permissions:
+  contents: read
+
+jobs:
+  export-data:
+    name: Export PROD Data for Dev (${{ inputs.release_version }})
+    runs-on: [self-hosted, Windows, X64, iis]
+    environment: production
+
+    steps:
+      # --- Checkout (whatever ref was selected in the dispatch UI - no override) ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Resolve commit metadata (Git is optional; GITHUB_SHA is authoritative) ---
+      - name: Resolve commit metadata
+        id: commit_meta
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\scripts\db\resolve-sync-commit-metadata.ps1" `
+            -EventSha $env:GITHUB_SHA `
+            -RepoRoot "${{ github.workspace }}"
+
+      # --- Validate inputs, branch ref and repository version (non-destructive) ---
+      - name: Validate inputs, ref and version
+        id: validate
+        shell: pwsh
+        env:
+          CONFIRM_EXPORT: ${{ inputs.confirm_export }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          & "${{ github.workspace }}\scripts\db\validate-export-prod-data-dev-inputs.ps1" `
+            -ConfirmExport $env:CONFIRM_EXPORT `
+            -ReleaseVersion $env:RELEASE_VERSION `
+            -RefName "${{ github.ref_name }}" `
+            -RequiredRefName "main" `
+            -VersionFilePath "${{ github.workspace }}\docs\VERSION.md" `
+            -SourceDbName "Portal-Gerencial" `
+            -ResolvedCommitSha "${{ steps.commit_meta.outputs.resolved_sha }}" `
+            -WorkflowRef "${{ github.ref }}"
+
+      # --- Run the read-only export (BACKUP DATABASE only) + checksum generation ---
+      - name: Run export script
+        id: export
+        shell: pwsh
+        env:
+          PROD_DB_CONNECTION_STRING: ${{ secrets.PROD_DB_CONNECTION_STRING }}
+        run: |
+          & "${{ github.workspace }}\scripts\db\export-prod-data-dev.ps1" `
+            -ProdDbName "Portal-Gerencial" `
+            -BackupDir "${{ vars.BACKUP_PATH }}\dev-export" `
+            -ReleaseVersion "${{ inputs.release_version }}" `
+            -RunId "${{ github.run_id }}" `
+            -RunAttempt "${{ github.run_attempt }}"
+
+      # --- Upload the backup + checksum as a 1-day-retention artifact ---
+      # Retention is intentionally the minimum GitHub allows (1 day): this
+      # artifact contains a full copy of Production data and must be
+      # downloaded and deleted promptly. The matching local .bak file is also
+      # removed from this runner by the cleanup step below regardless of
+      # whether this upload step succeeds.
+      - name: Upload PROD backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-dev-clone-backup-${{ inputs.release_version }}-run${{ github.run_id }}
+          path: |
+            ${{ steps.export.outputs.backup_file_path }}
+            ${{ steps.export.outputs.checksum_file_path }}
+          retention-days: 1
+          if-no-files-found: error
+
+      # --- Guaranteed cleanup of the exact files this run produced ---
+      # Runs on every outcome (success, upload failure, or any later step
+      # failure) as long as the export step produced a path. Deletes ONLY the
+      # two literal files named by the export step's outputs - never a
+      # directory, never a wildcard, never anything else in BACKUP_PATH.
+      # Cleanup failure intentionally FAILS this step: a sensitive Production
+      # backup that could not be removed from the runner must not be treated
+      # as a silent success.
+      - name: Clean up Production backup files from the runner
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $backupPath = "${{ steps.export.outputs.backup_file_path }}"
+          $checksumPath = "${{ steps.export.outputs.checksum_file_path }}"
+          $cleanupFailed = $false
+
+          foreach ($target in @(
+            @{ Label = "backup"; Path = $backupPath },
+            @{ Label = "checksum"; Path = $checksumPath }
+          )) {
+            $path = $target.Path
+            $label = $target.Label
+
+            if ([string]::IsNullOrWhiteSpace($path)) {
+              Write-Host "No $label file path was produced by the export step (nothing to clean up)."
+              continue
+            }
+
+            $sanitizedName = Split-Path -Leaf $path
+            if (Test-Path -LiteralPath $path) {
+              try {
+                Remove-Item -LiteralPath $path -Force
+                if (Test-Path -LiteralPath $path) {
+                  throw "File still present after Remove-Item."
+                }
+                Write-Host "Removed $label file from runner: $sanitizedName"
+              } catch {
+                Write-Host "::error::Failed to remove $label file '$sanitizedName' from the runner: $_"
+                $cleanupFailed = $true
+              }
+            } else {
+              Write-Host "$label file already absent (nothing to clean up): $sanitizedName"
+            }
+          }
+
+          if ($cleanupFailed) {
+            throw "CLEANUP FAILED: at least one Production backup-related file could not be confirmed removed from AOVIA1VMS011. Treat this run as requiring MANUAL verification and deletion on the runner."
+          }
+
+      # --- Summary ---
+      - name: Export summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "============================================="
+          Write-Host "  Export PROD Data for Dev - Summary"
+          Write-Host "============================================="
+          Write-Host "Version:        ${{ inputs.release_version }}"
+          Write-Host "Source database: Portal-Gerencial (read-only - BACKUP DATABASE only)"
+          Write-Host "Artifact name:   prod-dev-clone-backup-${{ inputs.release_version }}-run${{ github.run_id }}"
+          Write-Host "Artifact retention: 1 day"
+          Write-Host "============================================="
+          Write-Host ""
+          Write-Host "Next steps (run LOCALLY on your development machine, NOT on this runner):"
+          Write-Host "  1. Download the artifact 'prod-dev-clone-backup-${{ inputs.release_version }}-run${{ github.run_id }}' from this workflow run (contains both the .bak and the .bak.sha256)."
+          Write-Host "  2. Extract both files to the SAME local folder."
+          Write-Host "  3. Run scripts\db\import-prod-data-dev.ps1 -BackupFilePath <path-to-.bak> -ChecksumFilePath <path-to-.bak.sha256> (preview mode first, no -Apply)."
+          Write-Host "  4. Review the printed plan and checksum verification result, then re-run with -Apply -Confirmation `"APPLY-PROD-CLONE-IMPORT-DEV`"."
+          Write-Host "  See docs/DEV_DATA_REFRESH.md for the full walkthrough."
+          Write-Host "============================================="
+
+          if ($env:GITHUB_STEP_SUMMARY) {
+            "## Export PROD Data for Dev - Artifact" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "Artifact name: ``prod-dev-clone-backup-${{ inputs.release_version }}-run${{ github.run_id }}`` (retention: 1 day)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }

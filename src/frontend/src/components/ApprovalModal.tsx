@@ -47,6 +47,8 @@ interface ApprovalModalProps {
     /** Batch-scope context: when provided, REJECT/ADJUSTMENT descriptions inform the user the action targets only this batch. */
     batchNumber?: number | null;
     batchItemCount?: number | null;
+    /** Legacy-scope context: when true, REJECT/ADJUSTMENT descriptions inform the user the action targets the complete request. */
+    isLegacyQuotationApproval?: boolean;
     children?: React.ReactNode;
 }
 
@@ -67,6 +69,7 @@ export function ApprovalModal({
     selectedQuotationName,
     batchNumber,
     batchItemCount,
+    isLegacyQuotationApproval,
     children
 }: ApprovalModalProps) {
     if (!show) return null;
@@ -110,7 +113,9 @@ export function ApprovalModal({
                     : baseDesc;
             case 'REJECT': return batchNumber
                 ? `Esta ação será aplicada apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Esta ação é irreversível.`
-                : 'Tem certeza que deseja rejeitar este pedido? Esta ação é irreversível.';
+                : isLegacyQuotationApproval
+                    ? 'Este pedido utiliza o fluxo legado e não possui lote de aprovação. A rejeição será aplicada ao pedido completo. Esta ação é irreversível.'
+                    : 'Tem certeza que deseja rejeitar este pedido? Esta ação é irreversível.';
             case 'SAVE': return 'Deseja salvar as alterações realizadas neste pedido?';
             case 'SUBMIT': return isReworkStatus ? 'Deseja reenviar este pedido para o fluxo de aprovação?' : 'Deseja enviar este pedido para o fluxo de aprovação?';
             case 'DELETE': return 'Tem certeza de que deseja excluir este rascunho? Esta ação não poderá ser desfeita.';
@@ -126,7 +131,9 @@ export function ApprovalModal({
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
             case 'REQUEST_ADJUSTMENT': return batchNumber
                 ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Informe o que precisa ser ajustado.`
-                : 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
+                : isLegacyQuotationApproval
+                    ? 'Este pedido utiliza o fluxo legado de cotação e não possui um lote de aprovação. O pedido completo será devolvido ao comprador para que o mapeamento dos itens da cotação e a seleção dos vencedores sejam corrigidos.'
+                    : 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
             case 'ITEM_STATUS_CHANGE': 
                 return isLastItem 
                     ? 'Este é o último item pendente do pedido. Ao confirmar, todos os itens estarão recebidos e o pedido será finalizado.' 
