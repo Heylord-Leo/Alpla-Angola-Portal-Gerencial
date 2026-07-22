@@ -5,6 +5,7 @@ using AlplaPortal.Application.DTOs.Common;
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Application.Interfaces.Finance;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Constants;
@@ -26,16 +27,19 @@ public class FinanceController : BaseController
     private readonly IWorkflowNotificationOrchestrator _orchestrator;
     private readonly ILogger<FinanceController> _logger;
     private readonly IStatusAggregationService _statusAggregationService;
+    private readonly IFinancePaymentEligibilityService _eligibility;
 
     public FinanceController(
         ApplicationDbContext context,
         IWorkflowNotificationOrchestrator orchestrator,
         ILogger<FinanceController> logger,
-        IStatusAggregationService statusAggregationService) : base(context)
+        IStatusAggregationService statusAggregationService,
+        IFinancePaymentEligibilityService eligibility) : base(context)
     {
         _orchestrator = orchestrator;
         _logger = logger;
         _statusAggregationService = statusAggregationService;
+        _eligibility = eligibility;
     }
 
     private IQueryable<Request> GetFinanceQuery()
@@ -411,7 +415,10 @@ public class FinanceController : BaseController
         [FromQuery] string? statusIds = null,
         [FromQuery] string? statusCodes = null,
         [FromQuery] string? currencyCode = null,
-        [FromQuery] string? searchSupplier = null,
+        [FromQuery] string? search = null,
+        [FromQuery] string? searchSupplier = null, // legacy fallback — kept for bookmarked URLs/saved preferences; 'search' takes precedence when both are present
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool isDescending = false,
         [FromQuery] int? plantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -483,11 +490,17 @@ public class FinanceController : BaseController
                 || (!r.SelectedQuotationId.HasValue && r.Currency != null && r.Currency.Code.ToUpper() == ccUpper));
         }
 
-        if (!string.IsNullOrWhiteSpace(searchSupplier))
+        // General search: request number OR the effective supplier name (Quotation.SupplierNameSnapshot
+        // when a quotation is selected, otherwise Request.Supplier.Name) — same OR-search shape as
+        // RequestsController.GetRequests. 'search' takes precedence; 'searchSupplier' is a temporary
+        // fallback for old bookmarked URLs / saved table preferences that predate this change.
+        var effectiveSearch = !string.IsNullOrWhiteSpace(search) ? search : searchSupplier;
+        if (!string.IsNullOrWhiteSpace(effectiveSearch))
         {
-            var searchLower = searchSupplier.ToLower();
-            query = query.Where(r => 
-                (r.SelectedQuotationId.HasValue && r.Quotations.Any(q => q.Id == r.SelectedQuotationId.Value && q.SupplierNameSnapshot != null && q.SupplierNameSnapshot.ToLower().Contains(searchLower)))
+            var searchLower = effectiveSearch.Trim().ToLower();
+            query = query.Where(r =>
+                (r.RequestNumber != null && r.RequestNumber.ToLower().Contains(searchLower))
+                || (r.SelectedQuotationId.HasValue && r.Quotations.Any(q => q.Id == r.SelectedQuotationId.Value && q.SupplierNameSnapshot != null && q.SupplierNameSnapshot.ToLower().Contains(searchLower)))
                 || (!r.SelectedQuotationId.HasValue && r.Supplier != null && r.Supplier.Name != null && r.Supplier.Name.ToLower().Contains(searchLower)));
         }
 
@@ -514,7 +527,7 @@ public class FinanceController : BaseController
 
         var totalCount = await query.CountAsync();
 
-        var items = await query
+        var includedQuery = query
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.Supplier)
@@ -523,13 +536,63 @@ public class FinanceController : BaseController
             .Include(r => r.Quotations)
             .Include(r => r.Currency)
             .Include(r => r.PoGroups)
-                .ThenInclude(g => g.Payments)
-            .OrderByDescending(r => r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today ? 1 : 0) // Overdue first
-            .ThenByDescending(r => r.NeedLevelId ?? 0)
-            .ThenBy(r => r.NeedByDateUtc)
+                .ThenInclude(g => g.Payments);
+
+        // Default order (no sortBy): overdue first, then need-level, then need-by-date — unchanged
+        // from prior behavior. Explicit sortBy switches to one of the supported columns below.
+        IOrderedQueryable<Request> orderedQuery;
+        switch (sortBy?.ToLower())
+        {
+            case "requestnumber":
+                // RequestNumber format is REQ-DD/MM/YYYY-NNN — lexicographic string sort would be
+                // wrong (day precedes year). Sort by CreatedAtUtc.Date, same as RequestsController.
+                orderedQuery = isDescending
+                    ? includedQuery.OrderByDescending(r => r.CreatedAtUtc.Date).ThenByDescending(r => r.RequestNumber)
+                    : includedQuery.OrderBy(r => r.CreatedAtUtc.Date).ThenBy(r => r.RequestNumber);
+                break;
+            case "suppliername":
+                // Effective supplier name: Quotation.SupplierNameSnapshot when a quotation is
+                // selected, otherwise Request.Supplier.Name — same source used to populate the row.
+                orderedQuery = isDescending
+                    ? includedQuery.OrderByDescending(r => r.SelectedQuotationId.HasValue
+                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault()
+                        : (r.Supplier != null ? r.Supplier.Name : null))
+                    : includedQuery.OrderBy(r => r.SelectedQuotationId.HasValue
+                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => q.SupplierNameSnapshot).FirstOrDefault()
+                        : (r.Supplier != null ? r.Supplier.Name : null));
+                break;
+            case "needbydateutc":
+                // Raw due date. The row may separately display ScheduledDateUtc/PaidDateUtc
+                // depending on state, but sorting is intentionally against NeedByDateUtc only —
+                // same single-date-field approach RequestsController uses.
+                orderedQuery = isDescending ? includedQuery.OrderByDescending(r => r.NeedByDateUtc) : includedQuery.OrderBy(r => r.NeedByDateUtc);
+                break;
+            case "statuscode":
+                // Workflow position, not alphabetical label — same as RequestsController.
+                orderedQuery = isDescending ? includedQuery.OrderByDescending(r => r.Status!.DisplayOrder) : includedQuery.OrderBy(r => r.Status!.DisplayOrder);
+                break;
+            case "amount":
+                orderedQuery = isDescending
+                    ? includedQuery.OrderByDescending(r => r.SelectedQuotationId.HasValue
+                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                        : (decimal?)r.EstimatedTotalAmount)
+                    : includedQuery.OrderBy(r => r.SelectedQuotationId.HasValue
+                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                        : (decimal?)r.EstimatedTotalAmount);
+                break;
+            default:
+                orderedQuery = includedQuery
+                    .OrderByDescending(r => r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today ? 1 : 0) // Overdue first
+                    .ThenByDescending(r => r.NeedLevelId ?? 0)
+                    .ThenBy(r => r.NeedByDateUtc);
+                break;
+        }
+
+        var items = await orderedQuery
+            .ThenBy(r => r.Id) // deterministic tie-breaker — keeps pagination order stable
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(r => new 
+            .Select(r => new
             {
                 Request = r,
                 HasProforma = r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == AttachmentConstants.Types.Proforma),
@@ -557,15 +620,22 @@ public class FinanceController : BaseController
 
             if (filter == "missingDocs" && !isMissingDocuments) continue; // Manual filter application for missing docs
 
-            var actions = new List<string>();
-            if (!isPaid)
+            // Single source of truth for action eligibility — shared with SchedulePayment/MarkAsPaid/
+            // ReturnForAdjustment via IFinancePaymentEligibilityService, so listing can never advertise
+            // an action the corresponding endpoint would reject (or hide one it would accept).
+            var eligibilityInput = new FinanceEligibilityInput
             {
-                if (r.Status.Code != RequestConstants.Statuses.PaymentScheduled) actions.Add("SCHEDULE");
-                actions.Add("PAY");
-                actions.Add("RETURN");
-            }
-            actions.Add("ADD_NOTE");
-            if (!item.HasProof && (actions.Contains("PAY") || isPaid)) actions.Add("ADD_PROOF");
+                RequestTypeCode = r.RequestType!.Code,
+                RequestStatusCode = r.Status.Code,
+                IsPaid = isPaid,
+                HasProof = item.HasProof,
+                PoGroups = r.PoGroups.Select(g => new FinancePoGroupEligibilityInput
+                {
+                    GroupId = g.Id,
+                    GroupStatus = g.Status
+                }).ToList()
+            };
+            var actions = _eligibility.Evaluate(eligibilityInput).Actions.ToList();
 
             dtoList.Add(new FinanceListItemDto
             {
@@ -604,8 +674,12 @@ public class FinanceController : BaseController
                     && Math.Round(r.ActualPaidAmount.Value, 2) != Math.Round(r.ApprovedTotalAmount.Value, 2),
                 PaymentCondition = r.PaymentConditionCode,
                 AdvancePaymentPercent = r.AdvancePaymentPercent,
+                // Deliberately NOT filtered by financeGroupStatuses: the frontend needs every
+                // group's real id/status to act on it (including a legacy group stuck at a
+                // pre-finance status like PENDING, which is otherwise still the request's only
+                // group). Row inclusion for QUOTATION is separately guarded below, against the
+                // original (unfiltered-here) items collection, so that guard's intent is preserved.
                 PoGroups = r.PoGroups
-                    .Where(g => financeGroupStatuses.Contains(g.Status))
                     .Select(g => new RequestPoGroupDto
                 {
                     Id = g.Id,
@@ -632,16 +706,21 @@ public class FinanceController : BaseController
             });
         }
 
-        // ── Guard: exclude QUOTATION items with empty PoGroups after finance-status filtering ──
+        // ── Guard: exclude QUOTATION items with no finance-eligible group ──
         // This prevents QUOTATION requests that entered via the parent-status path (e.g. with a
         // request-level PO attachment but no group-linked PO) from appearing with zero finance groups.
-        dtoList.RemoveAll(dto => 
+        // Checked against the original (unfiltered) items collection — dto.PoGroups itself is no
+        // longer status-filtered (see above), so it can't be used for this decision anymore.
+        dtoList.RemoveAll(dto =>
         {
-            if (dto.StatusCode == RequestConstants.Statuses.PoPartiallyUploaded 
-                || items.Any(i => i.Request.Id == dto.Id && i.Request.RequestType?.Code == RequestConstants.Types.Quotation))
+            var sourceItem = items.FirstOrDefault(i => i.Request.Id == dto.Id);
+            if (sourceItem == null) return false;
+
+            if (dto.StatusCode == RequestConstants.Statuses.PoPartiallyUploaded
+                || sourceItem.Request.RequestType?.Code == RequestConstants.Types.Quotation)
             {
                 // For QUOTATION, require at least one finance-eligible group
-                return dto.PoGroups == null || !dto.PoGroups.Any();
+                return !sourceItem.Request.PoGroups.Any(g => financeGroupStatuses.Contains(g.Status));
             }
             return false;
         });
@@ -826,13 +905,13 @@ public class FinanceController : BaseController
         var group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
 
-        // ── DEC-110: Status Guard ────────────────────────────────────────────
+        // ── DEC-110: Status Guard — via IFinancePaymentEligibilityService, same rule GetPayments uses ──
         var allowedScheduleStatuses = new[] {
             RequestConstants.Statuses.PoIssued,
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.AdvancePaymentRequired
         };
-        if (!allowedScheduleStatuses.Contains(group.Status))
+        if (!_eligibility.CanSchedule(group.Status))
         {
             return BadRequest(new ProblemDetails
             {
@@ -939,6 +1018,8 @@ public class FinanceController : BaseController
         }
 
         // ── Status Guard: group-first for QUOTATION, request-level for PAYMENT ──
+        // Both branches now delegate to IFinancePaymentEligibilityService.CanPay — the same
+        // predicate GetPayments uses to compute AvailableFinanceActions.
         if (r.RequestType?.Code == RequestConstants.Types.Quotation)
         {
             // QUOTATION: guard on group status, including advance payment statuses
@@ -949,7 +1030,7 @@ public class FinanceController : BaseController
                 RequestConstants.Statuses.AdvancePaymentRequired,
                 RequestConstants.Statuses.AdvancePaymentScheduled
             };
-            if (!allowedGroupPayStatuses.Contains(group.Status))
+            if (!_eligibility.CanPay(r.RequestType.Code, r.Status?.Code ?? string.Empty, group.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -968,7 +1049,7 @@ public class FinanceController : BaseController
                 RequestConstants.Statuses.PaymentRequestSent,
                 RequestConstants.Statuses.PaymentScheduled
             };
-            if (r.Status == null || !allowedPayStatuses.Contains(r.Status.Code))
+            if (r.Status == null || !_eligibility.CanPay(r.RequestType?.Code ?? string.Empty, r.Status.Code, group.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -1156,8 +1237,9 @@ public class FinanceController : BaseController
         // Source-status guard: only allow return from operational statuses where PO has been registered
         // Note: Returning from PAYMENT_SCHEDULED intentionally invalidates the prior scheduling.
         //       After correction, Finance must re-evaluate from PO_ISSUED.
+        // Delegates to IFinancePaymentEligibilityService.CanReturn — the same predicate GetPayments uses.
         var allowedReturnStatuses = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" };
-        if (r.Status == null || !allowedReturnStatuses.Contains(r.Status.Code))
+        if (r.Status == null || !_eligibility.CanReturn(r.Status.Code))
         {
             return BadRequest(new ProblemDetails
             {

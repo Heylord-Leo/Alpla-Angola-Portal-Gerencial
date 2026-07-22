@@ -1800,7 +1800,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar projeções de fluxo de caixa.');
             return response.json();
         },
-        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number, statusCodes?: string, currencyCode?: string, searchSupplier?: string): Promise<FinanceListResponseDto> => {
+        getPayments: async (filter?: string, page: number = 1, pageSize: number = 20, plantId?: number, statusCodes?: string, currencyCode?: string, search?: string, sortBy?: string, isDescending?: boolean): Promise<FinanceListResponseDto> => {
             const params = new URLSearchParams();
             if (filter) params.append('filter', filter);
             params.append('page', page.toString());
@@ -1808,7 +1808,9 @@ export const api = {
             if (plantId) params.append('plantId', plantId.toString());
             if (statusCodes) params.append('statusCodes', statusCodes);
             if (currencyCode) params.append('currencyCode', currencyCode);
-            if (searchSupplier) params.append('searchSupplier', searchSupplier);
+            if (search) params.append('search', search);
+            if (sortBy) params.append('sortBy', sortBy);
+            if (typeof isDescending === 'boolean') params.append('isDescending', isDescending.toString());
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/payments?${params.toString()}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();

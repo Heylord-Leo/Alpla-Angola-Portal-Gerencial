@@ -15,10 +15,12 @@ using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Infrastructure.Services.Requests;
 using AlplaPortal.Infrastructure.Services.Suppliers;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Application.Interfaces.Finance;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
 using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Infrastructure.Services.MonthlyChanges;
 using AlplaPortal.Infrastructure.Services.Purchasing;
+using AlplaPortal.Infrastructure.Services.Finance;
 using AlplaPortal.Infrastructure.Services.Integration.Operations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -109,6 +111,9 @@ builder.Services.AddScoped<IGroupBuilderService, GroupBuilderService>();
 // Cancelled-batch quotation reuse rule (Option C) — single source of truth for eligibility
 builder.Services.AddScoped<IQuotationItemEligibilityService, QuotationItemEligibilityService>();
 builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>();
+
+// Finance — single source of truth for SCHEDULE/PAY/RETURN action eligibility (listing + execution)
+builder.Services.AddScoped<IFinancePaymentEligibilityService, FinancePaymentEligibilityService>();
 
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();

@@ -2,6 +2,71 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-149 — Centralized Finance Payment Action Eligibility
+
+- **Date:** 2026-07-22
+- **Status:** Accepted
+- **Context:** `FinanceController.GetPayments` computed `AvailableFinanceActions` (SCHEDULE/PAY/RETURN)
+  from the parent `Request.Status.Code` alone, while separately filtering the DTO's `PoGroups`
+  array down to statuses in `financeGroupStatuses` — a second, independently-maintained rule.
+  `SchedulePayment`, `MarkAsPaid`, and `ReturnForAdjustment` each re-implemented their own status
+  guards inline. Investigation of the Finance > Payments page found 12 legacy `PAYMENT`-type
+  `RequestPoGroup` rows (single historical backfill batch, `CreatedAtUtc = 2026-07-20 17:25:39`)
+  stuck at `Status = 'PENDING'` under a parent already at `PO_ISSUED`. Because `PENDING` failed the
+  DTO's group-status filter, the frontend's `poGroups.length > 0` gate hid `PAY` even though
+  `MarkAsPaid`'s own guard (parent-status-driven for `PAYMENT` type) would have accepted it —
+  proving listing and execution could silently disagree.
+- **Decision:**
+    1. **Single source of truth**: extracted `IFinancePaymentEligibilityService` /
+       `FinancePaymentEligibilityService` (`AlplaPortal.Application.Interfaces.Finance` /
+       `AlplaPortal.Infrastructure.Services.Finance`), mirroring the existing
+       `IQuotationItemEligibilityService` / `IStatusAggregationService` pattern in
+       `AlplaPortal.Infrastructure.Services.Purchasing`.
+    2. **Pure input model, not EF entities**: `FinanceEligibilityInput`/`FinancePoGroupEligibilityInput`
+       are plain data carriers (not `Request`/`RequestPoGroup` directly), so eligibility is
+       unit-testable without constructing fully-wired EF entity graphs, and so the same shape can
+       be built from already-loaded data in `GetPayments`, `SchedulePayment`, `MarkAsPaid`, and
+       `ReturnForAdjustment` alike.
+    3. **Predicates, not just a list-builder**: `CanSchedule`/`CanPay`/`CanReturn` are exposed
+       individually so the mutation endpoints call the exact same method the listing endpoint uses
+       — not a parallel copy of the same status arrays.
+    4. **`PoGroups` DTO projection un-filtered**: `GetPayments` no longer filters the returned
+       `PoGroups` by `financeGroupStatuses` (that filtering fed the frontend's group-id lookup, not
+       just a display decision) — a legacy/pre-finance-status group is still returned so the
+       frontend can resolve a group id to act on. The QUOTATION "empty PoGroups" row-exclusion
+       guard was preserved by re-deriving its own check directly from the original (unfiltered)
+       query results rather than from the now-unfiltered DTO field.
+    5. **Frontend follows the DTO, not group-count**: `FinancePaymentsList.tsx` renders
+       `SCHEDULE`/`PAY` purely from `availableFinanceActions`; a missing/unresolvable group id
+       (e.g. zero groups) is treated as an execution/input guard (can't call the endpoint without
+       one), never re-interpreted as a business-eligibility rule.
+    6. **Internal-only unavailability reasons**: `FinanceActionEligibilityResult.UnavailableReasons`
+       is not mapped onto `FinanceListItemDto` — kept for logging/tests only, to avoid expanding the
+       public API contract for this fix.
+    7. **`MarkAsPaid` self-heals the legacy group status (confirmed by review, pre-existing behavior,
+       not introduced by this fix)**: for `PAYMENT` requests, `PAY` eligibility is parent-status-driven
+       (`CanPay` ignores the group's own status). `MarkAsPaid` unconditionally sets **both**
+       `Request.Status` and `RequestPoGroup.Status` to the same paid status when it succeeds — it does
+       not check or preserve the group's prior value. Therefore a legacy `RequestPoGroup.Status =
+       PENDING` under a valid parent `PO_ISSUED` request is advanced to the paid status as part of
+       paying, regardless of whether the data-remediation script has run first. The operation cannot
+       leave `Request = PAYMENT_COMPLETED` / `RequestPoGroup = PENDING` — verified in
+       `FinancePaymentEligibilityServiceTests.cs` (`MarkAsPaid_Payment_ParentPoIssued_GroupPending_...`).
+- **Alternatives considered:** (1) Relaxing only the frontend's `poGroups.length > 0` gate without
+  touching the backend (rejected — would have papered over the mismatch instead of fixing the
+  shared root cause, and the two mutation endpoints would still disagree with each other for
+  QUOTATION vs. PAYMENT types). (2) Making `RequestPoGroup.Status` itself the only source of truth
+  for `PAY` (rejected — `MarkAsPaid` deliberately authorizes `PAYMENT`-type requests from the
+  parent status, not the group status; changing that endpoint's own authorization rule was out of
+  scope for this fix).
+- **Consequences:** Listing and execution can no longer silently diverge for SCHEDULE/PAY/RETURN.
+  The 12 legacy rows still need a data correction (see
+  `scripts/db/remediate-legacy-po-group-status-payment-po-issued.sql`, PREVIEW-only as of this
+  decision) before `SCHEDULE` becomes available for them — `PAY` was already correctly restored by
+  the code fix alone, without requiring the data correction first.
+
+---
+
 ## DEC-143 — Accounts Payable Email Notification System
 
 - **Date:** 2026-06-23

@@ -199,3 +199,97 @@ needs React Testing Library, which was explicitly declined for this phase.
 No changes to `OpenAiDocumentExtractionProvider`, no dedicated PO extractor/prompt/schema, no
 broader OCR pipeline refactor. The ALPLA/MUSOLAND supplier-role inversion remains a separate,
 un-actioned extraction-quality issue for a later phase.
+
+---
+
+## Phase 7 — Finance > Payments: centralized eligibility, search, sort, legacy remediation script
+
+> Status: **Implemented, hardened, and committed (v2.211.0) — no data remediation executed and no
+> deploy/push performed.** See DEC-149 in `docs/DECISIONS.md` for the full architectural decision
+> record, including the confirmed `MarkAsPaid` self-healing behavior added during final review.
+
+### Confirmed root cause (read-only investigation, approved separately)
+12 legacy `PAYMENT`-type `RequestPoGroup` rows (single backfill batch, `CreatedAtUtc =
+2026-07-20 17:25:39`) are stuck at `Status = 'PENDING'` under a parent `Request.Status.Code`
+already at `PO_ISSUED`. `FinanceController.GetPayments` computed `AvailableFinanceActions` from the
+parent status only, while filtering the DTO's `PoGroups` by a separate `financeGroupStatuses` list
+— so these 12 rows got `PoGroups = []`, and the frontend's `poGroups.length > 0` gate hid
+`SCHEDULE`/`PAY` even where `MarkAsPaid`'s own (parent-status-driven, for `PAYMENT` type) rule would
+have accepted `PAY`. Multiple contributing causes: legacy data + a frontend gate stricter than, and
+independent of, the backend's real authorization rule.
+
+### Fix
+- `IFinancePaymentEligibilityService` / `FinancePaymentEligibilityService` (new,
+  `AlplaPortal.Application.Interfaces.Finance` / `AlplaPortal.Infrastructure.Services.Finance`) —
+  single source of truth for `SCHEDULE`/`PAY`/`RETURN`/`ADD_NOTE`/`ADD_PROOF`, exposing both
+  `Evaluate(...)` (for listing) and individual `CanSchedule`/`CanPay`/`CanReturn` predicates (reused
+  by `SchedulePayment`/`MarkAsPaid`/`ReturnForAdjustment` directly — no parallel rule).
+- `GetPayments`'s `PoGroups` DTO projection no longer filters by `financeGroupStatuses` (the
+  frontend needs every group's real id, including legacy ones); the QUOTATION empty-group
+  row-exclusion guard was re-derived from the original query results instead.
+- `FinancePaymentsList.tsx`: actions render from `availableFinanceActions` only
+  (`resolveSingleGroupRowActions`/`shouldShowSchedule`/`shouldShowPay` in new
+  `src/frontend/src/lib/financePaymentsView.ts`); a missing group id is an execution guard, not an
+  eligibility rule.
+- Search: `searchSupplier` → general `search` (OR across `RequestNumber` and effective supplier
+  name), server-side, case-insensitive; legacy param kept as fallback, new param takes precedence.
+  Label "Fornecedor" → "Buscar", placeholder "Buscar por pedido ou fornecedor...".
+  UI label/placeholder/state renamed accordingly; same 500ms debounce pattern as
+  `RequestsDashboard`.
+- Sorting: `sortBy`/`isDescending` added to `GetPayments`, mirroring
+  `RequestsController.GetRequests`'s exact conventions — `requestnumber` sorts by
+  `CreatedAtUtc.Date` (not the formatted string), `statuscode` by `RequestStatus.DisplayOrder` (not
+  alphabetically), amounts as raw `decimal`. Frontend headers use the same `ArrowUp`/`ArrowDown`/
+  `ArrowUpDown` icons and click-to-toggle behavior as `RequestsTableWidget`. Ações remains
+  non-sortable. The visual "Vencimento / Status" header cell got two independent inline sort
+  triggers (`needbydateutc`, `statuscode`) since the table keeps them as one visual column.
+
+### Legacy data remediation (NOT executed)
+`scripts/db/remediate-legacy-po-group-status-payment-po-issued.sql` +
+`rollback-legacy-po-group-status-payment-po-issued.sql` — PREVIEW-by-default, exact 12-row
+manifest (confirmed via read-only query), independent live cohort-count re-check, transaction,
+exact-rowcount enforcement, post-update validation before COMMIT, provenance-safeguarded rollback.
+**APPLY mode was not run against any environment as part of this change** — explicit separate
+authorization is required.
+
+### Tests
+- Backend (xUnit, `tests/backend/AlplaPortal.Application.Tests/Services/Finance/`):
+  `FinancePaymentEligibilityServiceTests.cs` (37 cases — PAYMENT/QUOTATION × every group/parent
+  status combination, the exact confirmed bug scenario asserted directly, already-paid, zero/
+  multiple groups), `FinancePaymentsSearchAndSortQueryTests.cs` (12 cases — full/partial request
+  number, supplier case-insensitivity, combined status/currency filters, null due date, null
+  supplier, `CreatedAtUtc`-based request-number sort, `DisplayOrder`-based status sort, raw-decimal
+  amount sort, stable tie-breaker), and `FinanceMarkAsPaidTransitionTests.cs` (1 case — the actual
+  state transition, not just the eligibility predicate: PAYMENT + parent `PO_ISSUED` + group
+  `PENDING` → `MarkAsPaid` succeeds, both `Request.Status` and `RequestPoGroup.Status` become
+  `PAYMENT_COMPLETED`, `ActualPaidAmount`/`ActualPaidAtUtc` persisted, status-history record created;
+  instantiates `FinanceController` directly against an EF Core InMemory context with a fake
+  SystemAdministrator `ClaimsPrincipal` — no controller-level HTTP/auth test framework exists in this
+  repo, so this is the least-invasive architecture consistent with existing precedent, e.g.
+  `QuotationReuseAuthorizationIntegrationTests.cs`). 50 Finance-specific cases pass; full suite run
+  (189 total) confirmed **188 passed, 1 confirmed pre-existing failure**
+  (`GroupBuilderServiceTests...SelectedQuotation`, confirmed via `git stash` to predate this change).
+- Frontend (`node --test`, zero new dependencies, same pattern as `ocrPoValidation.test.mjs`):
+  `src/frontend/src/lib/financePaymentsView.test.mjs` — 20 cases covering the action-visibility
+  helper (including the confirmed bug scenario), the CANCELLED-group operational-count exclusion
+  (`resolveOperationalGroups`/`hasMultipleOperationalGroups`: one operational + one CANCELLED still
+  resolves to the operational group; a lone CANCELLED group resolves no action; a legacy PENDING
+  PAYMENT group remains resolvable for PAY), and the sort-toggle state machine.
+- No controller-level (HTTP/auth-mocked) integration test suite exists for `GetPayments` itself —
+  the search/sort query shapes are verified directly against an in-memory `ApplicationDbContext`
+  (same LINQ predicates as the controller); the one mutation endpoint where the *actual state
+  transition* (not just the predicate) needed direct coverage (`MarkAsPaid`) now has a dedicated
+  controller-level test using the same InMemory + fake-ClaimsPrincipal approach.
+
+### Hardening added during final review (before commit)
+- DEC-149 updated with an explicit point on `MarkAsPaid`'s self-healing behavior (the "impossible
+  state" `Request=PAYMENT_COMPLETED`/`RequestPoGroup=PENDING` is unreachable).
+- `financePaymentsView.ts`: `resolveOperationalGroups`/`hasMultipleOperationalGroups` centralize
+  `CANCELLED`-group exclusion from the operational count (kept only for historical display),
+  replacing `FinancePaymentsList.tsx`'s inline `poGroups.length > 1` check — does not reintroduce
+  the old broad finance-status filter (only `CANCELLED` is excluded).
+
+### Scope limits observed
+No schema migration. No data UPDATE executed anywhere (PREVIEW only). No change to
+`RequestPoGroupDto`'s public shape. `UnavailableReasons` kept internal, not added to
+`FinanceListItemDto`. No changes to unrelated finance/request workflows.

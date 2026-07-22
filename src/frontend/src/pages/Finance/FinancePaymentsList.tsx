@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
@@ -14,6 +14,23 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { StandardTable } from '../../components/ui/StandardTable';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
+import { shouldShowSchedule, shouldShowPay, resolveSingleGroupRowActions, hasMultipleOperationalGroups, toggleSort, SortConfig } from '../../lib/financePaymentsView';
+
+// The visual "Vencimento / Status" header cell covers two independent sortable dimensions
+// (needbydateutc, statuscode) — each gets its own inline sort trigger within that one cell,
+// since the underlying table keeps them as a single visual column for data density.
+const SIMPLE_SORT_COLUMNS: { label: string; key: string; align?: 'right' }[] = [
+    { label: 'Identificação', key: 'requestnumber' },
+    { label: 'Fornecedor', key: 'suppliername' },
+];
+const AMOUNT_SORT_COLUMN = { label: 'Valor', key: 'amount', align: 'right' as const };
+const DUE_DATE_SORT_KEY = 'needbydateutc';
+const STATUS_SORT_KEY = 'statuscode';
+
+function SortIcon({ sortConfig, columnKey }: { sortConfig: SortConfig; columnKey: string }) {
+    if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} style={{ opacity: 0.3 }} />;
+    return sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+}
 
 export default function FinancePaymentsList() {
     const [data, setData] = useState<FinanceListResponseDto | null>(null);
@@ -34,7 +51,9 @@ export default function FinancePaymentsList() {
         const hasExistingUrlFilters =
             searchParams.has('statusCodes') ||
             searchParams.has('currencyCode') ||
-            searchParams.has('searchSupplier') ||
+            searchParams.has('search') ||
+            searchParams.has('searchSupplier') || // legacy — still honored if a bookmarked URL carries only the old key
+            searchParams.has('sortBy') ||
             searchParams.has('pageSize');
 
         if (!hasExistingUrlFilters && savedPrefs.filters) {
@@ -42,7 +61,9 @@ export default function FinancePaymentsList() {
             let anySet = false;
             if (savedPrefs.filters.statusCodes) { p.set('statusCodes', savedPrefs.filters.statusCodes); anySet = true; }
             if (savedPrefs.filters.currencyCode) { p.set('currencyCode', savedPrefs.filters.currencyCode); anySet = true; }
-            if (savedPrefs.filters.searchSupplier) { p.set('searchSupplier', savedPrefs.filters.searchSupplier); anySet = true; }
+            const savedSearch = savedPrefs.filters.search || savedPrefs.filters.searchSupplier;
+            if (savedSearch) { p.set('search', savedSearch); anySet = true; }
+            if (savedPrefs.sort?.key) { p.set('sortBy', savedPrefs.sort.key); p.set('isDescending', String(savedPrefs.sort.direction === 'desc')); anySet = true; }
             if (savedPrefs.pageSize && savedPrefs.pageSize !== 20) { p.set('pageSize', savedPrefs.pageSize.toString()); anySet = true; }
             if (anySet) {
                 p.set('page', '1');
@@ -56,8 +77,13 @@ export default function FinancePaymentsList() {
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const statusCodes = searchParams.get('statusCodes') || undefined;
     const currencyCode = searchParams.get('currencyCode') || undefined;
-    const searchSupplier = searchParams.get('searchSupplier') || undefined;
-    
+    // 'search' is the current general (request number OR supplier) search term; 'searchSupplier'
+    // is read only as a fallback so old bookmarked URLs keep working.
+    const search = searchParams.get('search') || searchParams.get('searchSupplier') || undefined;
+    const sortBy = searchParams.get('sortBy') || undefined;
+    const isDescending = searchParams.get('isDescending') === 'true';
+    const sortConfig: SortConfig = { key: sortBy || null, direction: isDescending ? 'desc' : 'asc' };
+
     const [flashedRequestId, setFlashedRequestId] = useState<string | null>(location.state?.flashRequestId || null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
 
@@ -65,9 +91,28 @@ export default function FinancePaymentsList() {
     const [processing, setProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
 
+    // Debounced search input — same 500ms pattern as RequestsDashboard. Kept in sync with the URL
+    // 'search' param both ways: typing debounces into the URL, and external changes (clear button,
+    // preference hydration) update the input.
+    const [searchInput, setSearchInput] = useState(search || '');
+
+    useEffect(() => {
+        setSearchInput(search || '');
+    }, [search]);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            if (searchInput !== (search || '')) {
+                handleSetParam('search', searchInput);
+            }
+        }, 500);
+        return () => clearTimeout(handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchInput]);
+
     useEffect(() => {
         loadData();
-    }, [filter, page, pageSize, statusCodes, currencyCode, searchSupplier]);
+    }, [filter, page, pageSize, statusCodes, currencyCode, search, sortBy, isDescending]);
 
     useEffect(() => {
         if (flashedRequestId) {
@@ -87,27 +132,40 @@ export default function FinancePaymentsList() {
     }, [flashedRequestId]);
 
     const loadData = () => {
-        api.finance.getPayments(filter, page, pageSize, undefined, statusCodes, currencyCode, searchSupplier).then(res => setData(res));
+        api.finance.getPayments(filter, page, pageSize, undefined, statusCodes, currencyCode, search, sortBy, isDescending).then(res => setData(res));
     };
 
     const handleSetParam = (key: string, value: string) => {
         const newParams = new URLSearchParams(searchParams);
         if (value) newParams.set(key, value);
         else newParams.delete(key);
+        if (key === 'search') newParams.delete('searchSupplier'); // new key supersedes the legacy one going forward
         newParams.set('page', '1');
         setSearchParams(newParams);
         // Sync to localStorage
         syncParamsToPrefs(newParams);
     };
 
+    const handleSort = (key: string) => {
+        const next = toggleSort(sortConfig, key);
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('sortBy', next.key || '');
+        newParams.set('isDescending', String(next.direction === 'desc'));
+        newParams.set('page', '1');
+        setSearchParams(newParams);
+        syncParamsToPrefs(newParams);
+    };
+
     const syncParamsToPrefs = (params: URLSearchParams) => {
+        const sortKey = params.get('sortBy');
         persistPrefs({
             pageSize: parseInt(params.get('pageSize') || '20'),
             filters: {
                 statusCodes: params.get('statusCodes') || undefined,
                 currencyCode: params.get('currencyCode') || undefined,
-                searchSupplier: params.get('searchSupplier') || undefined,
+                search: params.get('search') || undefined,
             },
+            sort: sortKey ? { key: sortKey, direction: params.get('isDescending') === 'true' ? 'desc' : 'asc' } : undefined,
         });
     };
 
@@ -306,23 +364,24 @@ export default function FinancePaymentsList() {
                     </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '250px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Fornecedor</label>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Buscar</label>
                     <div style={{ position: 'relative' }}>
                         <input
                             type="text"
-                            placeholder="Buscar fornecedor..."
-                            value={searchSupplier || ''}
-                            onChange={(e) => handleSetParam('searchSupplier', e.target.value)}
+                            placeholder="Buscar por pedido ou fornecedor..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
                             style={{ padding: '8px 12px', paddingLeft: '36px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '100%', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
                         />
                         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
                     </div>
                 </div>
-                {(statusCodes || currencyCode || searchSupplier) && (
+                {(statusCodes || currencyCode || search) && (
                     <button
                         onClick={() => {
+                            setSearchInput('');
                             const p = new URLSearchParams(searchParams);
-                            p.delete('statusCodes'); p.delete('currencyCode'); p.delete('searchSupplier'); p.set('page', '1');
+                            p.delete('statusCodes'); p.delete('currencyCode'); p.delete('search'); p.delete('searchSupplier'); p.set('page', '1');
                             setSearchParams(p);
                             resetPreferences();
                         }}
@@ -336,16 +395,49 @@ export default function FinancePaymentsList() {
             <StandardTable isEmpty={!data.pagedResult || data.pagedResult.items.length === 0}>
                 <thead>
                     <tr>
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Identificação</th>
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Fornecedor</th>
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Vencimento / Status</th>
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>Valor</th>
+                        {SIMPLE_SORT_COLUMNS.map(col => (
+                            <th
+                                key={col.key}
+                                onClick={() => handleSort(col.key)}
+                                style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {col.label}
+                                    <SortIcon sortConfig={sortConfig} columnKey={col.key} />
+                                </div>
+                            </th>
+                        ))}
+                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span onClick={() => handleSort(DUE_DATE_SORT_KEY)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    Vencimento
+                                    <SortIcon sortConfig={sortConfig} columnKey={DUE_DATE_SORT_KEY} />
+                                </span>
+                                <span style={{ opacity: 0.4 }}>/</span>
+                                <span onClick={() => handleSort(STATUS_SORT_KEY)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    Status
+                                    <SortIcon sortConfig={sortConfig} columnKey={STATUS_SORT_KEY} />
+                                </span>
+                            </div>
+                        </th>
+                        <th
+                            onClick={() => handleSort(AMOUNT_SORT_COLUMN.key)}
+                            style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {AMOUNT_SORT_COLUMN.label}
+                                <SortIcon sortConfig={sortConfig} columnKey={AMOUNT_SORT_COLUMN.key} />
+                            </div>
+                        </th>
                         <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', textAlign: 'right' }}>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                                         {data.pagedResult.items.map((item, i) => {
-                        const hasMultipleGroups = item.poGroups && item.poGroups.length > 1;
+                        // CANCELLED groups are kept for historical display only — they never count as
+                        // "operational" here, so a lone CANCELLED group alongside one real group still
+                        // renders as a single-group row (see resolveOperationalGroups / DEC-149).
+                        const hasMultipleGroups = hasMultipleOperationalGroups(item.poGroups);
                         
                         return (
                         <React.Fragment key={item.id}>
@@ -427,13 +519,24 @@ export default function FinancePaymentsList() {
                                 </td>
                                 <td style={{ padding: '16px', textAlign: 'right', verticalAlign: 'top' }}>
                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                        <KebabMenu options={[
-                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('SCHEDULE') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'SCHEDULE') }] : []),
-                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('PAY') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'PAY') }] : []),
-                                            { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
-                                            ...(item.availableFinanceActions.includes('ADD_NOTE') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'NOTE') }] : []),
-                                            ...(!hasMultipleGroups && item.availableFinanceActions.includes('RETURN') && item.poGroups && item.poGroups.length > 0 ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), item.poGroups[0].id, 'RETURN') }] : [])
-                                        ]} />
+                                        {(() => {
+                                            // AvailableFinanceActions (from IFinancePaymentEligibilityService on the
+                                            // backend) is the sole eligibility source — never re-derived from
+                                            // poGroups.length here. A resolvable single-group id is only required to
+                                            // actually execute SCHEDULE/PAY; that's an execution/input concern, not a
+                                            // different eligibility policy (see resolveSingleGroupRowActions).
+                                            const rowActions = resolveSingleGroupRowActions(item);
+                                            const bestEffortGroupId = item.poGroups?.[0]?.id || '';
+                                            return (
+                                                <KebabMenu options={[
+                                                    ...(!hasMultipleGroups && shouldShowSchedule(item) ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'SCHEDULE') }] : []),
+                                                    ...(!hasMultipleGroups && shouldShowPay(item) ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'PAY') }] : []),
+                                                    { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
+                                                    ...(item.availableFinanceActions.includes('ADD_NOTE') ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'NOTE') }] : []),
+                                                    ...(!hasMultipleGroups && item.availableFinanceActions.includes('RETURN') ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'RETURN') }] : [])
+                                                ]} />
+                                            );
+                                        })()}
                                     </div>
                                 </td>
                             </tr>

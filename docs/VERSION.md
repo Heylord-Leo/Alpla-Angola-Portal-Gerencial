@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.210.1
+v2.211.0
+
+## [v2.211.0] - 2026-07-22
+
+### Fixed — Finance > Payments: Missing Actions on P.O. Emitida Requests + Search/Sort
+
+- Centralized `SCHEDULE`/`PAY`/`RETURN`/`ADD_NOTE`/`ADD_PROOF` eligibility into `IFinancePaymentEligibilityService`, shared by `GetPayments` (listing) and `SchedulePayment`/`MarkAsPaid`/`ReturnForAdjustment` (execution) — fixes 12 legacy `PAYMENT`-type rows where `PAY`/`SCHEDULE` were hidden despite the backend's own authorization rule accepting them.
+- General "Buscar" search (request number OR supplier name) and sortable headers (Identificação, Fornecedor, Vencimento, Status, Valor) added to Finance > Payments.
+- `MarkAsPaid` self-healing behavior (advances a legacy `RequestPoGroup.Status=PENDING` to the paid status alongside `Request.Status`) confirmed via review and documented in DEC-149; covered by a new end-to-end transition test.
+- `CANCELLED` groups excluded from the frontend's operational-group count (`resolveOperationalGroups`/`hasMultipleOperationalGroups` in `financePaymentsView.ts`) so they can never suppress a valid single-group action or get auto-selected; legacy `PENDING` groups remain resolvable.
+- PREVIEW/APPLY remediation + rollback scripts added for the confirmed 12-row legacy cohort — **not executed** as part of this release.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.210.1] - 2026-07-22
 

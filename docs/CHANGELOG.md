@@ -4,9 +4,34 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.210.1
+v2.211.0
 
-## [Unreleased]
+## [v2.211.0] - 2026-07-22
+
+### Fixed — Finance > Payments: Missing Actions on P.O. Emitida Requests + Search/Sort
+
+- **Root cause**: `FinanceController.GetPayments` computed `AvailableFinanceActions` from the parent `Request.Status.Code` only, while separately filtering the `PoGroups` array returned in the DTO to statuses in `financeGroupStatuses`. 12 legacy `PAYMENT`-type `RequestPoGroup` rows (all created in the same historical backfill batch, `CreatedAtUtc = 2026-07-20 17:25:39`) are still at `Status = 'PENDING'` even though their parent `Request.Status.Code` already advanced to `PO_ISSUED`. Because `PENDING` is not a finance-pipeline group status, the API returned `PoGroups = []` for these rows, and `FinancePaymentsList.tsx`'s `poGroups.length > 0` gate hid "Agendar pagamento" / "Marcar como pago" even though the backend's own authorization rule for `MarkAsPaid` (parent-status-driven for `PAYMENT`-type requests) would have accepted the action.
+- **Centralized eligibility**: extracted `IFinancePaymentEligibilityService` / `FinancePaymentEligibilityService` (`AlplaPortal.Application.Interfaces.Finance` / `AlplaPortal.Infrastructure.Services.Finance`) as the single source of truth for `SCHEDULE`/`PAY`/`RETURN`/`ADD_NOTE`/`ADD_PROOF` eligibility. `GetPayments` (listing) and `SchedulePayment`/`MarkAsPaid`/`ReturnForAdjustment` (execution) now share the exact same predicates — the list can no longer advertise an action the corresponding endpoint would reject, or hide one it would accept.
+- **Frontend**: `FinancePaymentsList.tsx` renders actions from `availableFinanceActions` alone; a missing/unresolvable group id is now treated as an execution/input concern (see `resolveSingleGroupRowActions` in `lib/financePaymentsView.ts`), not folded into eligibility. The backend `PoGroups` projection no longer filters out legacy-status groups, so a resolvable group id is available whenever the row's only group needs one.
+- **Search expanded**: the "Fornecedor"-only filter is now a general "Buscar" field (`Buscar por pedido ou fornecedor...`), matching by `Request.RequestNumber` OR the effective supplier name (`Quotation.SupplierNameSnapshot` / `Request.Supplier.Name`), server-side, case-insensitive, combinable with the existing status/currency filters. The legacy `searchSupplier` query param is still honored as a fallback so old bookmarked URLs keep working; the new `search` param takes precedence when both are present.
+- **Sortable headers**: Identificação, Fornecedor, Vencimento, Status, and Valor are now sortable, following the same click-to-toggle UX, icons (`ArrowUp`/`ArrowDown`/`ArrowUpDown`), and server-side sort-key conventions already used on the Requests page — including sorting request numbers by `CreatedAtUtc.Date` (not the formatted string) and status by `RequestStatus.DisplayOrder` (workflow position, not alphabetical). Ações remains non-sortable.
+- **Legacy data**: a PREVIEW/APPLY remediation script for the confirmed 12-row cohort was added but **not executed** — see `scripts/db/remediate-legacy-po-group-status-payment-po-issued.sql` and its companion rollback script. Running it (APPLY mode) requires separate, explicit authorization.
+- **MarkAsPaid self-healing confirmed and covered**: a follow-up read-only review confirmed `MarkAsPaid` unconditionally advances `RequestPoGroup.Status` to the same paid status as `Request.Status` — the "impossible state" (`Request=PAYMENT_COMPLETED`/`RequestPoGroup=PENDING`) is unreachable. Documented in DEC-149 and covered end-to-end by a new controller-level transition test (`FinanceMarkAsPaidTransitionTests`), not just the eligibility predicate.
+- **CANCELLED groups excluded from operational group count**: `PoGroups` intentionally still returns `CANCELLED` groups (historical display), but `financePaymentsView.ts` now centralizes a `resolveOperationalGroups`/`hasMultipleOperationalGroups` distinction so a `CANCELLED` group never inflates the multi-group determination, never gets auto-selected as the acting group, and never suppresses a valid single-group action. Legacy `PENDING` `PAYMENT` groups remain fully resolvable — this does not reintroduce the old broad finance-status filter (only `CANCELLED` is excluded, nothing else).
+
+**Ficheiros alterados:**
+- `src/backend/AlplaPortal.Application/Interfaces/Finance/IFinancePaymentEligibilityService.cs` (new)
+- `src/backend/AlplaPortal.Infrastructure/Services/Finance/FinancePaymentEligibilityService.cs` (new)
+- `src/backend/AlplaPortal.Api/Controllers/FinanceController.cs` — centralized eligibility, general search, server-side sorting
+- `src/backend/AlplaPortal.Api/Program.cs` — DI registration
+- `src/frontend/src/pages/Finance/FinancePaymentsList.tsx` — action rendering, search UI, sortable headers, operational-group-count helper usage
+- `src/frontend/src/lib/financePaymentsView.ts` (new) — pure action-visibility / sort-toggle / operational-group-count helpers
+- `src/frontend/src/lib/api.ts` — `getPayments` search/sort params
+- `scripts/db/remediate-legacy-po-group-status-payment-po-issued.sql` (new, not executed)
+- `scripts/db/rollback-legacy-po-group-status-payment-po-issued.sql` (new, not executed)
+- Tests: `tests/backend/.../Services/Finance/FinancePaymentEligibilityServiceTests.cs`, `FinancePaymentsSearchAndSortQueryTests.cs`, `FinanceMarkAsPaidTransitionTests.cs` (new); `src/frontend/src/lib/financePaymentsView.test.mjs` (new)
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.210.1] - 2026-07-22
 
