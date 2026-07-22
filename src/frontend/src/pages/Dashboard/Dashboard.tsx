@@ -129,11 +129,11 @@ export function Dashboard() {
         { title: 'Aprov. Área', value: cockpit.waitingAreaApproval, color: '#8b5cf6', onClick: () => navigate('/requests?statusCodes=WAITING_AREA_APPROVAL') },
         { title: 'Aprov. Final', value: cockpit.waitingFinalApproval, color: '#a855f7', onClick: () => navigate('/requests?statusCodes=WAITING_FINAL_APPROVAL,WAITING_COST_CENTER') },
         { title: 'Reajuste', value: cockpit.inAdjustment, color: '#f97316', onClick: () => navigate('/requests?statusCodes=AREA_ADJUSTMENT,FINAL_ADJUSTMENT') },
-        { title: 'Ag. P.O', value: cockpit.awaitingPo, color: '#0ea5e9', onClick: () => navigate('/requests?statusCodes=APPROVED') },
+        { title: 'Ag. P.O', value: cockpit.awaitingPo, color: '#0ea5e9', onClick: () => navigate('/requests?statusCodes=APPROVED,QUOTATION_COMPLETED') },
         { title: 'Ag. Pagamento', value: cockpit.awaitingPayment, color: '#f59e0b', onClick: () => navigate('/finance/payments') },
         { title: 'Pago', value: cockpit.paymentCompleted, color: '#10b981', onClick: () => navigate('/requests?statusCodes=PAYMENT_COMPLETED') },
         { title: 'Recebimento', value: cockpit.waitingReceipt, color: '#14b8a6', onClick: () => navigate('/receiving/workspace') },
-        { title: 'Concluídos', value: cockpit.completed, color: '#6b7280', onClick: () => navigate('/requests?statusCodes=COMPLETED,QUOTATION_COMPLETED') },
+        { title: 'Concluídos', value: cockpit.completed, color: '#6b7280', onClick: () => navigate('/requests?statusCodes=COMPLETED') },
     ];
 
     return (

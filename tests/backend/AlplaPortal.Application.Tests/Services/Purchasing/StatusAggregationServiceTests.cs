@@ -6,6 +6,7 @@ using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Purchasing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AlplaPortal.Application.Tests.Services.Purchasing;
@@ -25,7 +26,8 @@ public class StatusAggregationServiceTests
             new RequestStatus { Id = 1, Code = RequestConstants.Statuses.FinalApproved, DisplayOrder = 50 },
             new RequestStatus { Id = 2, Code = RequestConstants.Statuses.WaitingPoCorrection, DisplayOrder = 55 },
             new RequestStatus { Id = 3, Code = RequestConstants.Statuses.PoIssued, DisplayOrder = 60 },
-            new RequestStatus { Id = 4, Code = RequestConstants.Statuses.PaymentRequestSent, DisplayOrder = 70 }
+            new RequestStatus { Id = 4, Code = RequestConstants.Statuses.PaymentRequestSent, DisplayOrder = 70 },
+            new RequestStatus { Id = 5, Code = RequestConstants.Statuses.PoPartiallyUploaded, DisplayOrder = 22 }
         };
         context.RequestStatuses.AddRange(statuses);
         context.SaveChanges();
@@ -34,11 +36,11 @@ public class StatusAggregationServiceTests
     }
 
     [Fact]
-    public async Task GetAggregateStatusIdAsync_ReturnsFurthestBehindStatus()
+    public async Task GetAggregateStatusIdAsync_ReturnsPoPartiallyUploaded_WhenOneGroupIssuedAndOneNeedsCorrection()
     {
         // Arrange
         var context = GetInMemoryDbContext();
-        var service = new StatusAggregationService(context);
+        var service = new StatusAggregationService(context, NullLogger<StatusAggregationService>.Instance);
 
         var request = new Request
         {
@@ -47,8 +49,8 @@ public class StatusAggregationServiceTests
             StatusId = 1 // FinalApproved
         };
 
-        var group1 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.PoIssued }; // PoIssued (60)
-        var group2 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.WaitingPoCorrection }; // WaitingPoCorrection (55)
+        var group1 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.PoIssued };
+        var group2 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.WaitingPoCorrection };
 
         context.Requests.Add(request);
         context.RequestPoGroups.Add(group1);
@@ -59,17 +61,19 @@ public class StatusAggregationServiceTests
         await service.AggregateRequestStatusAsync(request.Id);
 
         // Assert
-        // Should return the status with lowest DisplayOrder among the groups (WaitingPoCorrection = 55 = Id 2)
+        // One group already issued its PO, the other still needs a PO (correction) — the request
+        // must reflect the mixed state (PO_PARTIALLY_UPLOADED), not collapse to either single
+        // group's own status.
         var updatedRequest = await context.Requests.FirstOrDefaultAsync(r => r.Id == request.Id);
         Assert.NotNull(updatedRequest);
-        Assert.Equal(2, updatedRequest.StatusId); // WaitingPoCorrection has DisplayOrder=20 which is lowest
+        Assert.Equal(5, updatedRequest.StatusId); // PoPartiallyUploaded
     }
 
     [Fact]
     public async Task GetAggregateStatusIdAsync_ReturnsPaymentBottleneck_WhenOneGroupReceivedAndOneWaitingPayment()
     {
         var context = GetInMemoryDbContext();
-        var service = new StatusAggregationService(context);
+        var service = new StatusAggregationService(context, NullLogger<StatusAggregationService>.Instance);
 
         var request = new Request { Id = Guid.NewGuid(), Title = "Test", StatusId = 1 };
         var group1 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.WaitingReceipt }; // WaitingReceipt (priority 70)
@@ -89,7 +93,7 @@ public class StatusAggregationServiceTests
     public async Task GetAggregateStatusIdAsync_IgnoresCancelledGroups()
     {
         var context = GetInMemoryDbContext();
-        var service = new StatusAggregationService(context);
+        var service = new StatusAggregationService(context, NullLogger<StatusAggregationService>.Instance);
 
         var request = new Request { Id = Guid.NewGuid(), Title = "Test", StatusId = 1 };
         var group1 = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.Cancelled }; // Cancelled (priority 999)

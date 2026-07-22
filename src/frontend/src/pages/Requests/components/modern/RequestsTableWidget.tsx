@@ -365,7 +365,7 @@ export function RequestsTableWidget({
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
                                                 {['CANCELLED', 'REJECTED'].includes(req.statusCode) ? (
                                                     <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>-----</span>
-                                                ) : ['WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
+                                                ) : ['WAITING_RECEIPT', 'COMPLETED', 'PAID', 'PAYMENT_COMPLETED'].includes(req.statusCode) ? (
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3px' }}>
                                                         {/* Original request deadline */}
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

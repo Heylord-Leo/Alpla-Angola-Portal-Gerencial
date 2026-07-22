@@ -115,7 +115,7 @@ export function RequestStatusActionPanels({
 
 
             {/* Procurement/Buyer Status Panel (Former Action Bar) */}
-            {canExecuteOperationalAction && ['APPROVED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
+            {canExecuteOperationalAction && ['APPROVED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
                 <div style={{
                     backgroundColor: 'white',
                     padding: '12px 24px',
@@ -152,7 +152,7 @@ export function RequestStatusActionPanels({
                         {isBuyer && (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {/* Group-level PO Registration */}
-                                {(status === 'APPROVED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
+                                {(status === 'APPROVED' || status === 'QUOTATION_COMPLETED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
                                     poGroups.filter(g => g.status === 'WAITING_PO').map(group => (
                                         <button 
                                             key={`po-upload-${group.id}`}

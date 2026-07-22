@@ -1,6 +1,7 @@
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -48,7 +49,15 @@ public class RequestStatusSyncService : IRequestStatusSyncService
         }
 
         var previousStatusCode = request.Status?.Code ?? "";
-        var newStatusCode = DetermineStatusCode(request);
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+        var newStatusCode = result.StatusCode;
+
+        if (result.IssueCode.HasValue)
+        {
+            _logger.LogWarning(
+                "SyncStatusAsync: Request {RequestId} — {IssueCode}. Affected PO groups: {GroupIds}",
+                requestId, result.IssueCode, result.AffectedPoGroupIds);
+        }
 
         if (newStatusCode == previousStatusCode)
         {
@@ -265,56 +274,4 @@ public class RequestStatusSyncService : IRequestStatusSyncService
         _ => 999
     };
 
-    /// <summary>
-    /// Determines the appropriate legacy Request.StatusId code based on batch/item states.
-    /// This keeps the legacy status meaningful for backwards compatibility.
-    /// </summary>
-    private string DetermineStatusCode(Request request)
-    {
-        var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
-        var batches = request.ApprovalBatches.ToList();
-
-        if (batches.Count == 0)
-            return request.Status?.Code ?? RequestConstants.Statuses.WaitingQuotation;
-
-        // Check if any batch is in area approval / rework
-        var hasAreaApproval = batches.Any(b =>
-            b.Status == RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval ||
-            b.Status == RequestConstants.ApprovalBatchStatuses.AreaAdjustment);
-
-        var hasFinalApproval = batches.Any(b =>
-            b.Status == RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval ||
-            b.Status == RequestConstants.ApprovalBatchStatuses.FinalAdjustment);
-
-        var allBatchesApproved = batches
-            .Where(b => b.Status != RequestConstants.ApprovalBatchStatuses.Rejected)
-            .All(b => b.Status == RequestConstants.ApprovalBatchStatuses.Approved);
-
-        var hasPendingItems = activeItems.Any(li =>
-            string.IsNullOrWhiteSpace(li.QuotationLifecycleStatus) ||
-            li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending);
-
-        // Phase 7: Items with NOT_QUOTED_PROPOSED are awaiting decision — not terminal
-        var hasNotQuotedProposed = activeItems.Any(li =>
-            li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed);
-
-        // Priority: If there are still pending items or not-quoted proposals, the Request MUST remain in WAITING_QUOTATION
-        // so the buyer can continue inserting quotations for them.
-        if (hasPendingItems || hasNotQuotedProposed)
-            return RequestConstants.Statuses.WaitingQuotation;
-
-        if (hasFinalApproval)
-            return RequestConstants.Statuses.WaitingFinalApproval;
-
-        if (hasAreaApproval)
-            return RequestConstants.Statuses.WaitingAreaApproval;
-
-        // All batches approved or rejected, and no pending items or not-quoted proposals
-
-        // All batches approved, no pending items, no not-quoted proposals → legacy "completed" status
-        if (allBatchesApproved && !hasPendingItems && !hasNotQuotedProposed)
-            return RequestConstants.Statuses.QuotationCompleted;
-
-        return request.Status?.Code ?? RequestConstants.Statuses.WaitingQuotation;
-    }
 }

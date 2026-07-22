@@ -14,6 +14,7 @@ using AlplaPortal.Api.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
@@ -114,7 +115,7 @@ public class RequestsController : BaseController
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboardSummary()
     {
         var in4Days = DateTime.UtcNow.Date.AddDays(4);
-        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
+        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED" };
 
         var query = await GetScopedRequestsQuery();
 
@@ -159,8 +160,8 @@ public class RequestsController : BaseController
         var today = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
         var in4Days = today.AddDays(4);
-        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
-        var nonTerminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
+        var terminalStates = new[] { "APPROVED", "REJECTED", "CANCELLED", "COMPLETED" };
+        var nonTerminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED" };
 
         var currentUserId = CurrentUserId;
         var roles = CurrentUserRoles;
@@ -209,11 +210,11 @@ public class RequestsController : BaseController
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 PaymentCompleted = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PaymentCompleted || r.Status!.Code == RequestConstants.Statuses.Paid),
                 WaitingReceipt = g.Count(r => r.Status!.Code == "WAITING_RECEIPT" || r.Status!.Code == RequestConstants.Statuses.InFollowup),
-                Completed = g.Count(r => r.Status!.Code == RequestConstants.Statuses.Completed || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted)
+                Completed = g.Count(r => r.Status!.Code == RequestConstants.Statuses.Completed)
             })
             .OrderBy(g => 1)
             .FirstOrDefaultAsync();
@@ -415,7 +416,7 @@ public class RequestsController : BaseController
     public async Task<ActionResult<PurchasingSummaryDto>> GetPurchasingSummary()
     {
         var query = await GetScopedRequestsQuery();        var today = DateTime.UtcNow.Date;
-        var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
+        var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED" };
         var receivingStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "PAG_REALIZADO", "AG_RECIBO" };
 
         var stats = await query
@@ -578,7 +579,7 @@ public class RequestsController : BaseController
         return await query
             .OrderByDescending(r =>
                 (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
-                 r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED")
+                 r.Status.Code == "COMPLETED")
                     ? -1
                     : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today) ? 3
                     : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value < tomorrow) ? 2
@@ -592,7 +593,7 @@ public class RequestsController : BaseController
                 r,
                 SelectedQ = r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId),
                 FirstCostCenter = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter).FirstOrDefault(),
-                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
+                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
             })
             .Select(x => new RequestListItemDto
             {
@@ -611,9 +612,11 @@ public class RequestsController : BaseController
                 SupplierName = x.r.SelectedQuotationId.HasValue 
                     ? (x.SelectedQ != null ? x.SelectedQ.SupplierNameSnapshot : null)
                     : (x.r.Supplier != null ? x.r.Supplier.Name : null),
-                EstimatedTotalAmount = x.r.SelectedQuotationId.HasValue 
-                    ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
-                    : x.r.EstimatedTotalAmount,
+                EstimatedTotalAmount = (x.r.ApprovedTotalAmount.HasValue && x.r.ApprovedTotalAmount.Value > 0)
+                    ? x.r.ApprovedTotalAmount.Value
+                    : x.r.SelectedQuotationId.HasValue
+                        ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
+                        : x.r.EstimatedTotalAmount,
                 CurrencyCode = x.r.SelectedQuotationId.HasValue 
                     ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
                     : (x.r.Currency != null ? x.r.Currency.Code : null),
@@ -622,7 +625,7 @@ public class RequestsController : BaseController
                 // Added for Area Approval context
                 CostCenterCode = x.FirstCostCenter != null ? x.FirstCostCenter.Code : null,
                 CostCenterName = x.FirstCostCenter != null ? x.FirstCostCenter.Name : null,
-                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
+                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
                     ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
                     : null,
                 PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
@@ -943,7 +946,7 @@ public class RequestsController : BaseController
                 .OrderByDescending(r =>
                     // Finalized statuses always rank last (-1), below all active items including those with no deadline (0).
                     (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
-                     r.Status.Code == "COMPLETED" || r.Status.Code == "QUOTATION_COMPLETED")
+                     r.Status.Code == "COMPLETED")
                         ? -1                                                                                        // finalized — always last
                         : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < today) ? 3                          // overdue
                         : (r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value >= today && r.NeedByDateUtc.Value < tomorrow) ? 2  // due today
@@ -960,7 +963,7 @@ public class RequestsController : BaseController
             {
                 r,
                 SelectedQ = r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId),
-                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "QUOTATION_COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
+                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
             })
             .Select(x => new RequestListItemDto
             {
@@ -1000,9 +1003,11 @@ public class RequestsController : BaseController
                 SupplierPortalCode = x.r.SelectedQuotationId.HasValue 
                     ? null 
                     : (x.r.Supplier != null ? x.r.Supplier.PortalCode : null),
-                EstimatedTotalAmount = x.r.SelectedQuotationId.HasValue 
-                    ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
-                    : x.r.EstimatedTotalAmount,
+                EstimatedTotalAmount = (x.r.ApprovedTotalAmount.HasValue && x.r.ApprovedTotalAmount.Value > 0)
+                    ? x.r.ApprovedTotalAmount.Value
+                    : x.r.SelectedQuotationId.HasValue
+                        ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
+                        : x.r.EstimatedTotalAmount,
                 CurrencyId = x.r.CurrencyId,
                 CurrencyCode = x.r.SelectedQuotationId.HasValue 
                     ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
@@ -1013,7 +1018,7 @@ public class RequestsController : BaseController
                 IsCancelled = x.r.IsCancelled,
                 SelectedQuotationId = x.r.SelectedQuotationId,
                 CapexOpexClassificationId = x.r.CapexOpexClassificationId,
-                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "QUOTATION_COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
+                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
                     ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
                     : null,
                 PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
@@ -1602,7 +1607,7 @@ public class RequestsController : BaseController
             ? GetQuotationStages()
             : GetPaymentStages();
 
-        var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED", "QUOTATION_COMPLETED" };
+        var terminalStates = new[] { "REJECTED", "CANCELLED", "COMPLETED" };
         bool isTerminal = terminalStates.Contains(currentStatusCode);
         bool isRejectionPath = currentStatusCode == "REJECTED" || currentStatusCode == "CANCELLED";
 
@@ -1724,7 +1729,7 @@ public class RequestsController : BaseController
         // Post-process: Remove "Agendamento" step if the request completely bypassed it
         // (i.e. Finance paid directly without ever selecting a scheduling date).
         bool passedThroughScheduling = history.Any(h => h.NewStatus.Code == "PAYMENT_SCHEDULED") || currentStatusCode == "PAYMENT_SCHEDULED";
-        bool isPastSchedulingStage = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "COMPLETED", "QUOTATION_COMPLETED" }.Contains(currentStatusCode);
+        bool isPastSchedulingStage = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "COMPLETED" }.Contains(currentStatusCode);
 
         if (isPastSchedulingStage && !passedThroughScheduling)
         {
@@ -5865,8 +5870,11 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.Currency)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+            .Include(r => r.ApprovalBatches)
             .Include(r => r.PoGroups)
                 .ThenInclude(g => g.Supplier)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound("Pedido não encontrado.");
@@ -6066,57 +6074,60 @@ public class RequestsController : BaseController
         _context.RequestStatusHistories.Add(history);
 
         // Evaluate parent request status
-        var allGroups = request.PoGroups.ToList();
-        var pendingGroups = allGroups.Count(g => 
-            g.Status == RequestConstants.PoGroupStatuses.Pending || 
-            g.Status == RequestConstants.PoGroupStatuses.WaitingPo || 
-            g.Status == RequestConstants.Statuses.WaitingPoCorrection);
-
-        // For QUOTATION: also check for unresolved quotation items without PO groups
-        bool hasPendingQuotationItems = false;
         if (request.RequestType?.Code == RequestConstants.Types.Quotation)
         {
-            var lineItemStatuses = await _context.RequestLineItems
-                .Where(li => li.RequestId == request.Id && !li.IsDeleted)
-                .Select(li => li.QuotationLifecycleStatus)
-                .ToListAsync();
+            // QUOTATION: multi-batch/multi-group aggregation via the shared pure calculator.
+            var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
 
-            hasPendingQuotationItems = lineItemStatuses.Any(status =>
-                status == null ||
-                status == RequestConstants.QuotationLifecycleStatuses.QuotationPending ||
-                status == RequestConstants.QuotationLifecycleStatuses.BatchAssigned ||
-                status == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed);
-        }
+            if (result.IssueCode.HasValue)
+            {
+                _logger.LogWarning(
+                    "RegisterPo: Request {RequestId} — {IssueCode}. Affected PO groups: {GroupIds}",
+                    request.Id, result.IssueCode, result.AffectedPoGroupIds);
+            }
 
-        string newRequestStatusCode;
-        if (pendingGroups == 0 && !hasPendingQuotationItems)
-        {
-            // All POs uploaded AND no pending quotation items
-            if (allGroups.Any(g => g.Status == RequestConstants.Statuses.AdvancePaymentRequired))
+            if (request.Status.Code != result.StatusCode)
             {
-                newRequestStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
+                var newStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == result.StatusCode);
+                if (newStatus != null)
+                {
+                    request.StatusId = newStatus.Id;
+                }
             }
-            else
-            {
-                newRequestStatusCode = RequestConstants.Statuses.PoIssued;
-            }
-        }
-        else if (pendingGroups < allGroups.Count || hasPendingQuotationItems)
-        {
-            // Some groups still pending OR unresolved quotation items exist
-            newRequestStatusCode = RequestConstants.Statuses.PoPartiallyUploaded;
         }
         else
         {
-            newRequestStatusCode = "APPROVED";
-        }
+            // PAYMENT: single-supplier by design, no ApprovalBatch lifecycle —
+            // keep the existing group-count aggregation.
+            var allGroups = request.PoGroups.ToList();
+            var pendingGroups = allGroups.Count(g =>
+                g.Status == RequestConstants.PoGroupStatuses.Pending ||
+                g.Status == RequestConstants.PoGroupStatuses.WaitingPo ||
+                g.Status == RequestConstants.Statuses.WaitingPoCorrection);
 
-        if (request.Status.Code != newRequestStatusCode)
-        {
-            var newStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == newRequestStatusCode);
-            if (newStatus != null)
+            string newRequestStatusCode;
+            if (pendingGroups == 0)
             {
-                request.StatusId = newStatus.Id;
+                newRequestStatusCode = allGroups.Any(g => g.Status == RequestConstants.Statuses.AdvancePaymentRequired)
+                    ? RequestConstants.Statuses.AdvancePaymentRequired
+                    : RequestConstants.Statuses.PoIssued;
+            }
+            else if (pendingGroups < allGroups.Count)
+            {
+                newRequestStatusCode = RequestConstants.Statuses.PoPartiallyUploaded;
+            }
+            else
+            {
+                newRequestStatusCode = "APPROVED";
+            }
+
+            if (request.Status.Code != newRequestStatusCode)
+            {
+                var newStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == newRequestStatusCode);
+                if (newStatus != null)
+                {
+                    request.StatusId = newStatus.Id;
+                }
             }
         }
 
@@ -7572,11 +7583,11 @@ public class RequestsController : BaseController
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
         new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION" } },
         new StageDef { Label = "Aprovações", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED" } },
+        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED" } },
         new StageDef { Label = "Agendamento", StatusCodes = new[] { "PO_ISSUED" } },
         new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED" } },
         new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
-        new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED", "QUOTATION_COMPLETED" } }
+        new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
 
     private List<StageDef> GetPaymentStages() => new()
