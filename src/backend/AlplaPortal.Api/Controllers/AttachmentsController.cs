@@ -21,6 +21,25 @@ public class AttachmentsController : BaseController
     private readonly string _storagePath;
     private readonly SecurityOptions _securityOptions;
 
+    /// <summary>
+    /// Group statuses eligible for a PAYMENT_SCHEDULE attachment upload, evaluated against the
+    /// selected RequestPoGroup for QUOTATION requests that have PO groups. Shared by both the
+    /// initial uploadability fallback and the group-linkage enforcement below the switch statement,
+    /// so the rule is defined exactly once. Mirrors FinancePaymentEligibilityService's
+    /// SchedulableGroupStatuses (PO_ISSUED, PAYMENT_REQUEST_SENT, ADVANCE_PAYMENT_REQUIRED) plus
+    /// PAYMENT_SCHEDULED, which this same case's existing parent-level check already allows (a
+    /// re-upload after scheduling). ADVANCE_PAYMENT_SCHEDULED is deliberately excluded — no
+    /// existing rule supports it (ScheduleAdvancePayment only ever runs from
+    /// ADVANCE_PAYMENT_REQUIRED, never re-schedules).
+    /// </summary>
+    private static readonly string[] PaymentScheduleEligibleGroupStatuses =
+    {
+        RequestConstants.Statuses.PoIssued,
+        RequestConstants.Statuses.PaymentRequestSent,
+        RequestConstants.Statuses.AdvancePaymentRequired,
+        RequestConstants.Statuses.PaymentScheduled
+    };
+
     public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
     {
         _securityOptions = securityOptions.Value;
@@ -121,6 +140,18 @@ public class AttachmentsController : BaseController
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(statusCode);
+                // QUOTATION group-first: allow schedule-document upload when the target group is
+                // itself in a schedulable/already-scheduled status — mirrors the PurchaseOrder/
+                // PaymentProof fallback pattern above, since the parent's aggregated status alone
+                // cannot reflect a specific sibling group's state in a multi-group request.
+                if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var targetScheduleGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
+                    if (targetScheduleGroup != null && PaymentScheduleEligibleGroupStatuses.Contains(targetScheduleGroup.Status))
+                    {
+                        isUploadable = true;
+                    }
+                }
                 detail = "O Cronograma de Pagamento deve ser carregado nos estágios de emissão de P.O ou agendamento.";
                 break;
             case AttachmentConstants.Types.PaymentProof:
@@ -245,6 +276,38 @@ public class AttachmentsController : BaseController
                 {
                     Title = "Upload Bloqueado",
                     Detail = $"O Grupo P.O. não está em status que permita upload de comprovante de pagamento. Status atual: {payGroup.Status}.",
+                    Status = 400
+                });
+            }
+        }
+
+        if (isQuotationWithGroups && typeCodeStr == AttachmentConstants.Types.PaymentSchedule)
+        {
+            if (!poGroupId.HasValue)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Obrigatório",
+                    Detail = "Para pedidos do tipo Cotação com grupos de P.O., é obrigatório informar o RequestPoGroupId ao carregar o cronograma de pagamento.",
+                    Status = 400
+                });
+            }
+            var scheduleGroup = request.PoGroups.FirstOrDefault(g => g.Id == poGroupId.Value);
+            if (scheduleGroup == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Grupo P.O. Inválido",
+                    Detail = "O RequestPoGroupId informado não pertence a este pedido.",
+                    Status = 400
+                });
+            }
+            if (!PaymentScheduleEligibleGroupStatuses.Contains(scheduleGroup.Status))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Upload Bloqueado",
+                    Detail = $"O Grupo P.O. não está em status que permita upload de cronograma de pagamento. Status atual: {scheduleGroup.Status}. Status permitidos: {string.Join(", ", PaymentScheduleEligibleGroupStatuses)}.",
                     Status = 400
                 });
             }

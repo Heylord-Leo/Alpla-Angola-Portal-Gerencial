@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.211.0
+v2.212.0
+
+## [v2.212.0] - 2026-07-23
+
+### Added — Finance: Group-Aware Payment Actions & Schedule Cancellation
+
+- Single-group kebab menu and multi-group supplier cards now derive Schedule/Pay/Cancel eligibility and labels from each `RequestPoGroup`'s own status (normal and advance groups alike), never a sibling's or the parent request's aggregated status.
+- `IFinancePaymentEligibilityService.CanSchedule` accepts `(requestTypeCode, requestStatusCode, groupStatus)`: QUOTATION stays group-status-authoritative; PAYMENT falls back to a narrow parent-status set (`PO_ISSUED`, `PAYMENT_REQUEST_SENT` only) solely when the group carries no real information (null/empty/legacy `PENDING`).
+- New **schedule cancellation** endpoint (`POST /api/v1/finance/{id}/cancel-schedule`): normal `PAYMENT_SCHEDULED → PO_ISSUED` (payment row → `CANCELLED`); advance `ADVANCE_PAYMENT_SCHEDULED → ADVANCE_PAYMENT_REQUIRED` (same payment row returns to `PLANNED` so it can be rescheduled). Requires a ≥20-character reason; adds a new audit event without touching the original scheduling event; voids (never deletes) the related `PAYMENT_SCHEDULE` attachment. Completed payments cannot be reversed through this workflow.
+- Supplier/currency display fallback (`FinanceGroupDisplayResolver`) and a business-date formatting fix (`formatBusinessDateOnly`, avoids a UTC-vs-local calendar-day shift) for legacy PAYMENT-type groups.
+- Additive migration `20260723175105_AddAttachmentVoidFields` (nullable `VoidedAtUtc`/`VoidedByUserId`/`VoidReason` on `RequestAttachments`) — **not applied to any database as part of this release.**
+- No database backfill performed. Full rationale in `docs/DECISIONS.md` (DEC-150).
+
+**Guided Tour impact: not applicable for this release** — no Finance guided tour exists (predates this task); deferred as a follow-up. See DEC-150.
 
 ## [v2.211.0] - 2026-07-22
 

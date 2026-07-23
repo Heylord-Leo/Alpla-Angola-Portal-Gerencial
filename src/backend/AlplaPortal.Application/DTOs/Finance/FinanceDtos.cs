@@ -138,6 +138,10 @@ public class FinanceHistoryItemDto
     // ── Buy-to-Pay (Phase 8) ──
     public string? PaymentCondition { get; set; }
     public decimal? AdvancePaymentPercent { get; set; }
+
+    // ── Attachment void status (best-effort match by filename for DOCUMENTO ADICIONADO events) ──
+    public bool IsVoided { get; set; }
+    public string? VoidReason { get; set; }
 }
 
 public class FinanceActionRequestDto

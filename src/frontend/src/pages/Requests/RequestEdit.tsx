@@ -34,6 +34,7 @@ import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { RequestGeneralDataSection } from './components/RequestGeneralDataSection';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
+import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
@@ -354,6 +355,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getRequestGuidance={getRequestGuidance}
                 />
             </RequestActionHeader>
+
+            {requestTypeCode === 'QUOTATION' && (
+                <RequestGroupDisplaySummary poGroups={poGroups || []} fallbackStatusName={statusFullName || ''} />
+            )}
 
             {/* Form Card */}
             <form onSubmit={handleSubmit} style={{

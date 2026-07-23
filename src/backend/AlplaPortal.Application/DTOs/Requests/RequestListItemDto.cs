@@ -18,6 +18,15 @@ public class RequestListItemDto
     /// </summary>
     public string? DisplayWorkflowState { get; set; }
 
+    /// <summary>
+    /// Group-aware display override (RequestGroupDisplayStateCalculator), populated only by
+    /// GetRequests. Null means "no override" — the caller must fall back to StatusName. Never used
+    /// for permissions/eligibility/filtering — StatusId/StatusCode/StatusName remain the source of
+    /// truth for that; these two fields exist purely for the friendly label shown to the user.
+    /// </summary>
+    public string? DisplayStatusCode { get; set; }
+    public string? DisplayStatusName { get; set; }
+
     public int RequestTypeId { get; set; }
     public string RequestTypeName { get; set; } = string.Empty;
     public string RequestTypeCode { get; set; } = string.Empty;

@@ -46,13 +46,15 @@ public class FinancePaymentEligibilityServiceTests
     }
 
     [Fact]
-    public void Payment_ParentPoIssued_LegacyGroupPending_PayIsStillAvailable_ScheduleIsNot()
+    public void Payment_ParentPoIssued_LegacyGroupPending_PayAndScheduleAreBothAvailable()
     {
-        // This is the confirmed root-cause scenario: REQ-14/07/2026-059 and 11 other legacy rows.
-        // MarkAsPaid authorizes PAYMENT-type requests from the PARENT status, not the group status,
-        // so PAY must remain available even though the group itself is stuck at PENDING.
-        // SchedulePayment guards on the GROUP status, so SCHEDULE must correctly stay unavailable
-        // until the legacy group status is corrected (see the remediation script).
+        // This is the confirmed root-cause scenario: REQ-14/07/2026-059 and 11 other legacy rows
+        // (2026-07-25 Finance Payments UI regression). MarkAsPaid authorizes PAYMENT-type requests
+        // from the PARENT status, not the group status, so PAY has always been available even
+        // though the group itself is stuck at PENDING. SchedulePayment now applies the same
+        // parent-status fallback for PAYMENT type ONLY when the group carries no real information
+        // (PENDING/null/empty) — so SCHEDULE must now also be available, closing the asymmetry that
+        // hid "Agendar pagamento" in the Finance Payments UI for these legacy rows.
         var input = new FinanceEligibilityInput
         {
             RequestTypeCode = RequestConstants.Types.Payment,
@@ -65,8 +67,7 @@ public class FinancePaymentEligibilityServiceTests
         var result = _sut.Evaluate(input);
 
         Assert.Contains(FinancePaymentActionCodes.Pay, result.Actions);
-        Assert.DoesNotContain(FinancePaymentActionCodes.Schedule, result.Actions);
-        Assert.Equal(FinancePaymentUnavailableReasons.NoGroupInSchedulableState, result.UnavailableReasons[FinancePaymentActionCodes.Schedule]);
+        Assert.Contains(FinancePaymentActionCodes.Schedule, result.Actions);
     }
 
     [Fact]
@@ -211,16 +212,21 @@ public class FinancePaymentEligibilityServiceTests
     // ── SCHEDULE mirrors CanSchedule exactly (systematic sweep) ───────────
 
     [Theory]
-    [InlineData("PO_ISSUED", true)]
-    [InlineData("PAYMENT_REQUEST_SENT", true)]
-    [InlineData("ADVANCE_PAYMENT_REQUIRED", true)]
-    [InlineData("PENDING", false)]
-    [InlineData("WAITING_PO", false)]
-    [InlineData("PAYMENT_SCHEDULED", false)]
-    [InlineData("PAYMENT_COMPLETED", false)]
-    public void CanSchedule_MatchesSchedulePaymentGuard_ForEveryGroupStatus(string groupStatus, bool expected)
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "PO_ISSUED", true)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "PAYMENT_REQUEST_SENT", true)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "ADVANCE_PAYMENT_REQUIRED", true)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "PENDING", false)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "WAITING_PO", false)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "PAYMENT_SCHEDULED", false)]
+    [InlineData(RequestConstants.Types.Quotation, "irrelevant-for-quotation", "PAYMENT_COMPLETED", false)]
+    [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", "PO_ISSUED", true)]
+    [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", "PAYMENT_REQUEST_SENT", true)]
+    [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", "ADVANCE_PAYMENT_REQUIRED", true)]
+    [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", "PAYMENT_SCHEDULED", false)]
+    [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", "PAYMENT_COMPLETED", false)]
+    public void CanSchedule_MeaningfulGroupStatus_IsAlwaysAuthoritative_RegardlessOfType(string requestType, string requestStatus, string groupStatus, bool expected)
     {
-        Assert.Equal(expected, _sut.CanSchedule(groupStatus));
+        Assert.Equal(expected, _sut.CanSchedule(requestType, requestStatus, groupStatus));
     }
 
     [Fact]
@@ -238,8 +244,77 @@ public class FinancePaymentEligibilityServiceTests
                 PoGroups = new List<FinancePoGroupEligibilityInput> { Group(status) }
             };
             var result = _sut.Evaluate(input);
-            Assert.Equal(_sut.CanSchedule(status), result.Actions.Contains(FinancePaymentActionCodes.Schedule));
+            Assert.Equal(
+                _sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, status),
+                result.Actions.Contains(FinancePaymentActionCodes.Schedule));
         }
+    }
+
+    // ── PAYMENT legacy-PENDING-group fallback: conflicting-status safety matrix ───────────
+    // Covers the exact combinations from the 2026-07-25 Finance Payments UI regression fix —
+    // proves the group's own status always wins once meaningful, and the parent fallback is both
+    // narrow (only PO_ISSUED/PAYMENT_REQUEST_SENT) and scoped to PAYMENT type only.
+
+    [Fact]
+    public void PaymentFallback_ParentPoIssued_GroupPending_CanSchedule()
+    {
+        Assert.True(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, RequestConstants.PoGroupStatuses.Pending));
+    }
+
+    [Fact]
+    public void PaymentFallback_ParentPoIssued_GroupPoIssued_CanSchedule()
+    {
+        Assert.True(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, RequestConstants.PoGroupStatuses.PoIssued));
+    }
+
+    [Fact]
+    public void PaymentFallback_ParentPoIssued_GroupPaymentScheduled_GroupWins_CannotReschedule()
+    {
+        // The group has already moved on — a stale parent status must never re-enable scheduling.
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, RequestConstants.PoGroupStatuses.PaymentScheduled));
+    }
+
+    [Fact]
+    public void PaymentFallback_ParentPoIssued_GroupPaymentCompleted_GroupWins_CannotSchedule()
+    {
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, RequestConstants.PoGroupStatuses.PaymentCompleted));
+    }
+
+    [Fact]
+    public void PaymentFallback_ParentPaymentCompleted_GroupPending_FallbackApplies_CannotSchedule()
+    {
+        // Group carries no information (PENDING) -> falls back to parent, but PAYMENT_COMPLETED is
+        // not in the narrow schedulable-parent-status set.
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PaymentCompleted, RequestConstants.PoGroupStatuses.Pending));
+    }
+
+    [Fact]
+    public void PaymentFallback_ParentCancelled_GroupPending_CannotSchedule()
+    {
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.Cancelled, RequestConstants.PoGroupStatuses.Pending));
+    }
+
+    [Fact]
+    public void Quotation_ParentPoIssued_GroupPending_RemainsBlocked_NoPaymentFallbackApplied()
+    {
+        // QUOTATION must never receive the PAYMENT-only legacy fallback, even with the exact same
+        // parent/group shape that would schedule for PAYMENT type.
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Quotation, RequestConstants.Statuses.PoIssued, RequestConstants.PoGroupStatuses.Pending));
+    }
+
+    [Fact]
+    public void Quotation_GroupPoIssued_RemainsSchedulable()
+    {
+        Assert.True(_sut.CanSchedule(RequestConstants.Types.Quotation, "irrelevant-for-quotation", RequestConstants.PoGroupStatuses.PoIssued));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void PaymentFallback_NullOrEmptyGroupStatus_TreatedAsMeaningless_FallsBackToParent(string? groupStatus)
+    {
+        Assert.True(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PoIssued, groupStatus));
+        Assert.False(_sut.CanSchedule(RequestConstants.Types.Payment, RequestConstants.Statuses.PaymentCompleted, groupStatus));
     }
 
     // ── PAY mirrors CanPay exactly (systematic sweep) ─────────────────────
@@ -289,6 +364,114 @@ public class FinancePaymentEligibilityServiceTests
     public void CanReturn_MatchesReturnForAdjustmentGuard(string? parentStatus, bool expected)
     {
         Assert.Equal(expected, _sut.CanReturn(parentStatus));
+    }
+
+    // ── CANCEL_SCHEDULE ─────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("PAYMENT_SCHEDULED", true)]
+    [InlineData("ADVANCE_PAYMENT_SCHEDULED", true)]
+    [InlineData("PO_ISSUED", false)]
+    [InlineData("ADVANCE_PAYMENT_REQUIRED", false)]
+    [InlineData("PAYMENT_COMPLETED", false)]
+    [InlineData("ADVANCE_PAYMENT_COMPLETED", false)]
+    [InlineData("WAITING_RECEIPT", false)]
+    [InlineData("COMPLETED", false)]
+    [InlineData("PENDING", false)]
+    [InlineData(null, false)]
+    public void CanCancelSchedule_OnlyEligibleForScheduledGroupStatuses(string? groupStatus, bool expected)
+    {
+        Assert.Equal(expected, _sut.CanCancelSchedule(groupStatus));
+    }
+
+    [Fact]
+    public void Evaluate_PaymentScheduledGroup_ExposesCancelSchedule()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Payment,
+            RequestStatusCode = RequestConstants.Statuses.PaymentScheduled,
+            IsPaid = false,
+            HasProof = false,
+            PoGroups = new List<FinancePoGroupEligibilityInput> { Group(RequestConstants.Statuses.PaymentScheduled) }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+    }
+
+    [Fact]
+    public void Evaluate_AdvancePaymentScheduledGroup_ExposesCancelSchedule()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Quotation,
+            RequestStatusCode = RequestConstants.Statuses.AdvancePaymentScheduled,
+            IsPaid = false,
+            HasProof = false,
+            PoGroups = new List<FinancePoGroupEligibilityInput> { Group(RequestConstants.Statuses.AdvancePaymentScheduled) }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+    }
+
+    [Fact]
+    public void Evaluate_NoGroupScheduled_CancelScheduleUnavailable()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Payment,
+            RequestStatusCode = RequestConstants.Statuses.PoIssued,
+            IsPaid = false,
+            HasProof = false,
+            PoGroups = new List<FinancePoGroupEligibilityInput> { Group(RequestConstants.Statuses.PoIssued) }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.DoesNotContain(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+        Assert.Equal(FinancePaymentUnavailableReasons.NoGroupCurrentlyScheduled, result.UnavailableReasons[FinancePaymentActionCodes.CancelSchedule]);
+    }
+
+    [Fact]
+    public void Evaluate_AlreadyPaid_CancelScheduleUnavailable()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Payment,
+            RequestStatusCode = RequestConstants.Statuses.PaymentCompleted,
+            IsPaid = true,
+            HasProof = true,
+            PoGroups = new List<FinancePoGroupEligibilityInput> { Group(RequestConstants.Statuses.PaymentCompleted) }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.DoesNotContain(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+    }
+
+    [Fact]
+    public void Evaluate_MultiGroup_OneScheduledOneNot_CancelScheduleAvailableBecauseAtLeastOneGroupQualifies()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Quotation,
+            RequestStatusCode = RequestConstants.Statuses.AdvancePaymentCompleted,
+            IsPaid = false,
+            HasProof = false,
+            PoGroups = new List<FinancePoGroupEligibilityInput>
+            {
+                Group(RequestConstants.Statuses.AdvancePaymentCompleted),
+                Group(RequestConstants.Statuses.PaymentScheduled)
+            }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, result.Actions);
     }
 
     // ── ADD_NOTE / ADD_PROOF ────────────────────────────────────────────────

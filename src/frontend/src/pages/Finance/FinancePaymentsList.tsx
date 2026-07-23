@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { api } from '../../lib/api';
 import { FinanceListResponseDto } from '../../types';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X, XCircle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
@@ -14,7 +14,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { StandardTable } from '../../components/ui/StandardTable';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
-import { shouldShowSchedule, shouldShowPay, resolveSingleGroupRowActions, hasMultipleOperationalGroups, toggleSort, SortConfig } from '../../lib/financePaymentsView';
+import { shouldShowSchedule, shouldShowPay, shouldShowCancelSchedule, resolveSingleGroupRowActions, hasMultipleOperationalGroups, toggleSort, SortConfig, canScheduleGroupStatus, canPayGroupStatus, canCancelScheduleGroupStatus, isAdvanceGroupStatus, resolveAttachmentUploadParams, resolveParentDisplayStatus, resolveScheduledPaymentDetails, resolveAdvancePaymentDetails, resolveSoleGroupActionLabels, GROUP_STATUS_LABELS } from '../../lib/financePaymentsView';
 
 // The visual "Vencimento / Status" header cell covers two independent sortable dimensions
 // (needbydateutc, statuscode) — each gets its own inline sort trigger within that one cell,
@@ -183,17 +183,40 @@ export default function FinancePaymentsList() {
         syncParamsToPrefs(newParams);
     };
 
-    const handleActionClick = (requestId: string, groupId: string, action: FinanceActionType) => {
-        // Compute expected amount from PO group or scheduled payment
-        let expectedAmount: number | undefined = undefined;
+    // Resolves the specific RequestPoGroup being acted on. Eligibility, routing (normal vs.
+    // advance), and default amounts must all come from THIS group's own status/payments — never
+    // from the parent request's aggregated statusCode or a sibling group.
+    const findActingGroup = (requestId: string | null, groupId: string | null): any => {
+        if (!requestId || !groupId) return undefined;
         const requestItem = data?.pagedResult?.items.find(i => i.id === requestId);
-        if (requestItem?.poGroups) {
-            const poGroup = requestItem.poGroups.find((g: any) => g.id === groupId);
-            if (poGroup) {
-                // Check for scheduled payment with plannedAmount first
-                const scheduledPayment = poGroup.payments?.find((p: any) => p.paymentStatus === 'SCHEDULED' && p.plannedAmount > 0);
-                expectedAmount = scheduledPayment?.plannedAmount || poGroup.totalAmount || undefined;
-            }
+        return requestItem?.poGroups?.find((g: any) => g.id === groupId);
+    };
+
+    // Read-only summary shown in the Cancel-schedule confirmation modal, sourced from the acting
+    // group's own currently-Scheduled payment row (works identically for normal and advance
+    // groups) — never from the parent request's aggregated fields.
+    const resolveCancelScheduleContext = (requestId: string | null, groupId: string | null) => {
+        const poGroup = findActingGroup(requestId, groupId);
+        if (!poGroup) return undefined;
+        const scheduledPayment = poGroup.payments?.find((p: any) => p.paymentStatus === 'SCHEDULED');
+        return {
+            supplierName: poGroup.supplierNameSnapshot || '---',
+            amount: scheduledPayment?.plannedAmount ?? poGroup.totalAmount ?? 0,
+            currencyCode: poGroup.currencyCode || 'AOA',
+            scheduledDateUtc: scheduledPayment?.scheduledDateUtc ?? null,
+        };
+    };
+
+    const handleActionClick = (requestId: string, groupId: string, action: FinanceActionType) => {
+        // Compute expected amount from the acting group's own planned/scheduled payment, or
+        // fall back to the group's total. A PLANNED advance payment (created at PO registration,
+        // before any scheduling) must supply its PlannedAmount here too — not just a SCHEDULED one.
+        let expectedAmount: number | undefined = undefined;
+        const poGroup = findActingGroup(requestId, groupId);
+        if (poGroup) {
+            const plannedOrScheduledPayment = poGroup.payments?.find((p: any) =>
+                (p.paymentStatus === 'PLANNED' || p.paymentStatus === 'SCHEDULED') && p.plannedAmount > 0);
+            expectedAmount = plannedOrScheduledPayment?.plannedAmount || poGroup.totalAmount || undefined;
         }
         setActionModal({ show: true, action, requestId, groupId, expectedAmount });
         setFeedback({ type: 'success', message: null });
@@ -205,12 +228,13 @@ export default function FinancePaymentsList() {
         setFeedback({ type: 'success', message: null });
 
         try {
-            const requestItem = data?.pagedResult?.items.find(i => i.id === actionModal.requestId);
-            const isAdvance = requestItem?.statusCode === 'ADVANCE_PAYMENT_REQUIRED';
+            const actingGroup = findActingGroup(actionModal.requestId, actionModal.groupId);
+            const isAdvance = isAdvanceGroupStatus(actingGroup?.status);
 
             if (action === 'SCHEDULE' && payload.date) {
-                if (payload.file) {
-                    await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_SCHEDULE');
+                const scheduleUploadParams = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
+                if (scheduleUploadParams) {
+                    await api.attachments.upload(actionModal.requestId, [payload.file!], scheduleUploadParams.typeCode, scheduleUploadParams.poGroupId);
                 }
                 if (isAdvance) {
                     await api.requests.scheduleAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, scheduledDate: new Date(payload.date).toISOString(), comment: payload.notes || "Adiantamento agendado via portal" });
@@ -219,8 +243,9 @@ export default function FinancePaymentsList() {
                 }
             } else if (action === 'PAY') {
                 let attachmentId: string | undefined = undefined;
-                if (payload.file) {
-                    const uploadResult = await api.attachments.upload(actionModal.requestId, [payload.file], 'PAYMENT_PROOF');
+                const payUploadParams = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
+                if (payUploadParams) {
+                    const uploadResult = await api.attachments.upload(actionModal.requestId, [payload.file!], payUploadParams.typeCode, payUploadParams.poGroupId);
                     if (uploadResult && uploadResult.length > 0) {
                         attachmentId = uploadResult[0].id;
                     }
@@ -242,6 +267,8 @@ export default function FinancePaymentsList() {
                 await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
             } else if (action === 'NOTE' && payload.notes) {
                 await api.finance.addNote(actionModal.requestId, payload.notes);
+            } else if (action === 'CANCEL_SCHEDULE' && payload.notes) {
+                await api.finance.cancelSchedule(actionModal.requestId, actionModal.groupId!, payload.notes);
             }
 
             setActionModal({ show: false, action: null, requestId: null, groupId: null });
@@ -438,7 +465,13 @@ export default function FinancePaymentsList() {
                         // "operational" here, so a lone CANCELLED group alongside one real group still
                         // renders as a single-group row (see resolveOperationalGroups / DEC-149).
                         const hasMultipleGroups = hasMultipleOperationalGroups(item.poGroups);
-                        
+                        // Only overrides the parent badge for multi-group rows — the raw persisted
+                        // Request.Status is unambiguous for a single group (no aggregation to second-guess),
+                        // so single-group rows keep showing item.statusName exactly as before.
+                        const parentDisplayStatus = hasMultipleGroups
+                            ? resolveParentDisplayStatus(item.poGroups, item.statusName)
+                            : null;
+
                         return (
                         <React.Fragment key={item.id}>
                             <tr id={`payment-row-${item.id}`} className={flashedRequestId === item.id.toString() ? 'flash-red-row' : ''} style={{ borderBottom: hasMultipleGroups ? 'none' : '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
@@ -453,9 +486,13 @@ export default function FinancePaymentsList() {
                                 <td style={{ padding: '16px', verticalAlign: 'top' }}>
                                     <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                                         <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{getStatusTooltip(item.statusCode, item.statusName)}</div>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                                                {parentDisplayStatus
+                                                    ? 'Fornecedores em estágios diferentes do fluxo de pagamento.'
+                                                    : getStatusTooltip(item.statusCode, item.statusName)}
+                                            </div>
                                         } side="top">
-                                            <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{item.statusName}</span>
+                                            <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{parentDisplayStatus?.label ?? item.statusName}</span>
                                         </ModernTooltip>
 
                                         {!hasMultipleGroups && item.statusCode === 'ADVANCE_PAYMENT_REQUIRED' && (
@@ -527,10 +564,17 @@ export default function FinancePaymentsList() {
                                             // different eligibility policy (see resolveSingleGroupRowActions).
                                             const rowActions = resolveSingleGroupRowActions(item);
                                             const bestEffortGroupId = item.poGroups?.[0]?.id || '';
+                                            // Label terminology comes from the resolved SOLE group's own status —
+                                            // never the parent request status — matching the multi-group cards'
+                                            // isAdvanceGroupStatus branching exactly (see the "Pagamentos por
+                                            // Fornecedor" panel below).
+                                            const soleGroupStatus = item.poGroups?.find((g: any) => g.id === rowActions.groupId)?.status;
+                                            const { scheduleLabel, payLabel, cancelScheduleLabel } = resolveSoleGroupActionLabels(soleGroupStatus);
                                             return (
                                                 <KebabMenu options={[
-                                                    ...(!hasMultipleGroups && shouldShowSchedule(item) ? [{ label: 'Agendar pagamento', icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'SCHEDULE') }] : []),
-                                                    ...(!hasMultipleGroups && shouldShowPay(item) ? [{ label: 'Marcar como pago', icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'PAY') }] : []),
+                                                    ...(!hasMultipleGroups && shouldShowSchedule(item) ? [{ label: scheduleLabel, icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'SCHEDULE') }] : []),
+                                                    ...(!hasMultipleGroups && shouldShowPay(item) ? [{ label: payLabel, icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'PAY') }] : []),
+                                                    ...(!hasMultipleGroups && shouldShowCancelSchedule(item) ? [{ label: cancelScheduleLabel, icon: <XCircle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'CANCEL_SCHEDULE') }] : []),
                                                     { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
                                                     ...(item.availableFinanceActions.includes('ADD_NOTE') ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'NOTE') }] : []),
                                                     ...(!hasMultipleGroups && item.availableFinanceActions.includes('RETURN') ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'RETURN') }] : [])
@@ -550,30 +594,65 @@ export default function FinancePaymentsList() {
                                                 <div key={group.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{group.supplierNameSnapshot}</div>
-                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                                             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
                                                                 {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(group.totalAmount)}
                                                             </span>
-                                                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                                Status: {group.status}
+                                                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#334155', backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '12px' }}>
+                                                                {GROUP_STATUS_LABELS[group.status] ?? group.status}
                                                             </span>
                                                         </div>
+                                                        {group.status === 'PAYMENT_SCHEDULED' && (() => {
+                                                            const { scheduledDateUtc, plannedAmount } = resolveScheduledPaymentDetails(group.payments);
+                                                            if (!scheduledDateUtc && plannedAmount == null) return null;
+                                                            return (
+                                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                                    {scheduledDateUtc && `Agendado para ${new Date(scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
+                                                                    {scheduledDateUtc && plannedAmount != null && ' · '}
+                                                                    {plannedAmount != null && `Previsto: ${new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(plannedAmount)}`}
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                        {group.status === 'ADVANCE_PAYMENT_COMPLETED' && (() => {
+                                                            const { paidDateUtc, actualPaidAmount } = resolveAdvancePaymentDetails(group.payments);
+                                                            if (!paidDateUtc && actualPaidAmount == null && group.advancePaymentPercent == null) return null;
+                                                            return (
+                                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                                    {paidDateUtc && `Pago em ${new Date(paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
+                                                                    {paidDateUtc && actualPaidAmount != null && ' · '}
+                                                                    {actualPaidAmount != null && `Montante: ${new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(actualPaidAmount)}`}
+                                                                    {group.advancePaymentPercent != null && ` · ${group.advancePaymentPercent}% adiantamento`}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                                        {item.availableFinanceActions.includes('SCHEDULE') && (group.status === 'ADVANCE_PAYMENT_REQUIRED' || group.status === 'PO_ISSUED' || group.status === 'WAITING_SUPPLIER_DELIVERY' || group.status === 'PO_CONFIRMED' || group.status === 'PAYMENT_REQUIRED') && (
+                                                        {/* Eligibility and label are computed from THIS group's own status only —
+                                                            never from item.statusCode (the parent's aggregated status) or a sibling
+                                                            group. See financePaymentsView.ts's canScheduleGroupStatus/canPayGroupStatus/
+                                                            isAdvanceGroupStatus, which mirror the backend's canonical eligibility lists. */}
+                                                        {item.availableFinanceActions.includes('SCHEDULE') && canScheduleGroupStatus(group.status) && (
                                                             <button
                                                                 onClick={() => handleActionClick(item.id, group.id, 'SCHEDULE')}
                                                                 style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #0369a1', backgroundColor: '#f0f9ff', color: '#0369a1', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                                                             >
-                                                                <Clock size={14} /> Agendar
+                                                                <Clock size={14} /> {resolveSoleGroupActionLabels(group.status).scheduleLabel}
                                                             </button>
                                                         )}
-                                                        {item.availableFinanceActions.includes('PAY') && (group.status === 'ADVANCE_PAYMENT_SCHEDULED' || group.status === 'PAYMENT_SCHEDULED') && (
+                                                        {item.availableFinanceActions.includes('PAY') && canPayGroupStatus(group.status) && (
                                                             <button
                                                                 onClick={() => handleActionClick(item.id, group.id, 'PAY')}
                                                                 style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #15803d', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                                                             >
-                                                                <Check size={14} /> Pagar
+                                                                <Check size={14} /> {resolveSoleGroupActionLabels(group.status).payLabel}
+                                                            </button>
+                                                        )}
+                                                        {item.availableFinanceActions.includes('CANCEL_SCHEDULE') && canCancelScheduleGroupStatus(group.status) && (
+                                                            <button
+                                                                onClick={() => handleActionClick(item.id, group.id, 'CANCEL_SCHEDULE')}
+                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #dc2626', backgroundColor: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                <XCircle size={14} /> {resolveSoleGroupActionLabels(group.status).cancelScheduleLabel}
                                                             </button>
                                                         )}
                                                     </div>
@@ -684,8 +763,9 @@ export default function FinancePaymentsList() {
             <FinanceActionModal
                 show={actionModal.show}
                 action={actionModal.action}
-                isAdvance={data?.pagedResult?.items.find(i => i.id === actionModal.requestId)?.statusCode === 'ADVANCE_PAYMENT_REQUIRED'}
+                isAdvance={isAdvanceGroupStatus(findActingGroup(actionModal.requestId, actionModal.groupId)?.status)}
                 expectedAmount={actionModal.expectedAmount}
+                cancelScheduleContext={actionModal.action === 'CANCEL_SCHEDULE' ? resolveCancelScheduleContext(actionModal.requestId, actionModal.groupId) : undefined}
                 onClose={() => setActionModal({ show: false, action: null, requestId: null, groupId: null })}
                 onConfirm={handleConfirmAction}
                 processing={processing}

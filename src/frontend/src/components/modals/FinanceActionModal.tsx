@@ -5,14 +5,24 @@ import { DropdownPortal } from '../ui/DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
 import { CurrencyInput } from '../CurrencyInput';
+import { formatBusinessDateOnly } from '../../lib/financePaymentsView';
 
-export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | null;
+export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | 'CANCEL_SCHEDULE' | null;
+
+export interface CancelScheduleContext {
+    supplierName: string;
+    loteNumber?: number | null;
+    amount: number;
+    currencyCode: string;
+    scheduledDateUtc: string | null;
+}
 
 interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     isAdvance?: boolean;
     expectedAmount?: number;
+    cancelScheduleContext?: CancelScheduleContext;
     onClose: () => void;
     onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
     processing: boolean;
@@ -20,11 +30,14 @@ interface FinanceActionModalProps {
     onCloseFeedback: () => void;
 }
 
+const CANCEL_SCHEDULE_MIN_REASON_LENGTH = 20;
+
 export function FinanceActionModal({
     show,
     action,
     isAdvance = false,
     expectedAmount,
+    cancelScheduleContext,
     onClose,
     onConfirm,
     processing,
@@ -64,6 +77,7 @@ export function FinanceActionModal({
             case 'PAY': return isAdvance ? 'Confirmar Adiantamento' : 'Confirmar Liquidação';
             case 'RETURN': return 'Devolver Pedido para Ajuste';
             case 'NOTE': return 'Adicionar Observação';
+            case 'CANCEL_SCHEDULE': return isAdvance ? 'Cancelar Agendamento de Adiantamento' : 'Cancelar Agendamento';
             default: return '';
         }
     };
@@ -74,17 +88,19 @@ export function FinanceActionModal({
             case 'PAY': return 'Informe o montante efetivamente pago e anexe o comprovante de pagamento.';
             case 'RETURN': return 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
+            case 'CANCEL_SCHEDULE': return 'Esta ação cancela o agendamento atual deste grupo. O documento de cronograma anexado será marcado como sem efeito.';
             default: return '';
         }
     };
 
-    const isCommentRequired = action === 'RETURN' || action === 'NOTE';
-    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE' || action === 'NOTE';
-    
+    const isCommentRequired = action === 'RETURN' || action === 'NOTE' || action === 'CANCEL_SCHEDULE';
+    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE' || action === 'NOTE' || action === 'CANCEL_SCHEDULE';
+
     // Determine button disabled state
-    const isConfirmDisabled = processing || 
-        (action === 'SCHEDULE' && !date) || 
+    const isConfirmDisabled = processing ||
+        (action === 'SCHEDULE' && !date) ||
         (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0 || !date)) ||
+        (action === 'CANCEL_SCHEDULE' && notes.trim().length < CANCEL_SCHEDULE_MIN_REASON_LENGTH) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -303,10 +319,39 @@ export function FinanceActionModal({
                             </div>
                         )}
 
+                        {action === 'CANCEL_SCHEDULE' && cancelScheduleContext && (
+                            <div style={{ marginBottom: '24px', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Fornecedor</span>
+                                    <span>{cancelScheduleContext.supplierName}</span>
+                                </div>
+                                {cancelScheduleContext.loteNumber != null && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                        <span style={{ color: 'var(--color-text-muted)' }}>Lote</span>
+                                        <span>#{cancelScheduleContext.loteNumber}</span>
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Montante</span>
+                                    <span>{new Intl.NumberFormat('pt-AO', { style: 'currency', currency: cancelScheduleContext.currencyCode || 'AOA' }).format(cancelScheduleContext.amount)}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Data agendada</span>
+                                    <span>{formatBusinessDateOnly(cancelScheduleContext.scheduledDateUtc)}</span>
+                                </div>
+                                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.75rem', fontWeight: 700, color: '#c2410c' }}>
+                                    <span>⚠</span>
+                                    <span>O documento de cronograma de pagamento anexado a este agendamento será marcado como "Sem efeito" e deixará de ser considerado ativo.</span>
+                                </div>
+                            </div>
+                        )}
+
                         {showCommentField && (
                             <div style={{ marginBottom: '32px' }}>
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                    {action === 'NOTE' ? 'Observação (obrigatório)' : isCommentRequired ? 'Motivo da Devolução (obrigatório)' : 'Observações (opcional)'}
+                                    {action === 'NOTE' ? 'Observação (obrigatório)'
+                                        : action === 'CANCEL_SCHEDULE' ? `Motivo do Cancelamento (obrigatório, mínimo ${CANCEL_SCHEDULE_MIN_REASON_LENGTH} caracteres)`
+                                        : isCommentRequired ? 'Motivo da Devolução (obrigatório)' : 'Observações (opcional)'}
                                 </label>
                                 <textarea
                                     value={notes}
@@ -319,6 +364,11 @@ export function FinanceActionModal({
                                         padding: '16px'
                                     }}
                                 />
+                                {action === 'CANCEL_SCHEDULE' && (
+                                    <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: notes.trim().length < CANCEL_SCHEDULE_MIN_REASON_LENGTH ? '#dc2626' : 'var(--color-text-muted)' }}>
+                                        {notes.trim().length}/{CANCEL_SCHEDULE_MIN_REASON_LENGTH} caracteres mínimos
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -345,7 +395,7 @@ export function FinanceActionModal({
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
-                                    backgroundColor: action === 'RETURN' ? 'var(--color-status-red)' : 'var(--color-primary)',
+                                    backgroundColor: (action === 'RETURN' || action === 'CANCEL_SCHEDULE') ? 'var(--color-status-red)' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
                                     cursor: isConfirmDisabled ? 'not-allowed' : 'pointer',

@@ -8,6 +8,9 @@ export interface RequestListItemDto {
     statusDisplayOrder: number;
     statusBadgeColor: string;
     displayWorkflowState?: string | null;
+    /** Group-aware display override (RequestGroupDisplayStateCalculator) — null means "no override", fall back to statusName. */
+    displayStatusCode?: string | null;
+    displayStatusName?: string | null;
     requestTypeId: number;
     requestTypeName: string;
     requestTypeCode: string;
@@ -248,6 +251,8 @@ export interface RequestAttachmentDto {
     requestPoGroupId?: string | null;
     uploadedAtUtc: string;
     uploadedByName: string;
+    voidedAtUtc?: string | null;
+    voidReason?: string | null;
 }
 
 // Keep details types minimal just to prove routing works later
@@ -836,6 +841,8 @@ export interface FinanceHistoryItemDto {
     actorName: string;
     newStatusCode: string | null;
     newStatusName: string | null;
+    isVoided?: boolean;
+    voidReason?: string | null;
 }
 
 export type PrimaveraRequestValidationStatus = 'VALID' | 'WARNING' | 'INVALID' | 'ERROR';

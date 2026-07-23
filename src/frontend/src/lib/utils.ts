@@ -96,6 +96,10 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 nextAction: 'Revisar e reenviar a cotação'
             };
         case 'QUOTATION_COMPLETED':
+            return {
+                responsible: 'Comprador',
+                nextAction: 'Registrar P.O. para os grupos aprovados'
+            };
         case 'COMPLETED':
             return {
                 responsible: 'Sem ação',
@@ -149,8 +153,8 @@ export interface UrgencyStyle {
 export function isFinalizedStatus(statusCode: string | null | undefined): boolean {
     if (!statusCode) return false;
     const finalized = [
-        'COMPLETED', 'REJECTED', 'CANCELLED', 
-        'QUOTATION_COMPLETED', 'PO_ISSUED', 
+        'COMPLETED', 'REJECTED', 'CANCELLED',
+        'PO_ISSUED',
         'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED',
         'WAITING_RECEIPT',
         'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED',

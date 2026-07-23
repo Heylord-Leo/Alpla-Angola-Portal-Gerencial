@@ -7,6 +7,17 @@ import {
     shouldShowSchedule,
     shouldShowPay,
     toggleSort,
+    canScheduleGroupStatus,
+    canPayGroupStatus,
+    isAdvanceGroupStatus,
+    resolveAttachmentUploadParams,
+    resolveParentDisplayStatus,
+    resolveScheduledPaymentDetails,
+    resolveAdvancePaymentDetails,
+    resolveSoleGroupActionLabels,
+    canCancelScheduleGroupStatus,
+    shouldShowCancelSchedule,
+    formatBusinessDateOnly,
 } from './financePaymentsView.ts';
 
 describe('resolveSingleGroupRowActions', () => {
@@ -135,6 +146,266 @@ describe('shouldShowSchedule / shouldShowPay', () => {
     });
 });
 
+describe('shouldShowCancelSchedule (single-group kebab menu)', () => {
+    test('renders when eligible AND resolvable group AND that group is currently scheduled', () => {
+        const item = { availableFinanceActions: ['CANCEL_SCHEDULE'], poGroups: [{ id: 'g1', status: 'PAYMENT_SCHEDULED' }] };
+        assert.equal(shouldShowCancelSchedule(item), true);
+    });
+
+    test('renders for an advance-scheduled group', () => {
+        const item = { availableFinanceActions: ['CANCEL_SCHEDULE'], poGroups: [{ id: 'g1', status: 'ADVANCE_PAYMENT_SCHEDULED' }] };
+        assert.equal(shouldShowCancelSchedule(item), true);
+    });
+
+    test('does not render when the resolved group itself is not in a scheduled status, even if the action code is present', () => {
+        // Regression guard: eligibility must be double-gated by the group's OWN status, not just
+        // the flat request-level action list, mirroring the multi-group cards' pattern.
+        const item = { availableFinanceActions: ['CANCEL_SCHEDULE'], poGroups: [{ id: 'g1', status: 'PO_ISSUED' }] };
+        assert.equal(shouldShowCancelSchedule(item), false);
+    });
+
+    test('does not render when not eligible, regardless of group status', () => {
+        const item = { availableFinanceActions: [], poGroups: [{ id: 'g1', status: 'PAYMENT_SCHEDULED' }] };
+        assert.equal(shouldShowCancelSchedule(item), false);
+    });
+
+    test('does not render when no group id is resolvable', () => {
+        const item = { availableFinanceActions: ['CANCEL_SCHEDULE'], poGroups: [] };
+        assert.equal(shouldShowCancelSchedule(item), false);
+    });
+});
+
+describe('canScheduleGroupStatus / canPayGroupStatus / isAdvanceGroupStatus (per-group, multi-group sub-row)', () => {
+    // Test matrix item 1: PO_ISSUED — can schedule and can pay; not advance.
+    test('PO_ISSUED: schedulable, payable, not advance', () => {
+        assert.equal(canScheduleGroupStatus('PO_ISSUED'), true);
+        assert.equal(canPayGroupStatus('PO_ISSUED'), true);
+        assert.equal(isAdvanceGroupStatus('PO_ISSUED'), false);
+    });
+
+    // Test matrix item 2: PAYMENT_REQUEST_SENT — matches backend eligibility (schedulable + payable, not advance).
+    test('PAYMENT_REQUEST_SENT: schedulable, payable, not advance', () => {
+        assert.equal(canScheduleGroupStatus('PAYMENT_REQUEST_SENT'), true);
+        assert.equal(canPayGroupStatus('PAYMENT_REQUEST_SENT'), true);
+        assert.equal(isAdvanceGroupStatus('PAYMENT_REQUEST_SENT'), false);
+    });
+
+    // Test matrix item 3: PAYMENT_SCHEDULED — can pay (not schedulable again, not advance).
+    test('PAYMENT_SCHEDULED: payable, not schedulable, not advance', () => {
+        assert.equal(canScheduleGroupStatus('PAYMENT_SCHEDULED'), false);
+        assert.equal(canPayGroupStatus('PAYMENT_SCHEDULED'), true);
+        assert.equal(isAdvanceGroupStatus('PAYMENT_SCHEDULED'), false);
+    });
+
+    // Test matrix item 4: ADVANCE_PAYMENT_REQUIRED — can schedule, can pay directly, is advance.
+    test('ADVANCE_PAYMENT_REQUIRED: schedulable, payable, is advance', () => {
+        assert.equal(canScheduleGroupStatus('ADVANCE_PAYMENT_REQUIRED'), true);
+        assert.equal(canPayGroupStatus('ADVANCE_PAYMENT_REQUIRED'), true);
+        assert.equal(isAdvanceGroupStatus('ADVANCE_PAYMENT_REQUIRED'), true);
+    });
+
+    // Test matrix item 5: ADVANCE_PAYMENT_SCHEDULED — can pay (not schedulable again), is advance.
+    test('ADVANCE_PAYMENT_SCHEDULED: payable, not schedulable, is advance', () => {
+        assert.equal(canScheduleGroupStatus('ADVANCE_PAYMENT_SCHEDULED'), false);
+        assert.equal(canPayGroupStatus('ADVANCE_PAYMENT_SCHEDULED'), true);
+        assert.equal(isAdvanceGroupStatus('ADVANCE_PAYMENT_SCHEDULED'), true);
+    });
+
+    // Test matrix item 6: terminal statuses — no schedule, no pay action.
+    test('PAYMENT_COMPLETED / ADVANCE_PAYMENT_COMPLETED: no schedule, no pay', () => {
+        for (const status of ['PAYMENT_COMPLETED', 'ADVANCE_PAYMENT_COMPLETED']) {
+            assert.equal(canScheduleGroupStatus(status), false, status);
+            assert.equal(canPayGroupStatus(status), false, status);
+        }
+    });
+
+    // Test matrix item 11: dead/stale status strings (never valid RequestConstants values) no
+    // longer influence eligibility — regression guard for the removed PO_CONFIRMED/PAYMENT_REQUIRED
+    // inline strings.
+    test('dead status strings (PO_CONFIRMED, PAYMENT_REQUIRED) are not eligible for anything', () => {
+        for (const status of ['PO_CONFIRMED', 'PAYMENT_REQUIRED']) {
+            assert.equal(canScheduleGroupStatus(status), false, status);
+            assert.equal(canPayGroupStatus(status), false, status);
+            assert.equal(isAdvanceGroupStatus(status), false, status);
+        }
+    });
+
+    test('null/undefined/empty status is never eligible', () => {
+        for (const status of [null, undefined, '']) {
+            assert.equal(canScheduleGroupStatus(status), false);
+            assert.equal(canPayGroupStatus(status), false);
+            assert.equal(isAdvanceGroupStatus(status), false);
+        }
+    });
+});
+
+describe('canCancelScheduleGroupStatus (per-group, mirrors backend CanCancelSchedule)', () => {
+    test('PAYMENT_SCHEDULED and ADVANCE_PAYMENT_SCHEDULED are cancellable', () => {
+        assert.equal(canCancelScheduleGroupStatus('PAYMENT_SCHEDULED'), true);
+        assert.equal(canCancelScheduleGroupStatus('ADVANCE_PAYMENT_SCHEDULED'), true);
+    });
+
+    test('every other status, including completed/terminal ones, is not cancellable', () => {
+        for (const status of ['PO_ISSUED', 'PAYMENT_REQUEST_SENT', 'ADVANCE_PAYMENT_REQUIRED', 'PAYMENT_COMPLETED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'PENDING']) {
+            assert.equal(canCancelScheduleGroupStatus(status), false, status);
+        }
+    });
+
+    test('null/undefined/empty status is never eligible', () => {
+        for (const status of [null, undefined, '']) {
+            assert.equal(canCancelScheduleGroupStatus(status), false);
+        }
+    });
+});
+
+// 2026-07-25 Finance Payments UI regression: the single-group kebab menu's Schedule/Pay labels,
+// derived from the resolved sole group's own status — same terminology the multi-group cards use.
+describe('resolveSoleGroupActionLabels (single-group kebab menu terminology)', () => {
+    test('normal group status -> "Agendar pagamento" / "Marcar como pago"', () => {
+        const result = resolveSoleGroupActionLabels('PO_ISSUED');
+        assert.equal(result.scheduleLabel, 'Agendar pagamento');
+        assert.equal(result.payLabel, 'Marcar como pago');
+    });
+
+    test('advance group status -> "Agendar adiantamento" / "Registrar adiantamento pago"', () => {
+        const result = resolveSoleGroupActionLabels('ADVANCE_PAYMENT_REQUIRED');
+        assert.equal(result.scheduleLabel, 'Agendar adiantamento');
+        assert.equal(result.payLabel, 'Registrar adiantamento pago');
+    });
+
+    test('ADVANCE_PAYMENT_SCHEDULED (still advance, only Pay remains eligible) -> advance-aware Pay label', () => {
+        const result = resolveSoleGroupActionLabels('ADVANCE_PAYMENT_SCHEDULED');
+        assert.equal(result.payLabel, 'Registrar adiantamento pago');
+    });
+
+    test('null/undefined status -> normal (non-advance) labels, never throws', () => {
+        assert.doesNotThrow(() => resolveSoleGroupActionLabels(null));
+        assert.equal(resolveSoleGroupActionLabels(null).scheduleLabel, 'Agendar pagamento');
+        assert.equal(resolveSoleGroupActionLabels(undefined).payLabel, 'Marcar como pago');
+    });
+
+    test('PAYMENT_SCHEDULED -> "Cancelar agendamento"', () => {
+        assert.equal(resolveSoleGroupActionLabels('PAYMENT_SCHEDULED').cancelScheduleLabel, 'Cancelar agendamento');
+    });
+
+    test('ADVANCE_PAYMENT_SCHEDULED -> "Cancelar agendamento de adiantamento"', () => {
+        assert.equal(resolveSoleGroupActionLabels('ADVANCE_PAYMENT_SCHEDULED').cancelScheduleLabel, 'Cancelar agendamento de adiantamento');
+    });
+});
+
+describe('formatBusinessDateOnly (timezone-proof calendar-date formatting)', () => {
+    // 2026-07-26 regression: RequestPayment.ScheduledDateUtc round-trips through SQL Server's
+    // datetime2 (no offset metadata) -> System.Text.Json emits it WITHOUT a trailing 'Z' -> a naive
+    // `new Date(str)` on a datetime string without an offset is parsed as LOCAL time per ECMA-262
+    // (unlike a date-ONLY string, which is parsed as UTC) -> combined with { timeZone: 'UTC' }
+    // display formatting, this silently shifted the displayed calendar day by the browser's UTC
+    // offset. Confirmed via reproduction: on a UTC+1 host, "2026-07-24T00:00:00" (no Z) rendered as
+    // 23/07/2026 instead of the correct 24/07/2026 — the exact boundary reported by Finance.
+    test('the exact 23/07-vs-24/07 regression boundary: a no-Z datetime string always yields the stored calendar day', () => {
+        assert.equal(formatBusinessDateOnly('2026-07-24T00:00:00'), '24/07/2026');
+    });
+
+    test('a Z-suffixed datetime string yields the same calendar day (no double conversion)', () => {
+        assert.equal(formatBusinessDateOnly('2026-07-24T00:00:00.000Z'), '24/07/2026');
+    });
+
+    test('a date-only string (no time component) yields the same calendar day', () => {
+        assert.equal(formatBusinessDateOnly('2026-07-24'), '24/07/2026');
+    });
+
+    test('null/undefined/empty -> "---"', () => {
+        assert.equal(formatBusinessDateOnly(null), '---');
+        assert.equal(formatBusinessDateOnly(undefined), '---');
+        assert.equal(formatBusinessDateOnly(''), '---');
+    });
+
+    test('malformed string -> "---", never throws', () => {
+        assert.doesNotThrow(() => formatBusinessDateOnly('not-a-date'));
+        assert.equal(formatBusinessDateOnly('not-a-date'), '---');
+    });
+});
+
+describe('resolveAttachmentUploadParams (group-scoped attachment upload for SCHEDULE/PAY)', () => {
+    const NCR_GROUP_ID = 'ncr-group-id';
+    const ITEC_GROUP_ID = 'itec-group-id';
+
+    // Test matrix item 12: normal payment upload passes the selected NCR group id.
+    test('PAY with a file passes PAYMENT_PROOF and the selected (NCR) group id', () => {
+        const result = resolveAttachmentUploadParams('PAY', true, NCR_GROUP_ID);
+        assert.deepEqual(result, { typeCode: 'PAYMENT_PROOF', poGroupId: NCR_GROUP_ID });
+    });
+
+    // Test matrix item 13: advance payment upload passes the selected ITEC group id.
+    test('PAY with a file passes PAYMENT_PROOF and the selected (ITEC) group id', () => {
+        const result = resolveAttachmentUploadParams('PAY', true, ITEC_GROUP_ID);
+        assert.deepEqual(result, { typeCode: 'PAYMENT_PROOF', poGroupId: ITEC_GROUP_ID });
+    });
+
+    // Test matrix item 14: normal scheduling upload passes the selected NCR group id.
+    test('SCHEDULE with a file passes PAYMENT_SCHEDULE and the selected (NCR) group id', () => {
+        const result = resolveAttachmentUploadParams('SCHEDULE', true, NCR_GROUP_ID);
+        assert.deepEqual(result, { typeCode: 'PAYMENT_SCHEDULE', poGroupId: NCR_GROUP_ID });
+    });
+
+    // Test matrix item 15: advance scheduling upload passes the selected ITEC group id.
+    test('SCHEDULE with a file passes PAYMENT_SCHEDULE and the selected (ITEC) group id', () => {
+        const result = resolveAttachmentUploadParams('SCHEDULE', true, ITEC_GROUP_ID);
+        assert.deepEqual(result, { typeCode: 'PAYMENT_SCHEDULE', poGroupId: ITEC_GROUP_ID });
+    });
+
+    // Test matrix item 16: scheduling without a file must not attempt an upload at all.
+    test('SCHEDULE without a file returns null — no attachments.upload call should happen', () => {
+        assert.equal(resolveAttachmentUploadParams('SCHEDULE', false, NCR_GROUP_ID), null);
+    });
+
+    test('PAY without a file returns null — no attachments.upload call should happen', () => {
+        assert.equal(resolveAttachmentUploadParams('PAY', false, NCR_GROUP_ID), null);
+    });
+
+    // Test matrix item 17: normal and advance uploads keep the existing, shared type codes —
+    // there is no separate ADVANCE_PAYMENT_PROOF/advance schedule type (see diagnosis: that
+    // constant is dead code and ConfirmAdvancePayment explicitly expects PAYMENT_PROOF).
+    test('PAY always resolves PAYMENT_PROOF regardless of which group is selected (normal or advance)', () => {
+        assert.equal(resolveAttachmentUploadParams('PAY', true, NCR_GROUP_ID).typeCode, 'PAYMENT_PROOF');
+        assert.equal(resolveAttachmentUploadParams('PAY', true, ITEC_GROUP_ID).typeCode, 'PAYMENT_PROOF');
+    });
+
+    test('SCHEDULE always resolves PAYMENT_SCHEDULE regardless of which group is selected (normal or advance)', () => {
+        assert.equal(resolveAttachmentUploadParams('SCHEDULE', true, NCR_GROUP_ID).typeCode, 'PAYMENT_SCHEDULE');
+        assert.equal(resolveAttachmentUploadParams('SCHEDULE', true, ITEC_GROUP_ID).typeCode, 'PAYMENT_SCHEDULE');
+    });
+
+    // Test matrix item 18 / diagnosis item 5: switching the acting group between calls must never
+    // leak the previous group's id — the function is pure and stateless (no module-level mutable
+    // state, no parent-status input to derive a wrong answer from), so consecutive calls with
+    // different group ids must be fully independent. This is also the concrete regression guard
+    // for the original bug: an NCR action must never resolve ITEC's id, or vice versa.
+    test('consecutive calls for different groups never leak the previous group id', () => {
+        const forNcr = resolveAttachmentUploadParams('PAY', true, NCR_GROUP_ID);
+        const forItec = resolveAttachmentUploadParams('PAY', true, ITEC_GROUP_ID);
+        const forNcrAgain = resolveAttachmentUploadParams('PAY', true, NCR_GROUP_ID);
+
+        assert.equal(forNcr.poGroupId, NCR_GROUP_ID);
+        assert.notEqual(forNcr.poGroupId, ITEC_GROUP_ID);
+        assert.equal(forItec.poGroupId, ITEC_GROUP_ID);
+        assert.notEqual(forItec.poGroupId, NCR_GROUP_ID);
+        assert.equal(forNcrAgain.poGroupId, NCR_GROUP_ID);
+    });
+
+    // No group resolvable (defensive — should not happen once a modal is opened from a group
+    // button, but the function must not throw and must not silently invent an id).
+    test('null groupId resolves poGroupId to undefined, never a stale/guessed id', () => {
+        const result = resolveAttachmentUploadParams('PAY', true, null);
+        assert.equal(result.poGroupId, undefined);
+    });
+
+    // RETURN/NOTE never involve an attachment upload.
+    test('RETURN and NOTE never resolve upload params, even with a file present', () => {
+        assert.equal(resolveAttachmentUploadParams('RETURN', true, NCR_GROUP_ID), null);
+        assert.equal(resolveAttachmentUploadParams('NOTE', true, NCR_GROUP_ID), null);
+    });
+});
+
 describe('toggleSort', () => {
     test('first click on a column activates it ascending', () => {
         const result = toggleSort({ key: null, direction: 'asc' }, 'suppliername');
@@ -161,5 +432,70 @@ describe('toggleSort', () => {
         config = toggleSort(config, 'requestnumber');
         config = toggleSort(config, 'statuscode');
         assert.equal(config.key, 'statuscode');
+    });
+});
+
+// Full bucket-resolution coverage (mixed/passthrough/single-bucket-different-codes/CANCELLED/
+// fallback rules) now lives in requestGroupDisplayState.test.mjs, alongside the shared module's
+// implementation — this is a re-export smoke test only, proving financePaymentsView.ts's
+// backward-compatible re-export still points at a working implementation.
+describe('resolveParentDisplayStatus (re-export smoke test)', () => {
+    test('request 100 shape: NCR PAYMENT_SCHEDULED + ITEC ADVANCE_PAYMENT_COMPLETED -> "Pagamentos em andamento", not the raw aggregate', () => {
+        const result = resolveParentDisplayStatus(
+            [
+                { id: 'ncr', status: 'PAYMENT_SCHEDULED' },
+                { id: 'itec', status: 'ADVANCE_PAYMENT_COMPLETED' },
+            ],
+            'Adiantamento Realizado'
+        );
+        assert.equal(result.label, 'Pagamentos em andamento');
+        assert.equal(result.bucket, 'MIXED');
+    });
+
+    test('no active groups -> preserves the existing safe fallback label', () => {
+        const result = resolveParentDisplayStatus([], 'Aguardando Cotação');
+        assert.equal(result.label, 'Aguardando Cotação');
+        assert.equal(result.bucket, null);
+    });
+});
+
+describe('resolveScheduledPaymentDetails', () => {
+    test('resolves the FINAL_BALANCE payment scheduled date and planned amount', () => {
+        const result = resolveScheduledPaymentDetails([
+            { paymentType: 'ADVANCE', plannedAmount: 100, scheduledDateUtc: '2026-01-01T00:00:00Z' },
+            { paymentType: 'FINAL_BALANCE', plannedAmount: 70341.42, scheduledDateUtc: '2026-08-05T00:00:00Z' },
+        ]);
+        assert.equal(result.scheduledDateUtc, '2026-08-05T00:00:00Z');
+        assert.equal(result.plannedAmount, 70341.42);
+    });
+
+    test('no FINAL_BALANCE payment present -> nulls, no throw', () => {
+        assert.doesNotThrow(() => resolveScheduledPaymentDetails([{ paymentType: 'ADVANCE', plannedAmount: 100 }]));
+        const result = resolveScheduledPaymentDetails([{ paymentType: 'ADVANCE', plannedAmount: 100 }]);
+        assert.equal(result.scheduledDateUtc, null);
+        assert.equal(result.plannedAmount, null);
+    });
+
+    test('missing/undefined payments array -> nulls, no throw', () => {
+        assert.doesNotThrow(() => resolveScheduledPaymentDetails(undefined));
+        const result = resolveScheduledPaymentDetails(undefined);
+        assert.equal(result.plannedAmount, null);
+    });
+});
+
+describe('resolveAdvancePaymentDetails', () => {
+    test('resolves the ADVANCE payment paid date, actual amount', () => {
+        const result = resolveAdvancePaymentDetails([
+            { paymentType: 'ADVANCE', plannedAmount: 275139.00, actualPaidAmount: 275139.00, paidDateUtc: '2026-07-10T00:00:00Z' },
+            { paymentType: 'FINAL_BALANCE', plannedAmount: 0, scheduledDateUtc: null },
+        ]);
+        assert.equal(result.paidDateUtc, '2026-07-10T00:00:00Z');
+        assert.equal(result.actualPaidAmount, 275139.00);
+    });
+
+    test('no ADVANCE payment present -> nulls, no throw', () => {
+        const result = resolveAdvancePaymentDetails([{ paymentType: 'FINAL_BALANCE', plannedAmount: 100 }]);
+        assert.equal(result.paidDateUtc, null);
+        assert.equal(result.actualPaidAmount, null);
     });
 });

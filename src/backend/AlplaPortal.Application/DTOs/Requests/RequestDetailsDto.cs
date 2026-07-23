@@ -197,6 +197,10 @@ public class RequestAttachmentDto
     public string AttachmentTypeCode { get; set; } = string.Empty;
     public DateTime UploadedAtUtc { get; set; }
     public string UploadedByName { get; set; } = string.Empty;
+
+    // ── Void (correction workflows, e.g. Finance cancel-schedule) ──
+    public DateTime? VoidedAtUtc { get; set; }
+    public string? VoidReason { get; set; }
 }
 
 public class RequestStatusHistoryDto

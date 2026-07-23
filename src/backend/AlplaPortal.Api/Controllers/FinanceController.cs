@@ -10,6 +10,7 @@ using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Events;
+using AlplaPortal.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
@@ -106,9 +107,11 @@ public class FinanceController : BaseController
                 ScheduledDateUtc = r.ScheduledDateUtc,
                 RequestedDateUtc = r.RequestedDateUtc,
                 RequestTypeCode = r.RequestType!.Code,
-                Amount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
-                    : r.EstimatedTotalAmount,
+                Amount = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
+                    ? r.ApprovedTotalAmount.Value
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
+                        : r.EstimatedTotalAmount,
                 ActualPaidAmount = r.ActualPaidAmount,
                 ActualPaidAtUtc = r.ActualPaidAtUtc,
                 CurrencyCode = r.SelectedQuotationId.HasValue 
@@ -360,12 +363,14 @@ public class FinanceController : BaseController
             {
                 ScheduledDateUtc = r.ScheduledDateUtc,
                 NeedByDateUtc = r.NeedByDateUtc,
-                CurrencyCode = r.SelectedQuotationId.HasValue 
+                CurrencyCode = r.SelectedQuotationId.HasValue
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
                     : r.Currency != null ? r.Currency.Code : "---",
-                Amount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
-                    : r.EstimatedTotalAmount
+                Amount = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
+                    ? r.ApprovedTotalAmount.Value
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.TotalAmount
+                        : r.EstimatedTotalAmount
             })
             .Where(s => (s.ScheduledDateUtc ?? s.NeedByDateUtc) >= today && (s.ScheduledDateUtc ?? s.NeedByDateUtc) <= maxProjectionDate)
             .ToListAsync();
@@ -572,13 +577,19 @@ public class FinanceController : BaseController
                 orderedQuery = isDescending ? includedQuery.OrderByDescending(r => r.Status!.DisplayOrder) : includedQuery.OrderBy(r => r.Status!.DisplayOrder);
                 break;
             case "amount":
+                // Matches the Amount fallback below exactly, so the sort order never disagrees
+                // with what's displayed.
                 orderedQuery = isDescending
-                    ? includedQuery.OrderByDescending(r => r.SelectedQuotationId.HasValue
-                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
-                        : (decimal?)r.EstimatedTotalAmount)
-                    : includedQuery.OrderBy(r => r.SelectedQuotationId.HasValue
-                        ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
-                        : (decimal?)r.EstimatedTotalAmount);
+                    ? includedQuery.OrderByDescending(r => (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
+                        ? r.ApprovedTotalAmount
+                        : r.SelectedQuotationId.HasValue
+                            ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                            : (decimal?)r.EstimatedTotalAmount)
+                    : includedQuery.OrderBy(r => (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
+                        ? r.ApprovedTotalAmount
+                        : r.SelectedQuotationId.HasValue
+                            ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                            : (decimal?)r.EstimatedTotalAmount);
                 break;
             default:
                 orderedQuery = includedQuery
@@ -647,11 +658,13 @@ public class FinanceController : BaseController
                     : r.Supplier?.Name ?? "---",
                 RequesterName = r.Requester!.FullName ?? "---",
                 PlantName = r.Plant != null ? r.Plant.Name : "---",
-                Amount = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.TotalAmount ?? 0
-                    : r.EstimatedTotalAmount,
-                CurrencyCode = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency 
+                Amount = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
+                    ? r.ApprovedTotalAmount.Value
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.TotalAmount ?? 0
+                        : r.EstimatedTotalAmount,
+                CurrencyCode = r.SelectedQuotationId.HasValue
+                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency
                     : r.Currency != null ? r.Currency.Code : null,
                 NeedByDateUtc = r.NeedByDateUtc,
                 ScheduledDateUtc = r.ScheduledDateUtc,
@@ -684,8 +697,20 @@ public class FinanceController : BaseController
                 {
                     Id = g.Id,
                     RequestId = g.RequestId,
-                    SupplierNameSnapshot = g.SupplierNameSnapshot,
-                    CurrencyCode = g.CurrencyCode,
+                    // Legacy PAYMENT-type auto-created groups can carry a null snapshot (never
+                    // actively synced) even though the parent request always knows its own
+                    // supplier/currency — resolve a safe display value without writing back to
+                    // the DB. See FinanceGroupDisplayResolver.
+                    SupplierNameSnapshot = FinanceGroupDisplayResolver.ResolveSupplierName(
+                        g.SupplierNameSnapshot,
+                        r.SelectedQuotationId.HasValue,
+                        r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
+                        r.Supplier?.Name),
+                    CurrencyCode = FinanceGroupDisplayResolver.ResolveCurrencyCode(
+                        g.CurrencyCode,
+                        r.SelectedQuotationId.HasValue,
+                        r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
+                        r.Currency?.Code),
                     TotalAmount = g.TotalAmount,
                     PaymentConditionCode = g.PaymentConditionCode,
                     AdvancePaymentPercent = g.AdvancePaymentPercent,
@@ -751,7 +776,7 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" };
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -766,7 +791,15 @@ public class FinanceController : BaseController
 
         if (!string.IsNullOrWhiteSpace(actionType))
         {
-            query = query.Where(sh => sh.ActionTaken == actionType);
+            // "Pagos" (PAYMENT_COMPLETED) must also surface advance-payment completions — same
+            // financial category from the user's perspective, just a different group track. Every
+            // other tab keeps its exact single-code match.
+            var actionTypeCodes = actionType == "PAYMENT_COMPLETED"
+                ? new[] { "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED" }
+                : actionType == "PAYMENT_SCHEDULE_CANCELLED"
+                    ? new[] { "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" }
+                    : new[] { actionType };
+            query = query.Where(sh => actionTypeCodes.Contains(sh.ActionTaken));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -781,35 +814,155 @@ public class FinanceController : BaseController
         }
 
         var total = await query.CountAsync();
-        var items = await query
+        var rows = await query
             .OrderByDescending(sh => sh.CreatedAtUtc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(sh => new FinanceHistoryItemDto
-            {
-                Id = sh.Id,
-                RequestId = sh.RequestId,
-                RequestNumber = sh.Request!.RequestNumber ?? "---",
-                RequestTitle = sh.Request.Title ?? "---",
-                Amount = sh.Request.SelectedQuotationId.HasValue 
-                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.TotalAmount 
-                    : sh.Request.EstimatedTotalAmount,
-                CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
-                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
+            .Select(sh => new HistoryProjectionRow(
+                sh.Id,
+                sh.RequestId,
+                sh.Request!.RequestNumber ?? "---",
+                sh.Request.Title ?? "---",
+                sh.Comment,
+                sh.ActionTaken ?? "Unknown",
+                sh.CreatedAtUtc,
+                sh.ActorUser!.FullName ?? "Unknown",
+                sh.NewStatus!.Code,
+                sh.NewStatus.Name,
+                sh.Request.PaymentConditionCode,
+                sh.Request.AdvancePaymentPercent,
+                sh.Request.SelectedQuotationId.HasValue
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency
                     : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
-                ActionTaken = sh.ActionTaken ?? "Unknown",
-                Comment = sh.Comment ?? string.Empty,
-                CreatedAtUtc = sh.CreatedAtUtc,
-                ActorName = sh.ActorUser!.FullName ?? "Unknown",
-                NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
-                NewStatusName = sh.NewStatus.Name ?? string.Empty,
-                PaymentCondition = sh.Request.PaymentConditionCode,
-                AdvancePaymentPercent = sh.Request.AdvancePaymentPercent
-            })
+                sh.Request.ApprovedTotalAmount,
+                sh.Request.SelectedQuotationId.HasValue
+                    ? sh.Request.Quotations.Where(q => q.Id == sh.Request.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                    : null,
+                sh.Request.EstimatedTotalAmount))
             .ToListAsync();
+
+        var attachmentVoidLookup = await BuildScheduleAttachmentVoidLookupAsync(rows);
+        var items = ProjectHistoryItems(rows, attachmentVoidLookup);
 
         return Ok(new PagedResult<FinanceHistoryItemDto> { Items = items, TotalCount = total, Page = page, PageSize = pageSize });
     }
+
+    /// <summary>
+    /// RequestStatusHistory has no RequestAttachment FK, so a DOCUMENTO ADICIONADO event's void
+    /// status can only be found via a best-effort match on the filename embedded in its own Comment
+    /// (see AttachmentsController.Upload's exact "Documento &quot;{FileName}&quot; (...)" shape) —
+    /// scoped to PAYMENT_SCHEDULE-typed attachments only, one small batched query per page/export,
+    /// never a per-row query. Display-only: never used for any eligibility/validation decision.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex UploadedFileNamePattern =
+        new(@"Documento ""(?<fileName>.*?)""", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private async Task<Dictionary<(Guid RequestId, string FileName), (DateTime? VoidedAtUtc, string? VoidReason)>> BuildScheduleAttachmentVoidLookupAsync(
+        List<HistoryProjectionRow> rows)
+    {
+        var candidateRequestIds = rows
+            .Where(r => r.ActionTaken == "DOCUMENTO ADICIONADO" && r.Comment != null && r.Comment.Contains("Cronograma de Pagamento"))
+            .Select(r => r.RequestId)
+            .Distinct()
+            .ToList();
+
+        if (candidateRequestIds.Count == 0)
+        {
+            return new Dictionary<(Guid, string), (DateTime?, string?)>();
+        }
+
+        var scheduleAttachments = await _context.RequestAttachments
+            .Where(a => candidateRequestIds.Contains(a.RequestId) && a.AttachmentTypeCode == AttachmentConstants.Types.PaymentSchedule)
+            .Select(a => new { a.RequestId, a.FileName, a.VoidedAtUtc, a.VoidReason })
+            .ToListAsync();
+
+        var lookup = new Dictionary<(Guid, string), (DateTime?, string?)>();
+        foreach (var a in scheduleAttachments)
+        {
+            // Last-write-wins on a duplicate filename for the same request — display-only best
+            // effort, same tolerance CancelSchedule itself accepts for the ambiguous case.
+            lookup[(a.RequestId, a.FileName)] = (a.VoidedAtUtc, a.VoidReason);
+        }
+        return lookup;
+    }
+
+    /// <summary>
+    /// Raw, EF-translatable projection of a RequestStatusHistory row plus everything
+    /// FinanceHistoryAmountResolver needs to compute its display Amount. Shared by GetHistory and
+    /// ExportHistory so both use the exact same event-aware resolution — see ProjectHistoryItems.
+    /// </summary>
+    private sealed record HistoryProjectionRow(
+        Guid Id,
+        Guid RequestId,
+        string RequestNumber,
+        string RequestTitle,
+        string? Comment,
+        string ActionTaken,
+        DateTime CreatedAtUtc,
+        string ActorName,
+        string? NewStatusCode,
+        string? NewStatusName,
+        string? PaymentCondition,
+        decimal? AdvancePaymentPercent,
+        string? CurrencyCode,
+        decimal? ApprovedTotalAmount,
+        decimal? SelectedQuotationTotalAmount,
+        decimal EstimatedTotalAmount);
+
+    /// <summary>
+    /// Maps raw rows to FinanceHistoryItemDto, resolving each event's Amount via
+    /// FinanceHistoryAmountResolver (regex parsing can't run inside the EF-translated query
+    /// above, hence the two-step projection). The single point where GetHistory and ExportHistory
+    /// share amount-resolution logic — do not reintroduce a second inline copy.
+    /// attachmentVoidLookup is optional: only DOCUMENTO ADICIONADO rows for a PAYMENT_SCHEDULE
+    /// upload are ever looked up, and a missing/empty lookup simply leaves IsVoided false.
+    /// </summary>
+    private static List<FinanceHistoryItemDto> ProjectHistoryItems(
+        List<HistoryProjectionRow> rows,
+        IReadOnlyDictionary<(Guid RequestId, string FileName), (DateTime? VoidedAtUtc, string? VoidReason)>? attachmentVoidLookup = null) =>
+        rows.Select(row =>
+        {
+            var resolution = FinanceHistoryAmountResolver.Resolve(
+                row.Comment,
+                row.ActionTaken,
+                row.ApprovedTotalAmount,
+                row.SelectedQuotationTotalAmount,
+                row.EstimatedTotalAmount);
+
+            bool isVoided = false;
+            string? voidReason = null;
+            if (attachmentVoidLookup != null && row.ActionTaken == "DOCUMENTO ADICIONADO" && row.Comment != null)
+            {
+                var fileNameMatch = UploadedFileNamePattern.Match(row.Comment);
+                if (fileNameMatch.Success
+                    && attachmentVoidLookup.TryGetValue((row.RequestId, fileNameMatch.Groups["fileName"].Value), out var voidInfo)
+                    && voidInfo.VoidedAtUtc.HasValue)
+                {
+                    isVoided = true;
+                    voidReason = voidInfo.VoidReason;
+                }
+            }
+
+            return new FinanceHistoryItemDto
+            {
+                Id = row.Id,
+                RequestId = row.RequestId,
+                RequestNumber = row.RequestNumber,
+                RequestTitle = row.RequestTitle,
+                Amount = resolution.Amount,
+                CurrencyCode = row.CurrencyCode,
+                ActionTaken = row.ActionTaken,
+                Comment = row.Comment ?? string.Empty,
+                CreatedAtUtc = row.CreatedAtUtc,
+                ActorName = row.ActorName,
+                NewStatusCode = row.NewStatusCode ?? string.Empty,
+                NewStatusName = row.NewStatusName ?? string.Empty,
+                PaymentCondition = row.PaymentCondition,
+                AdvancePaymentPercent = row.AdvancePaymentPercent,
+                IsVoided = isVoided,
+                VoidReason = voidReason
+            };
+        }).ToList();
 
     [HttpGet("history/export")]
     public async Task<IActionResult> ExportHistory(
@@ -819,7 +972,7 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" };
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -832,7 +985,15 @@ public class FinanceController : BaseController
             .Where(sh => requestIds.Contains(sh.RequestId) && 
                 (financeStatusCodes.Contains(sh.NewStatus!.Code) || financeActionCodes.Contains(sh.ActionTaken)));
 
-        if (!string.IsNullOrWhiteSpace(actionType)) query = query.Where(sh => sh.ActionTaken == actionType);
+        if (!string.IsNullOrWhiteSpace(actionType))
+        {
+            var actionTypeCodes = actionType == "PAYMENT_COMPLETED"
+                ? new[] { "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED" }
+                : actionType == "PAYMENT_SCHEDULE_CANCELLED"
+                    ? new[] { "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" }
+                    : new[] { actionType };
+            query = query.Where(sh => actionTypeCodes.Contains(sh.ActionTaken));
+        }
         
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -845,31 +1006,34 @@ public class FinanceController : BaseController
             );
         }
 
-        var items = await query
+        var rows = await query
             .OrderByDescending(sh => sh.CreatedAtUtc)
             .Take(5000)
-            .Select(sh => new FinanceHistoryItemDto
-            {
-                Id = sh.Id,
-                RequestId = sh.RequestId,
-                RequestNumber = sh.Request!.RequestNumber ?? "---",
-                RequestTitle = sh.Request.Title ?? "---",
-                Amount = sh.Request.SelectedQuotationId.HasValue 
-                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.TotalAmount 
-                    : sh.Request.EstimatedTotalAmount,
-                CurrencyCode = sh.Request.SelectedQuotationId.HasValue 
-                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency 
+            .Select(sh => new HistoryProjectionRow(
+                sh.Id,
+                sh.RequestId,
+                sh.Request!.RequestNumber ?? "---",
+                sh.Request.Title ?? "---",
+                sh.Comment,
+                sh.ActionTaken ?? "Unknown",
+                sh.CreatedAtUtc,
+                sh.ActorUser!.FullName ?? "Unknown",
+                sh.NewStatus!.Code,
+                sh.NewStatus.Name,
+                sh.Request.PaymentConditionCode,
+                sh.Request.AdvancePaymentPercent,
+                sh.Request.SelectedQuotationId.HasValue
+                    ? sh.Request.Quotations.FirstOrDefault(q => q.Id == sh.Request.SelectedQuotationId.Value)!.Currency
                     : (sh.Request.Currency != null ? sh.Request.Currency.Code : "---"),
-                ActionTaken = sh.ActionTaken ?? "Unknown",
-                Comment = sh.Comment ?? string.Empty,
-                CreatedAtUtc = sh.CreatedAtUtc,
-                ActorName = sh.ActorUser!.FullName ?? "Unknown",
-                NewStatusCode = sh.NewStatus!.Code ?? string.Empty,
-                NewStatusName = sh.NewStatus.Name ?? string.Empty,
-                PaymentCondition = sh.Request.PaymentConditionCode,
-                AdvancePaymentPercent = sh.Request.AdvancePaymentPercent
-            })
+                sh.Request.ApprovedTotalAmount,
+                sh.Request.SelectedQuotationId.HasValue
+                    ? sh.Request.Quotations.Where(q => q.Id == sh.Request.SelectedQuotationId.Value).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
+                    : null,
+                sh.Request.EstimatedTotalAmount))
             .ToListAsync();
+
+        var attachmentVoidLookup = await BuildScheduleAttachmentVoidLookupAsync(rows);
+        var items = ProjectHistoryItems(rows, attachmentVoidLookup);
 
         var csv = new System.Text.StringBuilder();
         csv.AppendLine("Data/Hora;Acao;Responsavel;Ref. Pedido;Titulo;Moeda;Montante;Cond. Pagamento;% Adiant.;Detalhes");
@@ -880,10 +1044,13 @@ public class FinanceController : BaseController
             var actionStr = item.ActionTaken switch {
                 "PAYMENT_SCHEDULED" => "Agendado",
                 "PAYMENT_COMPLETED" => "Pago",
+                "ADVANCE_PAYMENT_COMPLETED" => "Adiantamento Realizado",
                 "DOCUMENTO ADICIONADO" => "Comprovativo",
                 "NOTA_FINANCEIRA" => "Observação",
                 "FINANCE_RETURN_ADJUSTMENT" => "Ajuste",
                 "PAYMENT_DIVERGENCE_DETECTED" => "Divergência",
+                "PAYMENT_SCHEDULE_CANCELLED" => "Agendamento Cancelado",
+                "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" => "Adiantamento Cancelado",
                 _ => item.ActionTaken
             };
             csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{item.PaymentCondition};{item.AdvancePaymentPercent};{comment}");
@@ -898,7 +1065,14 @@ public class FinanceController : BaseController
     {
         var r = await _context.Requests
             .Include(req => req.PoGroups)
+                .ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.PoGroups)
+                .ThenInclude(g => g.Payments)
             .Include(req => req.Status)
+            .Include(req => req.RequestType)
+            .Include(req => req.Supplier)
+            .Include(req => req.Currency)
+            .Include(req => req.Quotations)
             .FirstOrDefaultAsync(req => req.Id == id);
         if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
@@ -911,7 +1085,7 @@ public class FinanceController : BaseController
             RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.AdvancePaymentRequired
         };
-        if (!_eligibility.CanSchedule(group.Status))
+        if (!_eligibility.CanSchedule(r.RequestType!.Code, r.Status!.Code, group.Status))
         {
             return BadRequest(new ProblemDetails
             {
@@ -921,17 +1095,25 @@ public class FinanceController : BaseController
             });
         }
 
-        var newStatus = group.Status == RequestConstants.Statuses.AdvancePaymentRequired 
-            ? RequestConstants.Statuses.AdvancePaymentScheduled 
+        var newStatus = group.Status == RequestConstants.Statuses.AdvancePaymentRequired
+            ? RequestConstants.Statuses.AdvancePaymentScheduled
             : RequestConstants.Statuses.PaymentScheduled;
+
+        var paymentType = group.Status == RequestConstants.Statuses.AdvancePaymentRequired ? RequestPayment.PaymentTypes.Advance : RequestPayment.PaymentTypes.FinalBalance;
+        // Computed rather than hardcoded to 1: a prior CancelSchedule for this group/type leaves its
+        // RequestPayment row at PaymentSequence=1 with PaymentStatus=CANCELLED (preserved for audit,
+        // never reused) — a subsequent schedule must land on the next sequence to avoid colliding
+        // with the unique index on (RequestId, PaymentType, PaymentSequence). No-op for the ordinary
+        // first-time case (Max of an empty set is 0, so this still yields 1).
+        var nextSequence = group.Payments.Where(p => p.PaymentType == paymentType).Select(p => p.PaymentSequence).DefaultIfEmpty(0).Max() + 1;
 
         var payment = new RequestPayment
         {
             RequestId = r.Id,
             RequestPoGroupId = group.Id,
             PlannedAmount = group.TotalAmount,
-            PaymentType = group.Status == RequestConstants.Statuses.AdvancePaymentRequired ? RequestPayment.PaymentTypes.Advance : RequestPayment.PaymentTypes.FinalBalance,
-            PaymentSequence = 1,
+            PaymentType = paymentType,
+            PaymentSequence = nextSequence,
             ScheduledDateUtc = requestDto.ScheduledDate,
             ScheduledByUserId = CurrentUserId,
             PaymentStatus = RequestPayment.PaymentStatuses.Scheduled,
@@ -942,6 +1124,21 @@ public class FinanceController : BaseController
         };
         _context.RequestPayments.Add(payment);
 
+        // Legacy PAYMENT-type auto-created groups can carry a null SupplierNameSnapshot/CurrencyCode
+        // (never actively synced) even though the parent request always knows its own supplier/
+        // currency — resolve a safe display value for the audit comment only; never written back
+        // to the group/payment record. See FinanceGroupDisplayResolver.
+        var displaySupplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
+            group.SupplierNameSnapshot,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
+            r.Supplier?.Name);
+        var displayCurrencyCode = FinanceGroupDisplayResolver.ResolveCurrencyCode(
+            group.CurrencyCode,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
+            r.Currency?.Code);
+
         var history = new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
@@ -950,7 +1147,8 @@ public class FinanceController : BaseController
             ActionTaken = newStatus,
             PreviousStatusId = r.StatusId,
             NewStatusId = r.StatusId,
-            Comment = $"[Grupo P.O.: {group.SupplierNameSnapshot} | Moeda: {group.CurrencyCode} | Total: {group.TotalAmount:N2} | GroupId: {group.Id}] Pagamento agendado. " + (requestDto.Comment ?? ""),
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
+                + " Pagamento agendado. " + (requestDto.Comment ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         };
 
@@ -1001,6 +1199,7 @@ public class FinanceController : BaseController
     {
         var r = await _context.Requests
             .Include(req => req.PoGroups)
+                .ThenInclude(g => g.ApprovalBatch)
             .Include(req => req.Status)
             .Include(req => req.RequestType)
             .FirstOrDefaultAsync(req => req.Id == id);
@@ -1083,6 +1282,23 @@ public class FinanceController : BaseController
             });
         }
 
+        // ── Minimum-Amount Guard: partial payments are not supported by this action — a group
+        // must never be silently closed as fully paid for less than the required amount. This
+        // check runs before any mutation. Overpayment remains allowed (existing divergence
+        // detection further below still applies to it). ──
+        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+        {
+            var requiredAmount = group.TotalAmount;
+            if (requestDto.ActualPaidAmount < requiredAmount)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Montante Insuficiente",
+                    Detail = $"O montante pago ({requestDto.ActualPaidAmount:N2}) é inferior ao valor total do grupo P.O. ({requiredAmount:N2}). Pagamentos parciais não são suportados por esta ação.",
+                    Status = 400
+                });
+            }
+        }
 
         var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted || s.Code == RequestConstants.Statuses.Paid);
         if (paidStatus == null) return BadRequest("Status PAID não configurado.");
@@ -1095,11 +1311,20 @@ public class FinanceController : BaseController
             ActionTaken = "PAYMENT_COMPLETED",
             PreviousStatusId = r.StatusId,
             NewStatusId = paidStatus.Id,
-            Comment = $"Pagamento realizado. Montante: {requestDto.ActualPaidAmount:N2}. " + (requestDto.Comment ?? ""),
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Montante", requestDto.ActualPaidAmount)
+                + $" Pagamento realizado. Pago em {requestDto.PaidDate:dd/MM/yyyy}. " + (requestDto.Comment ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         };
 
-        r.StatusId = paidStatus.Id;
+        // QUOTATION: the parent status is decided below by the shared StatusAggregationService,
+        // which reflects the furthest-behind sibling group — never unconditionally set here, or a
+        // sibling still at PO_ISSUED/ADVANCE_PAYMENT_REQUIRED would be masked by this one group's
+        // completion. PAYMENT requests are single-group by design, so the direct assignment (matching
+        // every other PAYMENT-type transition in this method) remains correct and unchanged.
+        if (r.RequestType?.Code != RequestConstants.Types.Quotation)
+        {
+            r.StatusId = paidStatus.Id;
+        }
         group.Status = paidStatus.Code;
         group.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -1122,6 +1347,15 @@ public class FinanceController : BaseController
 
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
+
+        // QUOTATION: now that this group's paid status is persisted, let the shared aggregator
+        // (same one SchedulePayment/RegisterPo/ConfirmAdvancePayment already use) decide the
+        // parent's status from every group's current state — a sibling still pending must keep
+        // the parent from reading as globally PAYMENT_COMPLETED.
+        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+        {
+            await _statusAggregationService.AggregateRequestStatusAsync(id);
+        }
 
         // ── Divergence Detection: group-first for QUOTATION, request-level for PAYMENT ──
         decimal? comparisonAmount;
@@ -1298,6 +1532,195 @@ public class FinanceController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Non-critical: notification dispatch failed for ReturnForAdjustment on Request {RequestId}", id);
+        }
+
+        return Ok();
+    }
+
+    [HttpPost("{id:guid}/cancel-schedule")]
+    public async Task<IActionResult> CancelSchedule(Guid id, [FromBody] CancelSchedulePaymentDto requestDto)
+    {
+        var r = await _context.Requests
+            .Include(req => req.Status)
+            .Include(req => req.RequestType)
+            .Include(req => req.PoGroups)
+                .ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.PoGroups)
+                .ThenInclude(g => g.Payments)
+            .Include(req => req.Attachments)
+            .Include(req => req.Supplier)
+            .Include(req => req.Currency)
+            .Include(req => req.Quotations)
+            .FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
+
+        var group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId);
+        if (group == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Grupo P.O Não Encontrado",
+                Detail = "Grupo da P.O não encontrado para este pedido.",
+                Status = 400
+            });
+        }
+
+        // ── Status Guard: eligible only for a group whose OWN status is currently scheduled ──
+        if (!_eligibility.CanCancelSchedule(group.Status))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"O cancelamento de agendamento só é permitido para grupos nos status: " +
+                         $"{RequestConstants.Statuses.PaymentScheduled}, {RequestConstants.Statuses.AdvancePaymentScheduled}. " +
+                         $"Status atual do grupo: {group.Status}.",
+                Status = 400
+            });
+        }
+
+        // ── Reason: required, validated after Trim() ──
+        var trimmedReason = requestDto.Reason?.Trim() ?? string.Empty;
+        if (trimmedReason.Length < 20)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Motivo Obrigatório",
+                Detail = "O motivo do cancelamento é obrigatório e deve ter no mínimo 20 caracteres.",
+                Status = 400
+            });
+        }
+
+        var isAdvance = group.Status == RequestConstants.Statuses.AdvancePaymentScheduled;
+        var targetStatus = isAdvance ? RequestConstants.Statuses.AdvancePaymentRequired : RequestConstants.Statuses.PoIssued;
+        var expectedPaymentType = isAdvance ? RequestPayment.PaymentTypes.Advance : RequestPayment.PaymentTypes.FinalBalance;
+
+        // ── Locate the live Scheduled RequestPayment row for this group/type ──
+        var payment = group.Payments
+            .Where(p => p.PaymentType == expectedPaymentType && p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled)
+            .OrderByDescending(p => p.PaymentSequence)
+            .FirstOrDefault();
+        if (payment == null)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Inconsistência de Dados",
+                Detail = "O grupo está marcado como agendado, mas nenhum registo de pagamento agendado foi encontrado para este grupo. Contacte o suporte técnico.",
+                Status = 409
+            });
+        }
+
+        var previousScheduledDateUtc = payment.ScheduledDateUtc;
+
+        // ── Mutate the RequestPayment: normal vs. advance diverge here — never identical ──
+        if (isAdvance)
+        {
+            // This row originated as the pre-existing PLANNED advance record created at PO
+            // registration (RegisterPo). Returning it to PLANNED (not CANCELLED) — rather than
+            // creating a replacement row — lets ScheduleAdvancePayment's own lookup
+            // (PaymentType == Advance && PaymentStatus == Planned) find and reschedule the SAME
+            // row again, exactly as it would for a group that was never scheduled in the first place.
+            payment.PaymentStatus = RequestPayment.PaymentStatuses.Planned;
+            payment.ScheduledDateUtc = null;
+            payment.ScheduledByUserId = null;
+        }
+        else
+        {
+            payment.PaymentStatus = RequestPayment.PaymentStatuses.Cancelled;
+        }
+        payment.UpdatedByUserId = CurrentUserId;
+        payment.UpdatedAtUtc = DateTime.UtcNow;
+
+        // ── Update only the selected RequestPoGroup — siblings are never touched ──
+        group.Status = targetStatus;
+        group.UpdatedAtUtc = DateTime.UtcNow;
+
+        // ── Void only the single most recent eligible schedule attachment for THIS group ──
+        var candidates = r.Attachments
+            .Where(a => a.RequestPoGroupId == group.Id
+                && a.AttachmentTypeCode == RequestAttachment.TYPE_PAYMENT_SCHEDULE
+                && !a.IsDeleted
+                && a.VoidedAtUtc == null)
+            .OrderByDescending(a => a.UploadedAtUtc)
+            .ToList();
+        if (candidates.Count > 1)
+        {
+            _logger.LogWarning(
+                "CancelSchedule found {Count} non-voided PAYMENT_SCHEDULE attachments for Request {RequestId} Group {GroupId} — voiding only the most recent, older ones left untouched.",
+                candidates.Count, id, group.Id);
+        }
+        var attachmentToVoid = candidates.FirstOrDefault();
+        if (attachmentToVoid != null)
+        {
+            attachmentToVoid.VoidedAtUtc = DateTime.UtcNow;
+            attachmentToVoid.VoidedByUserId = CurrentUserId;
+            attachmentToVoid.VoidReason = trimmedReason;
+        }
+
+        // ── One RequestStatusHistory event — the original scheduling event is never touched ──
+        var actionTaken = isAdvance ? "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" : "PAYMENT_SCHEDULE_CANCELLED";
+        var cancelledLabel = isAdvance ? "Agendamento de adiantamento cancelado." : "Agendamento de pagamento cancelado.";
+        var scheduledDateLabel = previousScheduledDateUtc.HasValue ? previousScheduledDateUtc.Value.ToString("dd/MM/yyyy") : "desconhecida";
+        // Same legacy-snapshot fallback as SchedulePayment — resolve a safe display value for the
+        // audit comment only; never written back to the group record. See FinanceGroupDisplayResolver.
+        var displaySupplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
+            group.SupplierNameSnapshot,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
+            r.Supplier?.Name);
+        var displayCurrencyCode = FinanceGroupDisplayResolver.ResolveCurrencyCode(
+            group.CurrencyCode,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
+            r.Currency?.Code);
+        var history = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = id,
+            ActorUserId = CurrentUserId,
+            ActionTaken = actionTaken,
+            PreviousStatusId = r.StatusId,
+            NewStatusId = r.StatusId,
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
+                + $"\n{cancelledLabel}\nData anteriormente agendada: {scheduledDateLabel}.\nMotivo: {trimmedReason}.",
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        _context.RequestStatusHistories.Add(history);
+
+        r.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        // Same pattern as SchedulePayment/MarkAsPaid: aggregation is a separate round-trip after
+        // the group mutation is persisted, never assigned inline here.
+        await _statusAggregationService.AggregateRequestStatusAsync(id);
+
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.PaymentScheduleCancelled,
+                RequestId = id,
+                RequestNumber = r.RequestNumber ?? "S/N",
+                RequestTitle = r.Title ?? "",
+                TargetStatusCode = targetStatus,
+                ActionTaken = actionTaken,
+                ActorUserId = CurrentUserId,
+                ActorName = actor?.FullName ?? "Sistema",
+                Comment = trimmedReason,
+                CorrelationId = history.Id,
+                RequesterId = r.RequesterId,
+                BuyerId = r.BuyerId,
+                AreaApproverId = r.AreaApproverId,
+                FinalApproverId = r.FinalApproverId,
+                DepartmentId = r.DepartmentId,
+                PlantId = r.PlantId,
+                CompanyId = r.CompanyId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for CancelSchedule on Request {RequestId}", id);
         }
 
         return Ok();
