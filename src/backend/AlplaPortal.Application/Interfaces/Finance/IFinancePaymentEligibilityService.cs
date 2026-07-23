@@ -16,14 +16,30 @@ public interface IFinancePaymentEligibilityService
     /// <summary>Computes the full action list (and, for actions absent from it, an internal-only unavailability reason) for one request row.</summary>
     FinanceActionEligibilityResult Evaluate(FinanceEligibilityInput input);
 
-    /// <summary>Mirrors FinanceController.SchedulePayment's group-status guard exactly.</summary>
-    bool CanSchedule(string? groupStatus);
+    /// <summary>
+    /// Mirrors FinanceController.SchedulePayment's guard exactly. For QUOTATION, the group status
+    /// remains the sole authority (unchanged). For PAYMENT, the group status is authoritative once
+    /// it holds a genuine, non-legacy value; only when the group is null/empty/PENDING (never
+    /// actively synced for older PAYMENT-type auto-created groups) does it fall back to
+    /// requestStatusCode — and even then, only a small canonical parent-status set enables
+    /// scheduling, never the same broad set MarkAsPaid trusts for CanPay.
+    /// </summary>
+    bool CanSchedule(string requestTypeCode, string requestStatusCode, string? groupStatus);
 
     /// <summary>Mirrors FinanceController.MarkAsPaid's guard exactly (branches on request type, same as the endpoint).</summary>
     bool CanPay(string requestTypeCode, string requestStatusCode, string? groupStatus);
 
     /// <summary>Mirrors FinanceController.ReturnForAdjustment's parent-status guard exactly.</summary>
     bool CanReturn(string? requestStatusCode);
+
+    /// <summary>
+    /// Mirrors FinanceController.CancelSchedule's guard exactly. Eligible only for a group whose
+    /// OWN status is currently PAYMENT_SCHEDULED or ADVANCE_PAYMENT_SCHEDULED — never derived from
+    /// the parent request status. No type-branching is needed: unlike CanSchedule's legacy-PENDING
+    /// fallback, these two statuses are always genuinely written values (never a legacy default),
+    /// so the group's own status is always authoritative here.
+    /// </summary>
+    bool CanCancelSchedule(string? groupStatus);
 }
 
 /// <summary>One RequestPoGroup's identity/status, as seen by the eligibility calculation.</summary>
@@ -66,6 +82,7 @@ public static class FinancePaymentActionCodes
     public const string Return = "RETURN";
     public const string AddNote = "ADD_NOTE";
     public const string AddProof = "ADD_PROOF";
+    public const string CancelSchedule = "CANCEL_SCHEDULE";
 }
 
 /// <summary>Internal-only reason codes explaining why an action was omitted from AvailableFinanceActions.</summary>
@@ -76,4 +93,5 @@ public static class FinancePaymentUnavailableReasons
     public const string ParentOrGroupStatusNotEligibleForPay = "PARENT_OR_GROUP_STATUS_NOT_ELIGIBLE_FOR_PAY";
     public const string ParentStatusNotEligibleForReturn = "PARENT_STATUS_NOT_ELIGIBLE_FOR_RETURN";
     public const string AlreadyPaid = "ALREADY_PAID";
+    public const string NoGroupCurrentlyScheduled = "NO_GROUP_CURRENTLY_SCHEDULED";
 }

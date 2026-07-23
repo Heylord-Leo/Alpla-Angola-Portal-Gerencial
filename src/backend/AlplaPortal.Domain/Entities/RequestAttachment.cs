@@ -36,4 +36,12 @@ public class RequestAttachment
 
     public DateTime UploadedAtUtc { get; set; }
     public bool IsDeleted { get; set; }
+
+    // ── Void (correction workflows, e.g. Finance cancel-schedule) ──
+    // Distinct from IsDeleted: a voided attachment stays returned by every normal query and
+    // visible in the UI ("Sem efeito"/"Cancelado" badge) — it is not hidden like a deletion.
+    // IsVoided is intentionally not a stored column; derive it from VoidedAtUtc != null.
+    public DateTime? VoidedAtUtc { get; set; }
+    public Guid? VoidedByUserId { get; set; }
+    public string? VoidReason { get; set; }
 }

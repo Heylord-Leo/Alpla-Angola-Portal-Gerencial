@@ -90,6 +90,8 @@ export default function FinanceHistory() {
             'Devolvido por Finanças para ajuste: ',
             'Pagamento agendado. ',
             'Pagamento realizado na totalidade. ',
+            'Agendamento de pagamento cancelado.',
+            'Agendamento de adiantamento cancelado.',
         ];
         let cleaned = comment;
         for (const prefix of prefixes) {
@@ -105,10 +107,13 @@ export default function FinanceHistory() {
         switch (action) {
             case 'PAYMENT_SCHEDULED': return { label: 'Agendado', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
             case 'PAYMENT_COMPLETED': return { label: 'Pago', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
+            case 'ADVANCE_PAYMENT_COMPLETED': return { label: 'Adiantamento Realizado', bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' };
             case 'DOCUMENTO ADICIONADO': return { label: 'Comprovativo', bg: '#fdf4ff', color: '#c026d3', border: '#f5d0fe' };
             case 'NOTA_FINANCEIRA': return { label: 'Observação', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
             case 'FINANCE_RETURN_ADJUSTMENT': return { label: 'Devolvido', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };
             case 'PAYMENT_DIVERGENCE_DETECTED': return { label: 'Divergência', bg: '#fefce8', color: '#ca8a04', border: '#fde047' };
+            case 'PAYMENT_SCHEDULE_CANCELLED': return { label: 'Agendamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
+            case 'ADVANCE_PAYMENT_SCHEDULE_CANCELLED': return { label: 'Adiantamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
             default: return { label: action, bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
         }
     };
@@ -153,7 +158,8 @@ export default function FinanceHistory() {
                     { id: 'DOCUMENTO ADICIONADO', label: 'Comprovativos' },
                     { id: 'NOTA_FINANCEIRA', label: 'Observações' },
                     { id: 'FINANCE_RETURN_ADJUSTMENT', label: 'Devoluções' },
-                    { id: 'PAYMENT_DIVERGENCE_DETECTED', label: 'Divergências' }
+                    { id: 'PAYMENT_DIVERGENCE_DETECTED', label: 'Divergências' },
+                    { id: 'PAYMENT_SCHEDULE_CANCELLED', label: 'Cancelamentos' }
                 ]}
                 activeTabId={actionFilter}
                 onTabChange={(id) => setActionFilter(id)}
@@ -241,11 +247,24 @@ export default function FinanceHistory() {
                                                         }}>
                                                             {action.label}
                                                         </span>
+                                                        {item.isVoided && (
+                                                            <span style={{
+                                                                padding: '4px 8px',
+                                                                backgroundColor: '#fef2f2',
+                                                                color: '#dc2626',
+                                                                border: '1px solid #fecaca',
+                                                                fontWeight: 800,
+                                                                fontSize: '11px',
+                                                                textTransform: 'uppercase'
+                                                            }}>
+                                                                Sem efeito
+                                                            </span>
+                                                        )}
                                                         <span style={{ fontWeight: 700, color: '#64748b', fontSize: '13px' }}>
                                                             {new Date(item.createdAtUtc).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}
                                                         </span>
                                                     </div>
-                                                    
+
                                                     <div style={{ fontWeight: 600, color: '#334155', fontSize: '15px' }}>
                                                         <span style={{ color: 'var(--color-primary)', fontWeight: 800, marginRight: '6px' }}>{item.actorName}</span>
                                                         {item.comment ? (
@@ -254,6 +273,11 @@ export default function FinanceHistory() {
                                                             <span style={{ color: '#94a3b8', fontStyle: 'italic', fontWeight: 400 }}> Executou a ação.</span>
                                                         )}
                                                     </div>
+                                                    {item.isVoided && item.voidReason && (
+                                                        <div style={{ fontSize: '13px', color: '#dc2626', fontStyle: 'italic' }}>
+                                                            Cancelado: {item.voidReason}
+                                                        </div>
+                                                    )}
 
                                                     <a href={`/requests/${item.requestId}`} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none', color: '#0f172a', fontWeight: 800, fontSize: '14px', marginTop: '8px' }}>
                                                         <span style={{ backgroundColor: '#e2e8f0', padding: '2px 6px', fontSize: '12px' }}>#{item.requestNumber}</span> 

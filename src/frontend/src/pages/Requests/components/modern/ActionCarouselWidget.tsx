@@ -6,6 +6,7 @@ import { DashboardSummaryDto, RequestListItemDto } from '../../../../types';
 import { api } from '../../../../lib/api';
 import { StatusBadge } from './RequestsTableWidget';
 import { KebabMenu } from '../../../../components/ui/KebabMenu';
+import { resolveSafeStatusLabel } from '../../../../lib/requestGroupDisplayState';
 
 export interface ActionCarouselWidgetProps {
     summary: DashboardSummaryDto;
@@ -375,7 +376,10 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                             onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
                             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
                         >
-                            <StatusBadge status={order.statusCode} />
+                            <StatusBadge
+                                statusCode={order.statusCode}
+                                label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
+                            />
                         </div>
                     ) : (order.statusCode === 'WAITING_RECEIPT' || order.statusCode === 'PAYMENT_COMPLETED' || order.statusCode === 'WAITING_SUPPLIER_DELIVERY') && onReceivingClick ? (
                         <div 
@@ -392,7 +396,10 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                             onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
                             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
                         >
-                            <StatusBadge status={order.statusCode} />
+                            <StatusBadge
+                                statusCode={order.statusCode}
+                                label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
+                            />
                         </div>
                     ) : (order.statusCode === 'PO_ISSUED' || order.statusCode === 'PAYMENT_SCHEDULED' || order.statusCode === 'PAYMENT_REQUEST_SENT' || order.statusCode === 'ADVANCE_PAYMENT_REQUIRED' || order.statusCode === 'WAITING_RECONCILIATION') && onPaymentClick ? (
                         <div 
@@ -409,7 +416,10 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                             onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
                             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
                         >
-                            <StatusBadge status={order.statusCode} />
+                            <StatusBadge
+                                statusCode={order.statusCode}
+                                label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
+                            />
                         </div>
                     ) : order.statusCode === 'WAITING_PO_CORRECTION' && onCorrectPoClick ? (
                         <div 
@@ -426,10 +436,16 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                             onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
                             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
                         >
-                            <StatusBadge status={order.statusCode} />
+                            <StatusBadge
+                                statusCode={order.statusCode}
+                                label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
+                            />
                         </div>
                     ) : (
-                        <StatusBadge status={order.statusCode || 'DRAFT'} />
+                        <StatusBadge
+                            statusCode={order.statusCode || 'DRAFT'}
+                            label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
+                        />
                     )}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>

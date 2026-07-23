@@ -1870,6 +1870,14 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
         },
+        cancelSchedule: async (id: string, requestPoGroupId: string, reason: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/cancel-schedule`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestPoGroupId, reason })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao cancelar agendamento.');
+        },
         getContractProjectionSummary: async (companyId?: number, plantId?: number, departmentId?: number): Promise<any> => {
             const params = new URLSearchParams();
             if (companyId) params.append('companyId', companyId.toString());

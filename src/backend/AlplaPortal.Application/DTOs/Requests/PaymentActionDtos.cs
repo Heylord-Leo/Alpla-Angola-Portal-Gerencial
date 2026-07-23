@@ -58,4 +58,13 @@ namespace AlplaPortal.Application.DTOs.Requests
 
         public string? Comment { get; set; }
     }
+
+    public class CancelSchedulePaymentDto
+    {
+        [Required]
+        public Guid RequestPoGroupId { get; set; }
+
+        [Required]
+        public string Reason { get; set; } = string.Empty;
+    }
 }

@@ -12,6 +12,8 @@ interface Attachment {
     attachmentTypeCode: string;
     uploadedAtUtc: string;
     uploadedByName: string;
+    voidedAtUtc?: string | null;
+    voidReason?: string | null;
 }
 
 interface RequestAttachmentsProps {
@@ -243,12 +245,23 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                                                     <FileText size={16} style={{ color: 'var(--color-text-muted)' }} />
                                                     <span style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }} title={a.fileName}>
                                                         {a.fileName}
-                                                        <CheckCircle size={14} style={{ color: '#10B981' }} />
+                                                        {a.voidedAtUtc ? (
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: '#dc2626', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                                                Sem efeito
+                                                            </span>
+                                                        ) : (
+                                                            <CheckCircle size={14} style={{ color: '#10B981' }} />
+                                                        )}
                                                     </span>
                                                 </div>
                                                 <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginLeft: '24px', marginTop: '2px' }}>
                                                     Enviado por {a.uploadedByName} em {formatDateTime(a.uploadedAtUtc)}
                                                 </div>
+                                                {a.voidedAtUtc && a.voidReason && (
+                                                    <div style={{ fontSize: '0.7rem', color: '#dc2626', marginLeft: '24px', marginTop: '2px', fontStyle: 'italic' }}>
+                                                        Cancelado: {a.voidReason}
+                                                    </div>
+                                                )}
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
                                                 <button

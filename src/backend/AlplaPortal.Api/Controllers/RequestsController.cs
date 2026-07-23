@@ -1062,6 +1062,15 @@ public class RequestsController : BaseController
                         data.LineItems,
                         data.Batches,
                         data.PoGroups);
+
+                    // Display-only, group-aware label override (never persisted, never used for
+                    // permissions) — reuses this same already-page-scoped PoGroups fetch rather than
+                    // adding a third query. CANCELLED groups are excluded inside the calculator
+                    // itself. Null fields mean "no override"; RequestsTableWidget falls back to
+                    // StatusName in that case.
+                    var groupDisplay = RequestGroupDisplayStateCalculator.Resolve(data.PoGroups.Select(g => g.Status));
+                    item.DisplayStatusCode = groupDisplay.DisplayStatusCode;
+                    item.DisplayStatusName = groupDisplay.DisplayStatusName;
                 }
             }
         }
@@ -1236,7 +1245,9 @@ public class RequestsController : BaseController
                     FileSizeMBytes = a.FileSizeMBytes,
                     AttachmentTypeCode = a.AttachmentTypeCode,
                     UploadedAtUtc = a.UploadedAtUtc,
-                    UploadedByName = a.UploadedByUser!.FullName
+                    UploadedByName = a.UploadedByUser!.FullName,
+                    VoidedAtUtc = a.VoidedAtUtc,
+                    VoidReason = a.VoidReason
                 }).ToList(),
 
                 StatusHistory = r.StatusHistories.Select(sh => new RequestStatusHistoryDto
@@ -6263,6 +6274,7 @@ public class RequestsController : BaseController
 
         var request = await _context.Requests
             .Include(r => r.PoGroups)
+                .ThenInclude(g => g.ApprovalBatch)
             .Include(r => r.Status)
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.Id == id);
@@ -6288,6 +6300,21 @@ public class RequestsController : BaseController
         // Validate actual paid amount
         if (dto.ActualPaidAmount <= 0)
             return BadRequest(new ProblemDetails { Title = "Valor Inválido", Detail = "O valor pago deve ser maior que zero.", Status = 400 });
+
+        // ── Minimum-Amount Guard: reject amounts below the required advance amount already
+        // calculated by the domain (PlannedAmount) — partial advance payments are not supported
+        // by this action. Compared against the advance's own PlannedAmount, never the full PO
+        // group TotalAmount. Overpayment remains allowed (existing divergence detection below
+        // still applies to it). Runs before any mutation. ──
+        if (dto.ActualPaidAmount < advancePayment.PlannedAmount)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Montante Insuficiente",
+                Detail = $"O montante pago ({dto.ActualPaidAmount:N2}) é inferior ao valor de adiantamento previsto ({advancePayment.PlannedAmount:N2}). Pagamentos parciais não são suportados por esta ação.",
+                Status = 400
+            });
+        }
 
         // Validate and link payment proof attachment if provided
         var attachment = await _context.RequestAttachments
@@ -6329,10 +6356,11 @@ public class RequestsController : BaseController
             Id = Guid.NewGuid(),
             RequestId = request.Id,
             ActorUserId = actorId,
-            ActionTaken = "CONFIRM_ADVANCE",
+            ActionTaken = "ADVANCE_PAYMENT_COMPLETED",
             PreviousStatusId = prevStatusId,
-            NewStatusId = prevStatusId, // Keep parent request status id context
-            Comment = $"[Grupo P.O.: {group.SupplierNameSnapshot}] Adiantamento de {advancePayment.ActualPaidAmount} confirmado. {dto.Comment ?? ""}",
+            NewStatusId = prevStatusId, // Keep parent request status id context — same convention as SchedulePayment/MarkAsPaid
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Montante", advancePayment.ActualPaidAmount!.Value)
+                + $" Adiantamento de {group.AdvancePaymentPercent:0.##}% realizado. Pago em {dto.PaidDate:dd/MM/yyyy}. " + (dto.Comment ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         });
         
@@ -7564,12 +7592,15 @@ public class RequestsController : BaseController
 
     private async Task<bool> HasAttachmentAsync(Guid requestId, string typeCode)
     {
-        return await _context.RequestAttachments.AnyAsync(a => a.RequestId == requestId && a.AttachmentTypeCode == typeCode && !a.IsDeleted);
+        // VoidedAtUtc is only ever set for a since-cancelled PAYMENT_SCHEDULE attachment (Finance
+        // CancelSchedule) — a no-op filter for every other attachment type, and here it prevents a
+        // voided schedule document from satisfying an "attachment present" validation gate.
+        return await _context.RequestAttachments.AnyAsync(a => a.RequestId == requestId && a.AttachmentTypeCode == typeCode && !a.IsDeleted && a.VoidedAtUtc == null);
     }
 
     private async Task<bool> HasGroupAttachmentAsync(Guid poGroupId, string typeCode)
     {
-        return await _context.RequestAttachments.AnyAsync(a => a.RequestPoGroupId == poGroupId && a.AttachmentTypeCode == typeCode && !a.IsDeleted);
+        return await _context.RequestAttachments.AnyAsync(a => a.RequestPoGroupId == poGroupId && a.AttachmentTypeCode == typeCode && !a.IsDeleted && a.VoidedAtUtc == null);
     }
 
     private class StageDef
@@ -7585,7 +7616,7 @@ public class RequestsController : BaseController
         new StageDef { Label = "Aprovações", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
         new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED" } },
         new StageDef { Label = "Agendamento", StatusCodes = new[] { "PO_ISSUED" } },
-        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED" } },
+        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED" } },
         new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };

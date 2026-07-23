@@ -2,6 +2,94 @@
 
 Purpose: record important technical and process decisions so future work preserves context.
 
+## DEC-150 — Finance Schedule Cancellation: Divergent Payment Mutation, Attachment Voiding, and Conservative Fallback
+
+- **Date:** 2026-07-23
+- **Status:** Accepted
+- **Context:** Finance had no way to correct a payment scheduled against the wrong request/`RequestPoGroup`
+  before it was paid — confirmed live on `REQ-13/07/2026-054`, where a schedule intended for a
+  different request landed on this one. `CanSchedule`'s existing legacy-`PENDING`-group fallback
+  (DEC-149) also needed a companion "undo" path so the same conservative reasoning would apply in
+  reverse. Browser verification of the first cancellation pass additionally surfaced three
+  presentation defects, addressed in the same delivery: a null-legacy-snapshot supplier/currency
+  ("---") on the cancel modal and structured comments, a modal-vs-history scheduled-date mismatch
+  (23/07 vs 24/07), and a stale "Comprovativo" audit card with no void indication.
+- **Decision:**
+    1. **Normal and advance cancellation intentionally mutate `RequestPayment` differently, never
+       identically.** Normal (`FINAL_BALANCE`): the endpoint (`SchedulePayment`) always creates a
+       **new** `RequestPayment` row per schedule attempt, so cancellation sets that row's
+       `PaymentStatus = CANCELLED` and leaves it in place — a full, distinct audit record per
+       attempt. Advance (`ADVANCE`): the payment row is created once, at PO registration
+       (`RegisterPo`), and `ScheduleAdvancePayment` always mutates that **same** row in place
+       (`PLANNED → SCHEDULED`) — there is no "create a new advance row" precedent to mirror, so
+       cancellation returns the identical row to `PLANNED` (clearing `ScheduledDateUtc`,
+       preserving `PlannedAmount`/`PlannedPercent`) rather than marking it `CANCELLED`, so
+       `ScheduleAdvancePayment`'s own lookup (`PaymentType=Advance && PaymentStatus=Planned`) finds
+       and reschedules it exactly as it would for a group that was never scheduled at all.
+    2. **`PaymentSequence` is unique per `(RequestId, PaymentType)`, and a cancelled row keeps its
+       sequence number** (never reused, per the audit-preservation requirement) — so `SchedulePayment`
+       was changed from a hardcoded `PaymentSequence = 1` to `Max(existing) + 1` for that
+       `RequestId`+`PaymentType`, avoiding a unique-index collision against SQL Server (the InMemory
+       test provider does not enforce this constraint, so the collision was only caught by reasoning
+       through the schema, not by a failing test). No-op for the ordinary first-schedule case.
+    3. **Attachment voiding is distinct from deletion.** `RequestAttachment` gained
+       `VoidedAtUtc`/`VoidedByUserId`/`VoidReason` (additive migration
+       `20260723175105_AddAttachmentVoidFields`) rather than reusing `IsDeleted` — a voided document
+       must remain returned by every normal attachment query, stay downloadable, and be visibly
+       marked "Sem efeito" with its reason, none of which `IsDeleted` (a hard, query-filtering flag)
+       can express without also hiding it.
+    4. **Only the newest active `PAYMENT_SCHEDULE` attachment is voided, scoped to `RequestId` +
+       `RequestPoGroupId`, because `RequestAttachment` has no `RequestPaymentId` FK today.** There is
+       no reliable way to bind one specific attachment to one specific `RequestPayment` row, so
+       cancellation selects the most recently uploaded, non-voided, non-deleted `PAYMENT_SCHEDULE`
+       attachment for that group as a deliberate, narrow heuristic — never all matching attachments,
+       and a warning is logged (not silently ignored) if more than one candidate exists. Adding
+       `RequestPaymentId` to close this gap properly was explicitly deferred as out of scope for this
+       delivery.
+    5. **Parent status is always recalculated through `IStatusAggregationService`, never assigned
+       inline** — `CancelSchedule` mutates only the targeted `RequestPoGroup.Status` and calls
+       `AggregateRequestStatusAsync` afterward, identical to `SchedulePayment`/`MarkAsPaid`. Sibling
+       groups are never touched; `RequestStatusCalculator`/`StatusAggregationService` themselves were
+       not modified by this delivery.
+    6. **Completed-payment reversal (`PAYMENT_COMPLETED`, `ADVANCE_PAYMENT_COMPLETED`,
+       `WAITING_RECEIPT`, `COMPLETED`) is explicitly out of scope and deferred to a separate future
+       workflow.** `CanCancelSchedule` only ever returns true for `PAYMENT_SCHEDULED`/
+       `ADVANCE_PAYMENT_SCHEDULED` — reversing money already marked paid needs its own controlled,
+       likely credit/reversal-record-based design, not an extension of this endpoint.
+    7. **The legacy-PAYMENT scheduling fallback (DEC-149) remains conservative and restricted, not
+       widened by this delivery.** `SchedulableParentStatusesForPayment` is still exactly `{PO_ISSUED,
+       PAYMENT_REQUEST_SENT}`; `CanCancelSchedule` itself needs no type-branching or parent fallback
+       at all, since `PAYMENT_SCHEDULED`/`ADVANCE_PAYMENT_SCHEDULED` are always genuinely-written
+       group values, never a legacy default.
+    8. **Supplier/currency display fallback never backfills the database.**
+       `FinanceGroupDisplayResolver.ResolveSupplierName`/`ResolveCurrencyCode` are pure functions
+       consulted only at render/comment-formatting time (group snapshot → selected quotation →
+       request-level `Supplier`/`Currency` → `"---"`); `RequestPoGroup.SupplierNameSnapshot`/
+       `CurrencyCode` themselves are never written by this fix.
+    9. **`formatBusinessDateOnly` is a date-only, string-extraction formatter — never a general-purpose
+       date utility.** `RequestPayment.ScheduledDateUtc` loses its UTC `Kind` on the SQL Server
+       `datetime2` round-trip, so `System.Text.Json` omits the `Z` suffix and a naive `new Date(str)`
+       on the frontend was parsing it as local time, shifting the displayed calendar day. The fix
+       extracts `YYYY-MM-DD` directly from the ISO string via regex and never constructs a `Date`
+       object — intentionally scoped to date-only business values (schedule dates), not to
+       timestamps that legitimately need real timezone conversion (e.g. audit-event "created at"
+       times, still rendered via `new Date(...).toLocaleTimeString(...)` elsewhere unchanged).
+- **Alternatives considered:** (1) A single symmetric cancellation model for normal and advance
+  (rejected — would require inventing a "create a new cancelled advance row" pattern with no
+  precedent anywhere else in the advance-payment lifecycle, purely to keep the code path uniform).
+  (2) Adding `RequestPaymentId` to `RequestAttachment` now to make voiding exact (rejected for this
+  delivery — a real schema improvement, but broader than the reported defect; the newest-active
+  heuristic with a logged multi-candidate warning is judged sufficient for the confirmed cohort of
+  single-schedule-cycle groups). (3) Reusing `IsDeleted` for voided attachments (rejected — conflates
+  two different states with different UI/query implications, see point 3).
+- **Consequences:** Finance can now correct a mis-scheduled payment without losing audit history or
+  touching a completed payment. The `RequestPaymentId`-less attachment linkage and the still-narrow
+  legacy-PAYMENT fallback remain known, accepted limitations for a possible follow-up. No Finance
+  guided tour exists yet (predates this task) — creating one was deferred, not silently skipped; see
+  `docs/CHANGELOG.md` [v2.212.0].
+
+---
+
 ## DEC-149 — Centralized Finance Payment Action Eligibility
 
 - **Date:** 2026-07-22

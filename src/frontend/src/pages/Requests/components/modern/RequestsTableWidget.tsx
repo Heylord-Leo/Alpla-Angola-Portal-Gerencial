@@ -11,6 +11,7 @@ import { KebabMenu } from '../../../../components/ui/KebabMenu';
 import { ModernRequestTimeline } from './ModernRequestTimeline';
 import { ModernTooltip } from '../../../../components/ui/ModernTooltip';
 import { getRequestGuidance, getUrgencyStyle } from '../../../../lib/utils';
+import { resolveSafeStatusLabel } from '../../../../lib/requestGroupDisplayState';
 
 // ── Status Badge ──────────────────────────────────────────
 const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; icon: any }> = {
@@ -37,10 +38,10 @@ const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; ico
     'WAITING_RECONCILIATION': { bg: '#FFF7ED', fg: '#C2410C', border: '#FDBA74', icon: AlertCircle },
 };
 
-export const StatusBadge = ({ status }: { status: string }) => {
-    const theme = STATUS_THEME[status] || STATUS_THEME['DRAFT'];
+export const StatusBadge = ({ statusCode, label }: { statusCode: string; label: string }) => {
+    const theme = STATUS_THEME[statusCode] || STATUS_THEME['DRAFT'];
     const Icon = theme.icon;
-    const statusText = status.replace(/_/g, ' ');
+    const statusText = label;
 
     return (
         <span style={{
@@ -426,7 +427,10 @@ export function RequestsTableWidget({
                                                         <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px' }}><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>Próxima Ação</div><div style={{ fontSize: '0.8rem', fontWeight: 600, fontStyle: 'italic', color: 'var(--color-text-main)' }}>{guidance.nextAction}</div></div>
                                                     </div>
                                                 } side="top" align="start">
-                                                    <StatusBadge status={req.statusCode || 'DRAFT'} />
+                                                    <StatusBadge
+                                                        statusCode={req.statusCode || 'DRAFT'}
+                                                        label={resolveSafeStatusLabel(req.statusCode, req.statusName, req.displayStatusName)}
+                                                    />
                                                 </ModernTooltip>
                                             </td>
                                             {/* Valor */}

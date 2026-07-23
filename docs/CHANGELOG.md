@@ -4,7 +4,29 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.211.0
+v2.212.0
+
+## [v2.212.0] - 2026-07-23
+
+### Added — Finance: Group-Aware Payment Actions & Schedule Cancellation
+
+- **Group-aware Finance actions**: single-group kebab menu and multi-group "Pagamentos por Fornecedor" cards now derive Schedule/Pay/Cancel eligibility and Portuguese labels from each `RequestPoGroup`'s own status (never a sibling's or the parent request's aggregated status), for both normal and advance groups. Normal: `PO_ISSUED`/`PAYMENT_REQUEST_SENT` → schedule or direct pay; `PAYMENT_SCHEDULED` → pay. Advance: `ADVANCE_PAYMENT_REQUIRED` → schedule or direct confirm; `ADVANCE_PAYMENT_SCHEDULED` → confirm.
+- **Legacy PAYMENT PENDING-group fallback**: `IFinancePaymentEligibilityService.CanSchedule` now accepts `(requestTypeCode, requestStatusCode, groupStatus)`. For QUOTATION the group status remains sole authority (unchanged). For PAYMENT, a meaningful group status stays authoritative; only a null/empty/legacy `PENDING` group (never actively synced) falls back to the parent request status, and only against a narrow, explicitly justified set (`PO_ISSUED`, `PAYMENT_REQUEST_SENT`) — deliberately excluding `PAYMENT_SCHEDULED`/completed/rejected/cancelled states, since no reschedule flow exists.
+- **Schedule cancellation** (`POST /api/v1/finance/{id}/cancel-schedule`): lets Finance correct a payment scheduled against the wrong request/group, before it is paid.
+  - Normal: `PAYMENT_SCHEDULED → PO_ISSUED`; the scheduled `FINAL_BALANCE` `RequestPayment` row becomes `CANCELLED` (preserved for audit, `PaymentSequence`/`ScheduledDateUtc` retained). A later `SchedulePayment` call computes the next `PaymentSequence` dynamically rather than colliding with the cancelled row.
+  - Advance: `ADVANCE_PAYMENT_SCHEDULED → ADVANCE_PAYMENT_REQUIRED`; the **same** `ADVANCE` `RequestPayment` row (originally created at PO registration) returns to `PLANNED` — `ScheduledDateUtc` cleared, `PlannedAmount`/`PlannedPercent` preserved — so it can be rescheduled through the existing `ScheduleAdvancePayment` flow without creating a new row.
+  - Completed payments (`PAYMENT_COMPLETED`, `ADVANCE_PAYMENT_COMPLETED`, `WAITING_RECEIPT`, `COMPLETED`) are **not** cancellable through this workflow — reversal of a completed payment is out of scope, tracked as a separate future workflow.
+  - A justification (≥20 trimmed characters) is required; the original scheduling history event is never modified — a new `PAYMENT_SCHEDULE_CANCELLED`/`ADVANCE_PAYMENT_SCHEDULE_CANCELLED` event is added alongside it.
+  - The most recent active `PAYMENT_SCHEDULE` attachment for the group is marked **voided** (`RequestAttachment.VoidedAtUtc`/`VoidedByUserId`/`VoidReason`) — distinct from deletion: it remains stored, visible, and downloadable, shown with a "Sem efeito" badge and the recorded reason, and can no longer satisfy any "has schedule document" validation gate. Older/sibling-group attachments are never touched.
+  - UI: `FinanceActionModal` gains a `CANCEL_SCHEDULE` mode with a read-only summary (supplier, amount, previously-scheduled date) and the required-reason field; `FinanceHistory.tsx` gets a "Cancelamentos" filter (server-side widened to include both normal and advance cancellation codes), CSV export labels, and a void indicator on the related upload's audit card.
+- **Supplier/currency display fallback**: `FinanceGroupDisplayResolver` resolves a safe display supplier/currency (group snapshot → selected quotation → request-level `Supplier`/`Currency` → "---") for legacy `RequestPoGroup` rows whose own `SupplierNameSnapshot`/`CurrencyCode` were never actively synced — used by the Finance payments listing, the cancel-schedule modal, and both schedule/cancel structured history comments. Display-only; no backfill is written to the group record.
+- **Business-date formatting fix**: `RequestPayment.ScheduledDateUtc` round-trips through SQL Server's `datetime2` (no offset metadata); the JSON payload for it therefore omits a `Z` suffix, and a naive `new Date(str)` on the frontend was parsing it as local time instead of UTC — silently shifting the displayed calendar day by the browser's UTC offset (reproduced: 24/07 stored, 23/07 displayed on a UTC+1 host). `formatBusinessDateOnly` extracts the calendar date directly from the ISO string, never constructing a `Date` object, so the cancel-schedule modal and the audit history now always agree.
+- **Finance History attachment void indicator**: `DOCUMENTO ADICIONADO` audit cards for a since-cancelled `PAYMENT_SCHEDULE` upload now show "Sem efeito" and the void reason, via a best-effort filename match against the request's `PAYMENT_SCHEDULE` attachments (display-only; `RequestStatusHistory` has no attachment FK).
+- **Migration**: `20260723175105_AddAttachmentVoidFields` — additive, nullable `VoidedAtUtc`/`VoidedByUserId`/`VoidReason` columns on `RequestAttachments`. Not applied to any database as part of this release; apply via the standard `execution/update_dev_database.ps1` / CI migration workflow.
+- **Legacy compatibility**: no database backfill is performed anywhere in this release — QUOTATION requests remain fully group-status-driven; PAYMENT requests with a stale `PENDING` group use the parent status only as the narrow fallback described above; legacy supplier/currency fields are resolved for display only.
+- See `docs/DECISIONS.md` (DEC-150) for the full architectural rationale, including why normal and advance cancellation intentionally mutate `RequestPayment` differently and why only the newest active attachment is voided.
+
+**Guided Tour impact: not applicable for this release** — the Finance module (Payments list and History) has no guided tour registered (predates this task); creating one is deferred as a follow-up, not silently treated as reviewed/updated. See `docs/DECISIONS.md` (DEC-150).
 
 ## [v2.211.0] - 2026-07-22
 
