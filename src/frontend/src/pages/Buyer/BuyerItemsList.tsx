@@ -2,11 +2,11 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, RefreshCcw, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare, History } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare, History } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { formatCurrencyAO, formatDate, getUrgencyStyle, formatDateTime } from '../../lib/utils';
+import { formatCurrencyAO, formatDate, getUrgencyStyle, formatDateTime, computeFileHash } from '../../lib/utils';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { QuickCurrencyModal } from '../../components/Buyer/QuickCurrencyModal';
@@ -30,7 +30,7 @@ import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGui
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createQuotationManagementGuide } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
 import type { QuotationManagementState } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
-import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto } from '../../types';
+import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto, FinancialIntegrityCheckFailedDto, AmbiguousSavePreAttemptSnapshot } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
@@ -38,6 +38,90 @@ import { useTablePreferences } from '../../hooks/useTablePreferences';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
+
+// ── Ambiguous-save read-back reconciliation (SaveQuotation create path only) ───────────────
+//
+// A network error / 5xx / timeout on SaveQuotation does not prove the create failed: EF Core's
+// SaveChangesAsync wraps the write in one atomic transaction, and a client-side timeout can fire
+// after the server has already committed. This is a FRONTEND-ONLY, BEST-EFFORT heuristic to
+// detect that case — it is not a substitute for true idempotency (no CreationIdempotencyKey
+// exists on Quotation yet; see the separate recommendation to mirror RequestLineItem's existing
+// CreationIdempotencyKey pattern). It can only reduce false "save failed" reports; it cannot
+// eliminate the ambiguity with certainty.
+const AMBIGUOUS_SAVE_CLOCK_SKEW_TOLERANCE_MS = 60_000;
+
+/**
+ * Best-effort match for a quotation created by an ambiguous SaveQuotation attempt.
+ *
+ * IMPORTANT: a request may legitimately hold MULTIPLE quotations from the same supplier (the
+ * one-quotation-per-supplier restriction was removed from the backend — see SaveQuotation).
+ * This function must never assume "same supplier" implies "the one I'm looking for" — supplier
+ * match narrows the candidate set, it does not by itself confirm identity.
+ *
+ * Matching rules (in order):
+ *  1. Must belong to the request being edited (implicit — `quotations` is that request's list).
+ *  2. Must NOT be in the pre-attempt snapshot (i.e. must be new since the attempt started).
+ *  3. supplierId must match exactly.
+ *  4. createdAtUtc must be at/after (attemptStartedAtUtc - clock-skew tolerance).
+ *  5. If the draft has a proformaAttachmentId, it must match EXACTLY — this is the strongest
+ *     signal available (a stable per-upload GUID) and, when present, is treated as decisive: no
+ *     fallback to the weaker heuristic below, to avoid matching an unrelated same-supplier
+ *     quotation from a different document.
+ *  6. When proformaAttachmentId is absent (manual/no-attachment drafts), fall back to a WEAKER
+ *     heuristic: supplier + snapshot-exclusion + recency (1-4 above) narrow the candidates, then
+ *     totalAmount/documentNumber are used only as corroboration — never as the sole identity
+ *     criterion. If exactly one candidate remains with no corroboration, it is accepted only
+ *     because it is the sole survivor of ALL the filters above (new, this supplier, this time
+ *     window) — not because "one supplier = one quotation" is assumed anywhere. If multiple
+ *     uncorroborated candidates remain (now a realistic case, since a supplier may have several
+ *     concurrent quotations), the match is deliberately refused rather than guessed — the caller
+ *     falls back to showing the original error and letting the buyer retry/check manually.
+ */
+function findAmbiguousSaveMatch(
+    quotations: SavedQuotationDto[],
+    snapshot: AmbiguousSavePreAttemptSnapshot,
+    draft: OcrDraft
+): SavedQuotationDto | null {
+    const attemptStartMs = new Date(snapshot.attemptStartedAtUtc).getTime() - AMBIGUOUS_SAVE_CLOCK_SKEW_TOLERANCE_MS;
+
+    const candidates = quotations.filter(q =>
+        !snapshot.existingQuotationIds.has(q.id) &&
+        q.supplierId === draft.supplierId &&
+        new Date(q.createdAtUtc as any).getTime() >= attemptStartMs
+    );
+
+    if (candidates.length === 0) return null;
+
+    if (draft.proformaAttachmentId) {
+        return candidates.find(q => q.proformaAttachmentId === draft.proformaAttachmentId) || null;
+    }
+
+    const corroborated = candidates.find(q =>
+        (typeof q.totalAmount === 'number' && Math.abs(q.totalAmount - (draft.totalAmount || 0)) < 0.01) ||
+        (!!draft.documentNumber && !!q.documentNumber && q.documentNumber.trim() === draft.documentNumber.trim())
+    );
+    if (corroborated) return corroborated;
+
+    return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Re-fetches the request and looks for a quotation matching the ambiguous attempt. Never throws:
+ * a failure to confirm is reported the same as "no match found" — callers must not assume
+ * success without a positive match.
+ */
+async function tryReconcileAmbiguousSave(
+    requestId: string,
+    draft: OcrDraft,
+    snapshot: AmbiguousSavePreAttemptSnapshot
+): Promise<SavedQuotationDto | null> {
+    try {
+        const freshRequest = await api.requests.get(requestId);
+        return findAmbiguousSaveMatch(freshRequest.quotations || [], snapshot, draft);
+    } catch {
+        return null;
+    }
+}
 
 // Step 9: Highlight animation
 const highlightStyles = `
@@ -242,10 +326,6 @@ export function BuyerItemsList() {
     // Quick Currency Modal State
     const [quickCurrencyModal, setQuickCurrencyModal] = useState<{ show: boolean; requestId: string | null; initialCode: string }>({ show: false, requestId: null, initialCode: '' });
 
-    // Duplicate Supplier Flow State
-    const [duplicateSupplierModal, setDuplicateSupplierModal] = useState<{ show: boolean, requestId: string, draft: QuotationDraft | null, duplicate: SavedQuotationDto | null }>({
-        show: false, requestId: '', draft: null, duplicate: null
-    });
     const [expandedQuotations, setExpandedQuotations] = useState<Record<string, boolean>>({});
     // Option C — explicit reuse of quotations used in a cancelled batch
     const [reuseModal, setReuseModal] = useState<{ requestId: string; quotation: SavedQuotationDto } | null>(null);
@@ -332,8 +412,23 @@ export function BuyerItemsList() {
     const quotationWizardState = useQuotationWizardState();
     const [wizardActiveRequest, setWizardActiveRequest] = useState<any | null>(null);
     const [temporaryWizardAttachmentIds, setTemporaryWizardAttachmentIds] = useState<string[]>([]);
-    
-    const handleWizardSaveQuotation = async (draft: OcrDraft) => {
+
+    // Ambiguous-save pre-attempt snapshot (create path only). Owned HERE, not in the modal —
+    // `wizardActiveRequest` is client-side state set once when the wizard opens (from the last
+    // list load) and never refreshed, so it cannot be trusted as a "what exists right now"
+    // baseline; the snapshot must come from a FRESH server read taken immediately before the
+    // first create attempt. 'unavailable' means the fresh read itself failed — reconciliation is
+    // then skipped for the rest of this submission (the normal save still proceeds unblocked).
+    const preAttemptSnapshotRef = useRef<AmbiguousSavePreAttemptSnapshot | 'unavailable' | null>(null);
+
+    const handleWizardSaveQuotation = async (
+        draft: OcrDraft,
+        overridePayload?: { financialIntegrityOverride: boolean; overrideJustification: string }
+    ): Promise<
+        | { success: true }
+        | ({ success: false } & FinancialIntegrityCheckFailedDto)
+        | { success: false; error: string }
+    > => {
         if (!wizardActiveRequest) return { success: false, error: 'No active request' };
         try {
             const payload = {
@@ -378,6 +473,27 @@ export function BuyerItemsList() {
             if (isEditing && quotationId) {
                 await api.requests.updateQuotation(requestId, quotationId, payload);
             } else {
+                // Baseline capture for ambiguous-save read-back reconciliation — a FRESH server
+                // read, taken once per logical submission, immediately before the first create
+                // attempt. Never re-fetched on a retry (override retry, controlled retry after an
+                // ambiguous failure): reusing the ORIGINAL baseline is what makes a quotation
+                // created by an earlier attempt in this sequence still detectable as "new". If the
+                // read itself fails, the normal save is NOT blocked — reconciliation is simply
+                // unavailable for this submission (see the 'unavailable' branch below).
+                if (preAttemptSnapshotRef.current === null) {
+                    try {
+                        const freshRequest = await api.requests.get(requestId);
+                        preAttemptSnapshotRef.current = {
+                            existingQuotationIds: new Set((freshRequest.quotations || []).map(q => q.id)),
+                            attemptStartedAtUtc: new Date().toISOString()
+                        };
+                    } catch (baselineError) {
+                        console.warn('[AmbiguousSave] Could not capture a fresh quotation baseline before save; ambiguous-save reconciliation will be skipped for this submission if the create call fails ambiguously.', baselineError);
+                        preAttemptSnapshotRef.current = 'unavailable';
+                    }
+                }
+                const preAttemptSnapshot = preAttemptSnapshotRef.current !== 'unavailable' ? preAttemptSnapshotRef.current : null;
+
                 // Only the creation endpoint enforces the Financial Integrity
                 // Gate (RequestsController.SaveQuotation), so ocrTotal is sent
                 // here only — never on updateQuotation. Guard against
@@ -387,19 +503,66 @@ export function BuyerItemsList() {
                 const ocrTotal = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
                     ? draft.ocrTotalAmount
                     : undefined;
-                const createResult = await api.requests.saveQuotation(requestId, { ...payload, ocrTotal });
+                // Override fields are only ever sent on the creation endpoint (SaveQuotation),
+                // never merged into `payload` itself — UpdateQuotation must never receive them.
+                let createResult: any;
+                try {
+                    createResult = await api.requests.saveQuotation(requestId, {
+                        ...payload,
+                        ocrTotal,
+                        financialIntegrityOverride: overridePayload?.financialIntegrityOverride ?? false,
+                        overrideJustification: overridePayload?.overrideJustification
+                    });
+                } catch (createError: any) {
+                    // Ambiguous-save resilience (create path only, frontend-only heuristic — see
+                    // findAmbiguousSaveMatch above). Only attempted for specific failure shapes
+                    // that could plausibly mean "the write succeeded but the response didn't
+                    // arrive": a network error, an HTTP 5xx, or the specific duplicate-supplier
+                    // 409 (NOT the Financial Integrity 409, which is a normal non-throwing return
+                    // above and never reaches this catch; NOT ordinary 400 validation; NOT 401/403;
+                    // NOT the unrelated "Ação Bloqueada" status-lock 409).
+                    const isNetworkError = createError?.status === 0 || createError?.status === undefined;
+                    const is5xx = typeof createError?.status === 'number' && createError.status >= 500 && createError.status < 600;
+                    const isDuplicateSupplierConflict = createError?.status === 409 &&
+                        createError?.details?.title === 'Regra de Negócio Violada';
 
-                // Financial Integrity Gate (create-only): the backend responds
-                // with HTTP 409 + a normal (non-throwing) payload shape when the
-                // quotation total diverges from the OCR-extracted total. This
-                // must be treated as a failed save — never as success — since
-                // there is no override UX left in the Buyer wizard (removed
-                // together with the old "CONCLUIR COTAÇÃO" flow in Fase 1).
+                    if ((isNetworkError || is5xx || isDuplicateSupplierConflict) && preAttemptSnapshot) {
+                        const matched = await tryReconcileAmbiguousSave(requestId, draft, preAttemptSnapshot);
+                        if (matched) {
+                            preAttemptSnapshotRef.current = null;
+                            await loadData();
+                            quotationWizardState.closeWizard();
+                            setWizardActiveRequest(null);
+                            setTemporaryWizardAttachmentIds([]);
+                            setFeedback({
+                                type: 'info',
+                                message: 'Cotação salva após interrupção da resposta: a resposta inicial foi interrompida, mas confirmámos que a cotação foi salva corretamente no servidor.'
+                            });
+                            return { success: true };
+                        }
+                    }
+
+                    // No confirmed match (read-back found nothing, read-back itself failed, or the
+                    // error wasn't ambiguous-eligible) — never assume success without a positive
+                    // match. Preserve the original error for the normal failure path below.
+                    throw createError;
+                }
+
+                // Financial Integrity Gate (create-only): the backend responds with HTTP 409 +
+                // a normal (non-throwing) payload shape when the quotation total diverges from
+                // the OCR-extracted total beyond tolerance and no override was supplied. Surface
+                // the structured variance data (not a collapsed string) so the wizard can render
+                // the override panel and retry with FinancialIntegrityOverride + OverrideJustification.
                 if (createResult && 'integrityCheckFailed' in createResult && createResult.integrityCheckFailed) {
                     return {
                         success: false,
-                        error: createResult.detail
-                            || `Divergência financeira detectada entre o total do documento (${formatCurrencyAO(createResult.ocrOriginalTotal, draft.currency)}) e o total da cotação (${formatCurrencyAO(createResult.quotationTotal, draft.currency)}). Ajuste os valores dos itens antes de salvar.`
+                        integrityCheckFailed: true,
+                        ocrOriginalTotal: createResult.ocrOriginalTotal,
+                        quotationTotal: createResult.quotationTotal,
+                        varianceAmount: createResult.varianceAmount,
+                        variancePercent: createResult.variancePercent,
+                        toleranceApplied: createResult.toleranceApplied,
+                        detail: createResult.detail
                     };
                 }
             }
@@ -409,6 +572,7 @@ export function BuyerItemsList() {
             // proposeNotQuoted / touches QuotationLifecycleStatus. Closing an
             // item without quotation is a separate, explicit Buyer action
             // ("Encerrar sem cotação" on the items table → closeNotQuoted).
+            preAttemptSnapshotRef.current = null;
             await loadData();
             quotationWizardState.closeWizard();
             setWizardActiveRequest(null);
@@ -418,13 +582,22 @@ export function BuyerItemsList() {
             return { success: true };
         } catch (error: any) {
             console.error('Error saving quotation from wizard:', error);
-            return { success: false, error: error.response?.data?.message || 'Erro ao salvar cotação.' };
+            // `error` here is an ApiError (thrown by lib/api.ts's handleApiError), which exposes the
+            // structured backend message via `.message` directly (already resolved from
+            // errJson.detail || errJson.title || errJson.message) — NOT `.response.data.message`,
+            // an Axios shape this codebase's fetch-based client doesn't use. That mismatch always
+            // evaluated to undefined, discarding real backend details (e.g. the duplicate-supplier
+            // "Já existe uma cotação para este fornecedor..." message) in favor of the generic
+            // fallback below, which is now reserved for genuinely unstructured failures only.
+            return { success: false, error: error?.message || 'Erro ao salvar cotação.' };
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleUploadFileForWizard = async (file: File) => {
+    // The actual upload + OCR sequence, unchanged from before — extracted so it can be deferred
+    // until after an explicit "proceed anyway" confirmation on the file-duplicate warning below.
+    const _startWizardUpload = async (file: File) => {
         if (!wizardActiveRequest) return;
         setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
         try {
@@ -433,7 +606,7 @@ export function BuyerItemsList() {
             setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
             const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);
             const initialDraft = await mapOcrResultToDraft(result, attachmentId);
-            
+
             quotationWizardState.setDraft(initialDraft);
         } catch (error: any) {
             console.error('Wizard OCR Error:', error);
@@ -441,6 +614,37 @@ export function BuyerItemsList() {
         } finally {
             setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: false }));
         }
+    };
+
+    // Exact-file duplicate check (reconnects the existing, already-proven fileDuplicateWarning
+    // flow — same computeFileHash()/checkDuplicate() sequence already used by RequestCreate.tsx)
+    // runs BEFORE any upload or OCR call, so an accidental re-upload never wastes either.
+    const handleUploadFileForWizard = async (file: File) => {
+        if (!wizardActiveRequest) return;
+        try {
+            const hash = await computeFileHash(file);
+            const dupCheck = await api.attachments.checkDuplicate(hash);
+            if (dupCheck.isDuplicate) {
+                setFileDuplicateWarning({
+                    isOpen: true,
+                    requestId: wizardActiveRequest.requestId,
+                    fileName: file.name,
+                    requestNumber: dupCheck.requestNumber || 'Desconhecido',
+                    uploadedBy: dupCheck.uploadedBy,
+                    createdAtUtc: dupCheck.createdAtUtc,
+                    uploadCallback: () => {
+                        setFileDuplicateWarning(null);
+                        _startWizardUpload(file);
+                    }
+                });
+                return;
+            }
+        } catch (err) {
+            // Non-blocking: if the duplicate check itself fails (network hiccup, etc.), proceed
+            // with the upload as normal rather than blocking the buyer on an unrelated failure.
+            console.error('Duplicate check failed', err);
+        }
+        _startWizardUpload(file);
     };
 
     const handleReplaceDocumentForWizard = async (attachmentId: string) => {
@@ -485,6 +689,9 @@ export function BuyerItemsList() {
     };
 
     const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto) => {
+        // A genuinely new logical submission starts here — any ambiguous-save snapshot from a
+        // previous wizard session must not leak into this one.
+        preAttemptSnapshotRef.current = null;
         setWizardActiveRequest(group);
         if (editQuotation) {
             const draft: OcrDraft = {
@@ -796,11 +1003,6 @@ export function BuyerItemsList() {
     // Global discount logic replaced by item-level discounts (Option A)
 
     // Local calculation logic moved to shared useOcrProcessor hook
-
-    const cancelDuplicateFlow = () => {
-        setDuplicateSupplierModal({ show: false, requestId: '', draft: null, duplicate: null });
-    };
-
 
 
     const handleDeleteQuotation = async (requestId: string, quotationId: string) => {
@@ -2593,138 +2795,6 @@ export function BuyerItemsList() {
                 }}
             />
 
-            {/* Duplicate Supplier Resolution Modal (Step 9 Refresh) */}
-            <AnimatePresence>
-                {duplicateSupplierModal.show && (
-                    <DropdownPortal>
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            style={{
-                                position: 'fixed',
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                backgroundColor: 'rgba(0,0,0,0.8)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                zIndex: Z_INDEX.MODAL as any,
-                                padding: '20px'
-                            }}
-                        >
-                            <motion.div
-                                initial={{ scale: 0.9, y: 20 }}
-                                animate={{ scale: 1, y: 0 }}
-                                style={{
-                                    backgroundColor: 'var(--color-bg-surface)',
-                                    padding: '40px',
-                                    borderRadius: 'var(--radius-md)',
-                                    maxWidth: '550px',
-                                    width: '100%',
-                                    border: '1px solid var(--color-border)',
-                                    boxShadow: 'var(--shadow-md)',
-                                    position: 'relative'
-                                }}
-                            >
-                                <button
-                                    onClick={cancelDuplicateFlow}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '20px',
-                                        right: '20px',
-                                        background: 'none',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        color: 'var(--color-text-muted)'
-                                    }}
-                                >
-                                    <X size={24} />
-                                </button>
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                    <AlertCircle style={{ width: '32px', height: '32px', color: '#f59e0b' }} />
-                                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', textTransform: 'uppercase', margin: 0, letterSpacing: '-0.02em' }}>
-                                        Fornecedor Duplicado
-                                    </h2>
-                                </div>
-
-                                <div style={{ marginBottom: '24px' }}>
-                                    <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '16px', lineHeight: 1.4 }}>
-                                        Já existe uma cotação salva para <span style={{ color: 'var(--color-primary)' }}>{duplicateSupplierModal.draft?.supplierNameSnapshot || duplicateSupplierModal.duplicate?.supplierNameSnapshot}</span> neste pedido.
-                                    </p>
-
-                                    <div style={{
-                                        backgroundColor: '#fffbeb',
-                                        border: '2px solid #fef3c7',
-                                        borderRadius: 'var(--radius-sm)',
-                                        padding: '20px',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <div>
-                                            <p style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: '#92400e', marginBottom: '4px' }}>Cotação Existente:</p>
-                                            <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#b45309', margin: 0 }}>
-                                                Doc: {duplicateSupplierModal.duplicate?.documentNumber || 'S/N'} • {duplicateSupplierModal.duplicate?.documentDate ? formatDate(duplicateSupplierModal.duplicate.documentDate) : 'N/A'}
-                                            </p>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <p style={{ fontSize: '1.25rem', fontWeight: 900, color: '#92400e', margin: 0 }}>
-                                                <span style={{ fontSize: '0.8rem', opacity: 0.7, marginRight: '4px' }}>{duplicateSupplierModal.duplicate?.currency || 'AOA'}</span>
-                                                {formatCurrencyAO(duplicateSupplierModal.duplicate?.totalAmount || 0)}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '20px', fontWeight: 500, lineHeight: 1.5 }}>
-                                        Você deseja <strong>substituir</strong> a cotação existente pela nova que você está criando?
-                                        A cotação anterior e seu arquivo proforma serão <strong>excluídos permanentemente</strong> para garantir a consistência do pedido.
-                                    </p>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-                                    <button
-                                        type="button"
-                                        onClick={cancelDuplicateFlow}
-                                        disabled={isSaving}
-                                        style={{
-                                            flex: 1, height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',
-                                            cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                            fontFamily: 'var(--font-family-display)', fontSize: '0.875rem'
-                                        }}
-                                    >
-                                        CANCELAR INCLUSÃO
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {}}
-                                        disabled={isSaving}
-                                        style={{
-                                            flex: 2, height: '48px', padding: '0 24px', backgroundColor: '#f59e0b', color: '#fff',
-                                            border: 'none', cursor: 'pointer', fontWeight: 800, borderRadius: 'var(--radius-sm)',
-                                            boxShadow: 'var(--shadow-md)', fontFamily: 'var(--font-family-display)',
-                                            fontSize: '0.875rem', opacity: isSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-                                        }}
-                                    >
-                                        {isSaving ? (
-                                            <>
-                                                <RefreshCcw size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                                                SUBSTITUINDO...
-                                            </>
-                                        ) : (
-                                            'SUBSTITUIR COTAÇÃO'
-                                        )}
-                                    </button>
-                                </div>
-                            </motion.div>
-                        </motion.div>
-                    </DropdownPortal>
-                )}
-            </AnimatePresence>
-
             <AnimatePresence>
                 {fileDuplicateWarning?.isOpen && (
                     <div style={{ position: 'fixed', inset: 0, zIndex: Z_INDEX.MODAL + 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
@@ -2871,6 +2941,7 @@ export function BuyerItemsList() {
                 onCancelWizard={async () => {
                     quotationWizardState.closeWizard();
                     setWizardActiveRequest(null);
+                    preAttemptSnapshotRef.current = null;
                     if (temporaryWizardAttachmentIds.length > 0) {
                         try {
                             await Promise.all(temporaryWizardAttachmentIds.map(id => api.attachments.delete(id)));

@@ -3455,25 +3455,6 @@ public class RequestsController : BaseController
             });
         }
 
-        // Duplicate Supplier Protection
-        var existingQuotations = request.Quotations.Where(q => q.SupplierId == dto.SupplierId && q.Id != replaceQuotationId).ToList();
-        if (existingQuotations.Any())
-        {
-            var existingQuotationItemIds = existingQuotations.SelectMany(q => q.Items).Select(i => i.Id).ToList();
-            var isAuditProtected = await _context.Set<ApprovalBatchItem>()
-                .AnyAsync(abi => existingQuotationItemIds.Contains(abi.SelectedQuotationItemId));
-
-            if (!isAuditProtected)
-            {
-                return Conflict(new ProblemDetails 
-                { 
-                    Title = "Regra de Negócio Violada", 
-                    Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
-                    Status = 409
-                });
-            }
-        }
-
         // Basic Validation
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
         if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
@@ -3764,33 +3745,6 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(q => q.Id == quotationId && q.RequestId == requestId);
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
-
-        // Duplicate Supplier Protection
-        var requestWithQuotations = await _context.Requests
-            .Include(r => r.Quotations)
-                .ThenInclude(q => q.Items)
-            .FirstOrDefaultAsync(r => r.Id == requestId);
-            
-        if (requestWithQuotations != null)
-        {
-            var existingQuotations = requestWithQuotations.Quotations.Where(q => q.SupplierId == dto.SupplierId && q.Id != quotationId).ToList();
-            if (existingQuotations.Any())
-            {
-                var existingQuotationItemIds = existingQuotations.SelectMany(q => q.Items).Select(i => i.Id).ToList();
-                var isAuditProtected = await _context.Set<ApprovalBatchItem>()
-                    .AnyAsync(abi => existingQuotationItemIds.Contains(abi.SelectedQuotationItemId));
-
-                if (!isAuditProtected)
-                {
-                    return Conflict(new ProblemDetails 
-                    { 
-                        Title = "Regra de Negócio Violada", 
-                        Detail = "Já existe uma cotação para este fornecedor. Confirme a substituição ou escolha outro fornecedor.",
-                        Status = 409
-                    });
-                }
-            }
-        }
 
         // Validation (Explicitly including Currency as per user requirement)
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });

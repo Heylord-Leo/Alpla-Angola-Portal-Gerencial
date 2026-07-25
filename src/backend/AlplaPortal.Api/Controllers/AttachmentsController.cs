@@ -417,13 +417,21 @@ public class AttachmentsController : BaseController
         {
             // Calculate if the current user has access to that specific request
             bool hasAccess = await scopedQuery.AnyAsync(r => r.Id == attachment.RequestId);
-            
-            return Ok(new { 
-                isDuplicate = true, 
-                requestNumber = attachment.Request.RequestNumber, 
-                requestId = hasAccess ? attachment.RequestId : (Guid?)null, // Only expose ID for navigation if they have access
+
+            if (!hasAccess)
+            {
+                // The binary duplicate is real, but the current user has no access to the
+                // original request — confirm the duplicate without disclosing ANY identifying
+                // metadata about a request/document/user they cannot see.
+                return Ok(new { isDuplicate = true });
+            }
+
+            return Ok(new {
+                isDuplicate = true,
+                requestNumber = attachment.Request.RequestNumber,
+                requestId = attachment.RequestId,
                 uploadedBy = attachment.UploadedByUser?.FullName ?? "Usuário Desconhecido",
-                createdAtUtc = attachment.UploadedAtUtc 
+                createdAtUtc = attachment.UploadedAtUtc
             });
         }
 

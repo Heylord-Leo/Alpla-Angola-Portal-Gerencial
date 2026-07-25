@@ -4,7 +4,21 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.212.0
+v2.213.0
+
+## [v2.213.0] - 2026-07-25
+
+### Fixed — Quotation Wizard: Financial Integrity Override Restoration & Multi-Quotation Support
+
+- **Financial Integrity override restored**: The Quotation Wizard's "Salvar Cotação" flow lost its override path during the July 14 rewrite — a divergence between the OCR-extracted total and the buyer's corrected total returned a hard HTTP 409 with no way to justify and retry. Restored as an inline panel (not a separate modal) showing OCR total, corrected total, variance, and tolerance, with a required justification textarea and an explicit "Salvar com Justificativa" retry — independent of the existing per-item `reconciliationJustification` mechanism.
+- **OCR review fixes surfaced during restoration**: quantity/deletion edits in the "Documento e Extração" step were silently recalculating the running total to zero (a stale reconciliation-status filter left over from a different code path); "Total (Documento OCR)" in Revisão Final was bound to the wrong field, showing the buyer-corrected total instead of the immutable OCR original. Both corrected. Deleting an OCR-extracted item now requires explicit confirmation.
+- **Ambiguous-save resilience**: a network error, HTTP 5xx, or timeout on quotation creation no longer guarantees a failed write — `SaveChangesAsync` commits atomically, and a client-side timeout can fire after the server already succeeded. The wizard now takes a fresh pre-attempt snapshot of the request's quotations, and on an ambiguous failure re-reads the request and looks for a new, matching quotation (exact `ProformaAttachmentId` match when available; conservative supplier+total/document-number corroboration otherwise) before reporting failure — closing the wizard and showing an interruption notice instead of a false "save failed" when the write actually succeeded.
+- **Multiple quotations per supplier allowed**: removed the backend rule limiting a request to one quotation per supplier (`SaveQuotation`/`UpdateQuotation`) — a supplier may legitimately submit a revised, complementary, or alternative quotation. Each quotation remains independent by `QuotationId`; winner selection, batch eligibility, and coverage comparison were already `QuotationId`/`QuotationItemId`-scoped and required no changes. A non-blocking informational notice now appears in the wizard when the selected supplier already has other quotations on the request.
+- **Duplicate-file detection reconnected**: the existing SHA-256 file-hash duplicate check (`computeFileHash` + `GET /attachments/check-duplicate`), already used elsewhere in the app, is now also checked before OCR upload in the Quotation Wizard, reusing the existing warning modal and its 5-second confirmation safety delay. The endpoint's response for a duplicate the current user cannot access no longer discloses the original request's ID, number, uploader, or timestamp.
+- **Approval Batch Review cleanup**: the "other quotations" comparison area (already collapsed by default) now only lists quotations that actually have a matching item for that specific request line — quotations present on the request but never quoting that line no longer appear as "Não Cotado" placeholders. Updated labels and added an explicit consultation-only disclaimer.
+- Removed the unfinished, unreachable legacy duplicate-supplier replacement modal (dead since the July 14 rewrite; its confirm action was a no-op).
+
+**Guided Tour impact: existing tour reviewed, no changes needed.** Both the Buyer Items page tour and the Quotation Management live guide target stable containers (page header, search, request card, docs/quotations section) — none reference the wizard's internal steps, the Financial Integrity panel, the duplicate-file warning, or the Approval Batch Review comparison area, so nothing broke and nothing new required a tour anchor.
 
 ## [v2.212.0] - 2026-07-23
 

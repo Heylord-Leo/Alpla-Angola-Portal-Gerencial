@@ -41,11 +41,18 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
     const [editingQuotationId, setEditingQuotationId] = useState<string | null>(null);
     const [isFinalReviewConfirmed, setIsFinalReviewConfirmed] = useState(false);
 
+    // Live running total of the WHOLE current draft (every item, regardless of reconciliation
+    // status). Matches useOcrProcessor's calculateDraftTotal used for the initial post-OCR
+    // value, and matches scope with `ocrTotalAmount` for the DOCUMENTS_OCR step's own
+    // OCR-vs-current divergence banner. Filtering to reconciled-only statuses here made the
+    // total collapse to 0 during DOCUMENTS_OCR, since items have no reconciliationStatus yet at
+    // that stage — that filtering only belongs to the backend's post-reconciliation Financial
+    // Integrity comparison and to WizardStepFinalReview's separately-computed "Total Final
+    // Considerado", not to this running draft total.
     const recalculateQuotationTotal = (d: OcrDraft, rates: any[]) => {
         let gross = 0;
         let ivaTotal = 0;
         d.items.forEach(item => {
-            if (!['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM'].includes(item.reconciliationStatus as string)) return;
             const itemGrossRaw = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
             const itemDiscount = item.discountAmount || 0;
             const itemNet = Math.max(0, itemGrossRaw - itemDiscount);
