@@ -116,7 +116,7 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({ dr
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', color: '#1e40af' }}>
                             <span style={{ fontWeight: 500 }}>Total (Documento OCR):</span>
-                            <span>{formatter.format(draft.totalAmount || 0)}</span>
+                            <span>{formatter.format(draft.ocrTotalAmount || 0)}</span>
                         </div>
                         <div style={{ height: '1px', backgroundColor: '#bfdbfe', margin: '4px 0' }}></div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', color: '#1e3a8a' }}>

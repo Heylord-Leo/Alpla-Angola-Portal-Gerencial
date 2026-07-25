@@ -129,8 +129,26 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                         }
                     }
 
-                    // Other non-selected quotations for read-only inspection
-                    const otherQuotations = quotations.filter(q => q.id !== selectedQuotation?.id);
+                    // Other quotations available for comparison on THIS specific line item — read-only.
+                    // A quotation only counts as an "alternative" here if it actually has a matching
+                    // item for this line (mappedRequestLineItemId, falling back to description match,
+                    // same resolution the render used to do inline). Quotations with no matching item
+                    // for this line (would previously render as "Não Cotado") are excluded entirely:
+                    // being present on the request is not the same as being an alternative for THIS
+                    // item, and showing them under a "comparison" heading would be misleading. Each
+                    // quotation is kept independent by QuotationId — never grouped/collapsed by
+                    // SupplierId, so two quotations from the same supplier both show up if both
+                    // quoted this item.
+                    const otherQuotationsWithItem: { quotation: SavedQuotationDto; matchedItem: SavedQuotationItemDto }[] = quotations
+                        .filter(q => q.id !== selectedQuotation?.id)
+                        .map(q => ({
+                            quotation: q,
+                            matchedItem: q.items?.find(qi =>
+                                qi.mappedRequestLineItemId === item.id ||
+                                qi.description.trim().toLowerCase() === item.description.trim().toLowerCase()
+                            )
+                        }))
+                        .filter((entry): entry is { quotation: SavedQuotationDto; matchedItem: SavedQuotationItemDto } => !!entry.matchedItem);
                     const isOtherExpanded = !!expandedOtherQuotes[item.id];
 
                     const isChainValid = !!selectedQItemId && !!selectedQItem && !!selectedQuotation;
@@ -290,7 +308,7 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                 )}
                                             </div>
 
-                                            {otherQuotations.length > 0 && (
+                                            {otherQuotationsWithItem.length > 0 && (
                                                 <button
                                                     type="button"
                                                     onClick={() => toggleExpandOtherQuotes(item.id)}
@@ -301,25 +319,28 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                         fontWeight: 600, cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <Eye size={14} /> {isOtherExpanded ? 'Ocultar outras cotações' : `Consultar outras cotações (${otherQuotations.length})`}
+                                                    <Eye size={14} /> {isOtherExpanded ? 'Ocultar outras cotações disponíveis' : `Ver outras cotações disponíveis (${otherQuotationsWithItem.length})`}
                                                     {isOtherExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                                 </button>
                                             )}
                                         </div>
 
-                                        {/* Collapsible section for other non-winning quotes */}
-                                        {isOtherExpanded && otherQuotations.length > 0 && (
-                                            <div style={{
-                                                backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB',
-                                                borderRadius: '8px', padding: '14px', marginTop: '4px'
-                                            }}>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#4B5563', display: 'block', marginBottom: '8px' }}>
-                                                    Outras Cotações Recebidas (Apenas Consulta):
-                                                </span>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    {otherQuotations.map(oq => {
-                                                        const oqItem = oq.items?.find(qi => qi.mappedRequestLineItemId === item.id || qi.description.trim().toLowerCase() === item.description.trim().toLowerCase());
-                                                        return (
+                                        {/* Secondary, read-only comparison section — visually neutral/muted on purpose,
+                                            never the green selected-state styling, no interactive selection controls. */}
+                                        {isOtherExpanded && otherQuotationsWithItem.length > 0 && (
+                                            <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: '14px', marginTop: '4px' }}>
+                                                <div style={{
+                                                    backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB',
+                                                    borderRadius: '8px', padding: '14px'
+                                                }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6B7280', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                                                        Outras cotações disponíveis para comparação
+                                                    </span>
+                                                    <p style={{ fontSize: '0.6875rem', color: '#9CA3AF', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                                                        Estas cotações são apresentadas apenas para consulta e não fazem parte da seleção atual enviada para aprovação.
+                                                    </p>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        {otherQuotationsWithItem.map(({ quotation: oq, matchedItem: oqItem }) => (
                                                             <div key={oq.id} style={{
                                                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                                                                 padding: '8px 12px', backgroundColor: '#FFFFFF', border: '1px solid #E5E7EB',
@@ -330,17 +351,13 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                                     <span style={{ color: '#6B7280', marginLeft: '6px' }}>#{oq.documentNumber || 'S/N'}</span>
                                                                 </div>
                                                                 <div>
-                                                                    {oqItem ? (
-                                                                        <span style={{ fontWeight: 700, color: '#374151' }}>
-                                                                            {formatCurrencyAO(oqItem.lineTotal)} ({formatCurrencyAO(oqItem.unitPrice)} / {oqItem.unitName || 'UN'})
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>Não Cotado</span>
-                                                                    )}
+                                                                    <span style={{ fontWeight: 700, color: '#374151' }}>
+                                                                        {formatCurrencyAO(oqItem.lineTotal)} ({formatCurrencyAO(oqItem.unitPrice)} / {oqItem.unitName || 'UN'})
+                                                                    </span>
                                                                 </div>
                                                             </div>
-                                                        );
-                                                    })}
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Trash2, AlertCircle, CheckCircle2, AlertTriangle, Hash, Calendar } from 'lucide-react';
-import { OcrDraft, OcrDraftItem } from '../../../types';
+import { Trash2, AlertCircle, CheckCircle2, AlertTriangle, Hash, Calendar, Info } from 'lucide-react';
+import { OcrDraft, OcrDraftItem, RequestDetailsDto } from '../../../types';
 import { useQuotationWizardState } from './hooks/useQuotationWizardState';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
-import { formatCurrencyAO } from '../../../lib/utils';
+import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
 import { useState } from 'react';
 
@@ -80,19 +80,33 @@ interface WizardStepDocumentsOcrProps {
     ivaRates: any[];
     units: any[];
     currencies: any[];
+    /** Used only for the non-blocking "supplier already has other quotations" notice below. */
+    request?: RequestDetailsDto | null;
 }
 
-export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({ 
-    draft, 
+export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
+    draft,
     isProcessingOcr,
     onUpload,
     onReplaceConfirm,
     wizardState,
     ivaRates,
     units,
-    currencies
+    currencies,
+    request
 }) => {
     const { updateDraftHeader, updateDraftItem, removeDraftItem } = wizardState;
+
+    // Purely derived — no state, no effects. Recomputes on every render from the current
+    // supplier and the request's current quotation list, so it naturally updates/disappears
+    // when the supplier changes, is cleared, the document is replaced (new draft), or a
+    // different request's wizard opens (new `request` prop) — nothing to clear explicitly.
+    // Informational only: a supplier may legitimately submit multiple quotations for one
+    // request (revision, complementary offer, alternative pricing, etc.) — this never blocks
+    // advancing or saving.
+    const existingSupplierQuotations = (draft?.supplierId != null && request?.quotations)
+        ? request.quotations.filter((q: any) => q.supplierId === draft.supplierId && q.id !== wizardState.editingQuotationId)
+        : [];
 
     // ── Shared inline style atoms ─────────────────────────────────────────────
     const labelStyle: React.CSSProperties = {
@@ -118,10 +132,18 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
     };
 
     const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
+    const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
 
     const handleConfirmReplace = () => {
         setShowReplaceConfirm(false);
         onReplaceConfirm();
+    };
+
+    const handleConfirmDelete = () => {
+        if (pendingDeleteIndex !== null) {
+            removeDraftItem(pendingDeleteIndex, ivaRates);
+        }
+        setPendingDeleteIndex(null);
     };
 
     return (
@@ -196,6 +218,31 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                 )}
                             </div>
                         </div>
+
+                        {/* Supplier-already-has-quotations notice — informational only, never blocks. */}
+                        {existingSupplierQuotations.length > 0 && (
+                            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '14px 16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+                                <Info style={{ width: 18, height: 18, color: '#2563eb', flexShrink: 0, marginTop: '1px' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, minWidth: 0 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#1e3a8a' }}>
+                                            Este fornecedor já possui outras cotações neste pedido
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '2px', lineHeight: 1.5 }}>
+                                            {draft.supplierNameSnapshot || 'Este fornecedor'} já apresentou {existingSupplierQuotations.length} cotação(ões) para este pedido. Verifique se este documento é uma nova proposta, uma revisão ou uma possível duplicação.
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {existingSupplierQuotations.map((q: any) => (
+                                            <div key={q.id} style={{ fontSize: '0.75rem', color: '#1e3a8a', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '6px 8px', backgroundColor: '#dbeafe', borderRadius: '4px' }}>
+                                                <span>Doc: {q.documentNumber || 'S/N'} • {q.documentDate ? formatDate(q.documentDate) : 'N/A'} • {q.itemCount ?? (q.items?.length || 0)} item(ns)</span>
+                                                <span style={{ fontWeight: 700 }}>{q.currency || ''} {formatCurrencyAO(q.totalAmount || 0)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Doc Number */}
                         <div>
@@ -420,7 +467,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                             </td>
 
                                             <td style={{ padding: '8px 12px' }}>
-                                                <button onClick={() => removeDraftItem(idx)} style={{ color: '#cbd5e1', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                <button onClick={() => setPendingDeleteIndex(idx)} style={{ color: '#cbd5e1', background: 'none', border: 'none', cursor: 'pointer' }}>
                                                     <Trash2 style={{ width: 16, height: 16 }} />
                                                 </button>
                                             </td>
@@ -487,6 +534,18 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                     variant="destructive"
                     onConfirm={handleConfirmReplace}
                     onCancel={() => setShowReplaceConfirm(false)}
+                />
+            )}
+
+            {pendingDeleteIndex !== null && (
+                <ConfirmationDialog
+                    title="Remover item extraído?"
+                    message="Este item foi extraído do documento. Removê-lo pode gerar uma divergência no total da cotação e exigir uma justificativa ao salvar. Deseja continuar?"
+                    confirmText="Remover item"
+                    cancelText="Cancelar"
+                    variant="destructive"
+                    onConfirm={handleConfirmDelete}
+                    onCancel={() => setPendingDeleteIndex(null)}
                 />
             )}
         </div>

@@ -745,9 +745,13 @@ export const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(quotation),
             });
-            // Handle Financial Integrity Gate 409 response
+            // Handle Financial Integrity Gate 409 response. Read via .clone() so the ORIGINAL
+            // response body stays unconsumed for handleApiError below — a 409 that isn't the
+            // integrity shape (e.g. the duplicate-supplier conflict) must still be able to read
+            // response.json()/.clone() normally there; reading the original response's body here
+            // would otherwise make handleApiError's own response.clone() throw ("body already used").
             if (response.status === 409) {
-                const body = await response.json();
+                const body = await response.clone().json().catch(() => null);
                 if (body?.integrityCheckFailed) {
                     return {
                         integrityCheckFailed: true as const,

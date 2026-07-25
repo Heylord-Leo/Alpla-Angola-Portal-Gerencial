@@ -467,6 +467,28 @@ export interface ReconciliationReviewItemDto {
     justification?: string;
 }
 
+/**
+ * Captured once, before the first SaveQuotation create attempt of a logical wizard submission,
+ * and reused unchanged across every retry (Financial Integrity override, controlled retry after
+ * an ambiguous failure) of that same submission — never re-captured mid-sequence, or a quotation
+ * created by an earlier attempt would become invisible to the "is this new?" check.
+ */
+export interface AmbiguousSavePreAttemptSnapshot {
+    existingQuotationIds: Set<string>;
+    attemptStartedAtUtc: string;
+}
+
+/** SaveQuotation Financial Integrity Gate 409 response (RequestsController.SaveQuotation). */
+export interface FinancialIntegrityCheckFailedDto {
+    integrityCheckFailed: true;
+    ocrOriginalTotal: number;
+    quotationTotal: number;
+    varianceAmount: number;
+    variancePercent: number;
+    toleranceApplied: number;
+    detail: string;
+}
+
 export interface UserDto {
     id: string;
     fullName: string;
