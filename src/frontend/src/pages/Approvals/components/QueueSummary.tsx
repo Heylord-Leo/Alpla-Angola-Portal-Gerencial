@@ -14,7 +14,10 @@ export function QueueSummary({ areaApprovals, finalApprovals, pendingContracts }
     const allRequests = [...areaApprovals, ...finalApprovals];
 
     const totalCount = allRequests.length;
-    const totalValue = allRequests.reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
+    // Authoritative queue total — sum of the backend actionable amounts, excluding unresolved
+    // (null) ones, mirroring ApprovalQueueAmountResolver.SumActionable. Uses the exact same rule
+    // as each card, so cards and this KPI can never diverge.
+    const totalValue = allRequests.reduce((sum, req) => sum + (req.actionableAmount ?? 0), 0);
     const urgentCount = allRequests.filter(req => {
         const style = getUrgencyStyle(req.needByDateUtc, req.statusCode);
         return style && style.priority >= 2;

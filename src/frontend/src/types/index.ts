@@ -34,6 +34,15 @@ export interface RequestListItemDto {
     supplierName: string | null;
     supplierPortalCode: string | null;
     estimatedTotalAmount: number;
+    /** Authoritative actionable amount for the Approval Center queue (backend ApprovalQueueAmountResolver).
+     *  null = amount could not be resolved — render "Valor ainda não definido", never 0. */
+    actionableAmount?: number | null;
+    /** Which rule produced actionableAmount (PAYMENT_AMOUNT, BATCH_SNAPSHOT, BATCH_ITEM_SUM, ...). */
+    actionableAmountSource?: string | null;
+    /** Batch snapshot disagrees with the sum of its selected quotation items — warn, don't show a false amount. */
+    hasAmountInconsistency?: boolean;
+    /** Current actionable lot (batch) number, when the amount comes from a batch. */
+    actionableLotNumber?: number | null;
     discountAmount: number;
     currencyId: number | null;
     currencyCode: string | null;
@@ -314,6 +323,43 @@ export interface ApprovalBatchSummary {
     ignoredLines?: BatchInformationalItem[];
     /** Genuine EXTRA_ITEM lines with no recorded decision — only possible for legacy batches. */
     unresolvedLegacyLines?: BatchInformationalItem[];
+    /** Normalized, lot-aware view model for the Final Approval screen (backend-computed). */
+    lotView?: FinalApprovalLotView | null;
+}
+
+/** Normalized, lot-aware Final Approval view model — mirrors the backend's FinalApprovalLotViewDto.
+ * The Final Approval UI renders straight from this; it never re-derives line totals or sums money. */
+export interface FinalApprovalLotView {
+    batchNumber: number;
+    /** Authoritative approved total for THIS lot only. */
+    lotTotal: number;
+    currencyCode?: string | null;
+    includedItems: FinalApprovalLotItem[];
+    /** IGNORED quotation lines — audit only, never counted in the lot. */
+    ignoredLines: BatchInformationalItem[];
+    includedItemCount: number;
+    ignoredItemCount: number;
+    supplierNames: string[];
+    /** Resolved supplier value for the header (single name or "N fornecedores"); null if unresolved. */
+    supplierLabel?: string | null;
+    /** Header caption: "Fornecedor do lote" or "Fornecedores do lote". */
+    supplierHeading: string;
+    /** True when the approved snapshot disagrees with the sum of included line totals. */
+    hasMonetaryInconsistency: boolean;
+    /** True when an included item has no resolvable selected-quotation line total. */
+    hasUnresolvedItemValue: boolean;
+}
+
+export interface FinalApprovalLotItem {
+    requestLineItemId: string;
+    selectedQuotationItemId: string;
+    description: string;
+    quantity: number;
+    unitCode?: string | null;
+    /** Authoritative selected-quotation line total (IVA included). null = unresolved winner. */
+    lineTotal?: number | null;
+    supplierName?: string | null;
+    isExtraItem: boolean;
 }
 
 /** Values accepted by the backend's batch-composition decision (distinct from Area Approval's

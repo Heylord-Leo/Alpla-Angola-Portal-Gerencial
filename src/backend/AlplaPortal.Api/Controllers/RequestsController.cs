@@ -2,6 +2,7 @@ namespace AlplaPortal.Api.Controllers;
 using System.Diagnostics;
 
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Projections;
 using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Application.DTOs.Common;
@@ -566,8 +567,8 @@ public class RequestsController : BaseController
         var _sw = Stopwatch.StartNew();
 
         // 3. Execution and Projection
-        var areaTasks = await ProjectToListItem(areaQuery, today, tomorrow, in4Days);
-        var finalTasks = await ProjectToListItem(finalQuery, today, tomorrow, in4Days);
+        var areaTasks = await ProjectToListItem(areaQuery, today, tomorrow, in4Days, "AREA");
+        var finalTasks = await ProjectToListItem(finalQuery, today, tomorrow, in4Days, "FINAL");
         
         _sw.Stop();
         _logger.LogInformation("[PERF] GetPendingApprovals executing ProjectToListItem took {Elapsed}ms", _sw.ElapsedMilliseconds);
@@ -579,9 +580,16 @@ public class RequestsController : BaseController
         });
     }
 
-    private async Task<List<RequestListItemDto>> ProjectToListItem(IQueryable<Request> query, DateTime today, DateTime tomorrow, DateTime in4Days)
+    private async Task<List<RequestListItemDto>> ProjectToListItem(IQueryable<Request> query, DateTime today, DateTime tomorrow, DateTime in4Days, string approvalStage)
     {
-        return await query
+        // The "actionable" batch for this queue is the one whose status matches the stage the card
+        // is queued under — a request in the Area queue is actioned on its WAITING_AREA_APPROVAL
+        // batch, the Final queue on its WAITING_FINAL_APPROVAL batch.
+        var stageBatchStatus = approvalStage == "AREA"
+            ? RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval
+            : RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval;
+
+        var projected = await query
             .OrderByDescending(r =>
                 (r.Status!.Code == "REJECTED" || r.Status.Code == "CANCELLED" ||
                  r.Status.Code == "COMPLETED")
@@ -598,44 +606,89 @@ public class RequestsController : BaseController
                 r,
                 SelectedQ = r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId),
                 FirstCostCenter = r.LineItems.Where(l => !l.IsDeleted && l.CostCenter != null).Select(l => l.CostCenter).FirstOrDefault(),
-                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault()
+                CompletedStatusHistory = r.StatusHistories.Where(sh => sh.NewStatus.Code == "COMPLETED" || sh.NewStatus.Code == "PAID" || sh.NewStatus.Code == "PAYMENT_COMPLETED").OrderByDescending(sh => sh.CreatedAtUtc).FirstOrDefault(),
+                // ── Actionable-amount ingredients (resolved in memory by ApprovalQueueAmountResolver) ──
+                HasActiveBatch = r.ApprovalBatches.Any(b => b.Status == stageBatchStatus),
+                ActiveBatchNumber = r.ApprovalBatches.Where(b => b.Status == stageBatchStatus).OrderBy(b => b.BatchNumber).Select(b => (int?)b.BatchNumber).FirstOrDefault(),
+                ActiveBatchSnapshot = r.ApprovalBatches.Where(b => b.Status == stageBatchStatus).OrderBy(b => b.BatchNumber).Select(b => b.ApprovedTotalAmount).FirstOrDefault(),
+                ActiveBatchItemSum = r.ApprovalBatches.Where(b => b.Status == stageBatchStatus).OrderBy(b => b.BatchNumber).Select(b => (decimal?)b.Items.Sum(i => i.SelectedQuotationItem.LineTotal)).FirstOrDefault(),
+                ActiveBatchItemCount = r.ApprovalBatches.Where(b => b.Status == stageBatchStatus).OrderBy(b => b.BatchNumber).Select(b => (int?)b.Items.Count).FirstOrDefault(),
+                SelectedQuotationTotal = r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => (decimal?)q.TotalAmount).FirstOrDefault()
             })
-            .Select(x => new RequestListItemDto
+            .Select(x => new
             {
-                Id = x.r.Id,
-                RequestNumber = x.r.RequestNumber,
-                Title = x.r.Title,
-                StatusId = x.r.Status!.Id,
-                StatusName = x.r.Status.Name ?? string.Empty,
-                StatusCode = x.r.Status.Code ?? string.Empty,
-                StatusBadgeColor = x.r.Status.BadgeColor ?? string.Empty,
-                RequestTypeId = x.r.RequestType!.Id,
-                RequestTypeCode = x.r.RequestType.Code ?? string.Empty,
-                RequesterName = x.r.Requester.FullName ?? string.Empty,
-                DepartmentName = x.r.Department != null ? x.r.Department.Name : null,
-                PlantName = x.r.Plant != null ? x.r.Plant.Name : "---",
-                SupplierName = x.r.SelectedQuotationId.HasValue 
-                    ? (x.SelectedQ != null ? x.SelectedQ.SupplierNameSnapshot : null)
-                    : (x.r.Supplier != null ? x.r.Supplier.Name : null),
-                EstimatedTotalAmount = (x.r.ApprovedTotalAmount.HasValue && x.r.ApprovedTotalAmount.Value > 0)
-                    ? x.r.ApprovedTotalAmount.Value
-                    : x.r.SelectedQuotationId.HasValue
-                        ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
-                        : x.r.EstimatedTotalAmount,
-                CurrencyCode = x.r.SelectedQuotationId.HasValue 
-                    ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
-                    : (x.r.Currency != null ? x.r.Currency.Code : null),
-                NeedByDateUtc = x.r.NeedByDateUtc,
-                CreatedAtUtc = x.r.CreatedAtUtc,
-                // Added for Area Approval context
-                CostCenterCode = x.FirstCostCenter != null ? x.FirstCostCenter.Code : null,
-                CostCenterName = x.FirstCostCenter != null ? x.FirstCostCenter.Name : null,
-                CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
-                    ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
-                    : null,
-                PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
+                Dto = new RequestListItemDto
+                {
+                    Id = x.r.Id,
+                    RequestNumber = x.r.RequestNumber,
+                    Title = x.r.Title,
+                    StatusId = x.r.Status!.Id,
+                    StatusName = x.r.Status.Name ?? string.Empty,
+                    StatusCode = x.r.Status.Code ?? string.Empty,
+                    StatusBadgeColor = x.r.Status.BadgeColor ?? string.Empty,
+                    RequestTypeId = x.r.RequestType!.Id,
+                    RequestTypeCode = x.r.RequestType.Code ?? string.Empty,
+                    RequestTypeName = x.r.RequestType.Name ?? string.Empty,
+                    RequesterName = x.r.Requester.FullName ?? string.Empty,
+                    DepartmentName = x.r.Department != null ? x.r.Department.Name : null,
+                    CompanyId = x.r.CompanyId,
+                    CompanyName = x.r.Company != null ? x.r.Company.Name : string.Empty,
+                    PlantName = x.r.Plant != null ? x.r.Plant.Name : "---",
+                    SupplierName = x.r.SelectedQuotationId.HasValue
+                        ? (x.SelectedQ != null ? x.SelectedQ.SupplierNameSnapshot : null)
+                        : (x.r.Supplier != null ? x.r.Supplier.Name : null),
+                    // Raw request estimate (payment amount for PAYMENT). The authoritative queue money
+                    // is ActionableAmount below — set in memory so the rule stays centralized/testable.
+                    EstimatedTotalAmount = x.r.EstimatedTotalAmount,
+                    CurrencyCode = x.r.SelectedQuotationId.HasValue
+                        ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
+                        : (x.r.Currency != null ? x.r.Currency.Code : null),
+                    NeedByDateUtc = x.r.NeedByDateUtc,
+                    CreatedAtUtc = x.r.CreatedAtUtc,
+                    SelectedQuotationId = x.r.SelectedQuotationId,
+                    // Added for Area Approval context
+                    CostCenterCode = x.FirstCostCenter != null ? x.FirstCostCenter.Code : null,
+                    CostCenterName = x.FirstCostCenter != null ? x.FirstCostCenter.Name : null,
+                    CompletedAtUtc = (x.r.Status.Code == "COMPLETED" || x.r.Status.Code == "PAID" || x.r.Status.Code == "PAYMENT_COMPLETED")
+                        ? (x.CompletedStatusHistory != null ? (DateTime?)x.CompletedStatusHistory.CreatedAtUtc : null)
+                        : null,
+                    PaymentCompletedAtUtc = x.r.ActualPaidAtUtc
+                },
+                TypeCode = x.r.RequestType!.Code,
+                x.HasActiveBatch,
+                x.ActiveBatchNumber,
+                x.ActiveBatchSnapshot,
+                x.ActiveBatchItemSum,
+                x.ActiveBatchItemCount,
+                HasSelectedQuotation = x.r.SelectedQuotationId.HasValue,
+                x.SelectedQuotationTotal,
+                RequestApprovedTotal = x.r.ApprovedTotalAmount,
+                RequestEstimate = x.r.EstimatedTotalAmount
             })
             .ToListAsync();
+
+        // Resolve the single authoritative actionable amount in memory (centralized, testable rule).
+        foreach (var x in projected)
+        {
+            var res = ApprovalQueueAmountResolver.Resolve(
+                x.TypeCode,
+                x.HasActiveBatch,
+                x.ActiveBatchNumber,
+                x.ActiveBatchSnapshot,
+                x.ActiveBatchItemSum,
+                x.ActiveBatchItemCount ?? 0,
+                x.HasSelectedQuotation,
+                x.SelectedQuotationTotal,
+                x.RequestApprovedTotal,
+                x.RequestEstimate);
+
+            x.Dto.ActionableAmount = res.Amount;
+            x.Dto.ActionableAmountSource = res.Source;
+            x.Dto.HasAmountInconsistency = res.HasInconsistency;
+            x.Dto.ActionableLotNumber = res.LotNumber;
+        }
+
+        return projected.Select(x => x.Dto).ToList();
     }
 
     [HttpGet]
@@ -1420,6 +1473,16 @@ public class RequestsController : BaseController
                 batchDto.ExcludedExtraItems = informational.ExcludedExtraItems;
                 batchDto.IgnoredLines = informational.IgnoredLines;
                 batchDto.UnresolvedLegacyLines = informational.UnresolvedLegacyLines;
+            }
+
+            // Normalized, lot-aware Final Approval view model — authoritative item line totals
+            // (selected quotation item, not the RequestLineItem estimate), lot total, supplier
+            // resolution and included-vs-ignored separation. Built AFTER IgnoredLines are attached
+            // so the view carries the batch's audit lines. Pure over the projected DTOs.
+            foreach (var batchDto in request.ApprovalBatches)
+            {
+                if (batchDto.Items.Count == 0) continue;
+                batchDto.LotView = FinalApprovalLotViewBuilder.Build(batchDto, request.Quotations, request.CurrencyCode);
             }
         }
 

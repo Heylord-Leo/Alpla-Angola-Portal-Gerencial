@@ -120,6 +120,12 @@ public class RequestApprovalBatchDto
 
     /// <summary>Genuine EXTRA_ITEM lines with no recorded buyer decision — only possible for batches created before this rule existed. Blocks Area Approval progression when non-empty.</summary>
     public List<BatchInformationalItemDto> UnresolvedLegacyLines { get; set; } = new();
+
+    /// <summary>Normalized, lot-aware view model for the Final Approval screen: authoritative item
+    /// line totals (from the selected quotation item, never the RequestLineItem estimate), lot total,
+    /// supplier resolution and included-vs-ignored separation. Computed server-side; null when the
+    /// batch has no items to value.</summary>
+    public FinalApprovalLotViewDto? LotView { get; set; }
 }
 
 public class RequestApprovalBatchItemDto

@@ -105,10 +105,10 @@ export function DecisionInsightsPanel({
                     value={dept.monthAccumulatedTotal.toLocaleString('pt-AO', { style: 'currency', currency: dept.currency || 'AOA' })} 
                     tooltip="Total de gastos do departamento no mês atual (considerando pedidos já aprovados)."
                 />
-                <KpiCard 
-                    label="Impacto Orçame." 
-                    value={`${dept.currentRequestSharePercentage.toFixed(1)}%`} 
-                    tooltip="Percentual que este pedido consome do volume total de gastos do mês para o seu departamento."
+                <KpiCard
+                    label="Part. Acum. Mensal"
+                    value={`${dept.currentRequestSharePercentage.toFixed(1)}%`}
+                    tooltip="Participação deste pedido/lote no total de gastos do departamento no mês atual (valor do lote ÷ (acumulado do mês + valor do lote)). Não é consumo de orçamento configurado."
                 />
             </div>
         </div>

@@ -66,6 +66,23 @@ public class RequestListItemDto
     public decimal EstimatedTotalAmount { get; set; }
     public string? CurrencyCode { get; set; }
 
+    // ── Authoritative "actionable amount" for the Approval Center queue (ApprovalQueueAmountResolver) ──
+    // The single monetary rule used by the card, the queue-total KPI and value sort/filter. Resolved
+    // per request type + approval stage so partial QUOTATION lots show the current lot total, not the
+    // (0) request estimate. Null = the amount could not be resolved — render "Valor ainda não definido",
+    // NEVER 0. A genuine zero stays a concrete 0m.
+    public decimal? ActionableAmount { get; set; }
+
+    /// <summary>Which rule produced <see cref="ActionableAmount"/> — see ApprovalQueueAmountResolver.Sources.</summary>
+    public string? ActionableAmountSource { get; set; }
+
+    /// <summary>True when the batch approved snapshot disagrees with the sum of its included selected
+    /// quotation items — the card must warn instead of showing a falsely normal amount.</summary>
+    public bool HasAmountInconsistency { get; set; }
+
+    /// <summary>The current actionable lot (batch) number, when the amount comes from a batch.</summary>
+    public int? ActionableLotNumber { get; set; }
+
     public DateTime RequestedDateUtc { get; set; }
     public DateTime? NeedByDateUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
