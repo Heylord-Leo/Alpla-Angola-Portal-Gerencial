@@ -8,6 +8,7 @@ using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -86,7 +87,8 @@ public class FinanceCancelScheduleTests
             new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object,
             new Mock<IRequestLineItemSubmissionValidator>().Object,
-            new Mock<IQuotationItemEligibilityService>().Object);
+            new Mock<IQuotationItemEligibilityService>().Object,
+            new Mock<IBatchExtraItemDecisionService>().Object);
 
         var claims = new List<Claim>
         {

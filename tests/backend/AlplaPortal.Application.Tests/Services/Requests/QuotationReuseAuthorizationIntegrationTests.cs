@@ -8,10 +8,12 @@ using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
+using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Infrastructure.Services.Purchasing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -170,7 +172,7 @@ public class QuotationReuseAuthorizationIntegrationTests
             new Mock<IPrimaveraRequestValidationService>().Object, new Mock<IGroupBuilderService>().Object,
             new Mock<IRequestStatusSyncService>().Object, new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object, new Mock<IRequestLineItemSubmissionValidator>().Object,
-            new QuotationItemEligibilityService(ctx));
+            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx));
         SetUser(controller, actorId, roles);
         return controller;
     }
@@ -185,7 +187,7 @@ public class QuotationReuseAuthorizationIntegrationTests
         var controller = new ApprovalBatchController(
             ctx, NullLogger<ApprovalBatchController>.Instance,
             statusSync.Object, new Mock<IGroupBuilderService>().Object, routing.Object,
-            new QuotationItemEligibilityService(ctx));
+            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx));
         SetUser(controller, actorId, "System Administrator");
         return controller;
     }

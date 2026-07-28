@@ -4,7 +4,23 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.213.0
+v2.214.0
+
+## [v2.214.0] - 2026-07-28
+
+### Added & Fixed — Quotation Financial Reconciliation & Approval Monetary Corrections
+
+- **OCR-original per-line baseline (immutable)**: each quotation line now captures its OCR-extracted quantity/unit-price/discount/IVA/unit/line-total at SaveQuotation and document-replacement time, and UpdateQuotation compares against — but never overwrites — that persisted baseline. Nulls mean "not extracted" (never treated as 0), so legacy/manual lines stay exempt.
+- **Line-level financial-adjustment justification**: one consolidated free-text reason per line for material edits versus the OCR baseline, distinct from the reconciliation justification and the residual justification, enforced on both create and update.
+- **Authoritative reconciliation preview + signed residual gate**: a read-only backend preview endpoint computes the document residual from the same shared calculator used by SaveQuotation/UpdateQuotation; a signed residual beyond tolerance blocks the save until explained. Reconciliation applicability keys on the OCR header total, not the source label.
+- **EXTRA_ITEM / IGNORED handling & quick-text shortcuts**: buyer batch-composition INCLUDE/EXCLUDE decisions for genuine EXTRA_ITEM lines (shared service across batch creation and rework), a server-side legacy-unresolved-lines gate on Area Approval, and reconciliation-motive quick-text shortcuts (frontend text only, no codes/DB).
+- **Partial-approval batch monetary standardization + dynamic financial summary**: winner and EXTRA_ITEM cards show a uniform Qtd / Preço s/IVA / IVA(rate%) / Total c/IVA structure; a live "Resumo financeiro do lote" sums only persisted `taxableBase`/`ivaAmount`/`lineTotal` (never re-derived), with excluded extras removed from the total and a missing-field guard that blocks confirmation instead of showing a false 0.
+- **TaxableBase projection corrected across all read paths**: `SavedQuotationItemDto` now projects the net taxable base (`GrossSubtotal − DiscountAmount`) in RequestsController request-details, LineItemsController, and the SaveQuotation/UpdateQuotation responses — fixing "Subtotal sem IVA: 0,00" in the partial-approval modal.
+- **Area Approval IVA-rate projection corrected**: request-details now projects the persisted `IvaRatePercent`, so the approval wizard shows "IVA (14%)" instead of a contradictory "IVA (0%)"; the label never renders a 0% rate against a positive IVA amount.
+- Additive migration `20260727162615_AddQuotationItemOcrBaseline` (8 nullable columns on `QuotationItems`) — **not applied to any database as part of this release.**
+- Backend and frontend regression tests added (reconciliation calculator, controller shapes, batch extra-item decisions, legacy-gate, justification validator).
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.213.0] - 2026-07-25
 

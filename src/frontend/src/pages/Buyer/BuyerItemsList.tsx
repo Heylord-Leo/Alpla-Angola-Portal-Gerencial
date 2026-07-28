@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -14,6 +15,7 @@ import { QuotationReuseModal } from '../../components/Buyer/QuotationReuseModal'
 import { QuotationWizardModal } from './QuotationWizard/QuotationWizardModal';
 import { useQuotationWizardState } from './QuotationWizard/hooks/useQuotationWizardState';
 import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
+import { BatchReworkModal } from './BatchReworkModal';
 import { CancelApprovalBatchModal } from './CancelApprovalBatchModal';
 import { isQuotationItemSelectableForApproval, isLineItemEligibleForQuotation } from './batchEligibility';
 import { getBuyerItemStatus } from './buyerItemStatus';
@@ -30,7 +32,7 @@ import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGui
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createQuotationManagementGuide } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
 import type { QuotationManagementState } from '../../features/guided-tour/live-guide/guides/quotationManagement.liveGuide';
-import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto, FinancialIntegrityCheckFailedDto, AmbiguousSavePreAttemptSnapshot } from '../../types';
+import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, ReconciliationBatchDto, FinancialIntegrityCheckFailedDto, AmbiguousSavePreAttemptSnapshot, ExtraItemDecisionPayload } from '../../types';
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
@@ -250,6 +252,47 @@ const RequestGroupSkeleton: React.FC = () => {
 };
 
 
+/** Single source of truth for the quotation save/preview wire payload — used by BOTH the save call
+ * and the authoritative reconcile-preview so the two never diverge for the same draft. */
+function buildQuotationPayload(draft: OcrDraft) {
+    return {
+        source: 'OCR',
+        supplierId: draft.supplierId,
+        supplierNameSnapshot: draft.supplierNameSnapshot,
+        documentNumber: draft.documentNumber,
+        documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
+        currency: draft.currency || 'AOA',
+        discountAmount: draft.discountAmount || 0,
+        totalAmount: draft.totalAmount || 0,
+        proformaAttachmentId: draft.proformaAttachmentId,
+        items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED', 'IGNORED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
+            mappedRequestLineItemId: i.mappedRequestLineItemId,
+            lineNumber: idx + 1,
+            description: i.description || '',
+            quantity: i.quantity || 0,
+            unitPrice: i.unitPrice || 0,
+            discountAmount: i.discountAmount || 0,
+            ivaRateId: i.ivaRateId || null || 1,
+            unitId: i.unitId || null,
+            lineTotal: i.totalPrice || 0,
+            itemCatalogId: i.itemCatalogId || null,
+            reconciliationStatus: i.reconciliationStatus,
+            reconciliationJustification: i.reconciliationJustification || null,
+            originalReconciliationJustification: i.reconciliationJustification || null,
+            // ── Financial Reconciliation: OCR-original baseline + line adjustment reason ──
+            lineOrigin: i.lineOrigin || (i.ocrOriginalLineTotal != null ? 'OCR' : 'MANUAL'),
+            ocrOriginalQuantity: i.ocrOriginalQuantity ?? null,
+            ocrOriginalUnitPrice: i.ocrOriginalUnitPrice ?? null,
+            ocrOriginalDiscountAmount: i.ocrOriginalDiscountAmount ?? null,
+            ocrOriginalIvaRatePercent: i.ocrOriginalIvaRatePercent ?? null,
+            ocrOriginalUnitText: i.ocrOriginalUnitText ?? null,
+            ocrOriginalUnitId: i.ocrOriginalUnitId ?? null,
+            ocrOriginalLineTotal: i.ocrOriginalLineTotal ?? null,
+            lineAdjustmentJustification: i.lineAdjustmentJustification || null
+        }))
+    };
+}
+
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -282,6 +325,12 @@ export function BuyerItemsList() {
         show: boolean;
         group: any | null;
     }>({ show: false, group: null });
+
+    const [batchReworkModal, setBatchReworkModal] = useState<{
+        show: boolean;
+        group: any | null;
+        batch: any | null;
+    }>({ show: false, group: null, batch: null });
 
     const [cancelApprovalModal, setCancelApprovalModal] = useState<{
         show: boolean;
@@ -341,6 +390,8 @@ export function BuyerItemsList() {
         uploadCallback: () => void;
     } | null>(null);
     const [dupCountdown, setDupCountdown] = useState(0);
+    const duplicateWarningRef = useRef<HTMLDivElement | null>(null);
+    const duplicateWarningReturnFocusRef = useRef<HTMLElement | null>(null);
 
     // Countdown timer for duplicate warning confirm button safety delay
     useEffect(() => {
@@ -354,6 +405,44 @@ export function BuyerItemsList() {
         }, 1000);
         return () => clearInterval(interval);
     }, [fileDuplicateWarning?.isOpen]);
+
+    // Focus management for the duplicate-warning modal (stacked above the Quotation Wizard):
+    // capture whatever had focus in the wizard, move focus into the warning dialog once it
+    // paints, and restore the wizard's focus when the warning closes — the wizard's own state
+    // is untouched either way, only keyboard focus moves.
+    useEffect(() => {
+        if (fileDuplicateWarning?.isOpen) {
+            duplicateWarningReturnFocusRef.current = document.activeElement as HTMLElement | null;
+            const raf = requestAnimationFrame(() => {
+                const first = duplicateWarningRef.current?.querySelector<HTMLElement>(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+                first?.focus();
+            });
+            return () => cancelAnimationFrame(raf);
+        }
+        duplicateWarningReturnFocusRef.current?.focus();
+        duplicateWarningReturnFocusRef.current = null;
+    }, [fileDuplicateWarning?.isOpen]);
+
+    // Minimal Tab trap — keeps keyboard focus inside the warning dialog while it's open, so the
+    // wizard behind it (visually blocked by the backdrop already) also can't be reached by Tab.
+    const handleDuplicateWarningKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key !== 'Tab') return;
+        const focusable = duplicateWarningRef.current?.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusable || focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    };
 
     // Lookups
     const [ivaRates, setIvaRates] = useState<IvaRate[]>([]);
@@ -427,51 +516,33 @@ export function BuyerItemsList() {
     ): Promise<
         | { success: true }
         | ({ success: false } & FinancialIntegrityCheckFailedDto)
+        | { success: false; residualUnexplained: true; reconciliation: any; detail: string }
         | { success: false; error: string }
     > => {
         if (!wizardActiveRequest) return { success: false, error: 'No active request' };
         try {
-            const payload = {
-                source: 'OCR', // or draft.source if it exists
-                supplierId: draft.supplierId,
-                supplierNameSnapshot: draft.supplierNameSnapshot,
-                documentNumber: draft.documentNumber,
-                documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
-                currency: draft.currency || 'AOA',
-                discountAmount: draft.discountAmount || 0,
-                totalAmount: draft.totalAmount || 0,
-                proformaAttachmentId: draft.proformaAttachmentId,
-                // NOT_QUOTED items ARE persisted (zeroed) — they are document-level
-                // information ("this supplier did not quote this item") and must NOT
-                // touch the request line item's QuotationLifecycleStatus. The item
-                // stays pending on the request for future quotations.
-                // IGNORED lines are ALSO persisted (with their per-line justification):
-                // the backend excludes them from the quotation totals AND subtracts them
-                // from the OCR baseline in the Financial Integrity Gate — dropping them
-                // here made every ignored line a false divergence (excludedIgnoredTotal=0).
-                items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED', 'IGNORED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
-                    mappedRequestLineItemId: i.mappedRequestLineItemId,
-                    lineNumber: idx + 1,
-                    description: i.description || '',
-                    quantity: i.quantity || 0,
-                    unitPrice: i.unitPrice || 0,
-                    discountAmount: i.discountAmount || 0,
-                    ivaRateId: i.ivaRateId || null || 1,
-                    unitId: i.unitId || null,
-                    lineTotal: i.totalPrice || 0,
-                    itemCatalogId: i.itemCatalogId || null,
-                    reconciliationStatus: i.reconciliationStatus,
-                    reconciliationJustification: i.reconciliationJustification || null
-                }))
-            };
+            const payload = buildQuotationPayload(draft);
 
             setIsSaving(true);
             const requestId = wizardActiveRequest.requestId;
             const isEditing = quotationWizardState.isEditing;
             const quotationId = quotationWizardState.editingQuotationId;
 
+            // OCR header total drives the reconciliation gate on BOTH create and update now.
+            const ocrTotalHeader = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
+                ? draft.ocrTotalAmount
+                : undefined;
+
             if (isEditing && quotationId) {
-                await api.requests.updateQuotation(requestId, quotationId, payload);
+                const updateResult = await api.requests.updateQuotation(requestId, quotationId, {
+                    ...payload,
+                    ocrTotal: ocrTotalHeader,
+                    financialIntegrityOverride: overridePayload?.financialIntegrityOverride ?? false,
+                    overrideJustification: overridePayload?.overrideJustification
+                });
+                if (updateResult && 'residualUnexplained' in updateResult && updateResult.residualUnexplained) {
+                    return { success: false, residualUnexplained: true, reconciliation: updateResult.reconciliation, detail: updateResult.detail } as any;
+                }
             } else {
                 // Baseline capture for ambiguous-save read-back reconciliation — a FRESH server
                 // read, taken once per logical submission, immediately before the first create
@@ -565,6 +636,10 @@ export function BuyerItemsList() {
                         detail: createResult.detail
                     };
                 }
+                // New signed-residual gate: unexplained document difference after explained line adjustments.
+                if (createResult && 'residualUnexplained' in createResult && createResult.residualUnexplained) {
+                    return { success: false, residualUnexplained: true, reconciliation: createResult.reconciliation, detail: createResult.detail } as any;
+                }
             }
 
             // "Não cotado nesta cotação" is deliberately document-scoped: it is
@@ -614,6 +689,18 @@ export function BuyerItemsList() {
         } finally {
             setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: false }));
         }
+    };
+
+    // Authoritative reconciliation preview (read-only). Same payload builder as save (parity); sends
+    // the OCR header total and the editing quotation id (so the backend uses the immutable persisted
+    // baseline on edit). Throws on failure — the modal handles the error inline and offers a retry.
+    const handleReconcilePreview = async (draft: OcrDraft): Promise<any> => {
+        if (!wizardActiveRequest) throw new Error('No active request');
+        const ocrTotal = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
+            ? draft.ocrTotalAmount : undefined;
+        const payload = { ...buildQuotationPayload(draft), ocrTotal };
+        return await api.requests.reconcilePreview(
+            wizardActiveRequest.requestId, payload, quotationWizardState.editingQuotationId || undefined);
     };
 
     // Exact-file duplicate check (reconnects the existing, already-proven fileDuplicateWarning
@@ -719,7 +806,22 @@ export function BuyerItemsList() {
                     // SUBSTITUTE/EXTRA_ITEM and flipped persisted NOT_QUOTED
                     // items (which DO carry a mappedRequestLineItemId) to MAPPED.
                     reconciliationStatus: (item.reconciliationStatus || (item.mappedRequestLineItemId ? 'MAPPED' : 'NOT_QUOTED')) as OcrDraftItem['reconciliationStatus'],
-                    reconciliationJustification: item.reconciliationJustification || null
+                    reconciliationJustification: item.reconciliationJustification || null,
+                    // Persisted baseline for the untouched-legacy validation exemption (mirrors
+                    // the backend's legacy-vs-edited skip in RequestsController).
+                    originalReconciliationJustification: item.reconciliationJustification || null,
+                    // ── Financial Reconciliation: rehydrate the IMMUTABLE OCR baseline from persisted
+                    // columns so line-level change detection works on edit. A line with a baseline is
+                    // OCR-origin; without one it is legacy/manual (backend treats it accordingly). ──
+                    lineOrigin: (item.ocrOriginalLineTotal != null || item.ocrOriginalQuantity != null) ? 'OCR' : 'MANUAL',
+                    ocrOriginalQuantity: item.ocrOriginalQuantity ?? null,
+                    ocrOriginalUnitPrice: item.ocrOriginalUnitPrice ?? null,
+                    ocrOriginalDiscountAmount: item.ocrOriginalDiscountAmount ?? null,
+                    ocrOriginalIvaRatePercent: item.ocrOriginalIvaRatePercent ?? null,
+                    ocrOriginalUnitText: item.ocrOriginalUnitText ?? null,
+                    ocrOriginalUnitId: item.ocrOriginalUnitId ?? null,
+                    ocrOriginalLineTotal: item.ocrOriginalLineTotal ?? null,
+                    lineAdjustmentJustification: item.lineAdjustmentJustification || null
                 }))
             };
             quotationWizardState.openWizard('EDIT', draft, editQuotation.id, mode);
@@ -1111,21 +1213,32 @@ export function BuyerItemsList() {
         setCancelApprovalModal({ show: true, requestId, batchId, batchNumber });
     };
 
-    const handlePartialApprovalSubmit = async (submitData: { requestLineItemId: string, selectedQuotationItemId: string }[]) => {
+    const handleOpenBatchRework = (group: any, batch: any) => {
+        setBatchReworkModal({ show: true, group, batch });
+    };
+
+    // Does NOT catch errors — PartialApprovalBatchModal awaits this and renders structured
+    // 409/400 responses (pending decisions, locked reversal, invalid comment) inline itself;
+    // swallowing them here would silently downgrade that to a generic page-level toast.
+    const handlePartialApprovalSubmit = async (
+        submitData: { requestLineItemId: string, selectedQuotationItemId: string }[],
+        extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
+    ) => {
         if (!partialApprovalModal.group) return;
-        try {
-            await api.requests.createApprovalBatch(partialApprovalModal.group.requestId, submitData);
-            setPartialApprovalModal({ show: false, group: null });
-            setFeedback({ type: 'success', message: 'Lote de aprovação criado e enviado com sucesso.' });
-            loadData();
-        } catch (err: any) {
-            console.error('Error creating approval batch:', err);
-            setFeedback({ type: 'error', message: err.message || 'Falha ao criar lote de aprovação.' });
-        }
+        await api.requests.createApprovalBatch(partialApprovalModal.group.requestId, submitData, undefined, extraItemDecisions);
+        setPartialApprovalModal({ show: false, group: null });
+        setFeedback({ type: 'success', message: 'Lote de aprovação criado e enviado com sucesso.' });
+        loadData();
     };
 
     const handleCancelSuccess = () => {
         setFeedback({ type: 'success', message: 'Lote de aprovação cancelado com sucesso.' });
+        loadData();
+    };
+
+    const handleBatchReworkSuccess = (message: string) => {
+        setBatchReworkModal({ show: false, group: null, batch: null });
+        setFeedback({ type: 'success', message });
         loadData();
     };
 
@@ -1823,27 +1936,12 @@ export function BuyerItemsList() {
                                                         </span>
                                                         {canMutateQuotation && mode === 'BUYER' && hasEligibleItems && (
                                                             <button
+                                                                className="btn-primary"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     handleOpenPartialApproval(group);
                                                                 }}
-                                                                style={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '8px',
-                                                                    padding: '8px 16px',
-                                                                    backgroundColor: 'var(--color-primary)',
-                                                                    color: '#ffffff',
-                                                                    border: 'none',
-                                                                    borderRadius: '8px',
-                                                                    fontWeight: 800,
-                                                                    fontSize: '0.8rem',
-                                                                    cursor: 'pointer',
-                                                                    boxShadow: 'var(--shadow-sm)',
-                                                                    transition: 'all 0.2s ease-in-out'
-                                                                }}
-                                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-dark)'}
-                                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary)'}
+                                                                style={{ gap: '8px', padding: '8px 16px', borderRadius: '8px', fontSize: '0.8rem' }}
                                                             >
                                                                 <CheckSquare size={14} /> Avançar itens cobertos para aprovação
                                                             </button>
@@ -2608,29 +2706,54 @@ export function BuyerItemsList() {
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                                {canMutateQuotation && mode === 'BUYER' && isReversible && (
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleOpenCancelApproval(group.requestId, batch.id, batch.batchNumber);
-                                                                        }}
-                                                                        style={{
-                                                                            padding: '6px 12px',
-                                                                            fontSize: '0.75rem',
-                                                                            fontWeight: 700,
-                                                                            color: '#dc2626',
-                                                                            backgroundColor: '#fef2f2',
-                                                                            border: '1px solid #fecaca',
-                                                                            borderRadius: '4px',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s'
-                                                                        }}
-                                                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fee2e2'; }}
-                                                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
-                                                                    >
-                                                                        Cancelar Lote
-                                                                    </button>
-                                                                )}
+                                                                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                                                                    {canMutateQuotation && mode === 'BUYER' && (batch.status === 'AREA_ADJUSTMENT' || batch.status === 'FINAL_ADJUSTMENT') && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleOpenBatchRework(group, batch);
+                                                                            }}
+                                                                            style={{
+                                                                                padding: '6px 12px',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 700,
+                                                                                color: '#0284c7',
+                                                                                backgroundColor: '#e0f2fe',
+                                                                                border: '1px solid #bae6fd',
+                                                                                borderRadius: '4px',
+                                                                                cursor: 'pointer',
+                                                                                transition: 'all 0.2s'
+                                                                            }}
+                                                                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#bae6fd'; }}
+                                                                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#e0f2fe'; }}
+                                                                        >
+                                                                            Corrigir Lote
+                                                                        </button>
+                                                                    )}
+                                                                    {canMutateQuotation && mode === 'BUYER' && isReversible && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleOpenCancelApproval(group.requestId, batch.id, batch.batchNumber);
+                                                                            }}
+                                                                            style={{
+                                                                                padding: '6px 12px',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 700,
+                                                                                color: '#dc2626',
+                                                                                backgroundColor: '#fef2f2',
+                                                                                border: '1px solid #fecaca',
+                                                                                borderRadius: '4px',
+                                                                                cursor: 'pointer',
+                                                                                transition: 'all 0.2s'
+                                                                            }}
+                                                                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fee2e2'; }}
+                                                                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
+                                                                        >
+                                                                            Cancelar Lote
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
@@ -2795,9 +2918,16 @@ export function BuyerItemsList() {
                 }}
             />
 
-            <AnimatePresence>
-                {fileDuplicateWarning?.isOpen && (
-                    <div style={{ position: 'fixed', inset: 0, zIndex: Z_INDEX.MODAL + 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
+            {fileDuplicateWarning?.isOpen && createPortal(
+                <AnimatePresence>
+                    <div
+                        ref={duplicateWarningRef}
+                        onKeyDown={handleDuplicateWarningKeyDown}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="duplicate-warning-title"
+                        style={{ position: 'fixed', inset: 0, zIndex: `calc(${Z_INDEX.MODAL} + 50)` as any, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}
+                    >
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2808,7 +2938,7 @@ export function BuyerItemsList() {
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', margin: '0 auto 16px', backgroundColor: '#fff7ed', borderRadius: '50%' }}>
                                     <AlertTriangle size={24} color="#ea580c" />
                                 </div>
-                                <h3 style={{ fontSize: '1.25rem', fontWeight: 900, textAlign: 'center', color: '#0f172a', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                                <h3 id="duplicate-warning-title" style={{ fontSize: '1.25rem', fontWeight: 900, textAlign: 'center', color: '#0f172a', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
                                     Documento Já Existente
                                 </h3>
                                 <p style={{ fontSize: '0.875rem', color: '#64748b', textAlign: 'center', marginBottom: '20px', fontWeight: 500, lineHeight: 1.5 }}>
@@ -2849,8 +2979,9 @@ export function BuyerItemsList() {
                             </div>
                         </motion.div>
                     </div>
-                )}
-            </AnimatePresence>
+                </AnimatePresence>,
+                document.body
+            )}
 
             <QuickSupplierModal
                 isOpen={quickSupplierModal.show}
@@ -2905,6 +3036,14 @@ export function BuyerItemsList() {
                 onSubmit={handlePartialApprovalSubmit}
             />
 
+            <BatchReworkModal
+                isOpen={batchReworkModal.show}
+                onClose={() => setBatchReworkModal({ show: false, group: null, batch: null })}
+                group={batchReworkModal.group}
+                batch={batchReworkModal.batch}
+                onSuccess={handleBatchReworkSuccess}
+            />
+
             <CancelApprovalBatchModal
                 isOpen={cancelApprovalModal.show}
                 onClose={() => setCancelApprovalModal({ show: false, requestId: '', batchId: '', batchNumber: 0 })}
@@ -2936,6 +3075,7 @@ export function BuyerItemsList() {
                 request={wizardActiveRequest}
                 wizardState={quotationWizardState}
                 onSaveQuotation={handleWizardSaveQuotation}
+                onReconcilePreview={handleReconcilePreview}
                 isProcessingOcr={!!(wizardActiveRequest && isProcessingOcr[wizardActiveRequest.requestId])}
                 onUploadFile={handleUploadFileForWizard}
                 onCancelWizard={async () => {

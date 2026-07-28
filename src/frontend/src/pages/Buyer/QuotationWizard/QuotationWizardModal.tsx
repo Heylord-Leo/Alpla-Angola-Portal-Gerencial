@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronRight, ChevronLeft, Save, AlertCircle, ShieldAlert } from 'lucide-react';
-import { RequestDetailsDto, FinancialIntegrityCheckFailedDto } from '../../../types';
+import { RequestDetailsDto, FinancialIntegrityCheckFailedDto, QuotationReconciliationDto } from '../../../types';
 import { useQuotationWizardState, QuotationWizardStep } from './hooks/useQuotationWizardState';
 import { useQuotationValidation } from './hooks/useQuotationValidation';
 import { formatCurrencyAO } from '../../../lib/utils';
+import { draftCalculationSignature } from '../../../lib/lineReconciliation';
 import { WizardStepRequestOverview } from './WizardStepRequestOverview';
 import { WizardStepDocumentsOcr } from './WizardStepDocumentsOcr';
 import { WizardStepReconciliation } from './WizardStepReconciliation';
@@ -14,7 +15,14 @@ import { WizardStepSupplierValidation } from './WizardStepSupplierValidation';
 type QuotationSaveResult =
     | { success: true }
     | ({ success: false } & FinancialIntegrityCheckFailedDto)
+    | { success: false; residualUnexplained: true; reconciliation: QuotationReconciliationDto; detail: string }
     | { success: false; error: string };
+
+function isResidualFailure(
+    result: QuotationSaveResult
+): result is { success: false; residualUnexplained: true; reconciliation: QuotationReconciliationDto; detail: string } {
+    return result.success === false && 'residualUnexplained' in result && (result as any).residualUnexplained === true;
+}
 
 // TS can't structurally narrow an intersection-typed union member via `in`/property checks
 // (the discriminant lives on a mixed-in type, not a flat literal field), so an explicit type
@@ -32,6 +40,9 @@ interface QuotationWizardModalProps {
         draft: any,
         overridePayload?: { financialIntegrityOverride: boolean; overrideJustification: string }
     ) => Promise<QuotationSaveResult>;
+    /** Authoritative, read-only reconciliation preview for the current draft. Resolves to a
+     * QuotationReconciliationDto; rejects on failure (the modal shows the error + a retry). */
+    onReconcilePreview: (draft: any) => Promise<QuotationReconciliationDto>;
     isProcessingOcr: boolean;
     onUploadFile: (file: File) => void;
     onCancelWizard: () => Promise<void>;
@@ -55,6 +66,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     request,
     wizardState,
     onSaveQuotation,
+    onReconcilePreview,
     isProcessingOcr,
     onUploadFile,
     onCancelWizard,
@@ -82,7 +94,58 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     // `saveError` string and from the unrelated per-item `reconciliationJustification`
     // mechanism. `overrideJustification` is local to this modal, never merged into the draft.
     const [integrityError, setIntegrityError] = useState<FinancialIntegrityCheckFailedDto | null>(null);
+    // Signed-residual gate: the unexplained document difference after explained line adjustments.
+    const [residualError, setResidualError] = useState<QuotationReconciliationDto | null>(null);
     const [overrideJustification, setOverrideJustification] = useState('');
+
+    // ── Authoritative pre-save reconciliation preview (primary UX; the 409 handler is the fallback) ──
+    const [preview, setPreview] = useState<QuotationReconciliationDto | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+    // Signature the current preview was computed for — used to detect a stale preview after edits.
+    const [previewSignature, setPreviewSignature] = useState<string | null>(null);
+    const previewReqId = useRef(0);
+
+    const draftSignature = draft ? draftCalculationSignature(draft) : '';
+    const previewStale = !!preview && previewSignature !== draftSignature;
+    // Whether this draft even carries an OCR header total (otherwise no reconciliation applies).
+    const hasOcrTotal = typeof draft?.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0;
+
+    const fetchPreview = React.useCallback(async () => {
+        if (!draft) return;
+        const sig = draftCalculationSignature(draft);
+        const reqId = ++previewReqId.current;
+        setPreviewLoading(true);
+        setPreviewError(null);
+        try {
+            const result = await onReconcilePreview(draft);
+            if (reqId !== previewReqId.current) return; // a newer request superseded this one
+            setPreview(result);
+            setPreviewSignature(sig);
+        } catch (err: any) {
+            if (reqId !== previewReqId.current) return;
+            setPreview(null);
+            setPreviewSignature(null);
+            setPreviewError(err?.message || 'Não foi possível calcular o resumo de reconciliação. Tente recalcular.');
+        } finally {
+            if (reqId === previewReqId.current) setPreviewLoading(false);
+        }
+    }, [draft, onReconcilePreview]);
+
+    // Fetch (or refresh) the authoritative preview whenever the user is on the final-review step and
+    // the preview is missing or stale (any calculation-affecting field changed on an earlier step).
+    useEffect(() => {
+        if (!isOpen) return;
+        if (currentStep !== 'FINAL_REVIEW') return;
+        if (!hasOcrTotal) { setPreview(null); setPreviewError(null); return; }
+        if (previewLoading) return;
+        if (!preview || previewStale) { void fetchPreview(); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, currentStep, draftSignature, hasOcrTotal]);
+
+    // Residual gate derived from the AUTHORITATIVE preview (not from a 409).
+    const residualBlocksSave = !!preview && Math.abs(preview.residualVariance) > preview.toleranceApplied;
+    const residualJustificationValid = overrideJustification.trim().length >= 20;
     const [justificationTouched, setJustificationTouched] = useState(false);
     const justificationRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,8 +168,12 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         setSaveError(null);
         setIsSaving(false);
         setIntegrityError(null);
+        setResidualError(null);
         setOverrideJustification('');
         setJustificationTouched(false);
+        setPreview(null);
+        setPreviewError(null);
+        setPreviewSignature(null);
         isSavingRef.current = false;
     }, [isOpen]);
 
@@ -119,16 +186,17 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     useEffect(() => {
         setSaveError(null);
         setIntegrityError(null);
+        setResidualError(null);
         setOverrideJustification('');
         setJustificationTouched(false);
     }, [draft]);
 
     // Accessibility: move focus into the justification field as soon as the panel appears.
     useEffect(() => {
-        if (integrityError) {
+        if (integrityError || residualError) {
             justificationRef.current?.focus();
         }
-    }, [integrityError]);
+    }, [integrityError, residualError]);
 
     if (!isOpen) return null;
 
@@ -137,7 +205,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     const isLastStep = currentIndex === totalSteps - 1;
 
     const handleNext = () => {
-        const isNextAllowed = canGoNext(request);
+        const isNextAllowed = canGoNext(request, ivaRates, units);
         if (isNextAllowed && currentIndex < totalSteps - 1) {
             goToStep(STEPS[currentIndex + 1].key);
         }
@@ -162,7 +230,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         if (!canSubmit || isSaving || isSavingRef.current) return;
         isSavingRef.current = true;
 
-        const validation = validateDraft(draft);
+        const validation = validateDraft(draft, ivaRates, units);
         if (!validation.isValid) {
             setSaveError(validation.errors.join('\n'));
             isSavingRef.current = false;
@@ -180,7 +248,11 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
             const response = await onSaveQuotation(draft, overridePayload);
             if (response.success) {
                 setIntegrityError(null);
+                setResidualError(null);
                 closeWizard();
+            } else if (isResidualFailure(response)) {
+                // Signed-residual gate: show the breakdown and require a residual justification.
+                setResidualError(response.reconciliation);
             } else if (isIntegrityFailure(response)) {
                 // Keep the panel visible and refresh the comparison values on every attempt —
                 // including a retry that fails again with a new variance. The justification the
@@ -197,7 +269,22 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         }
     };
 
-    const handleSave = () => performSave();
+    // Primary save: when the authoritative preview reports an over-tolerance residual, the residual
+    // justification is sent as the override (the residual amount is still recorded, never zeroed).
+    const handleSave = () => {
+        if (residualBlocksSave) {
+            setJustificationTouched(true);
+            if (!residualJustificationValid) { justificationRef.current?.focus(); return; }
+            performSave({ financialIntegrityOverride: true, overrideJustification: overrideJustification.trim() });
+        } else {
+            performSave();
+        }
+    };
+
+    // Save is blocked until the authoritative preview is present, fresh, and — when it reports an
+    // over-tolerance residual — a valid residual justification has been entered.
+    const previewGateBlocksSave = currentStep === 'FINAL_REVIEW' && hasOcrTotal &&
+        (previewLoading || !!previewError || !preview || previewStale || (residualBlocksSave && !residualJustificationValid));
 
     const handleRetryWithOverride = () => {
         const trimmed = overrideJustification.trim();
@@ -218,6 +305,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     const handleReplaceConfirm = async () => {
         setSaveError(null); // a new document starts a fresh attempt — previous save errors are stale
         setIntegrityError(null);
+        setResidualError(null);
         setOverrideJustification('');
         setJustificationTouched(false);
         if (!isEditing && draft?.proformaAttachmentId) {
@@ -238,7 +326,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         await onCancelWizard();
     };
 
-    const validation = validateDraft(draft);
+    const validation = validateDraft(draft, ivaRates, units);
 
     const modalContent = (
         <div
@@ -351,10 +439,20 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                             <WizardStepSupplierValidation draft={draft} wizardState={wizardState} />
                         )}
                         {currentStep === 'FINAL_REVIEW' && (
-                            <WizardStepFinalReview 
-                                draft={draft} 
+                            <WizardStepFinalReview
+                                draft={draft}
                                 validation={validation}
                                 wizardState={wizardState}
+                                reconciliation={preview}
+                                reconciliationLoading={previewLoading}
+                                reconciliationError={previewError}
+                                reconciliationStale={previewStale}
+                                hasOcrTotal={hasOcrTotal}
+                                onRecalculate={fetchPreview}
+                                residualJustification={overrideJustification}
+                                onResidualJustificationChange={setOverrideJustification}
+                                residualJustificationTouched={justificationTouched}
+                                justificationRef={justificationRef}
                             />
                         )}
                     </div>
@@ -420,6 +518,63 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                 );
             })()}
 
+            {/* Signed-residual gate panel — the OCR document's own header/line inconsistency remaining
+                after all explained line adjustments. Renamed so it no longer claims to explain the
+                whole gross variance; the residual amount is NEVER zeroed by providing a justification. */}
+            {residualError && (() => {
+                const missingJustification = justificationTouched && !overrideJustification.trim();
+                const c = draft?.currency;
+                const r = residualError;
+                return (
+                    <div style={{ backgroundColor: 'var(--color-status-red-surface)', borderTop: '1px solid var(--color-status-red)', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-status-red)', fontWeight: 700, fontSize: '0.9rem' }}>
+                            <ShieldAlert style={{ width: 18, height: 18, flexShrink: 0 }} /> Diferença não explicada do documento
+                        </div>
+                        <p style={{ margin: 0, color: 'var(--color-text-main)', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                            Após os ajustes de linha explicados, resta uma diferença não explicada de <strong>{formatCurrencyAO(r.residualVariance, c)}</strong> entre o total do documento OCR ({formatCurrencyAO(r.ocrHeaderTotal, c)}) e o total considerado ({formatCurrencyAO(r.finalConsideredTotal, c)}).
+                        </p>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
+                            <span>Diferença estrutural (cabeçalho vs linhas): {formatCurrencyAO(r.structuralHeaderDifference, c)}</span>
+                            <span>Diferença de componentes OCR: {formatCurrencyAO(r.ocrLineComponentDifference, c)}</span>
+                            <span>Ignorados: {formatCurrencyAO(r.ignoredImpact, c)}</span>
+                            <span>Quantidade: {formatCurrencyAO(r.quantityImpact, c)}</span>
+                            <span>Preço: {formatCurrencyAO(r.unitPriceImpact, c)}</span>
+                            <span>Desconto: {formatCurrencyAO(r.discountImpact, c)}</span>
+                            <span>IVA: {formatCurrencyAO(r.ivaImpact, c)}</span>
+                            <span>Desconto global: {formatCurrencyAO(r.globalDiscountImpact, c)}</span>
+                            <span>Adições manuais: {formatCurrencyAO(r.manualAdditionsImpact, c)}</span>
+                            <span>Tolerância: {formatCurrencyAO(r.toleranceApplied, c)}</span>
+                        </div>
+                        <div>
+                            <label htmlFor="residual-justification" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', marginBottom: '8px' }}>
+                                Justificativa da diferença residual *
+                            </label>
+                            <textarea
+                                id="residual-justification"
+                                ref={justificationRef}
+                                value={overrideJustification}
+                                onChange={(e) => setOverrideJustification(e.target.value)}
+                                placeholder="Ex.: frete não itemizado pelo OCR; linha omitida na extração; arredondamento do documento..."
+                                rows={3}
+                                disabled={isSaving}
+                                style={{ width: '100%', fontSize: '0.875rem', padding: '10px', border: missingJustification ? '1px solid var(--color-status-red)' : '1px solid var(--color-border)', borderRadius: 'var(--radius-sm, 4px)', fontFamily: 'var(--font-family-body)', resize: 'vertical', boxSizing: 'border-box', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)' }}
+                            />
+                            {missingJustification && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-status-red)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <AlertCircle size={12} /> A justificativa da diferença residual é obrigatória para continuar.
+                                </span>
+                            )}
+                        </div>
+                        <div>
+                            <button onClick={handleRetryWithOverride} disabled={isSaving}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--color-status-red)', color: '#fff', fontWeight: 600, cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.7 : 1 }}>
+                                <Save size={16} /> {isSaving ? 'Salvando...' : 'Salvar com Justificativa'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Inline Error Panel for Save Failures unrelated to Financial Integrity. Rendered
                 independently of the panel above: if a retry-with-override fails for a different
                 reason, both stay visible — the entered justification must not be discarded. */}
@@ -455,21 +610,32 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                         {!isLastStep ? (
                             <button
                                 onClick={handleNext}
-                                disabled={!canGoNext(request)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: !canGoNext(request) ? '#e0e7ff' : 'var(--color-primary)', color: !canGoNext(request) ? '#818cf8' : '#fff', fontWeight: 600, cursor: !canGoNext(request) ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
+                                disabled={!canGoNext(request, ivaRates, units)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: !canGoNext(request, ivaRates, units) ? '#e0e7ff' : 'var(--color-primary)', color: !canGoNext(request, ivaRates, units) ? '#818cf8' : '#fff', fontWeight: 600, cursor: !canGoNext(request, ivaRates, units) ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
                             >
                                 Avançar <ChevronRight size={16} />
                             </button>
                         ) : (
-                            <button
-                                onClick={handleSave}
-                                disabled={!validation.isValid || isSaving || !wizardState.isFinalReviewConfirmed || !!integrityError}
-                                title={integrityError ? 'Resolva a divergência financeira acima antes de tentar salvar novamente.' : undefined}
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '6px', backgroundColor: (validation.isValid && wizardState.isFinalReviewConfirmed && !integrityError) ? 'var(--color-primary)' : '#94a3b8', color: '#fff', fontWeight: 600, border: 'none', cursor: (validation.isValid && wizardState.isFinalReviewConfirmed && !isSaving && !integrityError) ? 'pointer' : 'not-allowed' }}
-                            >
-                                <Save size={20} />
-                                {isSaving ? 'Salvando...' : 'Salvar Cotação'}
-                            </button>
+                            (() => {
+                                const saveEnabled = validation.isValid && wizardState.isFinalReviewConfirmed && !integrityError && !previewGateBlocksSave && !isSaving;
+                                const title = integrityError ? 'Resolva a divergência financeira acima antes de tentar salvar novamente.'
+                                    : previewLoading ? 'Calculando o resumo de reconciliação...'
+                                    : previewError ? 'Recalcule o resumo de reconciliação para continuar.'
+                                    : previewStale ? 'O resumo está desatualizado — recalcule antes de salvar.'
+                                    : (residualBlocksSave && !residualJustificationValid) ? 'Informe a justificativa da diferença residual para continuar.'
+                                    : undefined;
+                                return (
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={!saveEnabled}
+                                        title={title}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '6px', backgroundColor: saveEnabled ? 'var(--color-primary)' : '#94a3b8', color: '#fff', fontWeight: 600, border: 'none', cursor: saveEnabled ? 'pointer' : 'not-allowed' }}
+                                    >
+                                        <Save size={20} />
+                                        {isSaving ? 'Salvando...' : (residualBlocksSave ? 'Salvar com Justificativa' : 'Salvar Cotação')}
+                                    </button>
+                                );
+                            })()
                         )}
                     </div>
                 </div>

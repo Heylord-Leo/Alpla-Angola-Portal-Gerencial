@@ -10,6 +10,14 @@ public class CreateApprovalBatchDto
 
     /// <summary>Optional buyer comment describing the batch.</summary>
     public string? Comment { get; set; }
+
+    /// <summary>
+    /// Buyer's batch-composition decision (INCLUDE/EXCLUDE) for every genuine EXTRA_ITEM
+    /// quotation line belonging to a quotation contributing a winner to this batch. Keys are
+    /// QuotationItemId. Every such line must have an entry or CreateBatch rejects with
+    /// EXTRA_ITEMS_PENDING_DECISION. IGNORED lines are never part of this dictionary.
+    /// </summary>
+    public Dictionary<Guid, ExtraItemDecisionDto>? ExtraItemDecisions { get; set; }
 }
 
 /// <summary>
@@ -118,6 +126,49 @@ public class UpdateApprovalBatchDto
 
     /// <summary>Optional updated comment.</summary>
     public string? Comment { get; set; }
+
+    /// <summary>
+    /// Buyer's batch-composition decision (INCLUDE/EXCLUDE) for every genuine EXTRA_ITEM
+    /// quotation line belonging to a quotation contributing a winner to this batch, as it stands
+    /// after this edit. Allows changing a prior decision, subject to the safe-reversal rules for
+    /// INCLUDE→EXCLUDE (see IBatchExtraItemDecisionService).
+    /// </summary>
+    public Dictionary<Guid, ExtraItemDecisionDto>? ExtraItemDecisions { get; set; }
+}
+
+/// <summary>One informational (non-batch, non-total-affecting) quotation line shown to the Area
+/// Approver for transparency — buyer-excluded extra, IGNORED line, or unresolved legacy extra.</summary>
+public class BatchInformationalItemDto
+{
+    public Guid QuotationItemId { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string? SupplierName { get; set; }
+    public string? QuotationDocumentNumber { get; set; }
+
+    /// <summary>Why the line was classified this way at reconciliation time (SUBSTITUTE/EXTRA_ITEM/IGNORED).</summary>
+    public string? ReconciliationJustification { get; set; }
+
+    /// <summary>Buyer's batch-composition comment — only populated for buyer-excluded extras.</summary>
+    public string? Comment { get; set; }
+}
+
+/// <summary>Three separately-labeled, read-only informational lists for one ApprovalBatch (§F/§H).
+/// None of these affect the batch total or ApprovalBatchItem membership.</summary>
+public class BatchInformationalLinesDto
+{
+    /// <summary>Genuine EXTRA_ITEM lines the buyer explicitly decided not to include in this batch.</summary>
+    public List<BatchInformationalItemDto> ExcludedExtraItems { get; set; } = new();
+
+    /// <summary>IGNORED-status lines from the contributing quotation(s) — a complete, valid,
+    /// already-justified terminal state. Never requires a decision, never blocks anything.</summary>
+    public List<BatchInformationalItemDto> IgnoredLines { get; set; } = new();
+
+    /// <summary>Genuine EXTRA_ITEM lines with NO recorded ApprovalBatchExtraItemDecision at all —
+    /// only possible for batches created before this rule existed. Blocks Area Approval progression.</summary>
+    public List<BatchInformationalItemDto> UnresolvedLegacyLines { get; set; } = new();
 }
 
 /// <summary>

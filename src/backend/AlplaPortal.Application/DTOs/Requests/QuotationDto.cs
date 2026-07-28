@@ -38,9 +38,91 @@ public class SaveQuotationItemDto
     public int? IvaRateId { get; set; }
     public int? ItemCatalogId { get; set; } // Optional catalog item linkage
     public Guid? MappedRequestLineItemId { get; set; } // Link back to original request line item
-    
+
     public string ReconciliationStatus { get; set; } = "MAPPED";
     public string? ReconciliationJustification { get; set; }
+
+    // ── Financial Reconciliation ──
+    /// <summary>"OCR" for a line the extraction produced, "MANUAL" for a buyer-added line. Null is
+    /// tolerated (legacy/back-compat) and resolved by quotation context. An "OCR" line MUST carry
+    /// its baseline (see backend enforcement) — it is never silently exempted.</summary>
+    public string? LineOrigin { get; set; }
+
+    /// <summary>OCR-original per-line baseline captured at extraction. Null on any field = "not
+    /// extracted" (never an implicit 0). Only written to the entity by SaveQuotation / document
+    /// replacement; UpdateQuotation compares against the persisted baseline and never overwrites it.</summary>
+    public decimal? OcrOriginalQuantity { get; set; }
+    public decimal? OcrOriginalUnitPrice { get; set; }
+    public decimal? OcrOriginalDiscountAmount { get; set; }
+    public decimal? OcrOriginalIvaRatePercent { get; set; }
+    public string? OcrOriginalUnitText { get; set; }
+    public int? OcrOriginalUnitId { get; set; }
+    public decimal? OcrOriginalLineTotal { get; set; }
+
+    /// <summary>One consolidated free-text reason for material financial-field edits of this line
+    /// vs its OCR baseline. Distinct from ReconciliationJustification and the residual justification.</summary>
+    public string? LineAdjustmentJustification { get; set; }
+}
+
+/// <summary>Canonical values for <see cref="SaveQuotationItemDto.LineOrigin"/>.</summary>
+public static class QuotationLineOrigins
+{
+    public const string Ocr = "OCR";
+    public const string Manual = "MANUAL";
+}
+
+/// <summary>One line's reconciliation diagnostics for the breakdown UI (mirrors LineReconciliationResult).</summary>
+public class LineReconciliationDto
+{
+    public Guid? QuotationItemId { get; set; }
+    public int LineNumber { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string ReconciliationStatus { get; set; } = "MAPPED";
+    public bool HasOcrBaseline { get; set; }
+    public bool IsManualAddition { get; set; }
+    public bool QuantityChanged { get; set; }
+    public bool UnitPriceChanged { get; set; }
+    public bool DiscountChanged { get; set; }
+    public bool IvaChanged { get; set; }
+    public bool UnitChanged { get; set; }
+    public List<string> ImputedOcrComponents { get; set; } = new();
+    public bool RequiresAdjustmentReason { get; set; }
+    public bool HasAdjustmentReason { get; set; }
+    public bool HasReconciliationReason { get; set; }
+}
+
+/// <summary>
+/// Backend-authoritative financial reconciliation between the OCR document and the final considered
+/// total. Returned by the preview endpoint and inside the SaveQuotation/UpdateQuotation 409.
+/// <see cref="ResidualVariance"/> is SIGNED; only <see cref="ResidualExceedsTolerance"/> (which uses
+/// Math.Abs) gates the save. A residual justification never zeroes the residual.
+/// </summary>
+public class QuotationReconciliationDto
+{
+    public decimal OcrHeaderTotal { get; set; }
+    public decimal OcrLineSumTotal { get; set; }
+    public decimal ReconstructedOcrLineSum { get; set; }
+    public decimal StructuralHeaderDifference { get; set; }
+    public decimal OcrLineComponentDifference { get; set; }
+
+    public decimal FinalConsideredTotal { get; set; }
+    public decimal ManualAdditionsTotal { get; set; }
+
+    public decimal IgnoredImpact { get; set; }
+    public decimal QuantityImpact { get; set; }
+    public decimal UnitPriceImpact { get; set; }
+    public decimal DiscountImpact { get; set; }
+    public decimal IvaImpact { get; set; }
+    public decimal GlobalDiscountImpact { get; set; }
+    public decimal ManualAdditionsImpact { get; set; }
+    public decimal ExplainedLineAdjustments { get; set; }
+
+    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal).</summary>
+    public decimal ResidualVariance { get; set; }
+    public decimal ToleranceApplied { get; set; }
+    public bool ResidualExceedsTolerance { get; set; }
+
+    public List<LineReconciliationDto> Lines { get; set; } = new();
 }
 
 public class SavedQuotationDto
@@ -114,6 +196,16 @@ public class SavedQuotationItemDto
     
     public string ReconciliationStatus { get; set; } = "MAPPED";
     public string? ReconciliationJustification { get; set; }
+
+    // Financial Reconciliation — persisted OCR-original baseline (for edit hydration) + line reason.
+    public decimal? OcrOriginalQuantity { get; set; }
+    public decimal? OcrOriginalUnitPrice { get; set; }
+    public decimal? OcrOriginalDiscountAmount { get; set; }
+    public decimal? OcrOriginalIvaRatePercent { get; set; }
+    public string? OcrOriginalUnitText { get; set; }
+    public int? OcrOriginalUnitId { get; set; }
+    public decimal? OcrOriginalLineTotal { get; set; }
+    public string? LineAdjustmentJustification { get; set; }
 
     // Receiving Fields
     public decimal ReceivedQuantity { get; set; }

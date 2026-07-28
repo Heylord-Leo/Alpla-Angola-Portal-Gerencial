@@ -276,6 +276,7 @@ public class LineItemsController : BaseController
                             DiscountAmount = qi.DiscountAmount,
                             DiscountPercent = qi.DiscountPercent,
                             GrossSubtotal = qi.GrossSubtotal,
+                            TaxableBase = qi.GrossSubtotal - qi.DiscountAmount, // Net taxable base — the defect fix for the buyer batch modals (see SavedQuotationItemDto)
                             IvaAmount = qi.IvaAmount,
                             LineTotal = qi.LineTotal,
                             ItemCatalogId = qi.ItemCatalogId,

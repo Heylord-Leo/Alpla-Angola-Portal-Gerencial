@@ -60,7 +60,8 @@ public class SaveQuotationIgnoredLineIntegrationTests
             new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object,
             new Mock<IRequestLineItemSubmissionValidator>().Object,
-            new AlplaPortal.Infrastructure.Services.Purchasing.QuotationItemEligibilityService(ctx));
+            new AlplaPortal.Infrastructure.Services.Purchasing.QuotationItemEligibilityService(ctx),
+            new AlplaPortal.Infrastructure.Services.Approvals.BatchExtraItemDecisionService(ctx));
 
         var identity = new ClaimsIdentity(new[]
         {

@@ -25,7 +25,7 @@ public class ApprovalActionDto
 
 public class ExtraItemDecisionDto
 {
-    public string Decision { get; set; } = null!; // APPROVE, REJECT, ADJUST
+    public string Decision { get; set; } = null!; // INCLUDE, EXCLUDE (legacy: APPROVE, REJECT)
     public string? Comment { get; set; }
 }
 

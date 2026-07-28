@@ -8,6 +8,7 @@ using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -57,7 +58,8 @@ public class RequestsExplorerDisplayStateTests
             Mock.Of<IApprovalRoutingService>(),
             Mock.Of<ILineItemFactory>(),
             Mock.Of<IRequestLineItemSubmissionValidator>(),
-            Mock.Of<IQuotationItemEligibilityService>());
+            Mock.Of<IQuotationItemEligibilityService>(),
+            Mock.Of<IBatchExtraItemDecisionService>());
 
         var claims = new List<Claim>
         {

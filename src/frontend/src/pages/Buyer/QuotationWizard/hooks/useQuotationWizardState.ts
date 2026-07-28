@@ -1,6 +1,18 @@
 import { useState, useMemo } from 'react';
 import { OcrDraft, OcrDraftItem } from '../../../../types';
 import { isLineItemEligibleForQuotation } from '../../batchEligibility';
+import { validateReconciliationJustification } from '../../../../lib/reconciliationJustificationValidator';
+import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../../lib/lineReconciliation';
+
+/** Quality-validates a justification, mirroring the backend. An untouched legacy line — status
+ * and justification exactly as persisted (tracked via originalReconciliationJustification, set at
+ * hydration in BuyerItemsList) — is exempt, mirroring the backend's legacy-vs-edited skip. */
+function isJustificationSatisfied(item: OcrDraftItem): boolean {
+    const isLegacyUntouched = item.originalReconciliationJustification != null
+        && (item.reconciliationJustification ?? '') === (item.originalReconciliationJustification ?? '');
+    if (isLegacyUntouched) return true;
+    return validateReconciliationJustification(item.reconciliationJustification).isValid;
+}
 
 export type QuotationWizardStep = 'OVERVIEW' | 'DOCUMENTS_OCR' | 'RECONCILIATION' | 'SUPPLIER_VALIDATION' | 'FINAL_REVIEW';
 
@@ -29,7 +41,7 @@ export interface UseQuotationWizardStateReturn {
     setIsFinalReviewConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
     
     // State derivation
-    canGoNext: (request: any) => boolean;
+    canGoNext: (request: any, ivaRates?: any[], units?: any[]) => boolean;
     canSubmit: boolean;
 }
 
@@ -210,7 +222,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         });
     };
 
-    const canGoNext = (request: any): boolean => {
+    const canGoNext = (request: any, ivaRates: any[] = [], units: any[] = []): boolean => {
         switch (currentStep) {
             case 'OVERVIEW': return true;
             case 'DOCUMENTS_OCR': {
@@ -233,12 +245,19 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
                 for (const item of realItems) {
                     if (!item.reconciliationStatus) return false; // Missing status
                     if (item.reconciliationStatus === 'SUBSTITUTE' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
-                    if (item.reconciliationStatus === 'EXTRA_ITEM' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
+                    if (item.reconciliationStatus === 'EXTRA_ITEM' && !isJustificationSatisfied(item)) return false;
                     // Ignoring a document line WITH value removes it from the integrity baseline —
                     // that exclusion needs a per-line justification (zero-value lines are exempt).
-                    if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) return false;
+                    if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && !isJustificationSatisfied(item)) return false;
                     if (item.reconciliationStatus === 'MAPPED' && !item.mappedRequestLineItemId) return false;
                     if (item.reconciliationStatus === 'SUBSTITUTE' && !item.mappedRequestLineItemId) return false;
+                    // Integer-unit quantities must be whole numbers (mirrors the backend invalid-input rule).
+                    if (isFractionalForIntegerUnit(item, units)) return false;
+                    // Material financial edit vs the OCR baseline requires a valid line-adjustment reason
+                    // before advancing (mirrors the backend's per-line 400 gate).
+                    if (['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM'].includes(item.reconciliationStatus as string)
+                        && hasMaterialOcrChange(item, ivaRates)
+                        && !validateReconciliationJustification(item.lineAdjustmentJustification).isValid) return false;
                 }
 
                 // NOT_QUOTED marks are document-scoped and need no justification —

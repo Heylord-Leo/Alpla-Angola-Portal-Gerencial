@@ -11,7 +11,11 @@ export const useWizardValidation = (
     extraItemsCount: number = 0,
     approvedExtraItems: any[] = [],
     isBatchReviewMode: boolean = false,
-    quotations: any[] = []
+    quotations: any[] = [],
+    /** The active ApprovalBatch (batch-review mode only) — its unresolvedLegacyLines is the
+     * batch-scoped signal that actually replaces the request-wide extraItemDecisions/extraItemsCount
+     * check in that mode (see isStep3Valid). */
+    activeBatch: any | null = null
 ) => {
     
     const isAssigned = (itemId: string) => {
@@ -54,12 +58,23 @@ export const useWizardValidation = (
             allItemsAwarded = activeItems.every((item: any) => !!itemAwards[item.id] || !!item.selectedQuotationItemId);
         }
 
+        if (isBatchReviewMode) {
+            // Extra-item decisions are finalized by the Buyer at CreateBatch/UpdateBatch time
+            // (IBatchExtraItemDecisionService) — the Area Approver reviews the already-resolved
+            // batch, never re-decides scope, and no UI here ever populates extraItemDecisions.
+            // The only thing that can legitimately block progression is a genuinely unresolved
+            // legacy EXTRA_ITEM line (a batch created before this rule existed, with no recorded
+            // decision at all) — a valid, already-decided EXTRA_ITEM/IGNORED line must never block.
+            const allExtrasDecided = (activeBatch?.unresolvedLegacyLines?.length ?? 0) === 0;
+            return allItemsAwarded && allExtrasDecided;
+        }
+
         // All extra items must have a decision
-        const allExtrasDecided = Object.keys(extraItemDecisions).length === extraItemsCount && 
+        const allExtrasDecided = Object.keys(extraItemDecisions).length === extraItemsCount &&
             Object.values(extraItemDecisions).every(d => d.decision !== null);
 
         // If rejected, comment is required
-        const rejectedHaveComments = Object.values(extraItemDecisions).every(d => 
+        const rejectedHaveComments = Object.values(extraItemDecisions).every(d =>
             d.decision !== 'REJECT' || (d.decision === 'REJECT' && d.comment.trim().length > 0)
         );
 

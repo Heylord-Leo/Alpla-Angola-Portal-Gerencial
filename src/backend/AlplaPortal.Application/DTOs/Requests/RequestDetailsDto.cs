@@ -111,6 +111,15 @@ public class RequestApprovalBatchDto
     public DateTime? UpdatedAtUtc { get; set; }
 
     public List<RequestApprovalBatchItemDto> Items { get; set; } = new();
+
+    /// <summary>Genuine EXTRA_ITEM lines the Buyer explicitly decided not to include in this batch. Read-only, excluded from totals.</summary>
+    public List<BatchInformationalItemDto> ExcludedExtraItems { get; set; } = new();
+
+    /// <summary>IGNORED-status lines from the batch's contributing quotation(s) — a complete, valid, already-justified terminal state. Read-only, excluded from totals.</summary>
+    public List<BatchInformationalItemDto> IgnoredLines { get; set; } = new();
+
+    /// <summary>Genuine EXTRA_ITEM lines with no recorded buyer decision — only possible for batches created before this rule existed. Blocks Area Approval progression when non-empty.</summary>
+    public List<BatchInformationalItemDto> UnresolvedLegacyLines { get; set; } = new();
 }
 
 public class RequestApprovalBatchItemDto
@@ -172,6 +181,9 @@ public class RequestLineItemDto
     
     public Guid? RequestPoGroupId { get; set; }
     public Guid? SelectedQuotationItemId { get; set; }
+
+    /// <summary>How this line was created. Null = standard requester/create flow. See LineItemCreationOrigins.</summary>
+    public string? CreationOrigin { get; set; }
 
     public List<RequestLineItemAllocationDto> Allocations { get; set; } = new();
 }

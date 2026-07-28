@@ -217,7 +217,8 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         extraItemsCount,
         approvedExtraItems,
         isBatchReviewMode,
-        quotations
+        quotations,
+        activeBatch
     );
 
     // --- Close handling ---

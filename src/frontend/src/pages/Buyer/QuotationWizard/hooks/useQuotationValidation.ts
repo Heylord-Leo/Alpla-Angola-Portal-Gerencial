@@ -1,13 +1,25 @@
-import { OcrDraft } from '../../../../types';
+import { OcrDraft, OcrDraftItem } from '../../../../types';
+import { validateReconciliationJustification } from '../../../../lib/reconciliationJustificationValidator';
+import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../../lib/lineReconciliation';
 
 export interface QuotationValidationResult {
     isValid: boolean;
     errors: string[];
 }
 
+/** Quality-validates a justification, mirroring the backend. An untouched legacy line — status
+ * and justification exactly as persisted (tracked via originalReconciliationJustification, set at
+ * hydration in BuyerItemsList) — is exempt, mirroring the backend's legacy-vs-edited skip. */
+function isJustificationSatisfied(item: OcrDraftItem): boolean {
+    const isLegacyUntouched = item.originalReconciliationJustification != null
+        && (item.reconciliationJustification ?? '') === (item.originalReconciliationJustification ?? '');
+    if (isLegacyUntouched) return true;
+    return validateReconciliationJustification(item.reconciliationJustification).isValid;
+}
+
 export function useQuotationValidation() {
     
-    const validateDraft = (draft: OcrDraft | null): QuotationValidationResult => {
+    const validateDraft = (draft: OcrDraft | null, ivaRates: any[] = [], units: any[] = []): QuotationValidationResult => {
         const errors: string[] = [];
         
         if (!draft) {
@@ -60,9 +72,9 @@ export function useQuotationValidation() {
                 errors.push(`Item ${item.lineNumber}: Status de reconciliação ausente.`);
             } else if (item.reconciliationStatus === 'SUBSTITUTE' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) {
                 errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para itens substitutos.`);
-            } else if (item.reconciliationStatus === 'EXTRA_ITEM' && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) {
+            } else if (item.reconciliationStatus === 'EXTRA_ITEM' && !isJustificationSatisfied(item)) {
                 errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para itens adicionais.`);
-            } else if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && (!item.reconciliationJustification || !item.reconciliationJustification.trim())) {
+            } else if (item.reconciliationStatus === 'IGNORED' && (item.totalPrice ?? 0) > 0 && !isJustificationSatisfied(item)) {
                 // Ignored line WITH value leaves the integrity baseline — requires its own justification.
                 errors.push(`Item ${item.lineNumber}: Justificativa é obrigatória para ignorar uma linha com valor.`);
             } else if (item.reconciliationStatus === 'MAPPED' && !item.mappedRequestLineItemId) {
@@ -70,8 +82,21 @@ export function useQuotationValidation() {
             } else if (item.reconciliationStatus === 'SUBSTITUTE' && !item.mappedRequestLineItemId) {
                 errors.push(`Item ${item.lineNumber}: Deve selecionar o item solicitado correspondente para substituição.`);
             }
+
+            // Integer-unit quantities must be whole numbers (mirrors the backend invalid-input rule).
+            if (isFractionalForIntegerUnit(item, units)) {
+                errors.push(`Item ${item.lineNumber}: a unidade não permite quantidade fracionada; informe um número inteiro.`);
+            }
+
+            // Material financial edit vs the OCR baseline requires a consolidated line-adjustment reason
+            // (distinct from the reconciliation justification). Mirrors the backend's 400 gate.
+            if (['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM'].includes(item.reconciliationStatus as string)
+                && hasMaterialOcrChange(item, ivaRates)
+                && !validateReconciliationJustification(item.lineAdjustmentJustification).isValid) {
+                errors.push(`Item ${item.lineNumber}: informe o motivo das alterações desta linha em relação ao documento OCR.`);
+            }
         }
-        
+
         return {
             isValid: errors.length === 0,
             errors

@@ -322,10 +322,25 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     ivaUncertain
                 };
 
+                const computedTotal = calculateItemTotal(baseItem);
                 return {
                     ...baseItem,
                     // Always recalculate from components (qty * unitPrice - discount + IVA)
-                    totalPrice: calculateItemTotal(baseItem)
+                    totalPrice: computedTotal,
+                    // ── Immutable OCR-original baseline snapshot (Financial Reconciliation) ──
+                    // Captured ONCE at extraction, before the buyer can edit. Sent to the backend which
+                    // establishes the baseline on save; a NULL means "not extracted", never an implicit 0.
+                    lineOrigin: 'OCR' as const,
+                    ocrOriginalQuantity: rawQty,
+                    ocrOriginalUnitPrice: rawPrice,
+                    ocrOriginalDiscountAmount: resolvedDiscount,
+                    // Prefer the document's raw extracted tax %; fall back to the resolved rate's percent.
+                    ocrOriginalIvaRatePercent: (item.taxRate ?? null),
+                    ocrOriginalUnitText: matchedUnitCode || extractedUnit || null,
+                    ocrOriginalUnitId: matchedUnit ? matchedUnit.id : null,
+                    // Document's own reported line total when available, else the reconstructed total.
+                    ocrOriginalLineTotal: rawTotalPrice > 0 ? rawTotalPrice : computedTotal,
+                    lineAdjustmentJustification: null
                 };
             })
         };
