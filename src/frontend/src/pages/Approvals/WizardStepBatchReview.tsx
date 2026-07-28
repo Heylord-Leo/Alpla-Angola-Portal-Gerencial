@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RequestDetailsDto, SavedQuotationDto, SavedQuotationItemDto, PurchaseHistoryInsightDto } from '../../types';
+import { RequestDetailsDto, SavedQuotationDto, SavedQuotationItemDto, PurchaseHistoryInsightDto, BatchInformationalItem } from '../../types';
 import { formatCurrencyAO } from '../../lib/utils';
 import {
     CheckCircle2,
@@ -10,8 +10,38 @@ import {
     Scale,
     Building2,
     Check,
-    Eye
+    Eye,
+    Plus,
+    XCircle,
+    Info,
+    RefreshCw
 } from 'lucide-react';
+
+/** One row shared by the three read-only informational sections below (excluded extras, ignored
+ * lines, unresolved legacy lines) — same layout, different accent color/copy per section. */
+const InformationalItemRow: React.FC<{ item: BatchInformationalItem; accentColor: string }> = ({ item, accentColor }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', padding: '10px 12px', backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px' }}>
+        <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#111827' }}>{item.description}</div>
+            <div style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: '2px' }}>
+                Qtd: {item.quantity} • Fornecedor: {item.supplierName || 'N/D'}
+            </div>
+            {item.reconciliationJustification && (
+                <div style={{ fontSize: '0.75rem', color: accentColor, marginTop: '4px' }}>
+                    <strong>Motivo:</strong> {item.reconciliationJustification}
+                </div>
+            )}
+            {item.comment && (
+                <div style={{ fontSize: '0.75rem', color: accentColor, marginTop: '4px' }}>
+                    <strong>Comentário do comprador:</strong> {item.comment}
+                </div>
+            )}
+        </div>
+        <div style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#374151', whiteSpace: 'nowrap' }}>
+            {formatCurrencyAO(item.lineTotal)}
+        </div>
+    </div>
+);
 
 interface WizardStepBatchReviewProps {
     request: RequestDetailsDto;
@@ -228,6 +258,32 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                         <Check size={13} strokeWidth={3} /> Selecionado pelo Comprador
                                                     </span>
 
+                                                    {item.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED' && (
+                                                        <span
+                                                            title={selectedQItem!.reconciliationJustification || undefined}
+                                                            style={{
+                                                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                                fontSize: '0.6875rem', fontWeight: 700, color: '#1D4ED8',
+                                                                backgroundColor: '#DBEAFE', border: '1px solid #93C5FD',
+                                                                padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase', cursor: 'help'
+                                                            }}>
+                                                            <Plus size={12} strokeWidth={3} /> Item Adicional Incluído pelo Comprador
+                                                        </span>
+                                                    )}
+
+                                                    {selectedQItem!.reconciliationStatus === 'SUBSTITUTE' && (
+                                                        <span
+                                                            title={selectedQItem!.reconciliationJustification || undefined}
+                                                            style={{
+                                                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                                fontSize: '0.6875rem', fontWeight: 700, color: '#854D0E',
+                                                                backgroundColor: '#FEF9C3', border: '1px solid #FDE047',
+                                                                padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase', cursor: 'help'
+                                                            }}>
+                                                            <RefreshCw size={12} strokeWidth={3} /> Substituto
+                                                        </span>
+                                                    )}
+
                                                     {renderHistoryBadge(selectedQItem!.historyInsight)}
 
                                                     {(selectedQItem!.isReuseAuthorized || selectedQItem!.reuseConsumedFromBatchId) && selectedQItem!.sourceCancelledBatchNumber != null && (
@@ -279,7 +335,12 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                 {selectedQItem!.ivaAmount != null && selectedQItem!.ivaAmount > 0 && (
                                                     <div>
                                                         <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#047857', textTransform: 'uppercase' }}>
-                                                            IVA ({selectedQItem!.ivaRatePercent}%)
+                                                            {/* This block only renders for ivaAmount > 0, so a 0/missing rate here is an
+                                                                unexpected data gap — never show a contradictory "IVA (0%)" against a
+                                                                positive amount. A genuine 0% line has ivaAmount 0 and is hidden entirely. */}
+                                                            {selectedQItem!.ivaRatePercent != null && selectedQItem!.ivaRatePercent > 0
+                                                                ? `IVA (${selectedQItem!.ivaRatePercent}%)`
+                                                                : 'IVA'}
                                                         </span>
                                                         <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#065F46' }}>
                                                             {formatCurrencyAO(selectedQItem!.ivaAmount)}
@@ -287,6 +348,33 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {item.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED' && selectedQItem!.reconciliationJustification && (
+                                                <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #A7F3D0' }}>
+                                                    <strong>Motivo do item adicional:</strong> {selectedQItem!.reconciliationJustification}
+                                                </div>
+                                            )}
+
+                                            {/* SUBSTITUTE comparison — the approver must see exactly what was requested versus
+                                                what the buyer selected in its place (e.g. requested 500g vs proposed 450g),
+                                                plus the buyer's reconciliation justification. Read-only; totals untouched. */}
+                                            {selectedQItem!.reconciliationStatus === 'SUBSTITUTE' && (
+                                                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #FDE047', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: '#4B5563' }}>
+                                                        <strong style={{ color: '#374151' }}>Solicitado:</strong>{' '}
+                                                        {item.description} — Qtd: {item.quantity} {item.unit || 'UN'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#854D0E' }}>
+                                                        <strong>Proposto (substituto):</strong>{' '}
+                                                        {selectedQItem!.description} — Qtd: {selectedQItem!.quantity} {selectedQItem!.unitName || selectedQItem!.unitCode || 'UN'}
+                                                    </div>
+                                                    {selectedQItem!.reconciliationJustification && (
+                                                        <div style={{ fontSize: '0.75rem', color: '#854D0E' }}>
+                                                            <strong>Justificativa:</strong> {selectedQItem!.reconciliationJustification}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Action buttons & Collapsible other quotes */}
@@ -392,6 +480,75 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                     );
                 })}
             </div>
+
+            {/* Read-only informational sections (Phase R2 — previously-planned, never-implemented
+                "Phase 4"): excluded extras, ignored lines, and unresolved-legacy-lines are shown
+                separately from the batch above, never affect totals or ApprovalBatchItem membership,
+                and — except for UnresolvedLegacyLines — never block progression. A valid,
+                already-decided EXTRA_ITEM/IGNORED line is visible here, not a blocking error. */}
+            {!!activeBatch?.unresolvedLegacyLines?.length && (
+                <div style={{ backgroundColor: '#FFFBEB', border: '1.5px solid #F59E0B', borderRadius: '12px', padding: '16px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <AlertTriangle size={18} color="#B45309" />
+                        <h4 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#92400E', margin: 0 }}>
+                            Linhas Pendentes (Lote Legado) ({activeBatch.unresolvedLegacyLines.length})
+                        </h4>
+                    </div>
+                    <p style={{ fontSize: '0.8125rem', color: '#92400E', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                        Decisão do comprador não registrada — lote criado antes desta regra. Estas linhas NÃO fazem parte do total do lote. Solicite reajuste para que o comprador resolva estas linhas antes de aprovar.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {activeBatch.unresolvedLegacyLines.map((line: BatchInformationalItem) => (
+                            <InformationalItemRow key={line.quotationItemId} item={line} accentColor="#92400E" />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {!!activeBatch?.excludedExtraItems?.length && (
+                <CollapsibleInfoSection title={`Itens Excluídos pelo Comprador (${activeBatch.excludedExtraItems.length})`} icon={<XCircle size={16} color="#6B7280" />}>
+                    <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                        Itens adicionais que o comprador optou por não incluir neste lote — excluídos do total.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {activeBatch.excludedExtraItems.map((line: BatchInformationalItem) => (
+                            <InformationalItemRow key={line.quotationItemId} item={line} accentColor="#6B7280" />
+                        ))}
+                    </div>
+                </CollapsibleInfoSection>
+            )}
+
+            {!!activeBatch?.ignoredLines?.length && (
+                <CollapsibleInfoSection title={`Ignorado pelo Comprador (${activeBatch.ignoredLines.length})`} icon={<Info size={16} color="#6B7280" />}>
+                    <p style={{ fontSize: '0.75rem', color: '#6B7280', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                        Linhas do documento do fornecedor que o comprador classificou como ignoradas durante a reconciliação — estado completo e já justificado, nunca exige decisão, excluído do total.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {activeBatch.ignoredLines.map((line: BatchInformationalItem) => (
+                            <InformationalItemRow key={line.quotationItemId} item={line} accentColor="#6B7280" />
+                        ))}
+                    </div>
+                </CollapsibleInfoSection>
+            )}
+        </div>
+    );
+};
+
+/** Shared collapsed-by-default wrapper for the two neutral informational sections. */
+const CollapsibleInfoSection: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <div style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '12px', padding: '16px 20px' }}>
+            <button
+                type="button"
+                onClick={() => setExpanded(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, width: '100%' }}
+            >
+                {icon}
+                <h4 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#374151', margin: 0, flex: 1, textAlign: 'left' }}>{title}</h4>
+                {expanded ? <ChevronUp size={16} color="#6B7280" /> : <ChevronDown size={16} color="#6B7280" />}
+            </button>
+            {expanded && <div style={{ marginTop: '12px' }}>{children}</div>}
         </div>
     );
 };

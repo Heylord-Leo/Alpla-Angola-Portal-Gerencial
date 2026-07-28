@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.213.0
+v2.214.0
+
+## [v2.214.0] - 2026-07-28
+
+### Added & Fixed — Quotation Financial Reconciliation & Approval Monetary Corrections
+
+- **OCR-original per-line baseline (immutable)**: each quotation line captures its OCR-extracted quantity/unit-price/discount/IVA/unit/line-total at SaveQuotation and document-replacement time; UpdateQuotation compares against — but never overwrites — that persisted baseline. Nulls mean "not extracted" (never 0), so legacy/manual lines stay exempt.
+- **Line-level financial-adjustment justification**: one consolidated reason per line for material edits versus the OCR baseline, distinct from the reconciliation and residual justifications, enforced on create and update.
+- **Authoritative reconciliation preview + signed residual gate**: a read-only backend preview computes the document residual from the same shared calculator used by SaveQuotation/UpdateQuotation; a signed residual beyond tolerance blocks the save until explained. Applicability keys on the OCR header total.
+- **EXTRA_ITEM / IGNORED handling & quick-text shortcuts**: buyer batch-composition INCLUDE/EXCLUDE decisions (shared across batch creation and rework), a server-side legacy-unresolved-lines gate on Area Approval, and frontend-only reconciliation-motive quick-text shortcuts.
+- **Partial-approval batch monetary standardization + dynamic financial summary**: uniform Qtd / Preço s/IVA / IVA(rate%) / Total c/IVA cards and a live "Resumo financeiro do lote" summing only persisted `taxableBase`/`ivaAmount`/`lineTotal`, with excluded extras removed and a missing-field guard blocking confirmation.
+- **TaxableBase projection corrected across all read paths** (`GrossSubtotal − DiscountAmount`) in RequestsController request-details, LineItemsController, and the SaveQuotation/UpdateQuotation responses — fixed "Subtotal sem IVA: 0,00".
+- **Area Approval IVA-rate projection corrected**: request-details now projects persisted `IvaRatePercent`, so the wizard shows "IVA (14%)" not "IVA (0%)"; the label never renders 0% against a positive IVA amount.
+- Additive migration `20260727162615_AddQuotationItemOcrBaseline` (8 nullable columns on `QuotationItems`) — **not applied to any database as part of this release.**
+- Backend and frontend regression tests added.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.213.0] - 2026-07-25
 

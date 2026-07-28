@@ -100,6 +100,9 @@ export interface RequestLineItemDto {
     selectedQuotationItemId?: string | null;
     requestPoGroupId?: string | null;
 
+    /** How this line was created. Null = standard requester/create flow. E.g. 'BUYER_EXTRA_ITEM_INCLUDED'. */
+    creationOrigin?: string | null;
+
     allocations?: RequestLineItemAllocationDto[];
 }
 
@@ -142,6 +145,15 @@ export interface SavedQuotationItemDto {
     reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE' | string;
     reconciliationJustification?: string | null;
     buyerJustification?: string | null;
+    /** Persisted OCR-original baseline + line adjustment reason (for EDIT hydration & reconciliation). */
+    ocrOriginalQuantity?: number | null;
+    ocrOriginalUnitPrice?: number | null;
+    ocrOriginalDiscountAmount?: number | null;
+    ocrOriginalIvaRatePercent?: number | null;
+    ocrOriginalUnitText?: string | null;
+    ocrOriginalUnitId?: number | null;
+    ocrOriginalLineTotal?: number | null;
+    lineAdjustmentJustification?: string | null;
 
     // Receiving Fields
     receivedQuantity?: number;
@@ -255,6 +267,71 @@ export interface RequestAttachmentDto {
     voidReason?: string | null;
 }
 
+// ── ApprovalBatch (partial/batch approval) — focused interfaces for the buyer batch-composition
+// UI (Phase 3). RequestDetailsDto.approvalBatches stays `any[]` (existing, widely-used convention
+// across the Buyer pages, which type `group`/`batch` as `any`); these are used explicitly by the
+// new batch-creation/rework components, cast at the point group.approvalBatches is consumed. ──
+
+export interface ApprovalBatchItemSummary {
+    id: string;
+    requestLineItemId: string;
+    selectedQuotationItemId: string;
+}
+
+/** One informational (non-batch, non-total-affecting) quotation line — mirrors the backend's
+ * BatchInformationalItemDto exactly (excluded extras, IGNORED lines, unresolved legacy extras). */
+export interface BatchInformationalItem {
+    quotationItemId: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    supplierName?: string | null;
+    quotationDocumentNumber?: string | null;
+    /** Why the line was classified this way at reconciliation time (SUBSTITUTE/EXTRA_ITEM/IGNORED). */
+    reconciliationJustification?: string | null;
+    /** Buyer's batch-composition comment — only populated for buyer-excluded extras. */
+    comment?: string | null;
+}
+
+export interface ApprovalBatchSummary {
+    id: string;
+    batchNumber: number;
+    status: string;
+    comment?: string | null;
+    createdAtUtc: string;
+    createdByUserId: string;
+    createdByUserName?: string | null;
+    updatedByUserId?: string | null;
+    updatedByUserName?: string | null;
+    updatedAtUtc?: string | null;
+    budgetJustification?: string | null;
+    approvedTotalAmount?: number | null;
+    items: ApprovalBatchItemSummary[];
+    /** Genuine EXTRA_ITEM lines the buyer explicitly decided not to include in this batch. */
+    excludedExtraItems?: BatchInformationalItem[];
+    /** IGNORED-status lines from the contributing quotation(s) — complete, valid, read-only. */
+    ignoredLines?: BatchInformationalItem[];
+    /** Genuine EXTRA_ITEM lines with no recorded decision — only possible for legacy batches. */
+    unresolvedLegacyLines?: BatchInformationalItem[];
+}
+
+/** Values accepted by the backend's batch-composition decision (distinct from Area Approval's
+ * APPROVE/REJECT vocabulary — the buyer composes the batch, never "approves" anything). */
+export type ExtraItemDecisionValue = 'INCLUDE' | 'EXCLUDE';
+
+/** Wire payload sent to CreateBatch/UpdateBatch, keyed by QuotationItemId. */
+export interface ExtraItemDecisionPayload {
+    decision: ExtraItemDecisionValue;
+    comment?: string | null;
+}
+
+/** Local UI state for one EXTRA_ITEM line's decision-in-progress, keyed by QuotationItemId. */
+export interface ExtraItemDecisionState {
+    decision: ExtraItemDecisionValue | null;
+    comment: string;
+}
+
 // Keep details types minimal just to prove routing works later
 export interface RequestDetailsDto extends RequestListItemDto {
     /** Fase B: nomes dos managers elegíveis enquanto a aprovação de área está pendente e sem decisor. */
@@ -264,7 +341,7 @@ export interface RequestDetailsDto extends RequestListItemDto {
     attachments: RequestAttachmentDto[];
     quotations: SavedQuotationDto[];
     poGroups: RequestPoGroupDto[];
-    approvalBatches?: any[];
+    approvalBatches?: ApprovalBatchSummary[];
     statusHistory: RequestStatusHistoryDto[];
     // B2P: Payment Condition
     paymentConditionCode?: string | null;
@@ -310,6 +387,68 @@ export interface OcrDraftItem {
     mappedRequestLineItemId?: string | null; // ID of the RequestLineItem this quotation item corresponds to
     reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE';
     reconciliationJustification?: string | null;
+    /** Persisted justification captured at hydration time (EDIT mode) — baseline for the
+     * untouched-legacy validation exemption, mirroring the backend's legacy-vs-edited skip.
+     * Undefined for lines created in this session. */
+    originalReconciliationJustification?: string | null;
+
+    // ── Financial Reconciliation (OCR baseline) ──
+    /** 'OCR' for an extraction-produced line, 'MANUAL' for a buyer-added line. */
+    lineOrigin?: 'OCR' | 'MANUAL' | null;
+    /** Immutable OCR-original snapshot captured at extraction (new quotation) or hydrated from the
+     * persisted baseline (edit). Null on a field = "not extracted", never an implicit 0. */
+    ocrOriginalQuantity?: number | null;
+    ocrOriginalUnitPrice?: number | null;
+    ocrOriginalDiscountAmount?: number | null;
+    ocrOriginalIvaRatePercent?: number | null;
+    ocrOriginalUnitText?: string | null;
+    ocrOriginalUnitId?: number | null;
+    ocrOriginalLineTotal?: number | null;
+    /** One consolidated reason for material financial-field edits vs the OCR baseline. */
+    lineAdjustmentJustification?: string | null;
+}
+
+/** One line's reconciliation diagnostics (mirrors backend LineReconciliationDto). */
+export interface LineReconciliationDto {
+    quotationItemId?: string | null;
+    lineNumber: number;
+    description: string;
+    reconciliationStatus: string;
+    hasOcrBaseline: boolean;
+    isManualAddition: boolean;
+    quantityChanged: boolean;
+    unitPriceChanged: boolean;
+    discountChanged: boolean;
+    ivaChanged: boolean;
+    unitChanged: boolean;
+    imputedOcrComponents: string[];
+    requiresAdjustmentReason: boolean;
+    hasAdjustmentReason: boolean;
+    hasReconciliationReason: boolean;
+}
+
+/** Backend-authoritative reconciliation result (preview endpoint + Save/Update 409 extensions.reconciliation).
+ * residualVariance is SIGNED; residualExceedsTolerance already applies Math.Abs. */
+export interface QuotationReconciliationDto {
+    ocrHeaderTotal: number;
+    ocrLineSumTotal: number;
+    reconstructedOcrLineSum: number;
+    structuralHeaderDifference: number;
+    ocrLineComponentDifference: number;
+    finalConsideredTotal: number;
+    manualAdditionsTotal: number;
+    ignoredImpact: number;
+    quantityImpact: number;
+    unitPriceImpact: number;
+    discountImpact: number;
+    ivaImpact: number;
+    globalDiscountImpact: number;
+    manualAdditionsImpact: number;
+    explainedLineAdjustments: number;
+    residualVariance: number;
+    toleranceApplied: number;
+    residualExceedsTolerance: boolean;
+    lines: LineReconciliationDto[];
 }
 
 export interface OcrDraft {

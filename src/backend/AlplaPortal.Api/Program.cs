@@ -1,4 +1,5 @@
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Validation;
 using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Application.Interfaces.Extraction;
@@ -130,6 +131,7 @@ builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 
 // Department Manager redesign — single source of truth for area-approval routing
 builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
+builder.Services.AddScoped<IBatchExtraItemDecisionService, BatchExtraItemDecisionService>();
 builder.Services.AddScoped<DepartmentManagerService>();
 builder.Services.AddScoped<AreaApproverReconciliationService>();
 

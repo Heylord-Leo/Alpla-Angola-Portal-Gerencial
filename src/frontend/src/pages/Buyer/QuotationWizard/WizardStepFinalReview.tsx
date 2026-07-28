@@ -1,16 +1,31 @@
 import React from 'react';
-import { OcrDraft } from '../../../types';
+import { OcrDraft, QuotationReconciliationDto } from '../../../types';
 import { QuotationValidationResult } from './hooks/useQuotationValidation';
-import { XCircle, AlertTriangle, FileText } from 'lucide-react';
+import { XCircle, AlertTriangle, FileText, RefreshCw, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
 
 interface WizardStepFinalReviewProps {
     draft: OcrDraft | null;
     validation: QuotationValidationResult;
     wizardState: UseQuotationWizardStateReturn;
+    // ── Authoritative reconciliation preview ──
+    reconciliation: QuotationReconciliationDto | null;
+    reconciliationLoading: boolean;
+    reconciliationError: string | null;
+    reconciliationStale: boolean;
+    hasOcrTotal: boolean;
+    onRecalculate: () => void;
+    residualJustification: string;
+    onResidualJustificationChange: (v: string) => void;
+    residualJustificationTouched: boolean;
+    justificationRef: React.RefObject<HTMLTextAreaElement>;
 }
 
-export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({ draft, validation, wizardState }) => {
+export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
+    draft, validation, wizardState,
+    reconciliation, reconciliationLoading, reconciliationError, reconciliationStale, hasOcrTotal,
+    onRecalculate, residualJustification, onResidualJustificationChange, residualJustificationTouched, justificationRef
+}) => {
     if (!draft) return null;
 
     const isSupplierDraft = draft.supplierId && draft.supplierRegistrationStatus === 'DRAFT';
@@ -127,6 +142,114 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({ dr
                     </div>
                 </div>
             </div>
+
+            {/* ── Authoritative reconciliation (backend preview) ── */}
+            {hasOcrTotal && (() => {
+                const money = (n: number) => formatter.format(n || 0);
+                const residualBlocks = !!reconciliation && Math.abs(reconciliation.residualVariance) > reconciliation.toleranceApplied;
+                const Row: React.FC<{ label: string; value: number; strong?: boolean }> = ({ label, value, strong }) => (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', color: '#334155' }}>
+                        <span style={{ fontWeight: strong ? 700 : 400 }}>{label}</span>
+                        <span style={{ fontWeight: strong ? 700 : 500 }}>{money(value)}</span>
+                    </div>
+                );
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>Reconciliação Financeira (documento OCR)</h3>
+                            <button type="button" onClick={onRecalculate} disabled={reconciliationLoading}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-primary)', background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '6px 10px', cursor: reconciliationLoading ? 'not-allowed' : 'pointer' }}>
+                                <RefreshCw size={14} /> Recalcular resumo
+                            </button>
+                        </div>
+
+                        {reconciliationLoading && (
+                            <div style={{ padding: '16px', backgroundColor: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '0.875rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <RefreshCw size={16} className="spin" /> Calculando o resumo de reconciliação...
+                            </div>
+                        )}
+
+                        {!reconciliationLoading && reconciliationError && (
+                            <div style={{ padding: '16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b91c1c', fontWeight: 600, fontSize: '0.875rem' }}>
+                                    <AlertTriangle size={16} /> {reconciliationError}
+                                </div>
+                                <span style={{ fontSize: '0.75rem', color: '#991b1b' }}>Não é possível salvar enquanto o resumo autoritativo não estiver disponível. Use "Recalcular resumo".</span>
+                            </div>
+                        )}
+
+                        {!reconciliationLoading && !reconciliationError && reconciliationStale && (
+                            <div style={{ padding: '12px 16px', backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', fontSize: '0.8125rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <AlertTriangle size={16} /> O resumo está desatualizado após as suas alterações. Recalcule para salvar.
+                            </div>
+                        )}
+
+                        {!reconciliationLoading && !reconciliationError && reconciliation && !reconciliationStale && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                {/* Consistência do documento OCR */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ margin: '0 0 4px 0', fontSize: '0.8125rem', fontWeight: 700, color: '#0f172a' }}>Consistência do documento OCR</h4>
+                                    <Row label="Total do cabeçalho OCR" value={reconciliation.ocrHeaderTotal} />
+                                    <Row label="Soma das linhas OCR" value={reconciliation.ocrLineSumTotal} />
+                                    <Row label="Reconstruído dos componentes OCR" value={reconciliation.reconstructedOcrLineSum} />
+                                    <Row label="Diferença estrutural (cabeçalho − linhas)" value={reconciliation.structuralHeaderDifference} />
+                                    <Row label="Diferença de componentes OCR" value={reconciliation.ocrLineComponentDifference} />
+                                </div>
+                                {/* Ajustes explicados */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                                    <h4 style={{ margin: '0 0 4px 0', fontSize: '0.8125rem', fontWeight: 700, color: '#0f172a' }}>Ajustes explicados</h4>
+                                    <Row label="Ignorados" value={reconciliation.ignoredImpact} />
+                                    <Row label="Quantidade" value={reconciliation.quantityImpact} />
+                                    <Row label="Preço unitário" value={reconciliation.unitPriceImpact} />
+                                    <Row label="Desconto" value={reconciliation.discountImpact} />
+                                    <Row label="IVA" value={reconciliation.ivaImpact} />
+                                    <Row label="Adições manuais" value={reconciliation.manualAdditionsImpact} />
+                                    <Row label="Desconto global" value={reconciliation.globalDiscountImpact} />
+                                    <div style={{ height: '1px', backgroundColor: 'var(--color-border)', margin: '4px 0' }} />
+                                    <Row label="Total final considerado" value={reconciliation.finalConsideredTotal} strong />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Residual verdict */}
+                        {!reconciliationLoading && !reconciliationError && reconciliation && !reconciliationStale && !residualBlocks && (
+                            <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#166534' }}>
+                                <CheckCircle2 size={16} /> Diferença residual de {money(reconciliation.residualVariance)} dentro da tolerância ({money(reconciliation.toleranceApplied)}). Nenhuma justificativa de diferença é necessária.
+                            </div>
+                        )}
+
+                        {!reconciliationLoading && !reconciliationError && reconciliation && !reconciliationStale && residualBlocks && (
+                            <div style={{ padding: '14px 16px', backgroundColor: 'var(--color-status-red-surface, #fef2f2)', border: '1px solid var(--color-status-red, #dc2626)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-status-red, #dc2626)', fontWeight: 700, fontSize: '0.9rem' }}>
+                                    <ShieldAlert size={18} /> Diferença não explicada do documento: {money(reconciliation.residualVariance)}
+                                </div>
+                                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-main)', lineHeight: 1.5 }}>
+                                    Após os ajustes de linha explicados, resta esta diferença entre o total do documento OCR ({money(reconciliation.ocrHeaderTotal)}) e o total considerado ({money(reconciliation.finalConsideredTotal)}). Tolerância aplicada: {money(reconciliation.toleranceApplied)}. <strong>O valor da diferença permanece registrado no histórico mesmo após justificado</strong> (não é zerado).
+                                </p>
+                                <div>
+                                    <label htmlFor="residual-justification-fr" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-main)', marginBottom: '6px' }}>
+                                        Justificativa da diferença residual *
+                                    </label>
+                                    <textarea
+                                        id="residual-justification-fr"
+                                        ref={justificationRef}
+                                        value={residualJustification}
+                                        onChange={(e) => onResidualJustificationChange(e.target.value)}
+                                        placeholder="Ex.: frete não itemizado pelo OCR; linha omitida na extração; arredondamento do documento..."
+                                        rows={3}
+                                        style={{ width: '100%', fontSize: '0.875rem', padding: '10px', border: (residualJustificationTouched && residualJustification.trim().length < 20) ? '1px solid var(--color-status-red)' : '1px solid var(--color-border)', borderRadius: 'var(--radius-sm, 4px)', fontFamily: 'var(--font-family-body)', resize: 'vertical', boxSizing: 'border-box' }}
+                                    />
+                                    {residualJustificationTouched && residualJustification.trim().length < 20 && (
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-status-red)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <AlertTriangle size={12} /> A justificativa da diferença residual é obrigatória (mínimo 20 caracteres) para salvar.
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* List Substitutes and Extras specifically so buyer confirms justifications */}
             {(substituteCount > 0 || extraCount > 0) && (

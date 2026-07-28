@@ -2,6 +2,7 @@ namespace AlplaPortal.Api.Controllers;
 
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -25,6 +26,7 @@ public class ApprovalBatchController : BaseController
     private readonly IGroupBuilderService _groupBuilderService;
     private readonly IApprovalRoutingService _approvalRouting;
     private readonly IQuotationItemEligibilityService _quotationEligibility;
+    private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
 
     public ApprovalBatchController(
         ApplicationDbContext context,
@@ -32,13 +34,63 @@ public class ApprovalBatchController : BaseController
         IRequestStatusSyncService statusSyncService,
         IGroupBuilderService groupBuilderService,
         IApprovalRoutingService approvalRouting,
-        IQuotationItemEligibilityService quotationEligibility) : base(context)
+        IQuotationItemEligibilityService quotationEligibility,
+        IBatchExtraItemDecisionService extraItemDecisionService) : base(context)
     {
         _logger = logger;
         _statusSyncService = statusSyncService;
         _groupBuilderService = groupBuilderService;
         _approvalRouting = approvalRouting;
         _quotationEligibility = quotationEligibility;
+        _extraItemDecisionService = extraItemDecisionService;
+    }
+
+    /// <summary>
+    /// Translates an unsuccessful IBatchExtraItemDecisionService result into the matching
+    /// structured conflict/validation response — shared by CreateBatch and UpdateBatch so the
+    /// two call sites can never present this differently.
+    /// </summary>
+    private static IActionResult ExtraItemDecisionErrorResult(ExtraItemDecisionApplyResult result)
+    {
+        if (result.PendingItems.Count > 0)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Itens Adicionais Pendentes de Decisão",
+                Detail = "Existem linhas da cotação classificadas como Item Adicional que ainda não foram incluídas ou excluídas deste lote.",
+                Status = 409
+            };
+            pd.Extensions["code"] = "EXTRA_ITEMS_PENDING_DECISION";
+            pd.Extensions["pendingItems"] = result.PendingItems.Select(p => new
+            {
+                quotationItemId = p.QuotationItemId,
+                description = p.Description,
+                quotationDocumentNumber = p.QuotationDocumentNumber,
+                supplierName = p.SupplierName
+            }).ToList();
+            return new ConflictObjectResult(pd);
+        }
+
+        if (result.ReversalLocked)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Reversão de Item Adicional Bloqueada",
+                Detail = result.ReversalLockedReason,
+                Status = 409
+            };
+            pd.Extensions["code"] = "EXTRA_ITEM_INCLUSION_LOCKED";
+            pd.Extensions["reason"] = result.ReversalLockedReason;
+            pd.Extensions["quotationItemId"] = result.ReversalLockedQuotationItemId;
+            return new ConflictObjectResult(pd);
+        }
+
+        return new BadRequestObjectResult(new ProblemDetails
+        {
+            Title = "Validação de Decisão de Item Adicional Falhou",
+            Detail = result.ValidationErrorMessage,
+            Status = 400
+        });
     }
 
     /// <summary>
@@ -303,6 +355,17 @@ public class ApprovalBatchController : BaseController
             _context.Entry(lineItem).State = EntityState.Modified;
         }
 
+        // ── 7.05. Buyer batch-composition decision for genuine EXTRA_ITEM lines belonging to the
+        // quotation(s) contributing a winner to this batch (shared service — identical rule for
+        // CreateBatch and UpdateBatch). Nothing has been SaveChanges'd yet, so a failure here
+        // aborts cleanly with no persistence. ──
+        var extraItemResult = await _extraItemDecisionService.ApplyAsync(
+            request, batch, dto.Items.Select(i => i.SelectedQuotationItemId), dto.ExtraItemDecisions, actorId);
+        if (!extraItemResult.Success)
+        {
+            return ExtraItemDecisionErrorResult(extraItemResult);
+        }
+
         // ── 7.1. Consume reuse authorizations in the SAME transaction as the batch (Option C):
         // each authorized reused item flips its authorization to consumed and records provenance.
         // If SaveChanges fails, everything (batch + consumption + history) rolls back together.
@@ -489,98 +552,39 @@ public class ApprovalBatchController : BaseController
         if (batch.Status != RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O lote não está em fase de aprovação da área (status atual: {batch.Status}).", Status = 400 });
 
-        // ── 6. Process extra item decisions ──
+        // ── 6. Extra-item decisions are no longer made here. By the time a batch reaches
+        // WAITING_AREA_APPROVAL, every genuine EXTRA_ITEM line's INCLUDE/EXCLUDE decision was
+        // already finalized by the Buyer at CreateBatch/UpdateBatch time (IBatchExtraItemDecisionService)
+        // — the Area Approver reviews the resulting, already-resolved batch, never decides scope.
+        //
+        // Server-side safety net (mirrors the wizard's client-side block): a batch created before
+        // that rule existed can still carry genuine EXTRA_ITEM lines with no recorded decision at
+        // all. Approving over them would silently drop supplier-document lines from the process,
+        // so the batch must go back to the Buyer for rework instead. Runs before any allocation
+        // processing or other mutation — nothing is persisted when this returns.
+        var unresolvedCheck = await _extraItemDecisionService.GetInformationalLinesAsync(
+            batchId, batch.Items.Select(bi => bi.SelectedQuotationItemId).ToList());
+        if (unresolvedCheck.UnresolvedLegacyLines.Count > 0)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Lote com Itens Adicionais Não Resolvidos",
+                Detail = "Este lote foi criado antes da regra de decisão de itens adicionais e possui linhas de cotação sem decisão registrada do comprador. Solicite reajuste para que o comprador resolva estas linhas antes da aprovação.",
+                Status = 409
+            };
+            pd.Extensions["code"] = "BATCH_HAS_UNRESOLVED_LEGACY_LINES";
+            pd.Extensions["pendingItems"] = unresolvedCheck.UnresolvedLegacyLines.Select(l => new
+            {
+                quotationItemId = l.QuotationItemId,
+                description = l.Description,
+                supplierName = l.SupplierName,
+                quotationDocumentNumber = l.QuotationDocumentNumber
+            }).ToList();
+            return Conflict(pd);
+        }
+
         var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
         var batchItemRliIds = batch.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
-
-        if (dto.ExtraItemDecisions != null && dto.ExtraItemDecisions.Any())
-        {
-            var extraIds = dto.ExtraItemDecisions.Keys.ToList();
-            var extraQItems = await _context.QuotationItems
-                .Include(qi => qi.Quotation)
-                .Where(qi => extraIds.Contains(qi.Id) && qi.Quotation.RequestId == requestId)
-                .ToListAsync();
-
-            foreach (var qi in extraQItems)
-            {
-                var decision = dto.ExtraItemDecisions[qi.Id];
-
-                var extraDecision = new ApprovalBatchExtraItemDecision
-                {
-                    ApprovalBatchId = batchId,
-                    QuotationItemId = qi.Id,
-                    Decision = decision.Decision.ToUpperInvariant(),
-                    Comment = decision.Comment,
-                    CreatedAtUtc = DateTime.UtcNow,
-                    CreatedByUserId = actorId
-                };
-
-                if (decision.Decision.Equals("APPROVE", StringComparison.OrdinalIgnoreCase))
-                {
-                    int nextLineNumber = activeItems.Any() ? activeItems.Max(i => i.LineNumber) + 1 : 1;
-                    var newLineItem = new RequestLineItem
-                    {
-                        Id = Guid.NewGuid(),
-                        RequestId = requestId,
-                        LineNumber = nextLineNumber,
-                        Description = "[Item Adicional] " + qi.Description,
-                        Quantity = qi.Quantity,
-                        UnitId = qi.UnitId,
-                        UnitPrice = qi.UnitPrice,
-                        TotalAmount = qi.LineTotal,
-                        QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.BatchAssigned,
-                        IsDeleted = false,
-                        CreatedAtUtc = DateTime.UtcNow,
-                        CreatedByUserId = actorId
-                    };
-                    _context.RequestLineItems.Add(newLineItem);
-                    activeItems.Add(newLineItem);
-
-                    // Create ApprovalBatchItem for the extra
-                    var newBatchItem = new ApprovalBatchItem
-                    {
-                        ApprovalBatchId = batchId,
-                        RequestLineItemId = newLineItem.Id,
-                        SelectedQuotationItemId = qi.Id,
-                        CreatedAtUtc = DateTime.UtcNow
-                    };
-                    _context.Set<ApprovalBatchItem>().Add(newBatchItem);
-                    batch.Items.Add(newBatchItem);
-                    batchItemRliIds.Add(newLineItem.Id);
-
-                    extraDecision.GeneratedRequestLineItemId = newLineItem.Id;
-
-                    // Remap allocations/assignments from QuotationItemId → new RLI Id
-                    if (dto.ItemAssignments != null && dto.ItemAssignments.TryGetValue(qi.Id, out var assignment))
-                    {
-                        dto.ItemAssignments.Remove(qi.Id);
-                        dto.ItemAssignments[newLineItem.Id] = assignment;
-                    }
-                    if (dto.ItemAllocations != null && dto.ItemAllocations.TryGetValue(qi.Id, out var allocations))
-                    {
-                        dto.ItemAllocations.Remove(qi.Id);
-                        dto.ItemAllocations[newLineItem.Id] = allocations;
-                    }
-                }
-                else if (decision.Decision.Equals("REJECT", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Audit-only: create history entry
-                    _context.RequestStatusHistories.Add(new RequestStatusHistory
-                    {
-                        Id = Guid.NewGuid(),
-                        RequestId = requestId,
-                        ActorUserId = actorId,
-                        ActionTaken = "EXTRA_ITEM_REJECTED",
-                        PreviousStatusId = request.StatusId,
-                        NewStatusId = request.StatusId,
-                        Comment = $"Item Adicional Rejeitado (Lote #{batch.BatchNumber}, {qi.Quotation.SupplierNameSnapshot}): {qi.Description}. Motivo: {decision.Comment}",
-                        CreatedAtUtc = DateTime.UtcNow
-                    });
-                }
-
-                _context.ApprovalBatchExtraItemDecisions.Add(extraDecision);
-            }
-        }
 
         // ── 7. Build itemAwards from batch items (winners from ApprovalBatchItem) ──
         var itemAwards = new Dictionary<Guid, Guid>();
@@ -1076,6 +1080,16 @@ public class ApprovalBatchController : BaseController
                 var lineItem = request.LineItems.First(li => li.Id == item.RequestLineItemId);
                 lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.BatchAssigned;
             }
+        }
+
+        // ── 4.05. Buyer batch-composition decision for genuine EXTRA_ITEM lines belonging to the
+        // quotation(s) contributing a winner to this batch (shared service — identical rule as
+        // CreateBatch, including safe INCLUDE→EXCLUDE reversal during this rework).
+        var extraItemResult = await _extraItemDecisionService.ApplyAsync(
+            request, batch, dto.Items.Select(i => i.SelectedQuotationItemId), dto.ExtraItemDecisions, actorId);
+        if (!extraItemResult.Success)
+        {
+            return ExtraItemDecisionErrorResult(extraItemResult);
         }
 
         // ── 4.1. Consume reuse authorizations for newly assigned reused items — same transaction

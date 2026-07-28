@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -195,13 +195,42 @@ export const api = {
         }
     },
     requests: {
-        createApprovalBatch: async (requestId: string, items: { requestLineItemId: string, selectedQuotationItemId: string }[], comment?: string): Promise<any> => {
+        createApprovalBatch: async (
+            requestId: string,
+            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            comment?: string,
+            extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
+        ): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items, comment })
+                body: JSON.stringify({ items, comment, extraItemDecisions })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao criar lote de aprovação.');
+            return response.json();
+        },
+        updateApprovalBatch: async (
+            requestId: string,
+            batchId: string,
+            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            comment?: string,
+            extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
+        ): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items, comment, extraItemDecisions })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao salvar correções do lote.');
+            return response.json();
+        },
+        resubmitApprovalBatch: async (requestId: string, batchId: string, comment?: string): Promise<any> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/resubmit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao reenviar lote para aprovação.');
             return response.json();
         },
         cancelApprovalBatch: async (requestId: string, batchId: string, justification: string): Promise<void> => {
@@ -752,6 +781,10 @@ export const api = {
             // would otherwise make handleApiError's own response.clone() throw ("body already used").
             if (response.status === 409) {
                 const body = await response.clone().json().catch(() => null);
+                // New signed-residual gate: ProblemDetails with code + reconciliation breakdown.
+                if (body?.code === 'DOCUMENT_RESIDUAL_UNEXPLAINED' && body?.reconciliation) {
+                    return { residualUnexplained: true as const, reconciliation: body.reconciliation, detail: body.detail ?? '' };
+                }
                 if (body?.integrityCheckFailed) {
                     return {
                         integrityCheckFailed: true as const,
@@ -767,6 +800,19 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao salvar cotação.');
             return response.json();
         },
+        /** Backend-authoritative reconciliation preview (read-only, no persistence). */
+        reconcilePreview: async (requestId: string, quotation: any, quotationId?: string): Promise<any> => {
+            const url = quotationId
+                ? `${API_BASE_URL}/api/v1/requests/${requestId}/quotations/reconcile-preview?quotationId=${quotationId}`
+                : `${API_BASE_URL}/api/v1/requests/${requestId}/quotations/reconcile-preview`;
+            const response = await apiFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(quotation),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao calcular a reconciliação.');
+            return response.json();
+        },
         selectQuotation: async (requestId: string, quotationId: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/quotations/${quotationId}/select`, {
                 method: 'POST'
@@ -779,6 +825,12 @@ export const api = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(quotation),
             });
+            if (response.status === 409) {
+                const body = await response.clone().json().catch(() => null);
+                if (body?.code === 'DOCUMENT_RESIDUAL_UNEXPLAINED' && body?.reconciliation) {
+                    return { residualUnexplained: true as const, reconciliation: body.reconciliation, detail: body.detail ?? '' };
+                }
+            }
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar cotação.');
             return response.json();
         },

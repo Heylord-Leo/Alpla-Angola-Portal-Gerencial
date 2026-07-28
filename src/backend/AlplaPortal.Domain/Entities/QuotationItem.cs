@@ -22,7 +22,28 @@ public class QuotationItem
     // Reconciliation (Phase R1)
     public string ReconciliationStatus { get; set; } = "MAPPED";
     public string? ReconciliationJustification { get; set; }
-    
+
+    // ── OCR-original per-line baseline (Financial Reconciliation) ──
+    // Immutable snapshot of what the OCR extraction captured for this line, written ONCE at
+    // SaveQuotation / document-replacement time and NEVER overwritten by a normal UpdateQuotation.
+    // All nullable: legacy rows (pre-feature), manually-created quotation lines, and manually-added
+    // lines in an OCR quotation legitimately have no baseline. A NULL is never treated as 0 —
+    // callers must distinguish "not extracted" from "extracted as zero" (see reconciliation calculator).
+    public decimal? OcrOriginalQuantity { get; set; }
+    public decimal? OcrOriginalUnitPrice { get; set; }
+    public decimal? OcrOriginalDiscountAmount { get; set; }
+    public decimal? OcrOriginalIvaRatePercent { get; set; }
+    public string? OcrOriginalUnitText { get; set; }
+    public int? OcrOriginalUnitId { get; set; }
+    public decimal? OcrOriginalLineTotal { get; set; }
+
+    /// <summary>One consolidated free-text reason for material financial-field edits of this line
+    /// against its OCR baseline (quantity/price/discount/IVA/unit). Distinct from
+    /// ReconciliationJustification (SUBSTITUTE/EXTRA/IGNORED reason), the EXCLUDE comment, and the
+    /// document residual justification — never overloaded onto any of those.</summary>
+    public string? LineAdjustmentJustification { get; set; }
+
+
     // Deterministic ordering
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }

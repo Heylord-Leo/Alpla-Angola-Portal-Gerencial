@@ -1,9 +1,64 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { OcrDraft, RequestDetailsDto } from '../../../types';
 import { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
 import { CheckCircle, AlertCircle, HelpCircle, Link as LinkIcon, Plus, XCircle, Search, RefreshCw, Lock, FilePlus } from 'lucide-react';
 import { isLineItemEligibleForQuotation } from '../batchEligibility';
 import { AddRequestedItemModal } from './AddRequestedItemModal';
+import { validateReconciliationJustification } from '../../../lib/reconciliationJustificationValidator';
+import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../lib/lineReconciliation';
+
+/** Untouched-legacy exemption, mirroring the backend's legacy-vs-edited skip in
+ * RequestsController: a hydrated line whose status and justification are exactly what is already
+ * persisted (tracked via originalReconciliationJustification, set at hydration in BuyerItemsList)
+ * is never forced through the quality validator merely because the quotation was resaved. */
+export const isUntouchedLegacyJustification = (item: { reconciliationJustification?: string | null; originalReconciliationJustification?: string | null }): boolean =>
+    item.originalReconciliationJustification != null
+    && (item.reconciliationJustification ?? '') === (item.originalReconciliationJustification ?? '');
+
+/**
+ * Frontend-only quick-select justification shortcuts. These are pure DISPLAY HELPERS — clicking a
+ * chip copies its Portuguese label verbatim into the plain-text reconciliationJustification field,
+ * which stays fully editable. There is NO reason code/label, no structured state, no backend
+ * catalog, and no persisted field other than reconciliationJustification. The final chip
+ * ("Outro motivo") is a focus-only action: it never inserts text — it simply focuses the field so
+ * the buyer can type their own reason.
+ */
+const OTHER_JUSTIFICATION_LABEL = 'Outro motivo';
+
+const EXTRA_ITEM_JUSTIFICATION_SUGGESTIONS: readonly string[] = [
+    'Item necessário, mas não incluído no pedido original',
+    'Item complementar necessário para o item solicitado',
+    'Quantidade ou embalagem comercial diferente',
+    'Alternativa recomendada pelo fornecedor',
+    'Item necessário para completar o fornecimento',
+    OTHER_JUSTIFICATION_LABEL,
+];
+
+const IGNORED_JUSTIFICATION_SUGGESTIONS: readonly string[] = [
+    'Item não relacionado ao pedido',
+    'Linha duplicada no documento',
+    'Item gratuito ou sem custo',
+    'Frete, serviço ou encargo tratado separadamente',
+    'Linha informativa sem impacto na cotação',
+    'Item incluído incorretamente pelo fornecedor',
+    OTHER_JUSTIFICATION_LABEL,
+];
+
+const justificationChipBase: React.CSSProperties = { padding: '6px 10px', fontSize: '0.8rem', fontWeight: 500, borderRadius: '16px', cursor: 'pointer', border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' };
+const justificationChipSelected: React.CSSProperties = { ...justificationChipBase, border: '1px solid var(--color-primary)', backgroundColor: 'var(--color-primary)', color: '#fff' };
+
+/** Quick-select shortcuts for the consolidated line-adjustment reason (frontend-only text helpers). */
+const LINE_ADJUSTMENT_SUGGESTIONS: readonly string[] = [
+    'Erro na extração pelo OCR',
+    'Quantidade corrigida conforme o documento',
+    'Quantidade confirmada com o fornecedor',
+    'Apenas parte da quantidade será adquirida',
+    'A quantidade representa embalagem ou múltiplo comercial',
+    'Preço/desconto corrigido conforme o documento',
+    OTHER_JUSTIFICATION_LABEL,
+];
+
+const fmtNum = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('pt-AO', { maximumFractionDigits: 4 }));
 
 interface WizardStepReconciliationProps {
     draft: OcrDraft | null;
@@ -27,6 +82,10 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
 }) => {
     // Which OCR draft line currently has the "add as requested item" form open (index into draft.items).
     const [addFormDraftIndex, setAddFormDraftIndex] = useState<number | null>(null);
+
+    // Per-row justification input refs — lets the "Outro motivo" chip focus the field for free
+    // typing without inserting any text (keyed by the realItems map index).
+    const justificationInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
     if (!draft || !request) return null;
 
@@ -142,13 +201,13 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
         if (itemIndex === -1) return;
 
         const updates: any = { reconciliationStatus: newStatus, isAutoSuggested: false };
-        
+
         if (newStatus === 'MAPPED') {
             updates.reconciliationJustification = null;
         } else if (newStatus === 'EXTRA_ITEM' || newStatus === 'IGNORED') {
             updates.mappedRequestLineItemId = null;
         }
-        
+
         updateDraftItemFields(itemIndex, updates, ivaRates);
     };
 
@@ -156,6 +215,12 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
         const itemIndex = draft.items.findIndex((i: any) => i === realItems[idx]);
         if (itemIndex === -1) return;
         updateDraftItemFields(itemIndex, { reconciliationJustification: text, isAutoSuggested: false }, ivaRates);
+    };
+
+    const handleLineAdjustmentReasonChange = (idx: number, text: string) => {
+        const itemIndex = draft.items.findIndex((i: any) => i === realItems[idx]);
+        if (itemIndex === -1) return;
+        updateDraftItemFields(itemIndex, { lineAdjustmentJustification: text, isAutoSuggested: false }, ivaRates);
     };
 
     const handleNotQuotedJustificationChange = (reqItemId: string, text: string) => {
@@ -247,10 +312,25 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                             // lines are exempt).
                             const ignoredWithValue = isIgnored && (quoteItem.totalPrice ?? 0) > 0;
                             const showMapping = quoteItem.reconciliationStatus === "MAPPED" || quoteItem.reconciliationStatus === "SUBSTITUTE";
+                            // SUBSTITUTE, EXTRA_ITEM, and value-bearing IGNORED all require a
+                            // quality-validated justification (mirrors the backend's
+                            // ReconciliationJustificationValidator). An untouched legacy line —
+                            // status and justification exactly as persisted — is exempt, mirroring
+                            // the backend's legacy-vs-edited skip in RequestsController.
                             const showJustification = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM" || ignoredWithValue;
-                            const isJustificationRequired = quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM" || ignoredWithValue;
                             const missingMapping = showMapping && !quoteItem.mappedRequestLineItemId;
-                            const missingJustification = isJustificationRequired && (!quoteItem.reconciliationJustification || !quoteItem.reconciliationJustification.trim());
+                            const justificationCheck = showJustification && !isUntouchedLegacyJustification(quoteItem)
+                                ? validateReconciliationJustification(quoteItem.reconciliationJustification)
+                                : null;
+                            const missingJustification = justificationCheck != null && !justificationCheck.isValid;
+
+                            // Quick-select justification shortcuts (frontend-only display helpers) —
+                            // EXTRA_ITEM and value-bearing IGNORED only. SUBSTITUTE keeps its plain
+                            // free-text field (no chips). null = no chips for this line.
+                            const justificationSuggestions =
+                                quoteItem.reconciliationStatus === "EXTRA_ITEM" ? EXTRA_ITEM_JUSTIFICATION_SUGGESTIONS
+                                : ignoredWithValue ? IGNORED_JUSTIFICATION_SUGGESTIONS
+                                : null;
 
                             const baseBtnStyle = { padding: "6px 12px", fontSize: "0.875rem", fontWeight: 500, borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" };
                             const unselectedBtnStyle = { ...baseBtnStyle, border: "1px solid #E2E8F0", backgroundColor: "#F8FAFC", color: "#64748B" };
@@ -363,17 +443,100 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
 
                                         {showJustification && (
                                             <div>
-                                                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "var(--font-weight-medium, 500)", color: "var(--color-text-main)", marginBottom: "8px" }}>Justificativa {isJustificationRequired ? "*" : "(Opcional)"}</label>
-                                                <input 
+                                                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "var(--font-weight-medium, 500)", color: "var(--color-text-main)", marginBottom: "8px" }}>Justificativa *</label>
+
+                                                {/* Quick-select shortcuts: clicking a chip copies its label into the
+                                                    free-text field (still fully editable); "Outro motivo" only focuses
+                                                    the field. Selected highlight is derived purely from exact text match —
+                                                    no hidden code/label state. */}
+                                                {justificationSuggestions && (
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                                                        {justificationSuggestions.map((label) => {
+                                                            const isOther = label === OTHER_JUSTIFICATION_LABEL;
+                                                            const selected = !isOther && (quoteItem.reconciliationJustification || "") === label;
+                                                            return (
+                                                                <button
+                                                                    key={label}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (isOther) {
+                                                                            // Focus-only: never insert or persist text.
+                                                                            justificationInputRefs.current[idx]?.focus();
+                                                                        } else {
+                                                                            handleJustificationChange(idx, label);
+                                                                        }
+                                                                    }}
+                                                                    style={selected ? justificationChipSelected : justificationChipBase}
+                                                                >
+                                                                    {label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                                <input
+                                                    ref={(el) => { justificationInputRefs.current[idx] = el; }}
                                                     type="text"
                                                     style={{ width: "100%", fontSize: "0.875rem", padding: "10px", border: missingJustification ? "1px solid var(--color-status-red)" : "1px solid var(--color-border)", borderRadius: "var(--radius-sm, 4px)", fontFamily: "var(--font-family-body)" }}
                                                     placeholder="Informe o motivo..."
                                                     value={quoteItem.reconciliationJustification || ""}
                                                     onChange={(e) => handleJustificationChange(idx, e.target.value)}
                                                 />
-                                                {missingJustification && <span style={{ fontSize: "0.75rem", color: "var(--color-status-red, #dc2626)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}><AlertCircle size={12} /> Informe a justificativa para este item.</span>}
+                                                {missingJustification && <span style={{ fontSize: "0.75rem", color: "var(--color-status-red, #dc2626)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}><AlertCircle size={12} /> {justificationCheck!.error}</span>}
                                             </div>
                                         )}
+
+                                        {/* Line-adjustment reason: shown when a CONSIDERED line's current financial values
+                                            differ materially from its OCR baseline. One consolidated reason for all changed
+                                            fields; persisted as lineAdjustmentJustification (distinct from the reconciliation
+                                            justification and the document residual justification). */}
+                                        {isFractionalForIntegerUnit(quoteItem, units) && (
+                                            <span style={{ fontSize: "0.75rem", color: "var(--color-status-red, #dc2626)", display: "flex", alignItems: "center", gap: "4px", marginTop: "8px" }}>
+                                                <AlertCircle size={12} /> A unidade não permite quantidade fracionada; informe um número inteiro.
+                                            </span>
+                                        )}
+
+                                        {(quoteItem.reconciliationStatus === "MAPPED" || quoteItem.reconciliationStatus === "SUBSTITUTE" || quoteItem.reconciliationStatus === "EXTRA_ITEM")
+                                          && hasMaterialOcrChange(quoteItem, ivaRates) && (() => {
+                                            const adjText = quoteItem.lineAdjustmentJustification || "";
+                                            const adjCheck = validateReconciliationJustification(adjText);
+                                            const showAdjError = adjText.trim().length > 0 && !adjCheck.isValid;
+                                            return (
+                                                <div style={{ marginTop: "12px", padding: "12px", border: "1px solid #FDE68A", backgroundColor: "#FFFBEB", borderRadius: "6px" }}>
+                                                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#92400E", marginBottom: "6px" }}>
+                                                        Alteração em relação ao documento OCR
+                                                    </div>
+                                                    <div style={{ fontSize: "0.75rem", color: "#78350F", marginBottom: "8px", display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                                                        <span>Qtd OCR: <strong>{fmtNum(quoteItem.ocrOriginalQuantity)}</strong> → <strong>{fmtNum(quoteItem.quantity)}</strong></span>
+                                                        <span>Preço OCR: <strong>{fmtNum(quoteItem.ocrOriginalUnitPrice)}</strong> → <strong>{fmtNum(quoteItem.unitPrice)}</strong></span>
+                                                        <span>Desc. OCR: <strong>{fmtNum(quoteItem.ocrOriginalDiscountAmount)}</strong> → <strong>{fmtNum(quoteItem.discountAmount)}</strong></span>
+                                                    </div>
+                                                    <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "#92400E", marginBottom: "6px" }}>Motivo das alterações desta linha *</label>
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                                                        {LINE_ADJUSTMENT_SUGGESTIONS.map((label) => {
+                                                            const isOther = label === OTHER_JUSTIFICATION_LABEL;
+                                                            const selected = !isOther && adjText === label;
+                                                            return (
+                                                                <button key={label} type="button"
+                                                                    onClick={() => { if (!isOther) handleLineAdjustmentReasonChange(idx, label); }}
+                                                                    style={selected ? justificationChipSelected : justificationChipBase}>
+                                                                    {label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        style={{ width: "100%", fontSize: "0.875rem", padding: "10px", border: showAdjError ? "1px solid var(--color-status-red)" : "1px solid var(--color-border)", borderRadius: "var(--radius-sm, 4px)", fontFamily: "var(--font-family-body)", boxSizing: "border-box" }}
+                                                        placeholder="Explique por que os valores diferem do documento (mínimo 20 caracteres)..."
+                                                        value={adjText}
+                                                        onChange={(e) => handleLineAdjustmentReasonChange(idx, e.target.value)}
+                                                    />
+                                                    {showAdjError && <span style={{ fontSize: "0.75rem", color: "var(--color-status-red, #dc2626)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}><AlertCircle size={12} /> {adjCheck.error}</span>}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             );

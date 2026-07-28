@@ -23,6 +23,8 @@ using System.Security.Claims;
 using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Application.Interfaces.Approvals;
+using AlplaPortal.Application.Validation;
 
 
 [Authorize]
@@ -42,6 +44,7 @@ public class RequestsController : BaseController
     private readonly ILineItemFactory _lineItemFactory;
     private readonly IRequestLineItemSubmissionValidator _lineItemValidator;
     private readonly IQuotationItemEligibilityService _quotationEligibility;
+    private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
 
     public RequestsController(
         ApplicationDbContext context,
@@ -56,7 +59,8 @@ public class RequestsController : BaseController
         IApprovalRoutingService approvalRouting,
         ILineItemFactory lineItemFactory,
         IRequestLineItemSubmissionValidator lineItemValidator,
-        IQuotationItemEligibilityService quotationEligibility) : base(context)
+        IQuotationItemEligibilityService quotationEligibility,
+        IBatchExtraItemDecisionService extraItemDecisionService) : base(context)
     {
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -70,6 +74,7 @@ public class RequestsController : BaseController
         _lineItemFactory = lineItemFactory;
         _lineItemValidator = lineItemValidator;
         _quotationEligibility = quotationEligibility;
+        _extraItemDecisionService = extraItemDecisionService;
     }
 
     /// <summary>
@@ -1204,6 +1209,7 @@ public class RequestsController : BaseController
                     NotQuotedProposedAtUtc = li.NotQuotedProposedAtUtc,
                     RequestPoGroupId = li.RequestPoGroupId,
                     SelectedQuotationItemId = li.SelectedQuotationItemId,
+                    CreationOrigin = li.CreationOrigin,
                     Allocations = li.Allocations != null ? li.Allocations.Select(a => new RequestLineItemAllocationDto
                     {
                         Id = a.Id,
@@ -1287,7 +1293,10 @@ public class RequestsController : BaseController
                         Quantity = qi.Quantity,
                         UnitPrice = qi.UnitPrice,
                         GrossSubtotal = qi.GrossSubtotal,
-                        TaxableBase = qi.GrossSubtotal, // In this domain, TaxableBase is usually the same as GrossSubtotal (after line discount)
+                        DiscountAmount = qi.DiscountAmount,
+                        TaxableBase = qi.GrossSubtotal - qi.DiscountAmount, // Net taxable base — exactly the netSubtotal off which IvaAmount/LineTotal were computed at save
+                        IvaRateId = qi.IvaRateId,
+                        IvaRatePercent = qi.IvaRatePercent, // Persisted rate snapshot — the approval wizard's IVA (x%) label reads this; omission showed "IVA (0%)"
                         IvaAmount = qi.IvaAmount,
                         LineTotal = qi.LineTotal,
                         ItemCatalogId = qi.ItemCatalogId,
@@ -1295,6 +1304,14 @@ public class RequestsController : BaseController
                         MappedRequestLineItemId = qi.MappedRequestLineItemId,
                         ReconciliationStatus = qi.ReconciliationStatus,
                         ReconciliationJustification = qi.ReconciliationJustification,
+                OcrOriginalQuantity = qi.OcrOriginalQuantity,
+                OcrOriginalUnitPrice = qi.OcrOriginalUnitPrice,
+                OcrOriginalDiscountAmount = qi.OcrOriginalDiscountAmount,
+                OcrOriginalIvaRatePercent = qi.OcrOriginalIvaRatePercent,
+                OcrOriginalUnitText = qi.OcrOriginalUnitText,
+                OcrOriginalUnitId = qi.OcrOriginalUnitId,
+                OcrOriginalLineTotal = qi.OcrOriginalLineTotal,
+                LineAdjustmentJustification = qi.LineAdjustmentJustification,
                         UnitId = qi.UnitId,
                         // Ensure Unit properties are projected; EF Core will join Units table
                         UnitName = qi.Unit != null ? qi.Unit.Name : null,
@@ -1389,6 +1406,20 @@ public class RequestsController : BaseController
                     batchDto.CreatedByUserName = createdName;
                 if (batchDto.UpdatedByUserId.HasValue && batchUserNamesById.TryGetValue(batchDto.UpdatedByUserId.Value, out var updatedName))
                     batchDto.UpdatedByUserName = updatedName;
+            }
+
+            // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED
+            // lines, unresolved legacy extras) — read-only, computed from the quotation(s) that
+            // contributed a winner to that specific batch. See IBatchExtraItemDecisionService.
+            foreach (var batchDto in request.ApprovalBatches)
+            {
+                var winningQuotationItemIds = batchDto.Items.Select(i => i.SelectedQuotationItemId).ToList();
+                if (winningQuotationItemIds.Count == 0) continue;
+
+                var informational = await _extraItemDecisionService.GetInformationalLinesAsync(batchDto.Id, winningQuotationItemIds);
+                batchDto.ExcludedExtraItems = informational.ExcludedExtraItems;
+                batchDto.IgnoredLines = informational.IgnoredLines;
+                batchDto.UnresolvedLegacyLines = informational.UnresolvedLegacyLines;
             }
         }
 
@@ -3377,9 +3408,9 @@ public class RequestsController : BaseController
                     errorMessage = "Itens SUBSTITUTE precisam ter um MappedRequestLineItemId associado.";
                     return false;
                 }
-                if (string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+                if (!ReconciliationJustificationValidator.IsValid(item.ReconciliationJustification, out var substituteJustificationError))
                 {
-                    errorMessage = "Itens SUBSTITUTE precisam de uma justificativa.";
+                    errorMessage = $"Itens SUBSTITUTE precisam de uma justificativa: {substituteJustificationError}";
                     return false;
                 }
             }
@@ -3390,9 +3421,9 @@ public class RequestsController : BaseController
                     errorMessage = "Itens EXTRA_ITEM n\u00e3o podem ter um MappedRequestLineItemId associado.";
                     return false;
                 }
-                if (string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+                if (!ReconciliationJustificationValidator.IsValid(item.ReconciliationJustification, out var extraItemJustificationError))
                 {
-                    errorMessage = "Itens EXTRA_ITEM precisam de uma justificativa.";
+                    errorMessage = $"Itens EXTRA_ITEM precisam de uma justificativa: {extraItemJustificationError}";
                     return false;
                 }
             }
@@ -3416,6 +3447,361 @@ public class RequestsController : BaseController
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// Justification-quality validation for a value-bearing IGNORED line, gated by whether this
+    /// line's classification actually changed this save:
+    /// - existing == null (new quotation, or a genuinely new line): always fully validated.
+    /// - existing found but status+justification are byte-for-byte unchanged from what's already
+    ///   persisted: this is an untouched legacy line — skip validation entirely, so resaving a
+    ///   quotation to fix an unrelated field never forces rewriting an untouched justification.
+    /// - existing found but status or justification differ: the buyer actively changed this line's
+    ///   classification/text this session — fully quality-validated.
+    /// </summary>
+    private static bool ValidateIgnoredJustification(string status, string? justification, QuotationItem? existing, out string errorMessage)
+    {
+        if (existing != null
+            && existing.ReconciliationStatus == status
+            && (existing.ReconciliationJustification ?? string.Empty) == (justification ?? string.Empty))
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        return ReconciliationJustificationValidator.IsValid(justification, out errorMessage);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // Financial reconciliation (OCR document header/lines ↔ final considered total).
+    // Shared by SaveQuotation, UpdateQuotation, and the read-only reconcile-preview endpoint so the
+    // three can never compute different values for the same payload. Pure w.r.t. persistence — these
+    // helpers never call SaveChanges; the caller decides when (if ever) to persist.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Reconciliation applies whenever the payload carries an extracted OCR header total —
+    /// the authoritative signal that this is an OCR quotation to reconcile against. Deliberately keyed
+    /// on OcrTotal (like the original integrity gate), NOT on SourceType: the frontend save payload
+    /// uses the key `source` which does not bind to the DTO's `SourceType`, so SourceType is null on
+    /// real payloads. A manual quotation never carries an OcrTotal, so it stays exempt.
+    /// Single source of truth used by SaveQuotation, UpdateQuotation, document replacement, and the
+    /// read-only preview — no divergent per-endpoint applicability rule.</summary>
+    private static bool IsOcrReconciliationApplicable(SaveQuotationRequestDto dto)
+        => dto.OcrTotal.HasValue && dto.OcrTotal.Value > 0m;
+
+    /// <summary>Structured 400 when an OCR-originated line omits the baseline the extraction captured.
+    /// A NULL line total on an OCR line is never silently exempted (refinement 2). Returns null if OK.</summary>
+    private ActionResult? ValidateOcrLineBaseline(SaveQuotationItemDto item, bool isOcrQuotation)
+    {
+        if (!isOcrQuotation) return null;
+        if (!string.Equals(item.LineOrigin, QuotationLineOrigins.Ocr, StringComparison.OrdinalIgnoreCase)) return null;
+
+        // An OCR line must carry the document's own reported line total, plus quantity & unit price
+        // (the core extracted fields). Discount/IVA/unit may individually be null = "not extracted".
+        var missing = new List<string>();
+        if (!item.OcrOriginalLineTotal.HasValue) missing.Add("OcrOriginalLineTotal");
+        if (!item.OcrOriginalQuantity.HasValue) missing.Add("OcrOriginalQuantity");
+        if (!item.OcrOriginalUnitPrice.HasValue) missing.Add("OcrOriginalUnitPrice");
+        if (missing.Count == 0) return null;
+
+        var pd = new ProblemDetails
+        {
+            Title = "Baseline OCR Incompleta",
+            Detail = $"Item {item.LineNumber}: linha originada de OCR sem a base de extração obrigatória ({string.Join(", ", missing)}). A linha não pode ser tratada como manual/legada.",
+            Status = 400
+        };
+        pd.Extensions["code"] = "OCR_LINE_BASELINE_MISSING";
+        pd.Extensions["lineNumber"] = item.LineNumber;
+        pd.Extensions["missing"] = missing;
+        return BadRequest(pd);
+    }
+
+    /// <summary>Integer-unit final quantities must be whole numbers (an invalid fractional final
+    /// quantity is rejected here, independent of materiality — refinement 4). Returns null if OK.</summary>
+    private ActionResult? ValidateFinalQuantityPrecision(SaveQuotationItemDto item, IReadOnlyDictionary<int, bool> unitAllowsDecimal)
+    {
+        if (!item.UnitId.HasValue) return null;
+        if (!unitAllowsDecimal.TryGetValue(item.UnitId.Value, out var allowsDecimal)) return null;
+        if (allowsDecimal) return null;
+        if (item.Quantity == Math.Truncate(item.Quantity)) return null;
+        return BadRequest(new ProblemDetails
+        {
+            Title = "Quantidade Inválida",
+            Detail = $"Item {item.LineNumber}: a unidade não permite quantidade fracionada; informe um número inteiro.",
+            Status = 400
+        });
+    }
+
+    private QuotationReconciliationResult ComputeReconciliation(
+        decimal ocrHeaderTotal, List<ReconciliationLineInput> lineInputs, List<QuotationItem> allItems,
+        decimal globalDiscount, decimal netAfterItemDiscounts)
+    {
+        // Single source of truth for the considered total + global-discount effect: the exact same
+        // QuotationIntegrityCalculator used elsewhere (refinement 4 — identical allocation & IVA rules).
+        var integrity = QuotationIntegrityCalculator.Compute(ocrHeaderTotal, allItems, globalDiscount, netAfterItemDiscounts);
+        var considered = allItems.Where(i => RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus)).ToList();
+        decimal consideredNet = Round2(Math.Max(0m, considered.Sum(i => i.GrossSubtotal) - considered.Sum(i => i.DiscountAmount)));
+        decimal consideredIva = considered.Sum(i => i.IvaAmount);
+        decimal preGlobal = consideredNet + consideredIva;
+        decimal globalDiscountEffect = integrity.QuotationConsideredTotal - preGlobal; // ≤ 0
+
+        return QuotationReconciliationCalculator.Compute(
+            ocrHeaderTotal, lineInputs, integrity.QuotationConsideredTotal, globalDiscountEffect,
+            QuotationReconciliationCalculator.ToleranceAmount);
+    }
+
+    private static QuotationReconciliationDto MapReconciliation(QuotationReconciliationResult r) => new()
+    {
+        OcrHeaderTotal = r.OcrHeaderTotal,
+        OcrLineSumTotal = r.OcrLineSumTotal,
+        ReconstructedOcrLineSum = r.ReconstructedOcrLineSum,
+        StructuralHeaderDifference = r.StructuralHeaderDifference,
+        OcrLineComponentDifference = r.OcrLineComponentDifference,
+        FinalConsideredTotal = r.FinalConsideredTotal,
+        ManualAdditionsTotal = r.ManualAdditionsTotal,
+        IgnoredImpact = r.IgnoredImpact,
+        QuantityImpact = r.QuantityImpact,
+        UnitPriceImpact = r.UnitPriceImpact,
+        DiscountImpact = r.DiscountImpact,
+        IvaImpact = r.IvaImpact,
+        GlobalDiscountImpact = r.GlobalDiscountImpact,
+        ManualAdditionsImpact = r.ManualAdditionsImpact,
+        ExplainedLineAdjustments = r.ExplainedLineAdjustments,
+        ResidualVariance = r.ResidualVariance,
+        ToleranceApplied = r.ToleranceApplied,
+        ResidualExceedsTolerance = r.ResidualExceedsTolerance,
+        Lines = r.Lines.Select(l => new LineReconciliationDto
+        {
+            QuotationItemId = l.QuotationItemId, LineNumber = l.LineNumber, Description = l.Description,
+            ReconciliationStatus = l.ReconciliationStatus, HasOcrBaseline = l.HasOcrBaseline, IsManualAddition = l.IsManualAddition,
+            QuantityChanged = l.QuantityChanged, UnitPriceChanged = l.UnitPriceChanged, DiscountChanged = l.DiscountChanged,
+            IvaChanged = l.IvaChanged, UnitChanged = l.UnitChanged, ImputedOcrComponents = l.ImputedOcrComponents.ToList(),
+            RequiresAdjustmentReason = l.RequiresAdjustmentReason, HasAdjustmentReason = l.HasAdjustmentReason,
+            HasReconciliationReason = l.HasReconciliationReason
+        }).ToList()
+    };
+
+    /// <summary>Builds calculator inputs from the (already-constructed) entity items. Baseline is read
+    /// straight off the entity — SaveQuotation/replace have written it from the DTO; UpdateQuotation
+    /// left the persisted (immutable) baseline untouched — so this projection is identical for all paths.</summary>
+    private static List<ReconciliationLineInput> BuildReconciliationLineInputs(
+        IEnumerable<QuotationItem> items, ISet<Guid> manualAdditionItemIds,
+        IReadOnlyDictionary<int, decimal> ivaRates)
+    {
+        var list = new List<ReconciliationLineInput>();
+        foreach (var i in items)
+        {
+            bool hasBaseline = i.OcrOriginalLineTotal.HasValue || i.OcrOriginalQuantity.HasValue || i.OcrOriginalUnitPrice.HasValue;
+            list.Add(new ReconciliationLineInput
+            {
+                QuotationItemId = i.Id, LineNumber = i.LineNumber, Description = i.Description,
+                ReconciliationStatus = i.ReconciliationStatus,
+                HasOcrBaseline = hasBaseline,
+                IsManualAddition = !hasBaseline && manualAdditionItemIds.Contains(i.Id),
+                OcrQuantity = i.OcrOriginalQuantity, OcrUnitPrice = i.OcrOriginalUnitPrice,
+                OcrDiscount = i.OcrOriginalDiscountAmount, OcrIvaPercent = i.OcrOriginalIvaRatePercent,
+                OcrLineTotal = i.OcrOriginalLineTotal, OcrUnitId = i.OcrOriginalUnitId, OcrUnitText = i.OcrOriginalUnitText,
+                FinalQuantity = i.Quantity, FinalUnitPrice = i.UnitPrice, FinalDiscount = i.DiscountAmount,
+                FinalIvaPercent = i.IvaRatePercent, FinalUnitId = i.UnitId, FinalUnitText = null,
+                HasAdjustmentReason = !string.IsNullOrWhiteSpace(i.LineAdjustmentJustification),
+                HasReconciliationReason = !string.IsNullOrWhiteSpace(i.ReconciliationJustification)
+            });
+        }
+        return list;
+    }
+
+    /// <summary>Enforces per-line adjustment reasons and the signed-residual gate, and writes the
+    /// audit summary on an accepted (overridden) residual. Returns a non-null IActionResult to abort
+    /// (400/409), or null to proceed. Never calls SaveChanges.</summary>
+    private ActionResult? EnforceReconciliationGate(
+        Request request, Quotation quotation, SaveQuotationRequestDto dto,
+        QuotationReconciliationResult result, IReadOnlyDictionary<Guid, QuotationItem> itemsById, Guid actorId)
+    {
+        // 1) Per-line consolidated adjustment reason (material financial edit vs baseline, or a manual
+        //    addition needing an origin reason). Quality-validated, quoted per line.
+        foreach (var line in result.Lines)
+        {
+            if (!line.RequiresAdjustmentReason) continue;
+            var text = line.QuotationItemId.HasValue && itemsById.TryGetValue(line.QuotationItemId.Value, out var it)
+                ? it.LineAdjustmentJustification : null;
+            if (!ReconciliationJustificationValidator.IsValid(text, out var reasonError))
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Motivo de Alteração Obrigatório",
+                    Detail = $"Item {line.LineNumber} ('{line.Description}'): alterações financeiras em relação ao documento OCR exigem um motivo. {reasonError}",
+                    Status = 400
+                };
+                pd.Extensions["code"] = "LINE_ADJUSTMENT_REASON_REQUIRED";
+                pd.Extensions["lineNumber"] = line.LineNumber;
+                pd.Extensions["quotationItemId"] = line.QuotationItemId;
+                return BadRequest(pd);
+            }
+        }
+
+        // 2) Signed-residual gate — only Math.Abs decides blocking (refinement 1).
+        if (result.ResidualExceedsTolerance && !dto.FinancialIntegrityOverride)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Diferença Não Explicada do Documento",
+                Detail = $"Diferença não explicada de {result.ResidualVariance:N2} {quotation.Currency} entre o total do documento OCR e o total considerado, após os ajustes de linha explicados. Informe uma justificativa da diferença residual para continuar.",
+                Status = 409
+            };
+            pd.Extensions["code"] = "DOCUMENT_RESIDUAL_UNEXPLAINED";
+            pd.Extensions["reconciliation"] = MapReconciliation(result);
+            return Conflict(pd);
+        }
+
+        // 3) Accepted residual (override): record the full signed summary in history. Never zeroes the residual.
+        if (result.ResidualExceedsTolerance && dto.FinancialIntegrityOverride && !string.IsNullOrWhiteSpace(dto.OverrideJustification))
+        {
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "QUOTATION_RESIDUAL_JUSTIFIED",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment =
+                    $"Reconciliação financeira da cotação ({quotation.SupplierNameSnapshot}). " +
+                    $"Total documento OCR (cabeçalho)={result.OcrHeaderTotal:N2}; soma linhas OCR={result.OcrLineSumTotal:N2}; " +
+                    $"reconstruído dos componentes OCR={result.ReconstructedOcrLineSum:N2}; diferença estrutural={result.StructuralHeaderDifference:N2}; " +
+                    $"diferença de componentes={result.OcrLineComponentDifference:N2}; residual (com sinal)={result.ResidualVariance:N2}; " +
+                    $"tolerância={result.ToleranceApplied:N2}. Ajustes explicados: ignorados={result.IgnoredImpact:N2}, quantidade={result.QuantityImpact:N2}, " +
+                    $"preço={result.UnitPriceImpact:N2}, desconto={result.DiscountImpact:N2}, IVA={result.IvaImpact:N2}, " +
+                    $"desconto global={result.GlobalDiscountImpact:N2}, adições manuais={result.ManualAdditionsImpact:N2}. " +
+                    $"Justificativa da diferença residual: {dto.OverrideJustification}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Read-only, backend-authoritative reconciliation preview. Same request scope as SaveQuotation,
+    /// same QuotationReconciliationCalculator, and ZERO persistence side effects: no SaveChanges, no
+    /// history, no status change, no reuse-authorization consumption. For the same payload it returns
+    /// the exact reconciliation values SaveQuotation/UpdateQuotation would compute.
+    /// </summary>
+    [HttpPost("{id:guid}/quotations/reconcile-preview")]
+    public async Task<ActionResult<QuotationReconciliationDto>> PreviewQuotationReconciliation(
+        Guid id, [FromQuery] Guid? quotationId, [FromBody] SaveQuotationRequestDto dto, CancellationToken ct)
+    {
+        NormalizeReconciliationStatuses(dto);
+
+        // Same request-scope authorization as SaveQuotation.
+        var query = await GetScopedRequestsQuery();
+        var request = await query
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        if (dto.Items == null || !dto.Items.Any())
+            return BadRequest(new ProblemDetails { Title = "Validação", Detail = "A cotação deve conter pelo menos um item.", Status = 400 });
+
+        // Validate referenced IDs belong to the request.
+        var requestLineItemIds = request.LineItems.Select(li => li.Id).ToHashSet();
+        foreach (var it in dto.Items)
+        {
+            if (it.MappedRequestLineItemId.HasValue && !requestLineItemIds.Contains(it.MappedRequestLineItemId.Value))
+                return BadRequest(new ProblemDetails { Title = "Referência Inválida", Detail = $"Item {it.LineNumber}: item solicitado referenciado não pertence a este pedido.", Status = 400 });
+        }
+
+        // Persisted baseline source for an EDIT preview (immutable OCR baseline), matched to DTO lines
+        // by the same key SaveQuotation/UpdateQuotation use. AsNoTracking — nothing is mutated.
+        List<QuotationItem> persistedItems = new();
+        if (quotationId.HasValue)
+        {
+            var persistedQuotation = await _context.Quotations.AsNoTracking()
+                .Include(q => q.Items)
+                .FirstOrDefaultAsync(q => q.Id == quotationId.Value && q.RequestId == id, ct);
+            if (persistedQuotation == null)
+                return NotFound(new ProblemDetails { Title = "Cotação não encontrada.", Detail = "A cotação referenciada não pertence a este pedido.", Status = 404 });
+            persistedItems = persistedQuotation.Items.ToList();
+        }
+
+        var ivaRates = await _context.IvaRates.AsNoTracking().ToDictionaryAsync(i => i.Id, i => i.RatePercent, ct);
+
+        var isOcrQuotation = IsOcrReconciliationApplicable(dto);
+
+        // Build in-memory items with the identical per-line math as Save/Update; resolve the immutable
+        // baseline from persisted matched lines (edit) or from the DTO (new line / new quotation).
+        var items = new List<QuotationItem>();
+        var manualAdditionItemIds = new HashSet<Guid>();
+        foreach (var item in dto.Items)
+        {
+            decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
+            decimal itemDiscount = Round2(Math.Max(0, item.DiscountAmount));
+            decimal netSubtotal = Math.Max(0, grossSubtotal - itemDiscount);
+            decimal ivaPercent = item.IvaRateId.HasValue && ivaRates.TryGetValue(item.IvaRateId.Value, out var rate) ? rate : 0m;
+            decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
+            decimal lineTotal = Round2(netSubtotal + ivaAmount);
+
+            var persisted = persistedItems.FirstOrDefault(e =>
+                (item.MappedRequestLineItemId.HasValue && e.MappedRequestLineItemId == item.MappedRequestLineItemId) ||
+                (!item.MappedRequestLineItemId.HasValue && !e.MappedRequestLineItemId.HasValue && e.LineNumber == item.LineNumber));
+
+            var isOcrLine = string.Equals(item.LineOrigin, QuotationLineOrigins.Ocr, StringComparison.OrdinalIgnoreCase);
+            bool useDtoBaseline = persisted == null && isOcrLine;   // new OCR line establishes baseline
+            bool usePersistedBaseline = persisted != null && (persisted.OcrOriginalLineTotal.HasValue || persisted.OcrOriginalQuantity.HasValue || persisted.OcrOriginalUnitPrice.HasValue);
+
+            var projected = new QuotationItem
+            {
+                Id = persisted?.Id ?? Guid.NewGuid(),
+                LineNumber = item.LineNumber, Description = item.Description, UnitId = item.UnitId,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, DiscountAmount = itemDiscount,
+                IvaRateId = item.IvaRateId, IvaRatePercent = ivaPercent, GrossSubtotal = grossSubtotal,
+                IvaAmount = ivaAmount, LineTotal = lineTotal, MappedRequestLineItemId = item.MappedRequestLineItemId,
+                ReconciliationStatus = item.ReconciliationStatus, ReconciliationJustification = item.ReconciliationJustification,
+                LineAdjustmentJustification = item.LineAdjustmentJustification,
+                OcrOriginalQuantity = usePersistedBaseline ? persisted!.OcrOriginalQuantity : (useDtoBaseline ? item.OcrOriginalQuantity : null),
+                OcrOriginalUnitPrice = usePersistedBaseline ? persisted!.OcrOriginalUnitPrice : (useDtoBaseline ? item.OcrOriginalUnitPrice : null),
+                OcrOriginalDiscountAmount = usePersistedBaseline ? persisted!.OcrOriginalDiscountAmount : (useDtoBaseline ? item.OcrOriginalDiscountAmount : null),
+                OcrOriginalIvaRatePercent = usePersistedBaseline ? persisted!.OcrOriginalIvaRatePercent : (useDtoBaseline ? item.OcrOriginalIvaRatePercent : null),
+                OcrOriginalUnitText = usePersistedBaseline ? persisted!.OcrOriginalUnitText : (useDtoBaseline ? item.OcrOriginalUnitText : null),
+                OcrOriginalUnitId = usePersistedBaseline ? persisted!.OcrOriginalUnitId : (useDtoBaseline ? item.OcrOriginalUnitId : null),
+                OcrOriginalLineTotal = usePersistedBaseline ? persisted!.OcrOriginalLineTotal : (useDtoBaseline ? item.OcrOriginalLineTotal : null)
+            };
+            bool hasBaseline = projected.OcrOriginalLineTotal.HasValue || projected.OcrOriginalQuantity.HasValue || projected.OcrOriginalUnitPrice.HasValue;
+            if (isOcrQuotation && !hasBaseline && persisted == null) manualAdditionItemIds.Add(projected.Id);
+            items.Add(projected);
+        }
+
+        if (!isOcrQuotation)
+        {
+            // Genuinely manual quotation (no OCR header total) — nothing to reconcile against.
+            return Ok(new QuotationReconciliationDto { ToleranceApplied = QuotationReconciliationCalculator.ToleranceAmount });
+        }
+
+        var considered = items.Where(i => RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus)).ToList();
+        decimal totalGross = considered.Sum(i => i.GrossSubtotal);
+        decimal sumItemDiscounts = considered.Sum(i => i.DiscountAmount);
+        decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
+        decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+
+        var lineInputs = BuildReconciliationLineInputs(items, manualAdditionItemIds, ivaRates);
+
+        // Defensive: an OCR payload with items must never map to an empty calculator input and then
+        // masquerade as a successful all-zero reconciliation. If it does, the OCR payload could not be
+        // mapped — surface a diagnostic error rather than a misleading green result.
+        if (lineInputs.Count == 0)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Falha ao Mapear a Reconciliação",
+                Detail = "O payload OCR possui itens, mas nenhuma linha pôde ser mapeada para o cálculo de reconciliação. A reconciliação não pode ser apresentada como bem-sucedida.",
+                Status = 400
+            };
+            pd.Extensions["code"] = "PREVIEW_RECONCILIATION_EMPTY_INPUT";
+            pd.Extensions["itemCount"] = dto.Items.Count;
+            return BadRequest(pd);
+        }
+
+        var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, items, globalDiscount, netAfterItemDiscounts);
+        return Ok(MapReconciliation(reconciliation));
     }
 
     [HttpPost("{id:guid}/quotations")]
@@ -3464,6 +3850,7 @@ public class RequestsController : BaseController
         if (supplier == null) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "Fornecedor selecionado não existe.", Status = 400 });
         
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
+        var unitAllowsDecimal = await _context.Units.ToDictionaryAsync(u => u.Id, u => u.AllowsDecimalQuantity);
 
         var quotation = new Quotation
         {
@@ -3498,16 +3885,28 @@ public class RequestsController : BaseController
             }
         }
 
+        // Reconciliation applies only to OCR-sourced quotations that carry a header OCR total.
+        var isOcrQuotation = IsOcrReconciliationApplicable(dto);
+        var manualAdditionItemIds = new HashSet<Guid>();
+
         foreach (var item in dto.Items)
         {
             if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "Todos os itens devem ter uma descrição.", Status = 400 });
-            
-            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED") 
+
+            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED")
             {
                 return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = $"Item {item.LineNumber}: A quantidade deve ser maior que zero.", Status = 400 });
             }
-            
+
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
+
+            // Integer-unit final quantity must be a whole number (invalid-input check, before materiality).
+            var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);
+            if (precisionError != null) return precisionError;
+
+            // An OCR-originated line must carry the baseline the extraction captured (never silently exempt).
+            var baselineError = ValidateOcrLineBaseline(item, isOcrQuotation);
+            if (baselineError != null) return baselineError;
 
             decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
             decimal itemDiscount = Round2(item.DiscountAmount);
@@ -3520,20 +3919,24 @@ public class RequestsController : BaseController
             decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
             // Ignoring a document line with monetary value excludes it from the comparable
-            // integrity baseline — that exclusion requires its own per-line justification.
-            // Zero-value ignored lines need none.
+            // integrity baseline — that exclusion requires its own quality-validated per-line
+            // justification. Zero-value ignored lines need none. SaveQuotation only ever creates
+            // brand-new rows, so `existing` is always null: always fully validated.
             if (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored && lineTotal > 0
-                && string.IsNullOrWhiteSpace(item.ReconciliationJustification))
+                && !ValidateIgnoredJustification(item.ReconciliationStatus, item.ReconciliationJustification, existing: null, out var ignoredJustificationError))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Justificativa Obrigatória",
-                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação.",
+                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação. {ignoredJustificationError}",
                     Status = 400
                 });
             }
 
-            quotation.Items.Add(new QuotationItem
+            // Baseline capture (SaveQuotation ESTABLISHES the OCR baseline). Only OCR-origin lines carry
+            // a baseline; a MANUAL/absent-origin line in an OCR quotation is a manual addition (tracked).
+            var isOcrLine = string.Equals(item.LineOrigin, QuotationLineOrigins.Ocr, StringComparison.OrdinalIgnoreCase);
+            var newItem = new QuotationItem
             {
                 Id = Guid.NewGuid(),
                 QuotationId = quotation.Id,
@@ -3552,8 +3955,18 @@ public class RequestsController : BaseController
                 LineTotal = lineTotal,
                 MappedRequestLineItemId = item.MappedRequestLineItemId,
                 ReconciliationStatus = item.ReconciliationStatus,
-                ReconciliationJustification = item.ReconciliationJustification
-            });
+                ReconciliationJustification = item.ReconciliationJustification,
+                LineAdjustmentJustification = string.IsNullOrWhiteSpace(item.LineAdjustmentJustification) ? null : item.LineAdjustmentJustification.Trim(),
+                OcrOriginalQuantity = isOcrLine ? item.OcrOriginalQuantity : null,
+                OcrOriginalUnitPrice = isOcrLine ? item.OcrOriginalUnitPrice : null,
+                OcrOriginalDiscountAmount = isOcrLine ? item.OcrOriginalDiscountAmount : null,
+                OcrOriginalIvaRatePercent = isOcrLine ? item.OcrOriginalIvaRatePercent : null,
+                OcrOriginalUnitText = isOcrLine ? item.OcrOriginalUnitText : null,
+                OcrOriginalUnitId = isOcrLine ? item.OcrOriginalUnitId : null,
+                OcrOriginalLineTotal = isOcrLine ? item.OcrOriginalLineTotal : null
+            };
+            if (isOcrQuotation && !isOcrLine) manualAdditionItemIds.Add(newItem.Id);
+            quotation.Items.Add(newItem);
         }
 
         // Sum up line totals. Item-level discounts are already applied per-line.
@@ -3584,48 +3997,17 @@ public class RequestsController : BaseController
         quotation.TotalAmount = Round2(taxableBase + adjustedIva);
 
         // ═══════════════════════════════════════════════════════════════
-        // Phase 1: Per-Quotation Financial Integrity Gate
-        // The OCR baseline covers the WHOLE document, while the quotation total only covers
-        // reconciled lines — so lines explicitly reconciled as IGNORED are subtracted from the
-        // baseline (comparable scope). Real divergences on considered lines still trip the gate.
-        // Math extracted to QuotationIntegrityCalculator for testability.
+        // Financial reconciliation gate (OCR document ↔ final considered total). Signed residual;
+        // per-line adjustment reasons; residual override never zeroes the residual. Shared calculator
+        // with UpdateQuotation and the read-only preview endpoint.
         // ═══════════════════════════════════════════════════════════════
-        if (dto.OcrTotal.HasValue && dto.OcrTotal.Value > 0 && !dto.FinancialIntegrityOverride)
+        if (isOcrQuotation)
         {
-            var integrity = AlplaPortal.Application.Validation.QuotationIntegrityCalculator.Compute(
-                dto.OcrTotal.Value, quotation.Items, globalDiscount, netAfterItemDiscounts);
-
-            if (integrity.VarianceAmount > AlplaPortal.Application.Validation.QuotationIntegrityCalculator.ToleranceAmount)
-            {
-                return StatusCode(409, new
-                {
-                    integrityCheckFailed = true,
-                    ocrOriginalTotal = integrity.OcrOriginalTotal,
-                    excludedIgnoredTotal = integrity.ExcludedIgnoredTotal,
-                    comparableDocumentTotal = integrity.ComparableDocumentTotal,
-                    quotationTotal = integrity.QuotationConsideredTotal,
-                    varianceAmount = integrity.VarianceAmount,
-                    variancePercent = integrity.VariancePercent,
-                    toleranceApplied = AlplaPortal.Application.Validation.QuotationIntegrityCalculator.ToleranceAmount,
-                    detail = $"Divergência detectada ({integrity.VarianceAmount:N2} {quotation.Currency}). A cotação não pode ser salva sem justificação explícita."
-                });
-            }
-        }
-
-        if (dto.FinancialIntegrityOverride && !string.IsNullOrWhiteSpace(dto.OverrideJustification))
-        {
-            var auditHistory = new RequestStatusHistory
-            {
-                Id = Guid.NewGuid(),
-                RequestId = request.Id,
-                ActorUserId = actorId,
-                ActionTaken = "FINANCIAL_INTEGRITY_OVERRIDEN",
-                PreviousStatusId = request.StatusId,
-                NewStatusId = request.StatusId,
-                Comment = $"Alerta de integridade financeira ignorado ao salvar cotação. Justificação: {dto.OverrideJustification}",
-                CreatedAtUtc = DateTime.UtcNow
-            };
-            _context.RequestStatusHistories.Add(auditHistory);
+            var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var itemsById = quotation.Items.ToDictionary(i => i.Id);
+            var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
+            if (gateError != null) return gateError;
         }
 
         _context.Quotations.Add(quotation);
@@ -3691,6 +4073,14 @@ public class RequestsController : BaseController
                 MappedRequestLineItemId = qi.MappedRequestLineItemId,
                 ReconciliationStatus = qi.ReconciliationStatus,
                 ReconciliationJustification = qi.ReconciliationJustification,
+                OcrOriginalQuantity = qi.OcrOriginalQuantity,
+                OcrOriginalUnitPrice = qi.OcrOriginalUnitPrice,
+                OcrOriginalDiscountAmount = qi.OcrOriginalDiscountAmount,
+                OcrOriginalIvaRatePercent = qi.OcrOriginalIvaRatePercent,
+                OcrOriginalUnitText = qi.OcrOriginalUnitText,
+                OcrOriginalUnitId = qi.OcrOriginalUnitId,
+                OcrOriginalLineTotal = qi.OcrOriginalLineTotal,
+                LineAdjustmentJustification = qi.LineAdjustmentJustification,
                 UnitId = qi.UnitId,
                 UnitName = qi.Unit?.Name,
                 UnitCode = qi.Unit?.Code,
@@ -3700,6 +4090,7 @@ public class RequestsController : BaseController
                 IvaRateId = qi.IvaRateId,
                 IvaRatePercent = qi.IvaRatePercent,
                 GrossSubtotal = qi.GrossSubtotal,
+                TaxableBase = qi.GrossSubtotal - qi.DiscountAmount, // Net taxable base (see SavedQuotationItemDto)
                 IvaAmount = qi.IvaAmount,
                 LineTotal = qi.LineTotal,
                 ItemCatalogId = qi.ItemCatalogId,
@@ -3808,17 +4199,25 @@ public class RequestsController : BaseController
         foreach(var rm in itemsToRemove) { quotation.Items.Remove(rm); }
 
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
+        var unitAllowsDecimal = await _context.Units.ToDictionaryAsync(u => u.Id, u => u.AllowsDecimalQuantity);
+
+        // Reconciliation applies only to OCR-sourced quotations that carry a header OCR total.
+        var isOcrQuotation = IsOcrReconciliationApplicable(dto);
+        var manualAdditionItemIds = new HashSet<Guid>();
 
         foreach (var item in dto.Items)
         {
             if (string.IsNullOrWhiteSpace(item.Description)) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "Todos os itens devem ter uma descrição.", Status = 400 });
-            
-            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED") 
+
+            if (item.Quantity <= 0 && item.ReconciliationStatus != "NOT_QUOTED" && item.ReconciliationStatus != "IGNORED")
             {
                 return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = $"Item {item.LineNumber}: A quantidade deve ser maior que zero.", Status = 400 });
             }
-            
+
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
+
+            var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);
+            if (precisionError != null) return precisionError;
 
             decimal grossSubtotal = Round2(item.Quantity * item.UnitPrice);
             decimal itemDiscount = Round2(item.DiscountAmount);
@@ -3830,23 +4229,26 @@ public class RequestsController : BaseController
             decimal ivaAmount = Round2(netSubtotal * (ivaPercent / 100m));
             decimal lineTotal = Round2(netSubtotal + ivaAmount);
 
-            // Same rule as SaveQuotation: ignoring a document line WITH value excludes it from
-            // the integrity baseline — that exclusion requires its own per-line justification.
-            if (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored && lineTotal > 0
-                && string.IsNullOrWhiteSpace(item.ReconciliationJustification))
-            {
-                return BadRequest(new ProblemDetails
-                {
-                    Title = "Justificativa Obrigatória",
-                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação.",
-                    Status = 400
-                });
-            }
-
             var existing = quotation.Items.FirstOrDefault(e =>
                 (item.MappedRequestLineItemId.HasValue && e.MappedRequestLineItemId == item.MappedRequestLineItemId) ||
                 (!item.MappedRequestLineItemId.HasValue && !e.MappedRequestLineItemId.HasValue && e.LineNumber == item.LineNumber)
             );
+
+            // Same rule as SaveQuotation: ignoring a document line WITH value excludes it from
+            // the integrity baseline — that exclusion requires its own quality-validated per-line
+            // justification. Gated by the legacy-vs-edited rule: an untouched legacy line
+            // (status+justification unchanged from what's already persisted) is never re-validated
+            // merely because this save touched other fields.
+            if (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored && lineTotal > 0
+                && !ValidateIgnoredJustification(item.ReconciliationStatus, item.ReconciliationJustification, existing, out var ignoredJustificationError))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Justificativa Obrigatória",
+                    Detail = $"Item {item.LineNumber}: uma linha ignorada com valor ({lineTotal:N2}) exige justificativa própria na reconciliação. {ignoredJustificationError}",
+                    Status = 400
+                });
+            }
 
             if (existing != null)
             {
@@ -3866,9 +4268,18 @@ public class RequestsController : BaseController
                 existing.MappedRequestLineItemId = item.MappedRequestLineItemId;
                 existing.ReconciliationStatus = item.ReconciliationStatus;
                 existing.ReconciliationJustification = item.ReconciliationJustification;
+                // Baseline immutability: OcrOriginal* are NEVER overwritten on an existing row —
+                // only the mutable per-line adjustment reason is updated from the DTO.
+                existing.LineAdjustmentJustification = string.IsNullOrWhiteSpace(item.LineAdjustmentJustification) ? null : item.LineAdjustmentJustification.Trim();
             }
             else
             {
+                // A brand-new line during an edit: an OCR-origin line must carry its baseline (first
+                // write, not an overwrite); a MANUAL/absent-origin line is a manual addition (tracked).
+                var newBaselineError = ValidateOcrLineBaseline(item, isOcrQuotation);
+                if (newBaselineError != null) return newBaselineError;
+                var isOcrLine = string.Equals(item.LineOrigin, QuotationLineOrigins.Ocr, StringComparison.OrdinalIgnoreCase);
+
                 var newItem = new QuotationItem
                 {
                     Id = Guid.NewGuid(),
@@ -3888,8 +4299,17 @@ public class RequestsController : BaseController
                     LineTotal = lineTotal,
                     MappedRequestLineItemId = item.MappedRequestLineItemId,
                     ReconciliationStatus = item.ReconciliationStatus,
-                    ReconciliationJustification = item.ReconciliationJustification
+                    ReconciliationJustification = item.ReconciliationJustification,
+                    LineAdjustmentJustification = string.IsNullOrWhiteSpace(item.LineAdjustmentJustification) ? null : item.LineAdjustmentJustification.Trim(),
+                    OcrOriginalQuantity = isOcrLine ? item.OcrOriginalQuantity : null,
+                    OcrOriginalUnitPrice = isOcrLine ? item.OcrOriginalUnitPrice : null,
+                    OcrOriginalDiscountAmount = isOcrLine ? item.OcrOriginalDiscountAmount : null,
+                    OcrOriginalIvaRatePercent = isOcrLine ? item.OcrOriginalIvaRatePercent : null,
+                    OcrOriginalUnitText = isOcrLine ? item.OcrOriginalUnitText : null,
+                    OcrOriginalUnitId = isOcrLine ? item.OcrOriginalUnitId : null,
+                    OcrOriginalLineTotal = isOcrLine ? item.OcrOriginalLineTotal : null
                 };
+                if (isOcrQuotation && !isOcrLine) manualAdditionItemIds.Add(newItem.Id);
                 _context.QuotationItems.Add(newItem);
                 quotation.Items.Add(newItem);
             }
@@ -3920,6 +4340,16 @@ public class RequestsController : BaseController
         quotation.TotalIvaAmount = adjustedIva;
         quotation.TotalAmount = Round2(taxableBase + adjustedIva);
 
+        // Financial reconciliation gate — same authoritative calculator as SaveQuotation and the
+        // preview endpoint. Extends the integrity control to in-place edits (previously ungated).
+        if (isOcrQuotation)
+        {
+            var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var itemsById = quotation.Items.ToDictionary(i => i.Id);
+            var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
+            if (gateError != null) return gateError;
+        }
 
         // Audit Trail entry for traceability
         var history = new RequestStatusHistory
@@ -3995,13 +4425,23 @@ public class RequestsController : BaseController
                 MappedRequestLineItemId = qi.MappedRequestLineItemId,
                 ReconciliationStatus = qi.ReconciliationStatus,
                 ReconciliationJustification = qi.ReconciliationJustification,
+                OcrOriginalQuantity = qi.OcrOriginalQuantity,
+                OcrOriginalUnitPrice = qi.OcrOriginalUnitPrice,
+                OcrOriginalDiscountAmount = qi.OcrOriginalDiscountAmount,
+                OcrOriginalIvaRatePercent = qi.OcrOriginalIvaRatePercent,
+                OcrOriginalUnitText = qi.OcrOriginalUnitText,
+                OcrOriginalUnitId = qi.OcrOriginalUnitId,
+                OcrOriginalLineTotal = qi.OcrOriginalLineTotal,
+                LineAdjustmentJustification = qi.LineAdjustmentJustification,
                 UnitId = qi.UnitId,
                 UnitName = qi.Unit?.Name,
                 UnitCode = qi.Unit?.Code,
                 UnitPrice = qi.UnitPrice,
+                DiscountAmount = qi.DiscountAmount,
                 IvaRateId = qi.IvaRateId,
                 IvaRatePercent = qi.IvaRatePercent,
                 GrossSubtotal = qi.GrossSubtotal,
+                TaxableBase = qi.GrossSubtotal - qi.DiscountAmount, // Net taxable base (see SavedQuotationItemDto)
                 IvaAmount = qi.IvaAmount,
                 LineTotal = qi.LineTotal,
                 ItemCatalogId = qi.ItemCatalogId,

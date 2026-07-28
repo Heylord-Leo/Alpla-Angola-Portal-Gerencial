@@ -245,6 +245,15 @@ public class QuotationItemConfiguration : IEntityTypeConfiguration<QuotationItem
         builder.Property(qi => qi.DiscountAmount).HasColumnType("decimal(18,2)");
         builder.Property(qi => qi.DiscountPercent).HasColumnType("decimal(9,4)");
 
+        // OCR-original baseline — each mirrors the precision of its live counterpart; all nullable.
+        // OcrOriginalUnitId is a plain snapshot int (no FK — it must not block unit-catalog changes).
+        builder.Property(qi => qi.OcrOriginalQuantity).HasColumnType("decimal(18,4)");
+        builder.Property(qi => qi.OcrOriginalUnitPrice).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.OcrOriginalDiscountAmount).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.OcrOriginalIvaRatePercent).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.OcrOriginalLineTotal).HasColumnType("decimal(18,2)");
+        builder.Property(qi => qi.OcrOriginalUnitText).HasMaxLength(64);
+
         builder.HasOne(qi => qi.IvaRate)
                .WithMany()
                .HasForeignKey(qi => qi.IvaRateId)

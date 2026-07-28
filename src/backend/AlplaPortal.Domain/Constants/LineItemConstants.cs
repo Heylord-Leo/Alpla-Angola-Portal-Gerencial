@@ -14,6 +14,14 @@ public static class LineItemCreationOrigins
     /// to cover a requested item omitted by the requester (or an old item-less request).
     /// </summary>
     public const string BuyerReconciliation = "BUYER_RECONCILIATION";
+
+    /// <summary>
+    /// Created by the Buyer from an EXTRA_ITEM quotation line explicitly included in an
+    /// ApprovalBatch (CreateBatch or UpdateBatch during rework). The Area Approver never
+    /// decides this — inclusion is a batch-composition decision made by the Buyer before
+    /// or during rework, not an area-approval action.
+    /// </summary>
+    public const string BuyerExtraItemIncluded = "BUYER_EXTRA_ITEM_INCLUDED";
 }
 
 /// <summary>
@@ -29,4 +37,10 @@ public static class LineItemHistoryActions
     /// (omitted requested item workaround).
     /// </summary>
     public const string ItemAddedFromProforma = "ITEM_ADDED_FROM_PROFORMA";
+
+    /// <summary>
+    /// An item was created by the Buyer from a genuine EXTRA_ITEM quotation line, explicitly
+    /// included in an ApprovalBatch at creation or rework time.
+    /// </summary>
+    public const string ItemAddedFromExtraQuotationLine = "ITEM_ADDED_FROM_EXTRA_QUOTATION_LINE";
 }
