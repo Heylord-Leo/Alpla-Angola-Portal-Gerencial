@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.214.0
+v2.215.0
+
+## [v2.215.0] - 2026-07-28
+
+### Fixed — Final Approval Lot-Aware Totals & Approval Center Authoritative Amounts + Search
+
+- **Final Approval lot-aware corrections**: a normalized `FinalApprovalLotViewDto` (built server-side by `FinalApprovalLotViewBuilder`) drives the Final Approval drawer. Requested-item totals now resolve from the **selected quotation item** (never the 0 request estimate for quotation requests); the financial summary shows **"Total Aprovado Neste Lote"** with the original estimate only as secondary context; "Cotações Salvas" separates **items considered in this lot** from **IGNORED / not-included** lines (kept for audit, never counted in the lot); the supplier is resolved from the current lot; the requesting plant ("Planta Solicitante") is disambiguated from the financial-allocation plant ("Planta (Alocação)"); and the misleading budget-impact metric was renamed to **monthly-accumulated participation** ("Part. Acum. Mensal") — a share of the department's monthly spend, not configured-budget consumption.
+- **Approval Center authoritative amounts**: a centralized `ApprovalQueueAmountResolver` resolves one authoritative `ActionableAmount` per queue card by request type and approval stage — PAYMENT uses the payment amount; QUOTATION uses the **active batch lot total** (approved snapshot, else the sum of the batch's selected quotation items) for Area/Final, or the legacy selected-quotation total when there is no batch. Partial lots are isolated (pending items outside the lot never contaminate the amount). The queue-total KPI and the cards now use the **same** rule, so they can no longer diverge. REQ-17/07/2026-096 (waiting final approval, Lote #1) now shows AOA 79.572,00 instead of AOA 0,00.
+- **Defensive missing-value behavior**: an unresolved amount is kept **null** and rendered as **"Valor ainda não definido"** (never a fabricated 0); a genuine zero stays a real 0 and remains distinguishable; a batch snapshot that disagrees with its item sum surfaces a warning instead of a false normal amount.
+- **Approval Center search/filter improvements**: the search input is now properly wired (it was previously a no-op) and matches **accent- and case-insensitively** across request number, requester, department, type, status, supplier, plant, company and cost center (request numbers match with or without formatting). One deterministic **scope → search → chip filters → sort** pipeline is shared by both queue sections and the post-action refresh, so no filter silently resets another; value sort and the high-value filter use the authoritative actionable amount. Section counts reflect the filtered results, an **"X de Y pedidos exibidos"** indicator appears while filtering, and a dedicated **"Nenhum pedido encontrado para esta busca."** empty state replaces the ambiguous empty container. Top KPI cards remain global queue indicators.
+- Backend unit tests added: `FinalApprovalLotViewBuilder` (10) and `ApprovalQueueAmountResolver` (10) — covering item-total resolution, IGNORED isolation, single/multi-supplier labels, snapshot/sum inconsistency, amount source by type/stage, partial-lot isolation, missing-vs-zero, and queue-total parity.
+- **No migration and no database change.**
+- **Known limitation (pending follow-up)**: a request with multiple simultaneously actionable `ApprovalBatch` records is still collapsed into a single request-level queue card, so the amount/lot shown on the card and the lot opened in the drawer can diverge (e.g. REQ-21/07/2026-132 with Lote #1 and Lote #2 both WAITING_AREA_APPROVAL). Redesigning the queue to one card per actionable batch is a separate, not-yet-started task.
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.214.0] - 2026-07-28
 

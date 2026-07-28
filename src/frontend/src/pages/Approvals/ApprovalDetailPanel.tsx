@@ -7,7 +7,7 @@ import {
     Target, TrendingUp, ArrowRightLeft, AlertTriangle, ShieldCheck,
     BookOpen, X, Compass, Layers
 } from 'lucide-react';
-import { RequestDetailsDto, ApprovalIntelligenceDto } from '../../types';
+import { RequestDetailsDto, ApprovalIntelligenceDto, FinalApprovalLotView } from '../../types';
 import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModal';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -147,6 +147,53 @@ export function ApprovalDetailPanel({
         return sum > 0 ? sum : null;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data, approvalStage]);
+
+    // Normalized, lot-aware Final Approval view model — backend-computed and authoritative for
+    // item line totals, lot total, supplier resolution and included-vs-ignored separation. All
+    // Final Approval displays read from here rather than the request-level estimate/supplier,
+    // which lag behind the batch (0 total, blank supplier for quotation requests).
+    const lotView: FinalApprovalLotView | null = (activeBatch as any)?.lotView ?? null;
+
+    // Fast lookup of a lot item by its RequestLineItemId — feeds the per-item total resolution.
+    const lotItemByLineId = useMemo(() => {
+        const map = new Map<string, FinalApprovalLotView['includedItems'][number]>();
+        (lotView?.includedItems || []).forEach(li => map.set(li.requestLineItemId, li));
+        return map;
+    }, [lotView]);
+
+    // The set of quotation-item ids that belong to the current lot (buyer-selected winners) and,
+    // separately, the IGNORED lines with their audit reason — used to make "Cotações Salvas"
+    // lot-aware (included vs. not-included-in-this-lot) instead of mixing every quotation row.
+    const lotIncludedQuotationItemIds = useMemo(() => {
+        const set = new Set<string>();
+        (activeBatch?.items || []).forEach((bi: any) => {
+            if (bi.selectedQuotationItemId) set.add(bi.selectedQuotationItemId);
+        });
+        return set;
+    }, [activeBatch]);
+
+    const lotIgnoredReasonByQuotationItemId = useMemo(() => {
+        const map = new Map<string, string | null | undefined>();
+        (lotView?.ignoredLines || []).forEach(line =>
+            map.set(line.quotationItemId, line.reconciliationJustification)
+        );
+        return map;
+    }, [lotView]);
+
+    // Resolve the authoritative displayed total for one line item. For a lot item we use its
+    // selected-quotation line total; a null there means "unresolved winner" — we surface a warning
+    // rather than silently rendering 0. Items with no lot entry (no batch / outside the lot) keep
+    // their own value, preserving legitimate zeros for genuinely unpriced requests.
+    const resolveItemTotal = (item: any): { text: string; warning: boolean } => {
+        const lotItem = lotItemByLineId.get(item.id);
+        if (lotItem) {
+            if (lotItem.lineTotal == null) {
+                return { text: 'Valor indisponível', warning: true };
+            }
+            return { text: formatCurrencyAO(lotItem.lineTotal), warning: false };
+        }
+        return { text: formatCurrencyAO(item.totalAmount), warning: false };
+    };
 
     // Guided tour context
     const { startTour } = useGuidedTourContext();
@@ -470,13 +517,24 @@ export function ApprovalDetailPanel({
 
     // --- Render Helpers ---
 
+    // Supplier header: on Final Approval prefer the lot's resolved supplier (from the batch's
+    // winning quotation items), never the obsolete request-level SupplierName (blank for quotation
+    // requests). Fall back to the request supplier only when there is no lot resolution at all, so
+    // a populated supplier group is never silently reduced to "---".
+    const supplierSummaryLabel = lotView?.supplierLabel ? lotView.supplierHeading : 'Fornecedor Atual';
+    const supplierSummaryValue = lotView?.supplierLabel ?? data.supplierName;
+
+    // Plant header names the REQUESTING plant. The financial-allocation plant (per item) can
+    // legitimately differ and is labeled separately in the items section, so we disambiguate here.
+    const plantSummaryLabel = isFinalApprovalStage ? 'Planta Solicitante' : 'Planta';
+
     const summaryItems = [
         { label: 'Solicitante', value: data.requesterName, icon: <User size={12} /> },
         { label: 'Departamento', value: data.departmentName, icon: <Building2 size={12} /> },
         { label: 'Empresa', value: data.companyName },
-        { label: 'Planta', value: data.plantName, icon: <Factory size={12} /> },
+        { label: plantSummaryLabel, value: data.plantName, icon: <Factory size={12} /> },
         { label: 'Necessário Até', value: data.needByDateUtc ? formatDate(data.needByDateUtc) : '---', icon: <Calendar size={12} /> },
-        { label: 'Fornecedor Atual', value: data.supplierName },
+        { label: supplierSummaryLabel, value: supplierSummaryValue },
         { 
             label: 'Atribuição Financeira', 
             value: (approvalStage === 'AREA' && isAreaApprovalStage) 
@@ -508,7 +566,7 @@ export function ApprovalDetailPanel({
                     statusCode={data.statusCode || ''}
                     statusName={data.statusName || ''}
                     statusBadgeColor={data.statusBadgeColor || ''}
-                    totalAmount={activeBatchTotal ?? data.estimatedTotalAmount}
+                    totalAmount={lotView?.lotTotal ?? activeBatchTotal ?? data.estimatedTotalAmount}
                     currencyCode={data.currencyCode || ''}
                     approvalStage={approvalStage}
                     onClose={onClose}
@@ -729,7 +787,7 @@ export function ApprovalDetailPanel({
                             ) : (
                                 <div>
                                     {data.quotations?.map(q => (
-                                        <DecisionQuotationCard 
+                                        <DecisionQuotationCard
                                             key={q.id}
                                             quotation={q}
                                             isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
@@ -738,6 +796,8 @@ export function ApprovalDetailPanel({
                                             isProcessing={quotationProcessingId === q.id}
                                             isExpanded={expandedQuotationId === q.id}
                                             onToggleExpand={(id) => setExpandedQuotationId(prev => prev === id ? null : id)}
+                                            lotIncludedItemIds={lotView ? lotIncludedQuotationItemIds : undefined}
+                                            lotIgnoredReasonById={lotView ? lotIgnoredReasonByQuotationItemId : undefined}
                                         />
                                     ))}
                                 </div>
@@ -992,7 +1052,14 @@ export function ApprovalDetailPanel({
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
                                                     <span style={{ fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.625rem' }}>Total</span>
-                                                    <span style={{ fontWeight: 900, color: 'var(--color-text-main)', fontSize: '0.875rem' }}>{formatCurrencyAO(item.totalAmount)}</span>
+                                                    {(() => {
+                                                        const t = resolveItemTotal(item);
+                                                        return (
+                                                            <span style={{ fontWeight: 900, color: t.warning ? 'var(--color-status-orange)' : 'var(--color-text-main)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                {t.warning && <AlertTriangle size={12} />}{t.text}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
 
@@ -1052,7 +1119,7 @@ export function ApprovalDetailPanel({
                                             ) : (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--color-border)' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
-                                                        <span style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>Planta</span>
+                                                        <span style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>Planta (Alocação)</span>
                                                         <span style={{ fontWeight: 900, color: 'var(--color-text-main)' }}>{item.plantName || '---'}</span>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
@@ -1087,8 +1154,15 @@ export function ApprovalDetailPanel({
                                                     <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--color-text-main)' }}>{item.quantity} {item.unit || 'UN'}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                    <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Estimado</span>
-                                                    <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--color-text-main)' }}>{formatCurrencyAO(item.totalAmount)}</span>
+                                                    <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{lotItemByLineId.has(item.id) ? 'Total Aprovado' : 'Total Estimado'}</span>
+                                                    {(() => {
+                                                        const t = resolveItemTotal(item);
+                                                        return (
+                                                            <span style={{ fontSize: '0.75rem', fontWeight: 900, color: t.warning ? 'var(--color-status-orange)' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                {t.warning && <AlertTriangle size={12} />}{t.text}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
@@ -1152,7 +1226,7 @@ export function ApprovalDetailPanel({
                                             ) : (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center', height: '100%' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem' }}>
-                                                        <span style={{ fontWeight: 700, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Planta</span>
+                                                        <span style={{ fontWeight: 700, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Planta (Alocação)</span>
                                                         <span style={{ fontWeight: 900, color: 'var(--color-text-main)' }}>{item.plantName || '---'}</span>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem' }}>
@@ -1193,12 +1267,42 @@ export function ApprovalDetailPanel({
                     defaultOpen={false}
                 >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custo Estimado Total</span>
-                            <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>
-                                {formatCurrencyAO(data.estimatedTotalAmount)} <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', fontWeight: 700, marginLeft: '4px' }}>{data.currencyCode}</span>
-                            </span>
-                        </div>
+                        {lotView ? (
+                            <>
+                                {/* Primary amount at Final Approval is the approved LOT total — never the
+                                     request's estimate (0 for quotation requests). The original estimate,
+                                     when meaningful, is kept only as secondary context. */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Aprovado Neste Lote</span>
+                                    <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>
+                                        {formatCurrencyAO(lotView.lotTotal)} <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', fontWeight: 700, marginLeft: '4px' }}>{lotView.currencyCode || data.currencyCode}</span>
+                                    </span>
+                                </div>
+                                {data.estimatedTotalAmount > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Valor Estimado Original</span>
+                                        <span style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>
+                                            {formatCurrencyAO(data.estimatedTotalAmount)} {data.currencyCode}
+                                        </span>
+                                    </div>
+                                )}
+                                {lotView.hasMonetaryInconsistency && (
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #f59e0b', borderRadius: 'var(--radius-md)' }}>
+                                        <AlertTriangle size={16} style={{ color: '#b45309', flexShrink: 0, marginTop: '2px' }} />
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#78350f' }}>
+                                            O total aprovado registrado não coincide com a soma dos itens do lote. Verifique os valores antes de decidir.
+                                        </span>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custo Estimado Total</span>
+                                <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--color-text-main)', letterSpacing: '-0.02em' }}>
+                                    {formatCurrencyAO(data.estimatedTotalAmount)} <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', fontWeight: 700, marginLeft: '4px' }}>{data.currencyCode}</span>
+                                </span>
+                            </div>
+                        )}
                         {data.supplierPortalCode && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '16px' }}>
                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Código do Fornecedor</span>

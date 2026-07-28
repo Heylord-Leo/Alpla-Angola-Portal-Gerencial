@@ -9,7 +9,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { ApprovalDetailPanel } from './ApprovalDetailPanel';
 import { DetailedHistoryPanel } from './components/DetailedHistoryPanel';
-import { AlertCircle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRight, FileText as FileContract, Info } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, User, Landmark, ShieldCheck, Inbox, ChevronRight, FileText as FileContract, Info } from 'lucide-react';
 import { formatDate, formatCurrencyAO, getUrgencyStyle } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DropdownPortal } from '../../components/ui/DropdownPortal';
@@ -32,13 +32,11 @@ import {
 import { ContractApprovalPanel } from './components/ContractApprovalPanel';
 import { SupplierApprovalPanel } from './components/SupplierApprovalPanel';
 import type { PendingFicha } from './components/SupplierApprovalPanel';
+import { processQueueSection, resolveCardAmount, sumActionable, type SortMode } from './approvalQueueView';
 
 // --- Types ---
 
 type ApprovalStage = 'AREA' | 'FINAL';
-type SortMode = 'default' | 'oldest' | 'value_desc' | 'value_asc';
-
-const HIGH_VALUE_THRESHOLD = 500000;
 
 // --- Component ---
 
@@ -94,6 +92,7 @@ export function ApprovalCenter() {
     // --- Triage State (Phase 4) ---
     const [sortMode, setSortMode] = useState<SortMode>((savedPrefs.filters?.sortMode as SortMode) || 'default');
     const [activeFilters, setActiveFilters] = useState<string[]>(savedPrefs.filters?.activeFilters || []);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Sync triage changes to persistent storage
     useEffect(() => {
@@ -108,54 +107,33 @@ export function ApprovalCenter() {
 
 
     // --- Filtered & Sorted Data ---
+    // ONE deterministic pipeline (approvalQueueView.processQueueSection):
+    //   raw → scope (Apenas Área/Final) → search → chip filters → sort.
+    // Both queue sections consume the same searched/filtered collection, and value
+    // sort / high-value filter use the backend's authoritative actionableAmount.
     const filteredAndSortedData = React.useMemo(() => {
         if (!data) return { area: [], final: [], flat: [] };
 
-        const applyFilters = (requests: RequestListItemDto[]) => {
-            return requests.filter(req => {
-                if (activeFilters.includes('urgent')) {
-                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
-                    if (!urgency || urgency.priority < 2) return false;
-                }
-                if (activeFilters.includes('high_value')) {
-                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
-                }
-                if (activeFilters.includes('has_alert')) {
-                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
-                    if (req.requestTypeCode !== 'QUOTATION') return false;
-                }
-                return true;
-            });
-        };
+        const opts = { search: searchQuery, activeFilters, sortMode, getUrgency: getUrgencyStyle };
 
-        const applySort = (requests: RequestListItemDto[]) => {
-            const list = [...requests];
-            switch (sortMode) {
-                case 'oldest':
-                    return list.sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
-                case 'value_desc':
-                    return list.sort((a, b) => (b.estimatedTotalAmount || 0) - (a.estimatedTotalAmount || 0));
-                case 'value_asc':
-                    return list.sort((a, b) => (a.estimatedTotalAmount || 0) - (b.estimatedTotalAmount || 0));
-                default:
-                    return list; // Backend default
-            }
-        };
+        const areaScoped = activeFilters.includes('final_only') ? [] : (data.areaApprovals || []);
+        const finalScoped = activeFilters.includes('area_only') ? [] : (data.finalApprovals || []);
 
-        const areaRaw = data.areaApprovals || [];
-        const finalRaw = data.finalApprovals || [];
-
-        const areaProcessed = activeFilters.includes('final_only') ? [] : applySort(applyFilters(areaRaw));
-        const finalProcessed = activeFilters.includes('area_only') ? [] : applySort(applyFilters(finalRaw));
+        const areaProcessed = processQueueSection(areaScoped, opts);
+        const finalProcessed = processQueueSection(finalScoped, opts);
 
         return {
             area: areaProcessed,
             final: finalProcessed,
             flat: [...areaProcessed, ...finalProcessed]
         };
-    }, [data, sortMode, activeFilters]);
+    }, [data, sortMode, activeFilters, searchQuery]);
 
     const { area: areaApprovals, final: finalApprovals, flat: flatQueue } = filteredAndSortedData;
+
+    // Whether any search/filter is narrowing the queue — drives the "X de Y" indicator
+    // and the search-specific empty state.
+    const isFiltering = searchQuery.trim().length > 0 || activeFilters.length > 0;
 
     // --- Navigation Logic ---
     const currentIndex = flatQueue.findIndex(r => r.id === selectedRequestId);
@@ -389,51 +367,10 @@ export function ApprovalCenter() {
         // Refresh the queue
         try {
             const newData = await api.requests.getPendingApprovals();
-            // We need to find the "next" item based on the active filters and sort
-            // Since state updates are async, we re-apply the logic to the new data
-            
-            const areaFiltered = activeFilters.includes('final_only') ? [] : (newData.areaApprovals || []).filter(req => {
-                if (activeFilters.includes('urgent')) {
-                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
-                    if (!urgency || urgency.priority < 2) return false;
-                }
-                if (activeFilters.includes('high_value')) {
-                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
-                }
-                if (activeFilters.includes('has_alert')) {
-                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
-                    if (req.requestTypeCode !== 'QUOTATION') return false;
-                }
-                return true;
-            });
-
-            const finalFiltered = activeFilters.includes('area_only') ? [] : (newData.finalApprovals || []).filter(req => {
-                if (activeFilters.includes('urgent')) {
-                    const urgency = getUrgencyStyle(req.needByDateUtc, req.statusCode);
-                    if (!urgency || urgency.priority < 2) return false;
-                }
-                if (activeFilters.includes('high_value')) {
-                    if ((req.estimatedTotalAmount || 0) < HIGH_VALUE_THRESHOLD) return false;
-                }
-                if (activeFilters.includes('has_alert')) {
-                    if (req.requestTypeCode === 'QUOTATION' && req.selectedQuotationId) return false;
-                    if (req.requestTypeCode !== 'QUOTATION') return false;
-                }
-                return true;
-            });
-
-            const sortList = (list: RequestListItemDto[]) => {
-                const res = [...list];
-                switch (sortMode) {
-                    case 'oldest': return res.sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
-                    case 'value_desc': return res.sort((a, b) => (b.estimatedTotalAmount || 0) - (a.estimatedTotalAmount || 0));
-                    case 'value_asc': return res.sort((a, b) => (a.estimatedTotalAmount || 0) - (b.estimatedTotalAmount || 0));
-                    default: return res;
-                }
-            };
-
-            const newSortedArea = sortList(areaFiltered);
-            const newSortedFinal = sortList(finalFiltered);
+            // Re-apply the SAME deterministic pipeline to pick the next selection after an action.
+            const opts = { search: searchQuery, activeFilters, sortMode, getUrgency: getUrgencyStyle };
+            const newSortedArea = processQueueSection(activeFilters.includes('final_only') ? [] : (newData.areaApprovals || []), opts);
+            const newSortedFinal = processQueueSection(activeFilters.includes('area_only') ? [] : (newData.finalApprovals || []), opts);
             const newFlatQueue = [...newSortedArea, ...newSortedFinal];
 
             setData(newData); // Update the main data state
@@ -542,8 +479,9 @@ export function ApprovalCenter() {
             {/* Triage Controls — Finance-style tab bar */}
             <div data-tour="approvals-filter-tabs">
             <SearchFilterBar
-                searchValue=""
-                onSearchChange={() => {}}
+                searchPlaceholder="Buscar por nº, solicitante, departamento, fornecedor..."
+                searchValue={searchQuery}
+                onSearchChange={setSearchQuery}
                 tabs={[
                     { id: 'sort_default', label: '⏰ Urgência' },
                     { id: 'sort_oldest',  label: '🕐 Mais Antigo' },
@@ -610,6 +548,8 @@ export function ApprovalCenter() {
                             icon={<Building2 size={20} />}
                             tooltip="Pedidos que aguardam a sua validação de área. Clique num cartão para abrir o painel de detalhe e escolher Aprovar ou Devolver. A aprovação de área é a primeira etapa do fluxo e confirma que o pedido está alinhado com a necessidade do departamento."
                             requests={areaApprovals}
+                            unfilteredCount={data?.areaApprovals?.length || 0}
+                            isFiltering={isFiltering}
                             showCostCenter={true}
                             selectedId={selectedRequestId}
                             flashedId={flashedRequestId}
@@ -631,6 +571,8 @@ export function ApprovalCenter() {
                             icon={<ShieldCheck size={20} />}
                             tooltip="Pedidos que já passaram pela aprovação de área e aguardam a sua decisão final. Esta é a última etapa antes do pedido ser encaminhado para Procurement. Clique num cartão para analisar os detalhes e aprovar ou devolver para revisão."
                             requests={finalApprovals}
+                            unfilteredCount={data?.finalApprovals?.length || 0}
+                            isFiltering={isFiltering}
                             selectedId={selectedRequestId}
                             flashedId={flashedRequestId}
                             onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
@@ -1218,6 +1160,10 @@ interface ApprovalQueueSectionProps {
     icon: React.ReactNode;
     tooltip?: string;
     requests: RequestListItemDto[];
+    /** Total in this queue before search/chip filters — powers the "X de Y" indicator. */
+    unfilteredCount?: number;
+    /** Whether a search/filter is currently narrowing the queue. */
+    isFiltering?: boolean;
     showCostCenter?: boolean;
     selectedId: string | null;
     flashedId?: string | null;
@@ -1226,8 +1172,12 @@ interface ApprovalQueueSectionProps {
     isFirstQueue?: boolean;
 }
 
-function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, selectedId, flashedId, onRowSelect, isFirstQueue }: ApprovalQueueSectionProps) {
+function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount, isFiltering, showCostCenter, selectedId, flashedId, onRowSelect, isFirstQueue }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
+        // A filtered-to-empty section reads differently from a genuinely empty queue.
+        const emptyMessage = isFiltering
+            ? 'Nenhum pedido encontrado para esta busca.'
+            : 'Nenhum pedido pendente nesta fila.';
         return (
             <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderLeft: '4px solid var(--color-border)', paddingLeft: '16px' }}>
@@ -1240,9 +1190,14 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, 
                             <Info size={15} style={{ color: 'var(--color-text-muted)', cursor: 'help', flexShrink: 0 }} />
                         </Tooltip>
                     )}
+                    {isFiltering && (unfilteredCount ?? 0) > 0 && (
+                        <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                            0 de {unfilteredCount} pedidos exibidos
+                        </span>
+                    )}
                 </div>
                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)', border: '2px dashed var(--color-border)', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-lg, 8px)' }}>
-                    <p style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nenhum pedido pendente nesta fila.</p>
+                    <p style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{emptyMessage}</p>
                 </div>
             </section>
         );
@@ -1261,7 +1216,12 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, 
                         <Info size={15} style={{ color: 'var(--color-primary)', cursor: 'help', flexShrink: 0, opacity: 0.7 }} />
                     </Tooltip>
                 )}
-                <span style={{ marginLeft: 'auto', backgroundColor: 'var(--color-primary)', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem' }}>
+                {isFiltering && (unfilteredCount ?? 0) > requests.length && (
+                    <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                        {requests.length} de {unfilteredCount} pedidos exibidos
+                    </span>
+                )}
+                <span style={{ marginLeft: (isFiltering && (unfilteredCount ?? 0) > requests.length) ? '12px' : 'auto', backgroundColor: 'var(--color-primary)', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem' }}>
                     {requests.length}
                 </span>
             </div>
@@ -1272,6 +1232,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, 
                     const isSelected = selectedId === req.id;
                     const isFlashed = flashedId === req.id;
                     const hasQuotationAlert = req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId;
+                    const cardAmount = resolveCardAmount(req);
 
                     return (
                         <motion.div
@@ -1335,13 +1296,33 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, showCostCenter, 
                                 )}
                             </div>
 
-                            {/* Right: value + status */}
+                            {/* Right: value + status.
+                                 Amount comes ONLY from the backend actionableAmount (resolveCardAmount):
+                                 a resolved amount, an inconsistency warning, or "Valor ainda não definido"
+                                 for unresolved — never a fabricated 0. */}
                             <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                                 <div>
-                                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>{req.currencyCode || 'AOA'}</div>
-                                    <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
-                                        {formatCurrencyAO(req.estimatedTotalAmount)}
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                        {cardAmount.state === 'undefined' ? ' ' : (req.currencyCode || 'AOA')}
+                                        {req.actionableLotNumber != null && cardAmount.state !== 'undefined' ? ` · Lote #${req.actionableLotNumber}` : ''}
                                     </div>
+                                    {cardAmount.state === 'undefined' ? (
+                                        <Tooltip variant="dark" content={<span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Ainda não há um valor autoritativo para o lote/cotação atual deste pedido.</span>}>
+                                            <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4, cursor: 'help' }}>
+                                                <AlertTriangle size={12} /> {cardAmount.display}
+                                            </div>
+                                        </Tooltip>
+                                    ) : cardAmount.state === 'inconsistent' ? (
+                                        <Tooltip variant="dark" content={<span style={{ fontWeight: 700, fontSize: '0.75rem' }}>O total aprovado do lote não coincide com a soma dos itens. Verifique antes de decidir.</span>}>
+                                            <div style={{ fontWeight: 800, fontSize: '1rem', color: '#b45309', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4, cursor: 'help' }}>
+                                                <AlertTriangle size={13} /> {cardAmount.display}
+                                            </div>
+                                        </Tooltip>
+                                    ) : (
+                                        <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                                            {cardAmount.display}
+                                        </div>
+                                    )}
                                 </div>
                                 <StatusBadge code={req.statusCode} name={req.statusName} color={req.statusBadgeColor} />
                             </div>
