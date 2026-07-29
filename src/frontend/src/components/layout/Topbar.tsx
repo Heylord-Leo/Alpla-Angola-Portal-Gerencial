@@ -21,7 +21,7 @@ export function Topbar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 3rem',
+            padding: '0 var(--spacing-shell-x, 3rem)',
             position: 'sticky',
             top: 'var(--env-banner-offset, 0px)',
             zIndex: Z_INDEX.TOPBAR as any, // Elevated for dropdowns
@@ -30,7 +30,7 @@ export function Topbar() {
             boxShadow: 'var(--shadow-sm)'
         }}>
             {/* Left Zone: Minimal Context (Branding handled by Sidebar) */}
-            <div style={{ display: 'flex', alignItems: 'center', width: '260px', minWidth: '80px', flexShrink: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', width: 'auto', minWidth: '80px', flex: '0 1 260px' }}>
                 {/* Space reserved to balance the Sidebar width below */}
             </div>
 
@@ -40,7 +40,7 @@ export function Topbar() {
             </div>
 
             {/* Right Zone: Integrated Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'flex-end', width: '320px', minWidth: '180px', flexShrink: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'flex-end', width: 'auto', minWidth: '180px', flex: '0 1 320px' }}>
                 <GuidedTourButton />
                 <div data-tour="notifications">
                     <NotificationBell />

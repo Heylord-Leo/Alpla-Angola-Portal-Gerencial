@@ -166,7 +166,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', margin: '0 auto' }}>
                 <Feedback type={feedback.type} message={feedback.message} onClose={() => setFeedback(prev => ({ ...prev, message: null }))} />
                 <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--color-bg-surface)', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ width: '40px', height: '40px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px auto' }}></div>

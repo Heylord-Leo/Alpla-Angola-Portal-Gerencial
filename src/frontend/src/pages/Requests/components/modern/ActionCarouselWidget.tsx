@@ -63,7 +63,7 @@ export function ActionCarouselWidget({ summary, onRowClick, onCorrectPoClick, on
             {/* ── Stats Grid ── */}
             <section style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(5, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
                 gap: '16px',
             }}>
                 {stats.map((stat, i) => {

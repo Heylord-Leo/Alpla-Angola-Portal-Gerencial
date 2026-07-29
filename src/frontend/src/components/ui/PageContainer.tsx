@@ -12,21 +12,22 @@ export function PageContainer({
     children, 
     className = '', 
     style = {}, 
-    maxWidth = '1400px',
-    padding = '24px 32px'
+    maxWidth = 'var(--page-max-width, 1400px)',
+    padding
 }: PageContainerProps) {
     return (
         <div 
             className={`page-container ${className}`}
             style={{
-                minHeight: '100vh',
-                padding: padding,
+                minHeight: 0,
+                flex: 1,
+                padding: padding || `var(--spacing-page-y, 24px) var(--spacing-page-x, 32px)`,
                 width: '100%',
                 maxWidth: maxWidth,
                 margin: '0 auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '32px',
+                gap: 'var(--spacing-page-gap, 32px)',
                 minWidth: 0,
                 overflowX: 'hidden',
                 ...style

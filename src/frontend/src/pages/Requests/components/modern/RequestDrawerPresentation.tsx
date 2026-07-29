@@ -40,7 +40,7 @@ export function RequestDrawerPresentation({ requestId, isOpen, onClose }: Reques
                             right: 0,
                             top: 0,
                             bottom: 0,
-                            width: '800px',
+                            width: 'min(800px, 90vw)',
                             maxWidth: '100vw',
                             backgroundColor: 'var(--color-bg-surface)',
                             boxShadow: 'var(--shadow-premium)',

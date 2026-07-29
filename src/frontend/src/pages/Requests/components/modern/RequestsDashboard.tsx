@@ -217,15 +217,16 @@ export function RequestsDashboard() {
 
     return (
         <div style={{
-            minHeight: '100vh',
+            minHeight: 0,
+            flex: 1,
             width: '100%',
             minWidth: 0,
-            padding: '24px 32px',
-            maxWidth: '1400px',
+            padding: `var(--spacing-page-y, 24px) var(--spacing-page-x, 32px)`,
+            maxWidth: 'var(--page-max-width, 1400px)',
             margin: '0 auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: '32px',
+            gap: 'var(--spacing-page-gap, 32px)',
         }}>
 
             {/* ── Header ── */}

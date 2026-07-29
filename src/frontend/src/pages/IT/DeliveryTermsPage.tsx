@@ -1129,7 +1129,7 @@ const drawerOverlayStyle: React.CSSProperties = {
 };
 
 const drawerStyle: React.CSSProperties = {
-    position: 'fixed', right: 0, top: 0, bottom: 0, width: '520px', maxWidth: '90vw',
+    position: 'fixed', right: 0, top: 0, bottom: 0, width: 'min(520px, 90vw)',
     background: '#fff', boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
     display: 'flex', flexDirection: 'column', overflow: 'auto',
     animation: 'slideInRight 0.2s ease',

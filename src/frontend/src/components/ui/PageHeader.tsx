@@ -27,7 +27,7 @@ export function PageHeader({ title, subtitle, icon, actions, style = {}, 'data-t
                         </div>
                     )}
                     <h1 style={{
-                        fontSize: '1.5rem',
+                        fontSize: 'var(--heading-h1-size, 1.5rem)',
                         fontWeight: 900,
                         color: 'var(--color-primary)',
                         margin: 0,
@@ -49,7 +49,7 @@ export function PageHeader({ title, subtitle, icon, actions, style = {}, 'data-t
                 )}
             </div>
             {actions && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 1, flexWrap: 'wrap' }}>
                     {actions}
                 </div>
             )}

@@ -221,6 +221,18 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         activeBatch
     );
 
+    // Lock background document scroll while the approval wizard is open
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isOpen]);
+
     // --- Close handling ---
     if (!isOpen || !request) return null;
 
@@ -409,13 +421,13 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             }}
         >
             <div
+                className="wizard-modal-container"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     backgroundColor: '#F3F4F6',
                     borderRadius: '12px',
                     width: '100%',
-                    maxWidth: '1200px',
-                    maxHeight: '90vh',
+                    maxWidth: 'min(1200px, calc(100vw - 48px))',
                     display: 'flex',
                     flexDirection: 'column',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',

@@ -36,7 +36,7 @@ export function KPICard({
             onClick={onClick}
             style={{ 
                 backgroundColor: bgColor,
-                padding: '24px', 
+                padding: 'var(--kpi-padding, 24px)', 
                 borderRadius: '12px', 
                 border: `1px solid ${borderColor || 'var(--color-border)'}`, 
                 boxShadow: '0 4px 6px rgba(0,0,0,0.05)', 
@@ -75,8 +75,8 @@ export function KPICard({
                 </span>
                 {icon && (
                     <div style={{ 
-                        width: 40,
-                        height: 40,
+                        width: 'var(--kpi-icon-size, 40px)',
+                        height: 'var(--kpi-icon-size, 40px)',
                         backgroundColor: color ? `${color}1A` : 'rgba(0, 0, 0, 0.05)',
                         color: color || 'var(--color-text-muted)',
                         borderRadius: '8px',
@@ -90,7 +90,7 @@ export function KPICard({
             </div>
             
             <div style={{ 
-                fontSize: '2.5rem', 
+                fontSize: 'var(--kpi-value-size, 2.5rem)', 
                 fontWeight: 700, 
                 lineHeight: 1, 
                 color: color || 'var(--color-text)',

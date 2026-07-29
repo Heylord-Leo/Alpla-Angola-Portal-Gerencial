@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.217.2
+v2.218.0
+
+## [v2.218.0] - 2026-07-29
+
+### Added — Responsive Layout for 1920×1080 and 1600×900 Viewports
+
+- **Token-driven responsive architecture**: 14 CSS custom property tokens (`--spacing-shell-x`, `--spacing-page-*`, `--kpi-*`, `--heading-h1-size`, `--table-*-padding/font-size`) with progressive overrides at ≤1600px, ≤1440px, and ≤1366px breakpoints. Components reference tokens instead of hardcoded values; the `@media` layer in `globals.css` is the single source of responsive density.
+- **AppShell sidebar auto-collapse threshold raised** from 1366px to 1600px. Sidebar automatically collapses when crossing from >1600px to ≤1600px; manual toggles persist within the same breakpoint range; expanding above 1600px does not auto-expand.
+- **PageContainer, KPICard, PageHeader, SearchFilterBar, WizardLayout** updated to consume responsive tokens — spacing, font sizes, icon sizes, and widths adapt without component-level media queries.
+- **Wizard modals (QuotationWizardModal, ApprovalWizardModal)** use `min(1200px, calc(100vw - 48px))` width clamping, `100dvh` with `100vh` fallback for height, and save/restore scroll lock (`document.body.style.overflow`) to prevent interference with other scroll-lock holders.
+- **Drawers** (RequestDrawerPresentation, CatalogDrawer, EquipmentQuickViewDrawer, DeliveryTermsPage) use `min()` width clamping for viewport safety.
+- **RequestsDashboard** container migrated to responsive tokens (padding, gap, max-width) with `flex: 1` layout instead of `minHeight: 100vh`.
+- **ActionCarouselWidget** stats grid changed from fixed 5-column to `repeat(auto-fit, minmax(160px, 1fr))`.
+- **Responsive table infrastructure** (`.data-table-responsive` CSS class) defined but intentionally not applied — existing tables use inline styles that take specificity precedence. Table-specific remediation deferred pending manual validation.
+- **No new routes, pages, modals, drawers, or workflow actions added.** No migration and no database change.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.217.2] - 2026-07-29
 

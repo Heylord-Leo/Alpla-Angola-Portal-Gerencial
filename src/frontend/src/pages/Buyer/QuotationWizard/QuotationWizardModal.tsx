@@ -177,6 +177,18 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
         isSavingRef.current = false;
     }, [isOpen]);
 
+    // Lock background document scroll while the wizard modal is open
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isOpen]);
+
     // Within the SAME session: as soon as the user starts fixing the cause (any draft
     // mutation — reconciliation status, justification, financial values, document), the stale
     // save error must disappear. The draft reference only changes on real mutations, so an
@@ -343,13 +355,13 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
             }}
         >
             <div
+                className="wizard-modal-container"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     backgroundColor: '#F3F4F6',
                     borderRadius: '12px',
                     width: '100%',
-                    maxWidth: '1200px',
-                    maxHeight: '90vh',
+                    maxWidth: 'min(1200px, calc(100vw - 48px))',
                     display: 'flex',
                     flexDirection: 'column',
                     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',

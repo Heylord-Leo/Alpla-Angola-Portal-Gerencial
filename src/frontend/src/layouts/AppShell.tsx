@@ -10,8 +10,11 @@ import { PendingReceivingSticker } from '../components/ui/PendingReceivingSticke
 import { EnvironmentBanner } from '../components/ui/EnvironmentBanner';
 import { useEnvironment } from '../contexts/EnvironmentContext';
 
-/** Breakpoint at which the sidebar auto-collapses for small laptops */
-const COMPACT_BREAKPOINT = 1366;
+/** Breakpoint at which the sidebar auto-collapses.
+ *  matchMedia fires a 'change' event only when crossing this boundary.
+ *  Within the ≤1600px zone, user manual toggles are respected without
+ *  repeated auto-collapse. See implementation_plan §2 for full state model. */
+const COMPACT_BREAKPOINT = 1600;
 
 interface AppShellProps {
     children?: ReactNode;
@@ -63,8 +66,8 @@ export function AppShell({ children }: AppShellProps) {
                 <div className="app-shell-grid" style={{
                     display: 'grid',
                     gridTemplateColumns: isSidebarExpanded ? '260px minmax(0, 1fr)' : '80px minmax(0, 1fr)',
-                    gap: '2rem',
-                    padding: '2rem 3rem',
+                    gap: 'var(--spacing-shell-gap, 2rem)',
+                    padding: `var(--spacing-shell-gap, 2rem) var(--spacing-shell-x, 3rem)`,
                     maxWidth: '1800px',
                     margin: '0 auto',
                     width: '100%',
