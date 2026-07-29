@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { formatDate, formatTime } from '../../../lib/utils';
+import { formatDateAngola, formatTimeAngola } from '../../../lib/utils';
 import { api } from '../../../lib/api';
 import { RequestTimelineDto } from '../../../types';
 import { Check, Loader2, X, Flag } from 'lucide-react';
@@ -150,10 +150,10 @@ export const RequestTimelineInline: React.FC<RequestTimelineInlineProps> = ({ re
                                 {step.completedAt && (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.8, marginTop: '2px' }}>
                                         <span style={{ fontSize: '0.6rem', color: 'var(--color-text-main)', fontWeight: 800, fontFamily: 'monospace' }}>
-                                            {formatDate(step.completedAt)}
+                                            {formatDateAngola(step.completedAt)}
                                         </span>
                                         <span style={{ fontSize: '0.55rem', color: 'var(--color-text-muted)', fontWeight: 600, fontFamily: 'monospace' }}>
-                                            {formatTime(step.completedAt)}
+                                            {formatTimeAngola(step.completedAt)}
                                         </span>
                                     </div>
                                 )}

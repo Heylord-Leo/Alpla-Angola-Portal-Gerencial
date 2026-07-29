@@ -1674,7 +1674,7 @@ public class RequestsController : BaseController
             if (isInStage)
             {
                 step.State = "current";
-                step.CompletedAt = lastEntry?.CreatedAtUtc ?? request.CreatedAtUtc;
+                step.CompletedAt = AsUtcOffset(lastEntry?.CreatedAtUtc ?? request.CreatedAtUtc);
             }
             else if (lastEntry != null)
             {
@@ -1686,7 +1686,7 @@ public class RequestsController : BaseController
                 else
                 {
                     step.State = "completed";
-                    step.CompletedAt = lastEntry.CreatedAtUtc;
+                    step.CompletedAt = AsUtcOffset(lastEntry.CreatedAtUtc);
                 }
             }
             else
@@ -1716,7 +1716,7 @@ public class RequestsController : BaseController
                         {
                             step.State = "completed";
                             // Use a fallback date if no history exists (e.g. request creation or next available history)
-                            step.CompletedAt = history.FirstOrDefault(h => h.CreatedAtUtc >= request.CreatedAtUtc)?.CreatedAtUtc ?? request.CreatedAtUtc;
+                            step.CompletedAt = AsUtcOffset(history.FirstOrDefault(h => h.CreatedAtUtc >= request.CreatedAtUtc)?.CreatedAtUtc ?? request.CreatedAtUtc);
                         }
                     }
                     else
@@ -7960,6 +7960,18 @@ public class RequestsController : BaseController
     private async Task<bool> HasGroupAttachmentAsync(Guid poGroupId, string typeCode)
     {
         return await _context.RequestAttachments.AnyAsync(a => a.RequestPoGroupId == poGroupId && a.AttachmentTypeCode == typeCode && !a.IsDeleted && a.VoidedAtUtc == null);
+    }
+
+    /// <summary>Wraps a DateTime (assumed UTC but with DateTimeKind.Unspecified from EF Core) into
+    /// a DateTimeOffset that serializes with an explicit +00:00 suffix.</summary>
+    private static DateTimeOffset AsUtcOffset(DateTime value)
+    {
+        return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+    }
+
+    private static DateTimeOffset? AsUtcOffset(DateTime? value)
+    {
+        return value.HasValue ? AsUtcOffset(value.Value) : null;
     }
 
     private class StageDef

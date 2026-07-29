@@ -3,7 +3,7 @@ import { motion, Variants } from 'framer-motion';
 import { Check, Loader2, X } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { RequestTimelineDto } from '../../../../types';
-import { formatDate, formatTime } from '../../../../lib/utils';
+import { formatDateAngola, formatTimeAngola } from '../../../../lib/utils';
 
 interface ModernRequestTimelineProps {
     requestId: string;
@@ -203,10 +203,10 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                                 {step.completedAt && (
                                     <div style={{ display: 'flex', flexDirection: 'column', opacity: 0.7 }}>
                                         <span style={{ fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace' }}>
-                                            {formatDate(step.completedAt)}
+                                            {formatDateAngola(step.completedAt)}
                                         </span>
                                         <span style={{ fontSize: '0.6rem', fontWeight: 600, fontFamily: 'monospace' }}>
-                                            {formatTime(step.completedAt)}
+                                            {formatTimeAngola(step.completedAt)}
                                         </span>
                                     </div>
                                 )}

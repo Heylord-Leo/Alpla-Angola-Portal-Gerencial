@@ -4,7 +4,19 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.216.0
+v2.216.1
+
+## [v2.216.1] - 2026-07-29
+
+### Fixed — Timezone Display on Request History and Timeline
+
+- **History timestamps corrected (−2h offset eliminated)**: request history ("Histórico do Pedido") and both timeline surfaces (summarized and inline) now display correct Angola local time (WAT, UTC+1). The root cause was a two-layer defect: `System.Text.Json` serialized `DateTime` with `DateTimeKind.Unspecified` without a timezone suffix, and the frontend's `new Date()` parsed the result as browser-local time — `getUTCHours()` then subtracted the local offset a second time. In Angola (UTC+1) the net effect was −2 hours.
+- **Backend: dual-strategy serialization fix**: for the timeline DTO (built in-memory), `CompletedAt` was changed to `DateTimeOffset?` and wrapped with a new `AsUtcOffset()` helper that forces `DateTimeKind.Utc`. For the history DTOs (built inside EF Core LINQ-to-SQL expressions where custom methods cannot be translated), a property-level `[JsonConverter(typeof(UtcDateTimeJsonConverter))]` forces the `+00:00` suffix at serialization time without changing the LINQ projection. Both strategies produce identical JSON output.
+- **Frontend: `Intl.DateTimeFormat`-based Angola formatters**: new `formatDateAngola`, `formatTimeAngola`, and `formatDateTimeAngola` use `parseUtcInstant` (handles both legacy no-suffix and new `+00:00` strings) with `timeZone: 'Africa/Luanda'` — timezone-correct regardless of the browser's own locale. Original `formatDate`/`formatTime`/`formatDateTime` are preserved unchanged for other consumers.
+- **Validated against Request 162**: all 6 acceptance values match (e.g. `COTACAO_ADICIONADA` DB 09:43 UTC → display 10:43 WAT). 22 unit tests pass in 3 browser timezone configurations (Africa/Luanda, UTC, Europe/Berlin). Midnight date rollover verified.
+- **No migration and no database change.**
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.216.0] - 2026-07-29
 

@@ -17,7 +17,7 @@ import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
-import { formatCurrencyAO, getRequestGuidance, formatDateTime } from '../../lib/utils';
+import { formatCurrencyAO, getRequestGuidance, formatDateTimeAngola } from '../../lib/utils';
 import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../types';
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -549,7 +549,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                                     <div>
                                         <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '4px' }}>Data / Hora</div>
                                         <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                                            {formatDateTime(entry.createdAtUtc)}
+                                            {formatDateTimeAngola(entry.createdAtUtc)}
                                         </div>
                                     </div>
                                     <div>
