@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Z_INDEX } from '../../constants/ui';
 import { api } from '../../lib/api';
-import { RequestListItemDto, RequestDetailsDto, PendingApprovalsResponseDto, ItemIntelligenceDto } from '../../types';
+import { ApprovalQueueItemDto, RequestDetailsDto, PendingApprovalsResponseDto, ItemIntelligenceDto } from '../../types';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -32,7 +32,7 @@ import {
 import { ContractApprovalPanel } from './components/ContractApprovalPanel';
 import { SupplierApprovalPanel } from './components/SupplierApprovalPanel';
 import type { PendingFicha } from './components/SupplierApprovalPanel';
-import { processQueueSection, resolveCardAmount, sumActionable, type SortMode } from './approvalQueueView';
+import { processQueueSection, resolveCardAmount, type SortMode } from './approvalQueueView';
 
 // --- Types ---
 
@@ -64,8 +64,12 @@ export function ApprovalCenter() {
     const [data, setData] = useState<PendingApprovalsResponseDto | null>(null);
     const [contractApprovals, setContractApprovals] = useState<PendingContractApprovalsResponse | null>(null);
 
-    // Selection state
+    // Selection state — identity is the ACTIONABLE row (batch+stage), so two lots of one request
+    // are independently selectable. The drawer is driven by an explicit (requestId, approvalBatchId)
+    // pair carried from the clicked card — never re-guessed from the request alone.
+    const [selectedQueueKey, setSelectedQueueKey] = useState<string | null>(null);
     const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+    const [selectedApprovalBatchId, setSelectedApprovalBatchId] = useState<string | null>(null);
     const [selectedApprovalStage, setSelectedApprovalStage] = useState<ApprovalStage | null>(null);
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     const [selectedDetailedItem, setSelectedDetailedItem] = useState<ItemIntelligenceDto | null>(null);
@@ -136,26 +140,27 @@ export function ApprovalCenter() {
     const isFiltering = searchQuery.trim().length > 0 || activeFilters.length > 0;
 
     // --- Navigation Logic ---
-    const currentIndex = flatQueue.findIndex(r => r.id === selectedRequestId);
-    
+    // Selection follows the ACTIONABLE row (queueKey = batch+stage), and every jump carries the
+    // row's own approvalBatchId + stage so the drawer opens exactly that batch.
+    const currentIndex = flatQueue.findIndex(r => r.queueKey === selectedQueueKey);
+
+    const selectQueueItem = useCallback((item: ApprovalQueueItemDto) => {
+        setSelectedQueueKey(item.queueKey);
+        setSelectedRequestId(item.requestId);
+        setSelectedApprovalBatchId(item.approvalBatchId ?? null);
+        setSelectedApprovalStage(item.approvalStage === 'FINAL' ? 'FINAL' : 'AREA');
+        setSelectedDetailedItem(null);
+    }, []);
+
     const handleNext = () => {
         if (currentIndex < flatQueue.length - 1) {
-            const next = flatQueue[currentIndex + 1];
-            // Determine if next is in area or final (must check processed lists)
-            const isArea = areaApprovals.some(r => r.id === next.id);
-            setSelectedRequestId(next.id);
-            setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
-            setSelectedDetailedItem(null);
+            selectQueueItem(flatQueue[currentIndex + 1]);
         }
     };
 
     const handlePrev = () => {
         if (currentIndex > 0) {
-            const prev = flatQueue[currentIndex - 1];
-            const isArea = areaApprovals.some(r => r.id === prev.id);
-            setSelectedRequestId(prev.id);
-            setSelectedApprovalStage(isArea ? 'AREA' : 'FINAL');
-            setSelectedDetailedItem(null);
+            selectQueueItem(flatQueue[currentIndex - 1]);
         }
     };
 
@@ -296,17 +301,19 @@ export function ApprovalCenter() {
 
     // --- Handlers ---
 
-    const handleRowSelect = (id: string, stage: ApprovalStage) => {
-        setSelectedRequestId(id);
-        setSelectedApprovalStage(stage);
+    // Navigation contract: the click carries the row's explicit approvalBatchId + stage.
+    // The drawer loads/selects exactly that batch (never re-derives it from the request).
+    const handleRowSelect = (item: ApprovalQueueItemDto) => {
+        selectQueueItem(item);
         setIsPanelOpen(true);
         setDetailData(null); // Clear old detail while new one loads
-        setSelectedDetailedItem(null); // Reset drill-down
     };
 
     const handleCloseDetail = () => {
         setIsPanelOpen(false);
+        setSelectedQueueKey(null);
         setSelectedRequestId(null);
+        setSelectedApprovalBatchId(null);
         setSelectedApprovalStage(null);
         setDetailData(null);
         setSelectedDetailedItem(null);
@@ -319,7 +326,9 @@ export function ApprovalCenter() {
     const handleContractRowSelect = (id: string, stage: 'TECHNICAL' | 'FINAL') => {
         // Close request panel first
         setIsPanelOpen(false);
+        setSelectedQueueKey(null);
         setSelectedRequestId(null);
+        setSelectedApprovalBatchId(null);
         setSelectedContractId(id);
         setSelectedContractStage(stage);
         setIsContractPanelOpen(true);
@@ -342,7 +351,9 @@ export function ApprovalCenter() {
     const handleSupplierRowSelect = (ficha: PendingFicha) => {
         // Close other panels
         setIsPanelOpen(false);
+        setSelectedQueueKey(null);
         setSelectedRequestId(null);
+        setSelectedApprovalBatchId(null);
         setIsContractPanelOpen(false);
         setSelectedContractId(null);
         // Open supplier panel
@@ -376,13 +387,10 @@ export function ApprovalCenter() {
             setData(newData); // Update the main data state
             
             if (newFlatQueue.length > 0) {
-                // Try to pick the item that now occupies the same index
+                // The just-actioned row is gone; pick the row now at the same index (batch identity).
                 const nextItem = newFlatQueue[currentIndex] || newFlatQueue[newFlatQueue.length - 1];
                 if (nextItem) {
-                    const isNewArea = newSortedArea.some(r => r.id === nextItem.id);
-                    setSelectedRequestId(nextItem.id);
-                    setSelectedApprovalStage(isNewArea ? 'AREA' : 'FINAL');
-                    setSelectedDetailedItem(null);
+                    selectQueueItem(nextItem);
                     // Detail data will be updated by the useEffect watching selectedRequestId
                     return;
                 }
@@ -551,9 +559,9 @@ export function ApprovalCenter() {
                             unfilteredCount={data?.areaApprovals?.length || 0}
                             isFiltering={isFiltering}
                             showCostCenter={true}
-                            selectedId={selectedRequestId}
+                            selectedKey={selectedQueueKey}
                             flashedId={flashedRequestId}
-                            onRowSelect={(id) => handleRowSelect(id, 'AREA')}
+                            onRowSelect={handleRowSelect}
                             isFirstQueue={true}
                         />
                     </div>
@@ -573,9 +581,9 @@ export function ApprovalCenter() {
                             requests={finalApprovals}
                             unfilteredCount={data?.finalApprovals?.length || 0}
                             isFiltering={isFiltering}
-                            selectedId={selectedRequestId}
+                            selectedKey={selectedQueueKey}
                             flashedId={flashedRequestId}
-                            onRowSelect={(id) => handleRowSelect(id, 'FINAL')}
+                            onRowSelect={handleRowSelect}
                             isFirstQueue={!isAreaApprover}
                         />
                     </div>
@@ -875,9 +883,10 @@ export function ApprovalCenter() {
                                     ) : detailData ? (
                                         <div style={{ padding: 0 }}>
                                             <ApprovalDetailPanel
-                                                key={detailData.id}
+                                                key={selectedQueueKey || detailData.id}
                                                 data={detailData}
                                                 approvalStage={selectedApprovalStage || 'AREA'}
+                                                activeBatchId={selectedApprovalBatchId}
                                                 isAreaApprover={isAreaApprover}
                                                 isFinalApprover={isFinalApprover}
                                                 onActionCompleted={handleActionCompleted}
@@ -1159,20 +1168,22 @@ interface ApprovalQueueSectionProps {
     title: string;
     icon: React.ReactNode;
     tooltip?: string;
-    requests: RequestListItemDto[];
-    /** Total in this queue before search/chip filters — powers the "X de Y" indicator. */
+    /** One row per actionable batch (or request-level action). */
+    requests: ApprovalQueueItemDto[];
+    /** Total actionable rows in this queue before search/chip filters — powers the "X de Y" indicator. */
     unfilteredCount?: number;
     /** Whether a search/filter is currently narrowing the queue. */
     isFiltering?: boolean;
     showCostCenter?: boolean;
-    selectedId: string | null;
+    /** Selected row identity = queueKey (batch+stage), not requestId. */
+    selectedKey: string | null;
     flashedId?: string | null;
-    onRowSelect: (id: string) => void;
+    onRowSelect: (item: ApprovalQueueItemDto) => void;
     /** If true, the first card in this queue gets data-tour="approvals-request-card" */
     isFirstQueue?: boolean;
 }
 
-function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount, isFiltering, showCostCenter, selectedId, flashedId, onRowSelect, isFirstQueue }: ApprovalQueueSectionProps) {
+function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount, isFiltering, showCostCenter, selectedKey, flashedId, onRowSelect, isFirstQueue }: ApprovalQueueSectionProps) {
     if (requests.length === 0) {
         // A filtered-to-empty section reads differently from a genuinely empty queue.
         const emptyMessage = isFiltering
@@ -1192,7 +1203,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                     )}
                     {isFiltering && (unfilteredCount ?? 0) > 0 && (
                         <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                            0 de {unfilteredCount} pedidos exibidos
+                            0 de {unfilteredCount} ações exibidas
                         </span>
                     )}
                 </div>
@@ -1218,7 +1229,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                 )}
                 {isFiltering && (unfilteredCount ?? 0) > requests.length && (
                     <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                        {requests.length} de {unfilteredCount} pedidos exibidos
+                        {requests.length} de {unfilteredCount} ações exibidas
                     </span>
                 )}
                 <span style={{ marginLeft: (isFiltering && (unfilteredCount ?? 0) > requests.length) ? '12px' : 'auto', backgroundColor: 'var(--color-primary)', color: 'white', padding: '2px 10px', fontWeight: 800, fontSize: '0.75rem' }}>
@@ -1229,18 +1240,18 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
             {/* Card list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {requests.map((req, i) => {
-                    const isSelected = selectedId === req.id;
-                    const isFlashed = flashedId === req.id;
+                    const isSelected = selectedKey === req.queueKey;
+                    const isFlashed = flashedId === req.requestId;
                     const hasQuotationAlert = req.requestTypeCode === 'QUOTATION' && !req.selectedQuotationId;
                     const cardAmount = resolveCardAmount(req);
 
                     return (
                         <motion.div
-                            key={req.id}
+                            key={req.queueKey}
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: i * 0.04, duration: 0.2 }}
-                            onClick={() => onRowSelect(req.id)}
+                            onClick={() => onRowSelect(req)}
                             className={isFlashed ? 'flash-red-row' : ''}
                             {...(isFirstQueue && i === 0 ? { 'data-tour': 'approvals-request-card' } : {})}
                             style={{
@@ -1263,9 +1274,14 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                         >
                             {/* Left: request number + date */}
                             <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     {isSelected && <ChevronRight size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}
                                     <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--color-primary)' }}>{req.requestNumber}</span>
+                                    {req.lotNumber != null && (
+                                        <span style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '1px 7px', borderRadius: 4, background: 'rgba(var(--color-primary-rgb), 0.1)', color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
+                                            Lote #{req.lotNumber}
+                                        </span>
+                                    )}
                                     {hasQuotationAlert && (
                                         <Tooltip variant="dark" content={<span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Requer atenção na análise</span>}>
                                             <AlertCircle size={13} strokeWidth={2.5} style={{ color: '#f43f5e', flexShrink: 0 }} />
@@ -1288,6 +1304,12 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', marginTop: 2 }}>
                                     {req.departmentName || '---'}
                                 </div>
+                                {req.supplierDisplay && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                                        <Building2 size={11} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.supplierDisplay}</span>
+                                    </div>
+                                )}
                                 {showCostCenter && req.costCenterCode && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
                                         <Landmark size={11} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
@@ -1304,7 +1326,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                                 <div>
                                     <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
                                         {cardAmount.state === 'undefined' ? ' ' : (req.currencyCode || 'AOA')}
-                                        {req.actionableLotNumber != null && cardAmount.state !== 'undefined' ? ` · Lote #${req.actionableLotNumber}` : ''}
+                                        {req.lotNumber != null && cardAmount.state !== 'undefined' ? ` · Lote #${req.lotNumber}` : ''}
                                     </div>
                                     {cardAmount.state === 'undefined' ? (
                                         <Tooltip variant="dark" content={<span style={{ fontWeight: 700, fontSize: '0.75rem' }}>Ainda não há um valor autoritativo para o lote/cotação atual deste pedido.</span>}>
@@ -1324,7 +1346,7 @@ function ApprovalQueueSection({ title, icon, tooltip, requests, unfilteredCount,
                                         </div>
                                     )}
                                 </div>
-                                <StatusBadge code={req.statusCode} name={req.statusName} color={req.statusBadgeColor} />
+                                <StatusBadge code={req.batchStatus} name={req.statusName} color={req.statusBadgeColor} />
                             </div>
                         </motion.div>
                     );

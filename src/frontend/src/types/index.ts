@@ -62,9 +62,67 @@ export interface RequestListItemDto {
     paymentCompletedAtUtc?: string;
 }
 
+/**
+ * One ACTIONABLE row in the Approval Center queue. The queue unit is the actionable ApprovalBatch
+ * (per approvalStage), NOT the Request — a request with two simultaneous WAITING_AREA_APPROVAL
+ * batches produces two rows sharing `requestNumber` but with distinct `approvalBatchId`.
+ * PAYMENT / legacy whole-request actions have no batch: `approvalBatchId` is null and identity
+ * falls back to requestId+stage (both encoded in `queueKey`).
+ */
+export interface ApprovalQueueItemDto {
+    requestId: string;
+    requestNumber?: string;
+    /** Actionable batch id; null for PAYMENT / legacy whole-request actions. */
+    approvalBatchId?: string | null;
+    /** Batch (lot) number when this row is a batch; null for request-level rows. */
+    lotNumber?: number | null;
+    /** "AREA" | "FINAL". */
+    approvalStage: string;
+    /** Stable unique row key: `{batchId}:{stage}` or `{requestId}:{stage}`. Selection/dedup key. */
+    queueKey: string;
+
+    /** Actionable status (the batch's own status for batch rows). */
+    batchStatus: string;
+    statusName: string;
+    statusBadgeColor: string;
+
+    /** Parent request's own aggregate status — may differ from batchStatus. */
+    requestStatusCode: string;
+    requestStatusName: string;
+
+    title: string;
+    requestTypeId: number;
+    requestTypeCode: string;
+    requestTypeName: string;
+    requesterName: string;
+    departmentId: number;
+    departmentName?: string | null;
+    companyId: number;
+    companyName: string;
+    plantId?: number | null;
+    plantName?: string | null;
+    /** Supplier for THIS row (batch winner, or request selected/legacy) — never a sibling batch's. */
+    supplierDisplay?: string | null;
+    costCenterCode?: string | null;
+    costCenterName?: string | null;
+    currencyCode?: string | null;
+    /** Number of items in THIS actionable unit. */
+    itemCount: number;
+
+    /** Authoritative actionable amount for THIS row. null = unresolved → "Valor ainda não definido". */
+    actionableAmount?: number | null;
+    actionableAmountSource?: string | null;
+    hasAmountInconsistency?: boolean;
+
+    needLevelId?: number | null;
+    needByDateUtc?: string | null;
+    createdAtUtc: string;
+    selectedQuotationId?: string | null;
+}
+
 export interface PendingApprovalsResponseDto {
-    areaApprovals: RequestListItemDto[];
-    finalApprovals: RequestListItemDto[];
+    areaApprovals: ApprovalQueueItemDto[];
+    finalApprovals: ApprovalQueueItemDto[];
 }
 
 export interface RequestLineItemDto {

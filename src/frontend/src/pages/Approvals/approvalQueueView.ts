@@ -1,4 +1,4 @@
-import { RequestListItemDto } from '../../types';
+import { ApprovalQueueItemDto } from '../../types';
 import { formatCurrencyAO } from '../../lib/utils';
 
 // ============================================================================
@@ -32,13 +32,29 @@ function digitsOnly(value: string | null | undefined): string {
 }
 
 /**
- * True when the request matches the free-text search. Case/accent-insensitive,
+ * True when the queue row matches the free-text search. Case/accent-insensitive,
  * trimmed, partial substring across all searchable fields; request numbers also
  * match on their digits (with or without the REQ-dd/mm/yyyy- formatting).
+ * Batch rows also match on their lot ("Lote #2", "lote 2", or a bare "#2").
+ *
+ * Search operates on BATCH-LEVEL rows: a request number shared by two lots returns
+ * both rows; "Lote #2" returns only that lot.
  */
-export function matchesApprovalSearch(req: RequestListItemDto, rawQuery: string): boolean {
+export function matchesApprovalSearch(req: ApprovalQueueItemDto, rawQuery: string): boolean {
     const q = normalizeText(rawQuery);
     if (!q) return true;
+
+    // Lot-style query ("lote #2", "lote 2", "#2") is EXCLUSIVE: it matches only rows whose own
+    // lotNumber equals the requested lot and never falls through to the request-number digit match
+    // (otherwise "Lote #2" would also match Lote #1 via the shared request number's digits).
+    const lotQuery = q.match(/^(?:lote\s*#?\s*|#\s*)(\d+)$/);
+    if (lotQuery) {
+        return req.lotNumber != null && Number(lotQuery[1]) === req.lotNumber;
+    }
+    // Bare "lote" lists every lot (batch) row.
+    if (q === 'lote' || q === 'lotes') {
+        return req.lotNumber != null;
+    }
 
     const fields = [
         req.requestNumber,
@@ -47,17 +63,19 @@ export function matchesApprovalSearch(req: RequestListItemDto, rawQuery: string)
         req.requestTypeCode,
         req.requestTypeName,
         req.statusName,
-        req.displayStatusName,
-        req.supplierName,
+        req.requestStatusName,
+        req.supplierDisplay,
         req.plantName,
         req.companyName,
         req.costCenterCode,
         req.costCenterName,
+        req.lotNumber != null ? `lote #${req.lotNumber}` : null,
     ];
 
     if (fields.some(f => normalizeText(f).includes(q))) return true;
 
-    // Request-number digit match: "096" or "17072026096" → REQ-17/07/2026-096
+    // Request-number digit match: "096" or "17072026096" → REQ-17/07/2026-096.
+    // Returns every lot row sharing that request number.
     const qDigits = digitsOnly(rawQuery);
     if (qDigits.length > 0 && digitsOnly(req.requestNumber).includes(qDigits)) return true;
 
@@ -65,18 +83,18 @@ export function matchesApprovalSearch(req: RequestListItemDto, rawQuery: string)
 }
 
 /** Amount used for value sort / high-value filter: authoritative actionable amount, else 0. */
-function sortableAmount(req: RequestListItemDto): number {
+function sortableAmount(req: ApprovalQueueItemDto): number {
     return req.actionableAmount ?? 0;
 }
 
 export function filterByChips(
-    list: RequestListItemDto[],
+    list: ApprovalQueueItemDto[],
     activeFilters: string[],
     getUrgency: (needBy: string | null | undefined, statusCode: string) => { priority: number } | null,
-): RequestListItemDto[] {
+): ApprovalQueueItemDto[] {
     return list.filter(req => {
         if (activeFilters.includes('urgent')) {
-            const urgency = getUrgency(req.needByDateUtc, req.statusCode);
+            const urgency = getUrgency(req.needByDateUtc, req.batchStatus);
             if (!urgency || urgency.priority < 2) return false;
         }
         if (activeFilters.includes('high_value')) {
@@ -91,7 +109,7 @@ export function filterByChips(
     });
 }
 
-export function sortList(list: RequestListItemDto[], sortMode: SortMode): RequestListItemDto[] {
+export function sortList(list: ApprovalQueueItemDto[], sortMode: SortMode): ApprovalQueueItemDto[] {
     const res = [...list];
     switch (sortMode) {
         case 'oldest':
@@ -111,14 +129,14 @@ export function sortList(list: RequestListItemDto[], sortMode: SortMode): Reques
  * apply identical rules.
  */
 export function processQueueSection(
-    scoped: RequestListItemDto[],
+    scoped: ApprovalQueueItemDto[],
     opts: {
         search: string;
         activeFilters: string[];
         sortMode: SortMode;
         getUrgency: (needBy: string | null | undefined, statusCode: string) => { priority: number } | null;
     },
-): RequestListItemDto[] {
+): ApprovalQueueItemDto[] {
     const searched = scoped.filter(r => matchesApprovalSearch(r, opts.search));
     const filtered = filterByChips(searched, opts.activeFilters, opts.getUrgency);
     return sortList(filtered, opts.sortMode);
@@ -140,7 +158,7 @@ export interface CardAmount {
  *  - set   → formatted amount, flagged when the backend reports an inconsistency.
  * A genuine 0 renders as a real "AOA 0,00", distinct from the undefined state.
  */
-export function resolveCardAmount(req: RequestListItemDto): CardAmount {
+export function resolveCardAmount(req: ApprovalQueueItemDto): CardAmount {
     if (req.actionableAmount == null) {
         return { display: 'Valor ainda não definido', state: 'undefined', warning: true };
     }
@@ -156,6 +174,6 @@ export function resolveCardAmount(req: RequestListItemDto): CardAmount {
  * sum of actionable amounts, excluding unresolved (null). Genuine zeros contribute 0.
  * Card amounts and this summary can therefore never use different monetary rules.
  */
-export function sumActionable(list: RequestListItemDto[]): number {
+export function sumActionable(list: ApprovalQueueItemDto[]): number {
     return list.reduce((sum, req) => sum + (req.actionableAmount ?? 0), 0);
 }
