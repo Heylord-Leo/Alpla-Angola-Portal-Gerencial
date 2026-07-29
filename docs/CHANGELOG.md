@@ -4,7 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.215.0
+v2.216.0
+
+## [v2.216.0] - 2026-07-29
+
+### Fixed — Approval Center: One Queue Card per Actionable Batch (Batch Identity)
+
+- **Queue unit is now the actionable `ApprovalBatch` (`approvalBatchId` + `approvalStage`), not the Request**: `GET /requests/pending-approvals` returns one row per actionable batch (new `ApprovalQueueItemDto`, built by `ApprovalQueueProjection`), replacing the previous one-row-per-request projection that picked `OrderBy(BatchNumber).FirstOrDefault()` and let the drawer independently re-select a batch. A request with two simultaneously actionable batches now yields two independent cards. This resolves the v2.215.0 known limitation: **REQ-21/07/2026-132** now shows two Area Approval cards — Lote #1 (AOA 150.217,07 · AFRICANA DISCOUNT, LDA.) and Lote #2 (AOA 618.732,10 · Mistoquímica - Indústria Química, Lda) — each with its own supplier, value, item count and status.
+- **Explicit card→drawer batch identity (parity)**: the clicked card carries its exact `approvalBatchId`, and the drawer opens that precise batch instead of re-selecting one by status — supplier, value, item count, status and navigation all come from the same batch. A defensive invariant surfaces a diagnostic banner if the card and drawer ever disagree, rather than silently opening a different lot.
+- **Batch-level search / filter / sort**: search, chip filters and sorting operate on batch rows — searching "132" returns **both** REQ-132 lots, "Lote #2" returns **only** Lote #2, and value sort / high-value filter use each batch's own actionable amount.
+- **KPI semantics changed to actions**: the primary card is now **"Ações Pendentes"** with a secondary **"X ações em Y pedidos"**; section badges count actionable approval actions and the queue monetary total sums each actionable row exactly once.
+- **PAYMENT & legacy request-level actions preserved**: requests actionable by status with no matching batch keep a request-level identity (no fake batch is fabricated); the authoritative amount continues to come from `ApprovalQueueAmountResolver`, per row.
+- **Backend regression tests added** (`ApprovalQueueBatchIdentityTests`): a REQ-132-shaped fixture asserts two independent rows (shared request, distinct batch ids, own amount/supplier/item-count/status), queue-total-once, Area/Final section independence, and that a non-actionable historical batch produces no row.
+- **Manually validated**: REQ-132 shows two Area Approval cards; Lote #1 opens Lote #1 and Lote #2 opens Lote #2; card and drawer values and suppliers match; search by request returns both lots; counts and KPI behavior are coherent.
+- **No migration and no database change.**
+
+**Guided Tour impact: existing tour reviewed, no changes needed.**
 
 ## [v2.215.0] - 2026-07-28
 

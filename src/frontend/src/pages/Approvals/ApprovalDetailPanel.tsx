@@ -61,6 +61,10 @@ const BATCH_STATUS_LABELS: Record<string, string> = {
 export interface ApprovalDetailPanelProps {
     data: RequestDetailsDto;
     approvalStage: 'AREA' | 'FINAL';
+    /** Explicit actionable batch id carried from the clicked queue card. When set, the drawer selects
+     *  EXACTLY this batch (never re-guesses by status), guaranteeing card ⇄ drawer parity for requests
+     *  with multiple simultaneous batches. Null for PAYMENT / legacy request-level actions. */
+    activeBatchId?: string | null;
     isAreaApprover: boolean;
     isFinalApprover: boolean;
     onActionCompleted: (successMessage: string) => void;
@@ -80,6 +84,7 @@ export interface ApprovalDetailPanelProps {
 export function ApprovalDetailPanel({
     data,
     approvalStage,
+    activeBatchId,
     isAreaApprover,
     onActionCompleted,
     onClose,
@@ -91,11 +96,20 @@ export function ApprovalDetailPanel({
     totalCount
 }: ApprovalDetailPanelProps) {
 
-    const activeBatch = data.approvalBatches?.find((b: any) => 
-        approvalStage === 'AREA' 
-            ? b.status === 'WAITING_AREA_APPROVAL' 
-            : b.status === 'WAITING_FINAL_APPROVAL'
-    );
+    const stageBatchStatus = approvalStage === 'AREA' ? 'WAITING_AREA_APPROVAL' : 'WAITING_FINAL_APPROVAL';
+
+    // Select EXACTLY the batch the card carried (identity parity). Only fall back to a status-based
+    // match when no id was carried (legacy callers / request-level PAYMENT actions with no batch).
+    const activeBatch = activeBatchId
+        ? data.approvalBatches?.find((b: any) => b.id === activeBatchId)
+        : data.approvalBatches?.find((b: any) => b.status === stageBatchStatus);
+
+    // Invariant: a card that passed a batch id MUST resolve that exact batch under this stage.
+    // A mismatch means the card and drawer disagreed — surface a diagnostic rather than silently
+    // opening a different lot (the original REQ-132 defect).
+    const batchIdentityError = activeBatchId != null && (!activeBatch || activeBatch.status !== stageBatchStatus)
+        ? `Inconsistência de lote: o cartão indicava o lote ${activeBatchId}, mas o painel não o encontrou nesta etapa (${approvalStage}). Recarregue a fila.`
+        : null;
 
     const activeItems = activeBatch
         ? (data.lineItems || []).filter(item =>
@@ -558,6 +572,14 @@ export function ApprovalDetailPanel({
                 minHeight: '100%', display: 'flex', flexDirection: 'column', position: 'relative'
             }}
         >
+            {/* Batch-identity diagnostic — the card carried a batch the drawer could not resolve. */}
+            {batchIdentityError && (
+                <div style={{ margin: '12px 16px 0', padding: '12px 16px', borderRadius: 8, backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                    <span>{batchIdentityError}</span>
+                </div>
+            )}
+
             {/* 1. DECISION HEADER (Top Navigation & Hero) */}
             <div data-tour="approval-drawer-header">
                 <DecisionHeader 
