@@ -4,7 +4,39 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.217.1
+v2.217.2
+
+## [v2.217.2] - 2026-07-29
+
+### Fixed — CI Artifact Inventory: Exclude Hidden Paths (TEST + PROD deploy workflows)
+
+Corrects the artifact-integrity canonical inventory so it matches what `actions/upload-artifact@v4`
+actually uploads. This is a **CI/deployment-only** change: there is **no application runtime, API,
+database, or user-facing behavior change**.
+
+- **Confirmed cause**: the TEST deploy of `v2.217.1` aborted (fail-closed, before touching the server)
+  because the build-side canonical inventory listed `data/templates/branding/.gitkeep`, but
+  `actions/upload-artifact@v4` **omits hidden/dot-prefixed paths by default**, so the downloaded artifact
+  had one fewer file. The persisted inventory, its aggregate, and the download were all valid — the
+  line-by-line gate correctly reported the single missing file (`ONLY-IN-EXPECTED`).
+- **Correction**: the canonical inventory now excludes any file whose relative path contains a
+  **dot-prefixed path segment** (a filename beginning with `.`, or any directory segment beginning with
+  `.`). Examples excluded: `.gitkeep`, `.hidden/file.txt`, `folder/.private/file.txt`. Normal filenames
+  that merely *contain* dots remain included (e.g. `file.name.with.dots.txt`, `runtimes/win-x64/native/
+  library.dll`). `include-hidden-files: true` was **not** enabled — only the canonical set was aligned.
+- **Identical logic in TEST and PROD**: the same `Test-IsHiddenArtifactPath` / `Get-CanonicalInventory`
+  helpers are byte-identical across `deploy-test.yml` and `deploy-prod.yml`, on both the build and the
+  deploy sides.
+- **Unchanged**: deterministic `StringComparer.Ordinal` ordering, persisted per-file
+  `artifact-inventory.sha256`, aggregate `artifact-sha256.txt` derived from the inventory bytes,
+  line-by-line deploy comparison, fail-closed aggregate and content gates, the separate manifest-equality
+  gate, and strict staging cleanup.
+
+**Notes / limitations:**
+- The new deploy-workflow change is **not yet execution-tested on the self-hosted runner** — a **TEST
+  deployment for `v2.217.2` is still required** for real-runner validation before any PROD deploy.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.217.1] - 2026-07-29
 

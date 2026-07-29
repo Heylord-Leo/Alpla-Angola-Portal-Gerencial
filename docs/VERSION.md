@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.217.1
+v2.217.2
+
+## [v2.217.2] - 2026-07-29
+
+### Fixed — CI Artifact Inventory: Exclude Hidden Paths (TEST + PROD)
+
+- Confirmed cause: `.gitkeep` was in the build-side canonical inventory but omitted by
+  `actions/upload-artifact@v4` (hidden/dot-prefixed paths are excluded by default), so the downloaded
+  artifact had one fewer file and the line-by-line gate aborted fail-closed before any server mutation.
+- The canonical inventory now excludes any file whose relative path contains a dot-prefixed segment
+  (e.g. `.gitkeep`, `.hidden/file.txt`, `folder/.private/file.txt`); normal names with dots stay included.
+- `include-hidden-files: true` was NOT enabled; only the canonical set was aligned to upload-artifact.
+- Identical `Test-IsHiddenArtifactPath` / `Get-CanonicalInventory` logic in `deploy-test.yml` and
+  `deploy-prod.yml` (build + deploy sides).
+- Ordinal ordering, persisted inventory, SHA-256 aggregate, line-by-line comparison, fail-closed gates,
+  and strict staging cleanup remain unchanged. No application runtime or API behavior change.
+- A TEST deployment for v2.217.2 is still required for real-runner validation.
 
 ## [v2.217.1] - 2026-07-29
 

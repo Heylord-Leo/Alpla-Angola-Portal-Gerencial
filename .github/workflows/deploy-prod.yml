@@ -207,27 +207,42 @@ jobs:
       # plus an aggregate (artifact-sha256.txt) = SHA-256 of that inventory file's exact UTF-8 (no BOM)
       # bytes. Ordinal sort only (culture-independent). The self-hosted runner re-derives the inventory
       # from the downloaded files and compares it LINE BY LINE, so any content/set drift is provable — not
-      # an opaque hash mismatch. Chain: files -> artifact-inventory.sha256 -> artifact-sha256.txt. Both
-      # integrity files are excluded from the inventory. SEPARATE control from manifest-equality
-      # (binary integrity vs build identity).
+      # an opaque hash mismatch. Chain: files -> artifact-inventory.sha256 -> artifact-sha256.txt. The
+      # inventory excludes the two integrity files AND all hidden paths so it matches
+      # actions/upload-artifact@v4 default inclusion (hidden files like .gitkeep are NOT uploaded).
+      # SEPARATE control from manifest-equality (binary integrity vs build identity).
       - name: Compute artifact inventory and SHA-256
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Canonical inventory: one "<relpath> <sha256>" line per file, lowercased forward-slash paths,
-          # ORDINAL sort (never culture-sensitive Sort-Object), excluding both integrity files.
+          # Canonical inventory helpers (identical on build and deploy sides): one "<relpath> <sha256>"
+          # line per file, lowercased forward-slash paths, ORDINAL sort. Excludes the two integrity files
+          # AND all hidden paths (dot-prefixed filename OR any dot-prefixed directory segment) so the set
+          # matches actions/upload-artifact@v4 default inclusion (hidden files like .gitkeep are not
+          # uploaded). Only a path SEGMENT whose first char is '.' is hidden — dots elsewhere are kept.
+          function Test-IsHiddenArtifactPath {
+            param([string]$RelativePath)
+            foreach ($segment in ($RelativePath -split '/')) {
+              if ($segment.StartsWith('.', [System.StringComparison]::Ordinal)) { return $true }
+            }
+            return $false
+          }
           function Get-CanonicalInventory($path) {
             $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
-            $files = Get-ChildItem -LiteralPath $root -Recurse -File |
-              Where-Object { $_.Name -ine 'artifact-sha256.txt' -and $_.Name -ine 'artifact-inventory.sha256' }
-            $lines = foreach ($f in $files) {
+            $included = New-Object System.Collections.Generic.List[string]
+            $excluded = New-Object System.Collections.Generic.List[string]
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File)) {
+              if ($f.Name -ieq 'artifact-sha256.txt' -or $f.Name -ieq 'artifact-inventory.sha256') { continue }
               $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              if (Test-IsHiddenArtifactPath $rel) { $excluded.Add($rel); continue }
               $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$rel $h"
+              $included.Add("$rel $h")
             }
-            $arr = [string[]]@($lines)
-            [Array]::Sort($arr, [System.StringComparer]::Ordinal)
-            return , $arr
+            $lines = [string[]]$included.ToArray()
+            [Array]::Sort($lines, [System.StringComparer]::Ordinal)
+            $hidden = [string[]]$excluded.ToArray()
+            [Array]::Sort($hidden, [System.StringComparer]::Ordinal)
+            return [pscustomobject]@{ Lines = $lines; Excluded = $hidden }
           }
           function Write-Utf8NoBom($filePath, $text) {
             $enc = New-Object System.Text.UTF8Encoding($false)
@@ -237,14 +252,20 @@ jobs:
             @{ Path = "${{ github.workspace }}/artifacts/api"; Label = 'api' },
             @{ Path = "${{ github.workspace }}/artifacts/web"; Label = 'web' }
           )) {
-            $inv = Get-CanonicalInventory $a.Path
+            $result = Get-CanonicalInventory $a.Path
+            $inv = $result.Lines
             $joined = ($inv -join "`n")
             $invFile = Join-Path $a.Path 'artifact-inventory.sha256'
             Write-Utf8NoBom $invFile $joined
             # Aggregate is the SHA-256 of the EXACT bytes just written (no independently rebuilt string).
             $agg = (Get-FileHash -LiteralPath $invFile -Algorithm SHA256).Hash.ToLowerInvariant()
             Write-Utf8NoBom (Join-Path $a.Path 'artifact-sha256.txt') $agg
-            Write-Host "::notice::$($a.Label)Inventory=$($inv.Count) files; $($a.Label)ArtifactSha256=$agg"
+            Write-Host "::notice::$($a.Label) inventory: includedFiles=$($inv.Count) excludedHiddenFiles=$($result.Excluded.Count)"
+            Write-Host "::notice::$($a.Label)ArtifactSha256=$agg"
+            if ($result.Excluded.Count -gt 0) {
+              Write-Host "$($a.Label) excluded hidden paths (capped at 20; not uploaded by actions/upload-artifact):"
+              $result.Excluded | Select-Object -First 20 | ForEach-Object { Write-Host "  EXCLUDED-HIDDEN: $_" }
+            }
           }
 
       # --- Upload Artifacts ---
@@ -368,19 +389,32 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Same canonical inventory used on the build side (ordinal sort, culture-independent).
+          # Same canonical inventory helpers as the build side (ordinal sort, culture-independent; excludes
+          # the two integrity files AND all hidden paths so the recalculated set matches what
+          # actions/upload-artifact@v4 actually uploaded — hidden files like .gitkeep are not transported).
+          function Test-IsHiddenArtifactPath {
+            param([string]$RelativePath)
+            foreach ($segment in ($RelativePath -split '/')) {
+              if ($segment.StartsWith('.', [System.StringComparison]::Ordinal)) { return $true }
+            }
+            return $false
+          }
           function Get-CanonicalInventory($path) {
             $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
-            $files = Get-ChildItem -LiteralPath $root -Recurse -File |
-              Where-Object { $_.Name -ine 'artifact-sha256.txt' -and $_.Name -ine 'artifact-inventory.sha256' }
-            $lines = foreach ($f in $files) {
+            $included = New-Object System.Collections.Generic.List[string]
+            $excluded = New-Object System.Collections.Generic.List[string]
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File)) {
+              if ($f.Name -ieq 'artifact-sha256.txt' -or $f.Name -ieq 'artifact-inventory.sha256') { continue }
               $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              if (Test-IsHiddenArtifactPath $rel) { $excluded.Add($rel); continue }
               $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$rel $h"
+              $included.Add("$rel $h")
             }
-            $arr = [string[]]@($lines)
-            [Array]::Sort($arr, [System.StringComparer]::Ordinal)
-            return , $arr
+            $lines = [string[]]$included.ToArray()
+            [Array]::Sort($lines, [System.StringComparer]::Ordinal)
+            $hidden = [string[]]$excluded.ToArray()
+            [Array]::Sort($hidden, [System.StringComparer]::Ordinal)
+            return [pscustomobject]@{ Lines = $lines; Excluded = $hidden }
           }
           function Get-InventoryLines($filePath) {
             $raw = [System.IO.File]::ReadAllText($filePath)
@@ -412,7 +446,7 @@ jobs:
 
             # (2) Content gate: re-derive inventory from downloaded files, diff LINE BY LINE (paths only).
             $expectedLines = Get-InventoryLines $invFile
-            $actualLines = Get-CanonicalInventory $path
+            $actualLines = (Get-CanonicalInventory $path).Lines
             $expectedMap = ConvertTo-InventoryMap $expectedLines
             $actualMap = ConvertTo-InventoryMap $actualLines
 
