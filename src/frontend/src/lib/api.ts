@@ -1,5 +1,7 @@
 import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload } from '../types';
 import { logger, FrontendComponentKey } from './logger';
+import { buildInfo } from '../buildInfo';
+import { versionSignal } from './versionSignal';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -26,22 +28,34 @@ export class ApiError extends Error {
 
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = sessionStorage.getItem('auth_token');
+    const method = (options.method || 'GET').toUpperCase();
+    const isUnsafe = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+
     const headers = {
         ...options.headers,
+        // Version-mismatch protection: the frontend build identity is sent on EVERY request (reads and
+        // writes, including multipart uploads). It is untrusted client metadata — the backend never
+        // uses it for authentication/authorization, only for write-enforcement comparison.
+        'X-Portal-Frontend-Build': buildInfo.buildId,
+        'X-Portal-Frontend-Version': buildInfo.version,
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
 
+    // Track in-flight writes so the update modal never reloads on top of an active mutation/upload.
+    if (isUnsafe) versionSignal.beginWrite();
     try {
         return await fetch(url, { ...options, headers });
     } catch (error: any) {
         // Detailed error reporting for the browser console
-        console.error(`[API ERROR] ${options.method || 'GET'} ${url}:`, error);
+        console.error(`[API ERROR] ${method} ${url}:`, error);
 
         // Map generic "Failed to fetch" to a more descriptive user error
         throw new ApiError(
             `Falha na ligação ao servidor (${API_BASE_URL}). Verifique se o servidor está online e acessível. (CORS ou Certificado SSL)`,
             0
         );
+    } finally {
+        if (isUnsafe) versionSignal.endWrite();
     }
 }
 
@@ -61,8 +75,16 @@ async function handleApiError(
     const clonedResponse = response.clone();
     const errJson = await response.json().catch(() => null);
     const rawText = !errJson ? await clonedResponse.text().catch(() => '') : undefined;
-    
+
     const correlationId = response.headers.get('X-Correlation-ID') || undefined;
+
+    // Version-mismatch: the backend rejected this write because the frontend build is outdated.
+    // Flip the global update-required state so the blocking modal is shown. Authoritative protection
+    // is the backend 409 itself; this just drives the UX. We still throw below so the caller aborts.
+    const detectedCode = errJson?.code || errJson?.errorCode;
+    if (response.status === 409 && detectedCode === 'CLIENT_VERSION_OUTDATED') {
+        versionSignal.markOutdated('version');
+    }
     // ... rest of logic
 
     if (componentKey) {

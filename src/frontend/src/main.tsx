@@ -4,6 +4,11 @@ import App from './App.tsx';
 import './styles/globals.css';
 
 import { logger } from './lib/logger';
+import { installChunkErrorHandler } from './lib/chunkErrorHandler';
+
+// Version-mismatch protection: detect stale lazy-loaded chunks after a deploy and route them into
+// the blocking update modal. Installed before render so no early dynamic import is missed.
+installChunkErrorHandler();
 
 window.addEventListener('error', (event) => {
     logger.log({

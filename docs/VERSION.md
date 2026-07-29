@@ -2,7 +2,87 @@
 
 ## Current Version
 
-v2.216.0
+v2.218.0
+
+## [v2.218.0] - 2026-07-29
+
+### Added — Responsive Layout for 1920×1080 and 1600×900 Viewports
+
+- **Token-driven responsive architecture**: 14 CSS custom property tokens (`--spacing-shell-x`, `--spacing-page-*`, `--kpi-*`, `--heading-h1-size`, `--table-*-padding/font-size`) with progressive overrides at ≤1600px, ≤1440px, and ≤1366px breakpoints. Components reference tokens instead of hardcoded values; the `@media` layer in `globals.css` is the single source of responsive density.
+- **AppShell sidebar auto-collapse threshold raised** from 1366px to 1600px. Sidebar automatically collapses when crossing from >1600px to ≤1600px; manual toggles persist within the same breakpoint range; expanding above 1600px does not auto-expand.
+- **PageContainer, KPICard, PageHeader, SearchFilterBar, WizardLayout** updated to consume responsive tokens — spacing, font sizes, icon sizes, and widths adapt without component-level media queries.
+- **Wizard modals (QuotationWizardModal, ApprovalWizardModal)** use `min(1200px, calc(100vw - 48px))` width clamping, `100dvh` with `100vh` fallback for height, and save/restore scroll lock (`document.body.style.overflow`) to prevent interference with other scroll-lock holders.
+- **Drawers** (RequestDrawerPresentation, CatalogDrawer, EquipmentQuickViewDrawer, DeliveryTermsPage) use `min()` width clamping for viewport safety.
+- **RequestsDashboard** container migrated to responsive tokens (padding, gap, max-width) with `flex: 1` layout instead of `minHeight: 100vh`.
+- **ActionCarouselWidget** stats grid changed from fixed 5-column to `repeat(auto-fit, minmax(160px, 1fr))`.
+- **Responsive table infrastructure** (`.data-table-responsive` CSS class) defined but intentionally not applied — existing tables use inline styles that take specificity precedence. Table-specific remediation deferred pending manual validation.
+- **No new routes, pages, modals, drawers, or workflow actions added.** No migration and no database change.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.217.2] - 2026-07-29
+
+### Fixed — CI Artifact Inventory: Exclude Hidden Paths (TEST + PROD)
+
+- Confirmed cause: `.gitkeep` was in the build-side canonical inventory but omitted by
+  `actions/upload-artifact@v4` (hidden/dot-prefixed paths are excluded by default), so the downloaded
+  artifact had one fewer file and the line-by-line gate aborted fail-closed before any server mutation.
+- The canonical inventory now excludes any file whose relative path contains a dot-prefixed segment
+  (e.g. `.gitkeep`, `.hidden/file.txt`, `folder/.private/file.txt`); normal names with dots stay included.
+- `include-hidden-files: true` was NOT enabled; only the canonical set was aligned to upload-artifact.
+- Identical `Test-IsHiddenArtifactPath` / `Get-CanonicalInventory` logic in `deploy-test.yml` and
+  `deploy-prod.yml` (build + deploy sides).
+- Ordinal ordering, persisted inventory, SHA-256 aggregate, line-by-line comparison, fail-closed gates,
+  and strict staging cleanup remain unchanged. No application runtime or API behavior change.
+- A TEST deployment for v2.217.2 is still required for real-runner validation.
+
+## [v2.217.1] - 2026-07-29
+
+### Fixed — CI Artifact-Integrity Hardening (TEST + PROD)
+
+- Persisted per-file canonical artifact inventory (`artifact-inventory.sha256`) written into each artifact.
+- Aggregate `artifact-sha256.txt` derived from the inventory file's exact UTF-8 (no BOM) bytes.
+- Deterministic `StringComparer.Ordinal` path ordering across the build and self-hosted runners.
+- Line-by-line comparison of downloaded artifacts before any server change (drift diagnostics).
+- Strict staging cleanup with terminating errors and empty-folder verification.
+- Byte-identical integrity controls in `deploy-test.yml` and `deploy-prod.yml`.
+- No application runtime or API behavior change. Historic root cause remains unrecoverable; the next
+  TEST deploy will provide definitive line-level diagnostics if drift recurs.
+
+## [v2.217.0] - 2026-07-29
+
+### Added — Version-Mismatch Protection & Deployment Validation (Phases A–G)
+
+- Detects an outdated Portal browser tab after a newer backend deploy and shows a blocking
+  "Nova versão disponível" update modal; prevents unsafe operations from an outdated frontend.
+- Handles stale lazy-loaded JavaScript chunks via the same update flow (with reload-loop guard).
+- Canonical frontend/backend build identity (`buildId = <version>+<shortGitSha>`, equality-only);
+  new anonymous `GET /api/app/version`; centralized `X-Portal-Frontend-Build/-Version` request headers.
+- Staged backend write enforcement (`Disabled/Observe/EnforceMismatch/EnforceAll`); TEST and PROD ship
+  in `Observe`; DEV non-enforcing; `409 CLIENT_VERSION_OUTDATED` for outdated writes.
+- IIS cache-policy corrections (no-cache `index.html`/`build-metadata.json`, immutable assets),
+  verified/patched fail-closed by the deploy workflows.
+- GitHub Actions: version-source validation, build manifest + artifact SHA-256, artifact identity and
+  integrity gates, deployment URL validation, and post-deploy live API/frontend build-identity verification.
+- Migration-readiness validated before pool-stop; IIS activation conditional on all gates (no
+  unconditional `if: always()` activation); PROD deploy timeout raised to 45 minutes.
+- Requires a TEST deployment dry-run before relying on the new gates; TEST/PROD remain in `Observe`.
+  Excludes Phase H (atomic path switching), automatic DB rollback, runner-label changes, and artifact
+  promotion. No migration and no database change.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.216.1] - 2026-07-29
+
+### Fixed — Timezone Display on Request History and Timeline
+
+- **History timestamps corrected (−2h offset eliminated)**: request history ("Histórico do Pedido") and both timeline surfaces (summarized and inline) now display correct Angola local time (WAT, UTC+1). The root cause was a two-layer defect: `System.Text.Json` serialized `DateTime` with `DateTimeKind.Unspecified` without a timezone suffix, and the frontend's `new Date()` parsed the result as browser-local time — `getUTCHours()` then subtracted the local offset a second time. In Angola (UTC+1) the net effect was −2 hours.
+- **Backend: dual-strategy serialization fix**: for the timeline DTO (built in-memory), `CompletedAt` was changed to `DateTimeOffset?` with `AsUtcOffset()` helper. For the history DTOs (EF Core LINQ-to-SQL), a property-level `[JsonConverter(typeof(UtcDateTimeJsonConverter))]` forces the `+00:00` suffix at serialization time.
+- **Frontend: `Intl.DateTimeFormat`-based Angola formatters**: new `formatDateAngola`, `formatTimeAngola`, and `formatDateTimeAngola` use `parseUtcInstant` with `timeZone: 'Africa/Luanda'` — timezone-correct regardless of the browser's own locale.
+- **Validated against Request 162**: all 6 acceptance values correct. 22 unit tests pass in 3 timezone configurations.
+- **No migration and no database change.**
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.216.0] - 2026-07-29
 

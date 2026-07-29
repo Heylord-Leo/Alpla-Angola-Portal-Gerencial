@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using AlplaPortal.Application.Serialization;
+
 namespace AlplaPortal.Application.DTOs.Requests;
 
 public class RequestDetailsDto
@@ -227,6 +230,7 @@ public class RequestStatusHistoryDto
     public string ActionTaken { get; set; } = string.Empty;
     public string NewStatusName { get; set; } = string.Empty;
     public string? Comment { get; set; }
+    [JsonConverter(typeof(UtcDateTimeJsonConverter))]
     public DateTime CreatedAtUtc { get; set; }
     public Guid ActorUserId { get; set; }
     public string ActorName { get; set; } = string.Empty;
@@ -242,6 +246,7 @@ public class RequestFieldChangeHistoryDto
     public string? NewValue { get; set; }
     public string StatusCodeAtChange { get; set; } = string.Empty;
     public Guid? LineItemId { get; set; }
+    [JsonConverter(typeof(UtcDateTimeJsonConverter))]
     public DateTime CreatedAtUtc { get; set; }
     public string ActorName { get; set; } = string.Empty;
 }

@@ -59,7 +59,7 @@ export function EquipmentQuickViewDrawer({ equipmentId, onClose, onRefresh }: Pr
             />
             {/* Drawer */}
             <div style={{
-                position: 'fixed', top: 0, right: 0, bottom: 0, width: 620,
+                position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(620px, 90vw)',
                 backgroundColor: 'var(--color-bg-surface)', borderLeft: '1px solid var(--color-border)',
                 zIndex: 'calc(var(--z-drawer) + 1)' as any, display: 'flex', flexDirection: 'column',
                 boxShadow: '-8px 0 30px rgba(0,0,0,0.15)',

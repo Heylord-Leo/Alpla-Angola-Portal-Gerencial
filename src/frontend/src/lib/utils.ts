@@ -247,6 +247,82 @@ export function formatTime(date: string | Date | null | undefined): string {
     return `${hours}:${minutes}`;
 }
 
+// ---------------------------------------------------------------------------
+// Angola timezone-aware formatters (Phase B1 — timezone remediation)
+// ---------------------------------------------------------------------------
+
+/** Matches ISO 8601 timezone suffix: Z, +HH:MM, -HH:MM */
+const HAS_TIMEZONE = /(Z|[+-]\d{2}:\d{2})$/i;
+
+/** Angola timezone identifier (WAT — West Africa Time, UTC+1) */
+const ANGOLA_TZ = 'Africa/Luanda';
+
+/**
+ * Parses a backend datetime string as a UTC instant.
+ *
+ * If the string already contains a timezone suffix (Z or +00:00), it is parsed
+ * as-is. If it lacks a suffix (legacy serialization from DateTimeKind.Unspecified),
+ * 'Z' is appended to treat the value as UTC — matching the backend contract that
+ * all *Utc columns store UTC values.
+ *
+ * Handles seven-digit fractional seconds from SQL Server datetime2.
+ */
+function parseUtcInstant(value: string | Date): Date {
+    if (value instanceof Date) return value;
+    return new Date(HAS_TIMEZONE.test(value) ? value : `${value}Z`);
+}
+
+/**
+ * Formats a UTC instant as Angola local date (dd/MM/yyyy).
+ * Uses Intl.DateTimeFormat — timezone-correct regardless of browser locale.
+ */
+export function formatDateAngola(date: string | Date | null | undefined): string {
+    if (!date) return '-';
+    const d = parseUtcInstant(date);
+    if (isNaN(d.getTime())) return '-';
+    return new Intl.DateTimeFormat('pt-AO', {
+        timeZone: ANGOLA_TZ,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(d);
+}
+
+/**
+ * Formats a UTC instant as Angola local time (HH:mm).
+ * Uses Intl.DateTimeFormat — timezone-correct regardless of browser locale.
+ */
+export function formatTimeAngola(date: string | Date | null | undefined): string {
+    if (!date) return '-';
+    const d = parseUtcInstant(date);
+    if (isNaN(d.getTime())) return '-';
+    return new Intl.DateTimeFormat('pt-AO', {
+        timeZone: ANGOLA_TZ,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).format(d);
+}
+
+/**
+ * Formats a UTC instant as Angola local date+time (dd/MM/yyyy HH:mm).
+ * Uses Intl.DateTimeFormat — timezone-correct regardless of browser locale.
+ */
+export function formatDateTimeAngola(date: string | Date | null | undefined): string {
+    if (!date) return '-';
+    const d = parseUtcInstant(date);
+    if (isNaN(d.getTime())) return '-';
+    return new Intl.DateTimeFormat('pt-AO', {
+        timeZone: ANGOLA_TZ,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).format(d);
+}
+
 export async function computeFileHash(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);

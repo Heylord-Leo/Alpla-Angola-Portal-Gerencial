@@ -92,7 +92,7 @@ export function SearchFilterBar({
                                     key={tab.id}
                                     onClick={() => onTabChange?.(tab.id)}
                                     style={{
-                                        padding: '6px 16px',
+                                        padding: '6px 12px',
                                         borderRadius: '6px',
                                         fontSize: '0.85rem',
                                         fontWeight: 600,

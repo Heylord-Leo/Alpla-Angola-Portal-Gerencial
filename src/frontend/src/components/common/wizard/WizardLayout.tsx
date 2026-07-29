@@ -96,7 +96,7 @@ export function WizardLayout({
             }}>
                 {/* Step Sidebar */}
                 <div style={{
-                    width: '240px',
+                    width: 'clamp(180px, 15vw, 240px)',
                     flexShrink: 0,
                     backgroundColor: 'var(--color-bg-surface)',
                     border: '1px solid var(--color-border)',

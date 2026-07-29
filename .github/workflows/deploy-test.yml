@@ -49,10 +49,55 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
 
+    outputs:
+      build_id: ${{ steps.meta.outputs.build_id }}
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+
     steps:
       # --- Checkout ---
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # --- Validate version consistency & compute canonical build metadata ---
+      # The authoritative version is docs/CHANGELOG.md ("Current Version"); docs/VERSION.md and
+      # src/frontend/src/config.ts must agree. The manual workflow input is a CONFIRMATION only and
+      # must equal the repository version. Any missing/malformed/inconsistent value fails the build
+      # (never silently corrected). buildId = <version>+<shortSha> (environment-independent).
+      - name: Validate version and compute build metadata
+        id: meta
+        shell: pwsh
+        run: |
+          function Get-CurrentVersion($text) {
+            if ($text -match '(?ms)Current Version\s*\r?\n\s*\r?\n\s*v?([0-9]+\.[0-9]+\.[0-9]+)') { return $Matches[1] }
+            return $null
+          }
+          $changelog = Get-Content docs/CHANGELOG.md -Raw
+          $versionMd = Get-Content docs/VERSION.md -Raw
+          $configTs  = Get-Content src/frontend/src/config.ts -Raw
+
+          $chVer = Get-CurrentVersion $changelog
+          $vmVer = Get-CurrentVersion $versionMd
+          $cfgVer = $null
+          if ($configTs -match "APP_VERSION\s*=\s*'v?([0-9]+\.[0-9]+\.[0-9]+)'") { $cfgVer = $Matches[1] }
+
+          $inputVer = "${{ inputs.version }}".Trim().TrimStart('v')
+
+          if ([string]::IsNullOrWhiteSpace($chVer)) { throw "Could not read 'Current Version' from docs/CHANGELOG.md" }
+          if ($chVer -ne $vmVer)  { throw "Version inconsistency: CHANGELOG=$chVer but VERSION.md=$vmVer" }
+          if ($chVer -ne $cfgVer) { throw "Version inconsistency: CHANGELOG=$chVer but config.ts=$cfgVer" }
+          if ([string]::IsNullOrWhiteSpace($inputVer)) { throw "Workflow version input is required." }
+          if ($inputVer -ne $chVer) { throw "Workflow input ($inputVer) does not match repository version ($chVer). Aborting." }
+
+          $shortSha = "${{ github.sha }}".Substring(0,7)
+          $buildId  = "$chVer+$shortSha"
+          $builtAt  = [DateTime]::UtcNow.ToString("o")
+
+          Write-Host "::notice::Validated version $chVer; buildId=$buildId"
+          "version=$chVer"      | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "short_sha=$shortSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "build_id=$buildId"   | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "built_at=$builtAt"   | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       # --- Backend (.NET 8) ---
       - name: Setup .NET 8 SDK
@@ -91,6 +136,13 @@ jobs:
 
       - name: Build frontend
         working-directory: src/frontend
+        env:
+          # Compile the canonical build identity into the bundle (public, non-secret). NEVER put
+          # secrets in VITE_* — they are visible in the browser.
+          VITE_APP_VERSION: ${{ steps.meta.outputs.version }}
+          VITE_APP_BUILD_ID: ${{ steps.meta.outputs.build_id }}
+          VITE_APP_SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          VITE_APP_BUILT_AT: ${{ steps.meta.outputs.built_at }}
         run: npm run build
 
       - name: Copy frontend dist to artifact folder
@@ -118,6 +170,27 @@ jobs:
           Write-Host "  JS files: $($jsFiles.Count)"
           Write-Host "  CSS files: $($cssFiles.Count)"
 
+      # --- Build manifest + public frontend metadata (canonical build identity) ---
+      # ONE object, written into BOTH artifacts so the deploy job can prove FE and BE were built from
+      # the same source (buildId equality). The backend reads build-manifest.json at startup; the web
+      # copy of build-metadata.json is served (no-cache) for live deploy verification. Deploy-time
+      # fields (environment, deploymentId, run IDs) are appended to the API manifest during deploy.
+      - name: Generate build manifest and frontend metadata
+        shell: pwsh
+        run: |
+          $manifest = [ordered]@{
+            version    = "${{ steps.meta.outputs.version }}"
+            gitSha     = "${{ github.sha }}"
+            shortSha   = "${{ steps.meta.outputs.short_sha }}"
+            buildId    = "${{ steps.meta.outputs.build_id }}"
+            builtAtUtc = "${{ steps.meta.outputs.built_at }}"
+          }
+          $json = $manifest | ConvertTo-Json -Depth 5
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/api/build-manifest.json" -Encoding UTF8
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/web/build-manifest.json" -Encoding UTF8
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/web/build-metadata.json" -Encoding UTF8
+          Write-Host "::notice::Build manifest written to both artifacts (buildId=${{ steps.meta.outputs.build_id }})"
+
       # --- Generate Expected Migration List (DEC-139) ---
       - name: Generate expected migration list
         shell: pwsh
@@ -130,6 +203,72 @@ jobs:
             Sort-Object
           $migrations | Set-Content -Path $outputFile -Encoding UTF8
           Write-Host "Generated expected-migrations.txt with $($migrations.Count) migrations"
+
+      # --- Artifact integrity: canonical inventory + aggregate (SHA-256) ---
+      # Writes a PERSISTED, line-level canonical inventory (artifact-inventory.sha256) into EACH artifact,
+      # plus an aggregate (artifact-sha256.txt) = SHA-256 of that inventory file's exact UTF-8 (no BOM)
+      # bytes. Ordinal sort only (culture-independent). The self-hosted runner re-derives the inventory
+      # from the downloaded files and compares it LINE BY LINE, so any content/set drift is provable — not
+      # an opaque hash mismatch. Chain: files -> artifact-inventory.sha256 -> artifact-sha256.txt. The
+      # inventory excludes the two integrity files AND all hidden paths so it matches
+      # actions/upload-artifact@v4 default inclusion (hidden files like .gitkeep are NOT uploaded).
+      # SEPARATE control from manifest-equality (binary integrity vs build identity).
+      - name: Compute artifact inventory and SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Canonical inventory helpers (identical on build and deploy sides): one "<relpath> <sha256>"
+          # line per file, lowercased forward-slash paths, ORDINAL sort. Excludes the two integrity files
+          # AND all hidden paths (dot-prefixed filename OR any dot-prefixed directory segment) so the set
+          # matches actions/upload-artifact@v4 default inclusion (hidden files like .gitkeep are not
+          # uploaded). Only a path SEGMENT whose first char is '.' is hidden — dots elsewhere are kept.
+          function Test-IsHiddenArtifactPath {
+            param([string]$RelativePath)
+            foreach ($segment in ($RelativePath -split '/')) {
+              if ($segment.StartsWith('.', [System.StringComparison]::Ordinal)) { return $true }
+            }
+            return $false
+          }
+          function Get-CanonicalInventory($path) {
+            $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
+            $included = New-Object System.Collections.Generic.List[string]
+            $excluded = New-Object System.Collections.Generic.List[string]
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File)) {
+              if ($f.Name -ieq 'artifact-sha256.txt' -or $f.Name -ieq 'artifact-inventory.sha256') { continue }
+              $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              if (Test-IsHiddenArtifactPath $rel) { $excluded.Add($rel); continue }
+              $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $included.Add("$rel $h")
+            }
+            $lines = [string[]]$included.ToArray()
+            [Array]::Sort($lines, [System.StringComparer]::Ordinal)
+            $hidden = [string[]]$excluded.ToArray()
+            [Array]::Sort($hidden, [System.StringComparer]::Ordinal)
+            return [pscustomobject]@{ Lines = $lines; Excluded = $hidden }
+          }
+          function Write-Utf8NoBom($filePath, $text) {
+            $enc = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($filePath, $text, $enc)
+          }
+          foreach ($a in @(
+            @{ Path = "${{ github.workspace }}/artifacts/api"; Label = 'api' },
+            @{ Path = "${{ github.workspace }}/artifacts/web"; Label = 'web' }
+          )) {
+            $result = Get-CanonicalInventory $a.Path
+            $inv = $result.Lines
+            $joined = ($inv -join "`n")
+            $invFile = Join-Path $a.Path 'artifact-inventory.sha256'
+            Write-Utf8NoBom $invFile $joined
+            # Aggregate is the SHA-256 of the EXACT bytes just written (no independently rebuilt string).
+            $agg = (Get-FileHash -LiteralPath $invFile -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Utf8NoBom (Join-Path $a.Path 'artifact-sha256.txt') $agg
+            Write-Host "::notice::$($a.Label) inventory: includedFiles=$($inv.Count) excludedHiddenFiles=$($result.Excluded.Count)"
+            Write-Host "::notice::$($a.Label)ArtifactSha256=$agg"
+            if ($result.Excluded.Count -gt 0) {
+              Write-Host "$($a.Label) excluded hidden paths (capped at 20; not uploaded by actions/upload-artifact):"
+              $result.Excluded | Select-Object -First 20 | ForEach-Object { Write-Host "  EXCLUDED-HIDDEN: $_" }
+            }
+          }
 
       # --- Upload Artifacts ---
       - name: Upload API artifact
@@ -175,18 +314,40 @@ jobs:
       ARTIFACT_WEB_PATH: C:\ActionsArtifacts\AlplaPortal\web
 
     steps:
+      # --- Fail-fast: required deployment variables (before ANY server-touching work) ---
+      - name: Validate deployment variables
+        shell: pwsh
+        run: |
+          $portal = "${{ vars.TEST_PORTAL_URL }}"
+          if ([string]::IsNullOrWhiteSpace($portal)) { throw "Repository variable TEST_PORTAL_URL is not set (expected https://portalgerencial-test.alpla.net)." }
+          if ($portal -notmatch '^https://') { throw "TEST_PORTAL_URL must be an https:// URL. Got: $portal" }
+          if ($portal -match '(?i)^https://portalgerencial\.alpla\.net') { throw "TEST_PORTAL_URL points to PRODUCTION — aborting to prevent a cross-environment deploy." }
+          if ($portal -notmatch '(?i)portalgerencial-test\.alpla\.net') { throw "TEST_PORTAL_URL does not match the TEST host (expected https://portalgerencial-test.alpla.net). Got: $portal" }
+          Write-Host "::notice::TEST_PORTAL_URL validated: $portal"
+
       # --- Download Artifacts ---
       - name: Clean artifact staging directories
         shell: pwsh
         run: |
-          if (Test-Path "${{ env.ARTIFACT_API_PATH }}") {
-            Remove-Item -Path "${{ env.ARTIFACT_API_PATH }}" -Recurse -Force
+          $ErrorActionPreference = 'Stop'
+          # Static per-environment staging path is RETAINED (not run_id-scoped): the strict clean below
+          # already guarantees an empty tree each run, whereas run_id-scoped folders would accumulate on
+          # the self-hosted runner with no garbage collection. Fail-closed: any partial delete aborts the
+          # job BEFORE download, so a stale/locked leftover file can never corrupt integrity verification.
+          $paths = @("${{ env.ARTIFACT_API_PATH }}", "${{ env.ARTIFACT_WEB_PATH }}")
+          foreach ($p in $paths) {
+            if (Test-Path -LiteralPath $p) {
+              Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
+            }
+            if (Test-Path -LiteralPath $p) { throw "Staging cleanup FAILED: '$p' still exists after removal. Aborting (a stale/locked file could corrupt integrity verification)." }
           }
-          if (Test-Path "${{ env.ARTIFACT_WEB_PATH }}") {
-            Remove-Item -Path "${{ env.ARTIFACT_WEB_PATH }}" -Recurse -Force
+          foreach ($p in $paths) {
+            New-Item -ItemType Directory -Force -Path $p -ErrorAction Stop | Out-Null
+            if (-not (Test-Path -LiteralPath $p)) { throw "Staging cleanup FAILED: could not create '$p'." }
+            $remaining = @(Get-ChildItem -LiteralPath $p -Force -ErrorAction SilentlyContinue)
+            if ($remaining.Count -gt 0) { throw "Staging cleanup FAILED: '$p' is not empty after recreation ($($remaining.Count) item(s))." }
           }
-          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_API_PATH }}" | Out-Null
-          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_WEB_PATH }}" | Out-Null
+          Write-Host "::notice::Staging directories cleaned and verified empty (api + web)."
 
       - name: Download API artifact
         uses: actions/download-artifact@v4
@@ -199,6 +360,150 @@ jobs:
         with:
           name: web-artifact
           path: ${{ env.ARTIFACT_WEB_PATH }}
+
+      # --- GATE: build identity (FE == BE == expected) — runs BEFORE any server mutation ---
+      - name: Verify build manifests (frontend == backend == expected)
+        shell: pwsh
+        run: |
+          $expected = "${{ needs.build.outputs.build_id }}"
+          $apiManifest = Join-Path "${{ env.ARTIFACT_API_PATH }}" "build-manifest.json"
+          $webManifest = Join-Path "${{ env.ARTIFACT_WEB_PATH }}" "build-manifest.json"
+          foreach ($m in @($apiManifest, $webManifest)) {
+            if (-not (Test-Path $m)) { throw "FATAL: build manifest missing ($m). Deployment metadata invalid — aborting fail-closed." }
+          }
+          $api = Get-Content $apiManifest -Raw | ConvertFrom-Json
+          $web = Get-Content $webManifest -Raw | ConvertFrom-Json
+          if ([string]::IsNullOrWhiteSpace($api.buildId)) { throw "FATAL: API manifest has no buildId (malformed)." }
+          if ($api.buildId -ne $web.buildId) { throw "FATAL: build identity mismatch api=$($api.buildId) web=$($web.buildId). Aborting before touching the server." }
+          if ($expected -and $api.buildId -ne $expected) { throw "FATAL: artifact buildId ($($api.buildId)) != expected ($expected). Aborting." }
+          Write-Host "::notice::Build identity verified: $($api.buildId)"
+
+      # --- GATE: artifact integrity (inventory + SHA-256) — before any server mutation ---
+      # Two independent checks per artifact, BOTH fail-closed before any server change:
+      #   (1) aggregate: SHA-256 of the downloaded artifact-inventory.sha256 file must equal the shipped
+      #       artifact-sha256.txt (detects a corrupt/tampered inventory or aggregate);
+      #   (2) content:  re-derive the canonical inventory from the downloaded files and diff it LINE BY
+      #       LINE against the shipped inventory (detects any added/removed/changed file — the exact
+      #       evidence the previous opaque folder-hash could not provide).
+      # Runs BEFORE DB checks, backup, pool stop, file copy and web.config patch. Separate control from
+      # the manifest-equality (identity) gate above.
+      - name: Verify artifact inventory and SHA-256 (integrity)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Same canonical inventory helpers as the build side (ordinal sort, culture-independent; excludes
+          # the two integrity files AND all hidden paths so the recalculated set matches what
+          # actions/upload-artifact@v4 actually uploaded — hidden files like .gitkeep are not transported).
+          function Test-IsHiddenArtifactPath {
+            param([string]$RelativePath)
+            foreach ($segment in ($RelativePath -split '/')) {
+              if ($segment.StartsWith('.', [System.StringComparison]::Ordinal)) { return $true }
+            }
+            return $false
+          }
+          function Get-CanonicalInventory($path) {
+            $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
+            $included = New-Object System.Collections.Generic.List[string]
+            $excluded = New-Object System.Collections.Generic.List[string]
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File)) {
+              if ($f.Name -ieq 'artifact-sha256.txt' -or $f.Name -ieq 'artifact-inventory.sha256') { continue }
+              $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              if (Test-IsHiddenArtifactPath $rel) { $excluded.Add($rel); continue }
+              $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $included.Add("$rel $h")
+            }
+            $lines = [string[]]$included.ToArray()
+            [Array]::Sort($lines, [System.StringComparer]::Ordinal)
+            $hidden = [string[]]$excluded.ToArray()
+            [Array]::Sort($hidden, [System.StringComparer]::Ordinal)
+            return [pscustomobject]@{ Lines = $lines; Excluded = $hidden }
+          }
+          function Get-InventoryLines($filePath) {
+            $raw = [System.IO.File]::ReadAllText($filePath)
+            if ([string]::IsNullOrEmpty($raw)) { return , @() }
+            return , @(($raw -split "`n") | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ -ne '' })
+          }
+          function ConvertTo-InventoryMap($lines) {
+            $map = @{}
+            foreach ($ln in $lines) {
+              $idx = $ln.LastIndexOf(' ')
+              if ($idx -lt 1) { throw "Malformed inventory line (no separator): '$ln'" }
+              $map[$ln.Substring(0, $idx)] = $ln.Substring($idx + 1)
+            }
+            return $map
+          }
+          function Confirm-Artifact($path, $label) {
+            $invFile = Join-Path $path 'artifact-inventory.sha256'
+            $aggFile = Join-Path $path 'artifact-sha256.txt'
+            if (-not (Test-Path -LiteralPath $invFile)) { throw "artifact-inventory.sha256 missing in $label ($path) - cannot verify integrity." }
+            if (-not (Test-Path -LiteralPath $aggFile)) { throw "artifact-sha256.txt missing in $label ($path) - cannot verify integrity." }
+
+            # (1) Aggregate gate: shipped aggregate must equal SHA-256 of the shipped inventory FILE bytes.
+            $expectedAgg = ([string][System.IO.File]::ReadAllText($aggFile)).Trim().ToLowerInvariant()
+            $actualAgg = (Get-FileHash -LiteralPath $invFile -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expectedAgg -ne $actualAgg) {
+              Write-Host "${label}: expectedAggregate=$expectedAgg actualInventoryFileAggregate=$actualAgg"
+              throw "ARTIFACT INTEGRITY FAILURE ($label): inventory aggregate mismatch (artifact-inventory.sha256 does not match artifact-sha256.txt). Aborting before touching the server."
+            }
+
+            # (2) Content gate: re-derive inventory from downloaded files, diff LINE BY LINE (paths only).
+            $expectedLines = Get-InventoryLines $invFile
+            $actualLines = (Get-CanonicalInventory $path).Lines
+            $expectedMap = ConvertTo-InventoryMap $expectedLines
+            $actualMap = ConvertTo-InventoryMap $actualLines
+
+            $onlyExpected = @($expectedMap.Keys | Where-Object { -not $actualMap.ContainsKey($_) } | Sort-Object)
+            $onlyActual   = @($actualMap.Keys   | Where-Object { -not $expectedMap.ContainsKey($_) } | Sort-Object)
+            $shaDiff      = @($expectedMap.Keys | Where-Object { $actualMap.ContainsKey($_) -and ($actualMap[$_] -ne $expectedMap[$_]) } | Sort-Object)
+
+            if (($onlyExpected.Count -gt 0) -or ($onlyActual.Count -gt 0) -or ($shaDiff.Count -gt 0)) {
+              Write-Host "${label}: expectedAggregate=$expectedAgg actualInventoryFileAggregate=$actualAgg"
+              Write-Host "${label}: expectedLines=$($expectedLines.Count) actualLines=$($actualLines.Count)"
+              Write-Host "${label}: onlyInExpected=$($onlyExpected.Count) onlyInActual=$($onlyActual.Count) shaDiffers=$($shaDiff.Count)"
+              $diffs = @()
+              foreach ($p in $onlyExpected) { $diffs += "ONLY-IN-EXPECTED: $p" }
+              foreach ($p in $onlyActual)   { $diffs += "ONLY-IN-ACTUAL:   $p" }
+              foreach ($p in $shaDiff)      { $diffs += "SHA-DIFF:         $p (expected=$($expectedMap[$p]) actual=$($actualMap[$p]))" }
+              $diffs | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+              throw "ARTIFACT INTEGRITY FAILURE ($label): downloaded files do not match the shipped canonical inventory. Aborting before touching the server."
+            }
+            Write-Host "${label}: integrity OK (aggregate=$expectedAgg, $($actualLines.Count) files)."
+          }
+          Confirm-Artifact "${{ env.ARTIFACT_API_PATH }}" "api"
+          Confirm-Artifact "${{ env.ARTIFACT_WEB_PATH }}" "web"
+          Write-Host "::notice::Artifact inventory + SHA-256 verified (api + web)."
+
+      # --- GATE: database readiness + pending EF Core migrations (DEC-137/DEC-139) ---
+      # Runs BEFORE stopping pools or replacing files. A failure here aborts with the PREVIOUS version
+      # still live (pools never stopped) — the corrected activation order (no new code against an
+      # un-migrated schema). Connection string comes from the server's preserved appsettings.Test.json;
+      # the expected list comes from the downloaded artifact.
+      - name: Verify database migration readiness
+        shell: pwsh
+        run: |
+          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+          $configFile = Join-Path $apiDeploy "appsettings.Test.json"
+          if (-not (Test-Path $configFile)) { throw "appsettings.Test.json not found at $configFile — cannot verify migrations." }
+          $connStr = (Get-Content $configFile -Raw | ConvertFrom-Json).ConnectionStrings.DefaultConnection
+          if ([string]::IsNullOrWhiteSpace($connStr)) { throw "DefaultConnection empty in appsettings.Test.json." }
+
+          $migrationListFile = Join-Path "${{ env.ARTIFACT_API_PATH }}" "expected-migrations.txt"
+          if (-not (Test-Path $migrationListFile)) { throw "expected-migrations.txt not found in artifact (DEC-139)." }
+          $expected = Get-Content $migrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
+
+          $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+          $conn.Open()
+          $dbName = (New-Object System.Data.SqlClient.SqlCommand("SELECT DB_NAME()", $conn)).ExecuteScalar()
+          Write-Host "Connected to [$dbName]; $($expected.Count) expected migrations."
+          $cmd = $conn.CreateCommand(); $cmd.CommandText = "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId"
+          $reader = $cmd.ExecuteReader(); $applied = @(); while ($reader.Read()) { $applied += $reader["MigrationId"].ToString() }; $reader.Close(); $conn.Close()
+
+          $pending = @(); foreach ($m in $expected) { if ($applied -notcontains $m) { $pending += $m } }
+          if ($pending.Count -gt 0) {
+            foreach ($m in $pending) { Write-Host "::error::PENDING migration: $m" }
+            throw "DEPLOYMENT BLOCKED: $($pending.Count) pending migration(s) in [$dbName]. Run 'Apply TEST Migrations' first. The previous version remains live."
+          }
+          Write-Host "::notice::All $($expected.Count) expected migrations are applied in [$dbName]."
 
       # --- Backup ---
       - name: Create timestamped backup
@@ -363,98 +668,50 @@ jobs:
           # Reset exit code
           $global:LASTEXITCODE = 0
 
-      # --- Check for Pending EF Core Migrations (DEC-137 + DEC-139) ---
-      # This step detects pending migrations BEFORE starting the App Pools.
-      # If any migrations are missing, the deployment fails early with a clear
-      # message instead of letting the API crash with HTTP 500.30.
-      # The expected migration list is auto-generated from the migrations folder
-      # and packaged in expected-migrations.txt during the build job (DEC-139).
-      - name: Check for pending EF Core migrations
+      # --- GATE: web.config cache policy present (fail-closed, before activation) ---
+      # TEST uses the artifact web.config, which ships the cache <location> blocks. This verifies they are
+      # actually present in the deployed file so a regression cannot silently ship without the no-cache
+      # index.html / immutable assets policy.
+      - name: Verify web.config cache policy
         shell: pwsh
         run: |
-          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
-          $configFile = Join-Path $apiDeploy "appsettings.Test.json"
-
-          if (-not (Test-Path $configFile)) {
-            Write-Host "::error::appsettings.Test.json not found at $configFile. Cannot check migrations."
-            throw "appsettings.Test.json not found — cannot verify database migrations."
+          $webConfig = Join-Path "${{ vars.WEB_DEPLOY_PATH }}" "web.config"
+          if (-not (Test-Path $webConfig)) { throw "web.config not found at $webConfig." }
+          [xml]$xml = Get-Content $webConfig
+          $req = @{ 'index.html' = 'no-cache'; 'build-metadata.json' = 'no-cache'; 'assets' = 'immutable' }
+          foreach ($p in $req.Keys) {
+            $loc = @($xml.configuration.location) | Where-Object { $_.path -eq $p }
+            if (-not $loc) { throw "web.config is missing the cache <location path='$p'> block." }
+            $add = @($loc.'system.webServer'.httpProtocol.customHeaders.add) | Where-Object { $_.name -eq 'Cache-Control' } | Select-Object -First 1
+            if (-not $add -or ($add.value -notmatch [regex]::Escape($req[$p]))) { throw "web.config Cache-Control for '$p' is missing or incorrect (expected to contain '$($req[$p])')." }
           }
+          Write-Host "::notice::web.config cache policy verified (index.html + build-metadata.json no-cache; assets immutable)."
 
-          # Extract connection string from appsettings.Test.json
-          $config = Get-Content $configFile -Raw | ConvertFrom-Json
-          $connStr = $config.ConnectionStrings.DefaultConnection
+      # --- Stamp deployment-time metadata into the deployed backend manifest ---
+      # Migration readiness was already validated BEFORE pools were stopped (see the gate above), so
+      # there is no post-deploy migration check here — activation cannot proceed against an un-migrated
+      # schema. This step records deployment identity for the version endpoint and audit.
+      - name: Write deployment metadata
+        shell: pwsh
+        run: |
+          $manifestPath = Join-Path "${{ vars.API_DEPLOY_PATH }}" "build-manifest.json"
+          if (-not (Test-Path $manifestPath)) { throw "build-manifest.json not found in deployed API folder." }
+          $m = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $m | Add-Member -NotePropertyName environment -NotePropertyValue "TEST" -Force
+          $m | Add-Member -NotePropertyName deploymentId -NotePropertyValue "${{ github.run_id }}-${{ github.run_attempt }}" -Force
+          $m | Add-Member -NotePropertyName githubRunId -NotePropertyValue "${{ github.run_id }}" -Force
+          $m | Add-Member -NotePropertyName githubRunNumber -NotePropertyValue "${{ github.run_number }}" -Force
+          $m | Add-Member -NotePropertyName githubRunAttempt -NotePropertyValue "${{ github.run_attempt }}" -Force
+          $m | Add-Member -NotePropertyName deploymentStartedAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString("o")) -Force
+          $m | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+          Write-Host "::notice::Deployment metadata written (deploymentId=${{ github.run_id }}-${{ github.run_attempt }})"
 
-          if ([string]::IsNullOrWhiteSpace($connStr)) {
-            Write-Host "::error::DefaultConnection is empty in appsettings.Test.json."
-            throw "Connection string is empty — cannot verify database migrations."
-          }
-
-          Write-Host "::notice::Checking EF Core migrations against TEST database..."
-
-          try {
-            $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
-            $conn.Open()
-
-            # Safety check: confirm database name
-            $dbCmd = $conn.CreateCommand()
-            $dbCmd.CommandText = "SELECT DB_NAME()"
-            $dbName = $dbCmd.ExecuteScalar()
-            Write-Host "Connected to database: [$dbName]"
-
-            # Read applied migrations
-            $cmd = $conn.CreateCommand()
-            $cmd.CommandText = "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId"
-            $reader = $cmd.ExecuteReader()
-            $applied = @()
-            while ($reader.Read()) { $applied += $reader["MigrationId"].ToString() }
-            $reader.Close()
-            $conn.Close()
-
-            Write-Host "Applied migrations in [$dbName]: $($applied.Count)"
-
-            # Load expected migrations from auto-generated file (DEC-139)
-            $migrationListFile = Join-Path $apiDeploy "expected-migrations.txt"
-            if (Test-Path $migrationListFile) {
-              $expected = Get-Content $migrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
-              Write-Host "::notice::Loaded $($expected.Count) expected migrations from expected-migrations.txt (DEC-139)"
-            } else {
-              Write-Host "::error::expected-migrations.txt not found at $migrationListFile."
-              Write-Host "::error::This file is generated during the build step. Ensure the build includes the migration list generation step (DEC-139)."
-              throw "expected-migrations.txt not found — cannot verify database migrations."
-            }
-
-            $pending = @()
-            foreach ($m in $expected) {
-              if ($applied -notcontains $m) { $pending += $m }
-            }
-
-            if ($pending.Count -gt 0) {
-              Write-Host ""
-              Write-Host "::error::$($pending.Count) PENDING migration(s) detected in [$dbName]!"
-              foreach ($m in $pending) {
-                Write-Host "::error::  PENDING: $m"
-              }
-              Write-Host ""
-              Write-Host "::error::REMEDIATION:"
-              Write-Host "::error::  1. Run the 'Apply TEST Migrations' workflow first."
-              Write-Host "::error::  2. Or apply migrations manually using SSMS/sqlcmd with a DBA account."
-              Write-Host "::error::  3. Re-run this deployment after migrations are applied."
-              Write-Host "::error::  See: docs/DEPLOYMENT_CHECKLIST.md"
-              throw "DEPLOYMENT BLOCKED: $($pending.Count) pending EF Core migration(s) in [$dbName]. Apply migrations before deploying."
-            }
-
-            Write-Host "::notice::All $($expected.Count) expected EF Core migrations are applied in [$dbName]."
-          } catch {
-            if ($_.Exception.Message -match "DEPLOYMENT BLOCKED") { throw }
-            Write-Host "::warning::Migration check failed: $_"
-            Write-Host "::warning::The deployment will continue, but the API may fail to start if migrations are pending."
-          }
-
-      # --- Start IIS App Pools ---
-      # This step runs even if a previous deploy step fails, to ensure
-      # the server is not left in a broken state with stopped App Pools.
+      # --- Start IIS App Pools (ACTIVATION) ---
+      # Activation is CONDITIONAL on every prior gate passing (if: success()). It deliberately does NOT
+      # use if: always() — new code must never be activated after a failed migration/metadata/deploy
+      # gate. Availability recovery is a separate, clearly-scoped step below.
       - name: Start IIS App Pools
-        if: always()
+        if: success()
         shell: pwsh
         run: |
           Import-Module WebAdministration
@@ -512,6 +769,56 @@ jobs:
             Write-Host "::error::The API may need additional time to start, or there may be a configuration issue."
             Write-Host "::error::Health URL: $healthUrl"
             throw "Smoke test failed"
+          }
+
+      # --- Verify running build identity (API + frontend == expected) ---
+      # A green /health is not enough: confirm the RUNNING API and the deployed frontend both report
+      # the exact buildId produced by this workflow. Fails the deployment on any mismatch or on a
+      # non-Valid backend metadata status.
+      - name: Verify running build identity
+        shell: pwsh
+        run: |
+          $expected = "${{ needs.build.outputs.build_id }}"
+          $portal = "${{ vars.TEST_PORTAL_URL }}"
+          if ([string]::IsNullOrWhiteSpace($portal)) {
+            $h = "${{ vars.TEST_API_HEALTH_URL }}"
+            if ($h -match '^(https?://[^/]+)') { $b = $Matches[1] } else { $b = "" }
+            if ($b -and ($b -notmatch 'localhost')) { $portal = $b }
+          }
+          if ([string]::IsNullOrWhiteSpace($portal)) {
+            throw "Cannot verify build identity: set repository variable TEST_PORTAL_URL (e.g. https://portalgerencial-test.alpla.net)."
+          }
+          $portal = $portal.TrimEnd('/')
+          Start-Sleep -Seconds 3
+
+          $apiVer = Invoke-RestMethod -Uri "$portal/api/app/version" -TimeoutSec 30
+          Write-Host "API   : buildId=$($apiVer.buildId) status=$($apiVer.buildMetadataStatus)"
+          if ($apiVer.buildMetadataStatus -ne 'Valid') { throw "API build metadata status is '$($apiVer.buildMetadataStatus)' (expected Valid)." }
+          if ($apiVer.buildId -ne $expected) { throw "API buildId '$($apiVer.buildId)' != expected '$expected'." }
+
+          $fe = Invoke-RestMethod -Uri "$portal/build-metadata.json" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 30
+          Write-Host "Front : buildId=$($fe.buildId)"
+          if ($fe.buildId -ne $expected) { throw "Frontend buildId '$($fe.buildId)' != expected '$expected'." }
+          if ($fe.buildId -ne $apiVer.buildId) { throw "Frontend/API buildId mismatch." }
+
+          Write-Host "::notice::Live build identity verified (API == frontend == $expected)."
+
+      # --- Availability recovery (failure only) ---
+      # Activation (Start IIS App Pools) is gated on success(). If a step AFTER the pools were stopped
+      # failed, this brings the site back to a running state. It is safe because migration readiness was
+      # validated BEFORE the pools were stopped — recovery never activates code against an un-migrated DB.
+      - name: Restore IIS App Pools (availability recovery)
+        if: failure() || cancelled()
+        shell: pwsh
+        run: |
+          Import-Module WebAdministration
+          foreach ($pool in @("${{ vars.IIS_API_APPPOOL }}", "${{ vars.IIS_WEB_APPPOOL }}")) {
+            try {
+              if ((Get-WebAppPoolState -Name $pool).Value -ne "Started") {
+                Write-Host "Recovery: starting App Pool '$pool'"
+                Start-WebAppPool -Name $pool
+              }
+            } catch { Write-Host "::error::Recovery failed to start App Pool '$pool': $_" }
           }
 
       # --- Summary (success) ---

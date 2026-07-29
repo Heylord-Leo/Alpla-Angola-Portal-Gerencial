@@ -8,6 +8,6 @@ public class RequestTimelineDto
 public class TimelineStepDto
 {
     public string Label { get; set; } = string.Empty;
-    public DateTime? CompletedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
     public string State { get; set; } = "pending"; // completed, current, pending, blocked
 }

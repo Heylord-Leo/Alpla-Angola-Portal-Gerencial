@@ -5,6 +5,9 @@ using AlplaPortal.Application.Interfaces.Contracts;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
+using AlplaPortal.Application.Versioning;
+using AlplaPortal.Api.Services;
+using AlplaPortal.Api.Middleware;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Infrastructure.Services;
@@ -147,6 +150,11 @@ builder.Services.AddScoped<ContractOcrBackgroundProcessor>();
 
 // Application Environment — visual differentiation between TEST and PROD (DEC-140)
 builder.Services.Configure<AppEnvironmentOptions>(builder.Configuration.GetSection("AppEnvironment"));
+
+// Build/version identity — single runtime source of truth, loaded once from build-manifest.json
+// (version-mismatch protection). Singleton because the manifest is immutable for the process lifetime.
+builder.Services.Configure<ClientVersionEnforcementOptions>(builder.Configuration.GetSection("ClientVersionEnforcement"));
+builder.Services.AddSingleton<IBuildInfoProvider, BuildInfoProvider>();
 
 // Auth Services
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
@@ -648,6 +656,11 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Version-mismatch protection: reject outdated frontend WRITE requests (staged rollout via
+// ClientVersionEnforcement:Mode). Placed after authn/authz so user + correlation context are
+// available; reads, exempt paths, and invalid-server-metadata all pass through (fail-open).
+app.UseMiddleware<ClientVersionEnforcementMiddleware>();
 
 app.MapControllers();
 app.MapHealthChecks("/health");

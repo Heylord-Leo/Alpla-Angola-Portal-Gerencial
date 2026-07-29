@@ -4,7 +4,183 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.216.0
+v2.218.0
+
+## [v2.218.0] - 2026-07-29
+
+### Added — Responsive Layout for 1920×1080 and 1600×900 Viewports
+
+Token-driven responsive layout system for the two primary user display configurations:
+24-inch desktop monitors (1920×1080) and standard company laptops (1600×900).
+
+- **Token-driven responsive architecture**: 14 CSS custom property tokens (`--spacing-shell-x`,
+  `--spacing-page-*`, `--kpi-*`, `--heading-h1-size`, `--table-*-padding/font-size`) with progressive
+  overrides at ≤1600px, ≤1440px, and ≤1366px breakpoints. Components reference tokens instead of
+  hardcoded values; the `@media` layer in `globals.css` is the single source of responsive density.
+- **AppShell sidebar auto-collapse threshold raised** from 1366px to 1600px. Sidebar automatically
+  collapses when crossing from >1600px to ≤1600px; manual toggles persist within the same breakpoint
+  range; expanding above 1600px does not auto-expand.
+- **Shared UI components** (PageContainer, KPICard, PageHeader, SearchFilterBar, WizardLayout) updated
+  to consume responsive tokens — spacing, font sizes, icon sizes, and widths adapt without
+  component-level media queries.
+- **Wizard modals** (QuotationWizardModal, ApprovalWizardModal) use `min(1200px, calc(100vw - 48px))`
+  width clamping, `100dvh` with `100vh` fallback for height, and save/restore scroll lock
+  (`document.body.style.overflow`) to prevent interference with other scroll-lock holders.
+- **Drawers** (RequestDrawerPresentation, CatalogDrawer, EquipmentQuickViewDrawer, DeliveryTermsPage)
+  use `min()` width clamping for viewport safety.
+- **RequestsDashboard** container migrated to responsive tokens (padding, gap, max-width) with
+  `flex: 1` layout instead of `minHeight: 100vh`.
+- **ActionCarouselWidget** stats grid changed from fixed 5-column to
+  `repeat(auto-fit, minmax(160px, 1fr))`.
+- **Responsive table infrastructure** (`.data-table-responsive` CSS class) defined but intentionally
+  not applied — existing tables use inline styles that take specificity precedence. Table-specific
+  remediation deferred pending manual validation.
+- **Ações column accessibility**: pending visual confirmation at target viewports.
+- **No new routes, pages, modals, drawers, or workflow actions added.**
+  No migration and no database change.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.217.2] - 2026-07-29
+
+### Fixed — CI Artifact Inventory: Exclude Hidden Paths (TEST + PROD deploy workflows)
+
+Corrects the artifact-integrity canonical inventory so it matches what `actions/upload-artifact@v4`
+actually uploads. This is a **CI/deployment-only** change: there is **no application runtime, API,
+database, or user-facing behavior change**.
+
+- **Confirmed cause**: the TEST deploy of `v2.217.1` aborted (fail-closed, before touching the server)
+  because the build-side canonical inventory listed `data/templates/branding/.gitkeep`, but
+  `actions/upload-artifact@v4` **omits hidden/dot-prefixed paths by default**, so the downloaded artifact
+  had one fewer file. The persisted inventory, its aggregate, and the download were all valid — the
+  line-by-line gate correctly reported the single missing file (`ONLY-IN-EXPECTED`).
+- **Correction**: the canonical inventory now excludes any file whose relative path contains a
+  **dot-prefixed path segment** (a filename beginning with `.`, or any directory segment beginning with
+  `.`). Examples excluded: `.gitkeep`, `.hidden/file.txt`, `folder/.private/file.txt`. Normal filenames
+  that merely *contain* dots remain included (e.g. `file.name.with.dots.txt`, `runtimes/win-x64/native/
+  library.dll`). `include-hidden-files: true` was **not** enabled — only the canonical set was aligned.
+- **Identical logic in TEST and PROD**: the same `Test-IsHiddenArtifactPath` / `Get-CanonicalInventory`
+  helpers are byte-identical across `deploy-test.yml` and `deploy-prod.yml`, on both the build and the
+  deploy sides.
+- **Unchanged**: deterministic `StringComparer.Ordinal` ordering, persisted per-file
+  `artifact-inventory.sha256`, aggregate `artifact-sha256.txt` derived from the inventory bytes,
+  line-by-line deploy comparison, fail-closed aggregate and content gates, the separate manifest-equality
+  gate, and strict staging cleanup.
+
+**Notes / limitations:**
+- The new deploy-workflow change is **not yet execution-tested on the self-hosted runner** — a **TEST
+  deployment for `v2.217.2` is still required** for real-runner validation before any PROD deploy.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.217.1] - 2026-07-29
+
+### Fixed — CI Artifact-Integrity Hardening (TEST + PROD deploy workflows)
+
+Hardens the deployment artifact-integrity validation after a TEST deploy of `v2.217.0` aborted at the
+integrity gate (fail-closed, before touching the server). This is a **CI/deployment-only** change: there
+is **no application runtime, API, database, or user-facing behavior change**.
+
+- **Persisted canonical artifact inventory**: the build now writes a line-level `artifact-inventory.sha256`
+  into each artifact (API and Web) — one `<relative-path> <sha256>` line per file — so the exact per-file
+  content is auditable, not just an opaque aggregate.
+- **Aggregate tied to the inventory file**: `artifact-sha256.txt` is now the SHA-256 of the exact
+  UTF-8-without-BOM bytes of `artifact-inventory.sha256` (chain: files → inventory → aggregate), instead
+  of a separately rebuilt in-memory string.
+- **Deterministic ordinal ordering**: canonical inventory lines are sorted with `StringComparer.Ordinal`
+  (never culture-sensitive `Sort-Object`), so the build runner and the self-hosted runner construct a
+  byte-identical canonical input.
+- **Line-by-line downloaded-artifact comparison**: before any server change, the runner re-derives the
+  inventory from the downloaded files and diffs it against the shipped inventory, reporting added/removed
+  files and per-file SHA differences (paths only) — definitive drift diagnostics instead of an opaque
+  hash mismatch.
+- **Strict staging cleanup**: staging-folder deletion now uses terminating errors (`-ErrorAction Stop`)
+  and verifies the folders are removed and recreated empty before download; a partial cleanup aborts the
+  job instead of silently continuing.
+- **Identical controls in TEST and PROD**: the inventory, aggregate, and verification blocks are
+  byte-identical across `deploy-test.yml` and `deploy-prod.yml`.
+
+**Notes / limitations:**
+- The **historic root cause of the `v2.217.0` mismatch remains unrecoverable** — the prior workflow
+  shipped only the aggregate, never a line-level inventory, so the specific differing file(s) cannot be
+  reconstructed. The specific differing file was **not** identified.
+- The integrity gate was **not weakened or bypassed**; both checks remain fail-closed before pool-stop,
+  file copy, or web.config patching, and IIS activation stays conditional (no unconditional
+  `if: always()` activation).
+- A **TEST deploy for `v2.217.1` has not yet been run**; the next TEST deploy will provide definitive
+  line-level diagnostics if drift recurs.
+
+**Guided Tour impact: not applicable.**
+
+## [v2.217.0] - 2026-07-29
+
+### Added — Version-Mismatch Protection & Deployment Validation (Phases A–G)
+
+Protects users who keep an **older Portal browser tab open** after a newer backend is deployed, so an
+outdated frontend can no longer silently perform incompatible operations.
+
+- **Outdated-client detection & blocking modal**: the frontend detects when a newer Portal has been
+  deployed (on load, on tab focus/visibility, every 5 minutes while visible, and when the backend
+  signals it) and shows a blocking **"Nova versão disponível"** update modal ("ATUALIZAR AGORA"). While
+  it is shown, new save/approve/submit/upload actions are prevented; it will not reload on top of an
+  active upload/mutation or unsaved work without a deliberate confirmation. A failed version check is
+  treated as transient and never triggers the modal.
+- **Stale JavaScript chunk handling**: a lazy-loaded route whose old file was removed by a deploy no
+  longer shows a broken page — the same update modal appears and reloads the fresh app. Includes a
+  per-build guard against reload loops.
+- **Backend write enforcement (authoritative)**: the API rejects **write** requests (POST/PUT/PATCH/
+  DELETE) from an incompatible frontend with a structured `409 CLIENT_VERSION_OUTDATED`. Reads, auth,
+  health, the version/environment endpoints, and file downloads are exempt. Rollout is staged
+  (`Disabled → Observe → EnforceMismatch → EnforceAll`); **TEST and PROD ship in `Observe`** (log-only),
+  DEV is non-enforcing, and the mode is environment-configurable without a redeploy.
+- **Canonical build identity**: one immutable `buildId` (`<version>+<shortGitSha>`, environment-
+  independent) is compiled into the frontend and written to a backend `build-manifest.json`, becoming
+  the single runtime source of version truth (the stale hard-coded backend version literals are
+  retired). Compatibility is decided by **exact `buildId` equality** — never by ordering a Git SHA.
+- **New endpoint `GET /api/app/version`**: anonymous, database-independent, returns
+  `version/buildId/shortSha/environment/builtAtUtc/buildMetadataStatus`.
+- **Centralized frontend build headers**: every API request carries `X-Portal-Frontend-Build` /
+  `X-Portal-Frontend-Version` (untrusted metadata; never used for authentication/authorization).
+- **Cache-policy corrections (IIS)**: `index.html` and `build-metadata.json` are served
+  `no-cache, must-revalidate`; hashed assets are `immutable`. TEST verifies this fail-closed; PROD
+  patches its preserved (port-5002) `web.config` in place and validates it fail-closed before activation.
+- **GitHub Actions deployment validation** (both TEST and PROD): validate that the workflow version
+  input matches the authoritative repository version (CHANGELOG→VERSION→config.ts); generate a shared
+  build manifest and per-artifact **SHA-256**; verify **artifact identity (manifest equality)** and
+  **artifact integrity (SHA-256)** before touching the server; validate the required portal-URL
+  variable fail-fast; and, after deploy, verify the **running API and frontend both report the expected
+  build id**.
+- **Migration-readiness & activation safety**: database migration readiness is now checked **before**
+  IIS pools are stopped or files replaced, and IIS activation is **conditional on all gates passing**
+  (no unconditional `if: always()` activation) — new code is never activated against an un-migrated
+  schema; a separate failure-only step restores availability. PROD deploy timeout raised to 45 minutes.
+- **Backend unit tests** added for the enforcement decision logic (unsafe-method, exempt-path, header
+  classification, per-mode matrix, fail-open on invalid server metadata).
+
+**Operational notes / limitations:**
+- The new deployment workflow changes are **not yet execution-tested on the self-hosted runner** — a
+  **TEST deployment dry-run for v2.217.0 is required** before relying on the new gates or the first PROD
+  deploy. TEST and PROD remain in **`Observe`** until validated.
+- After merge, create the GitHub repository variables `TEST_PORTAL_URL` and `PROD_PORTAL_URL`.
+- **Not included** (explicitly out of scope): Phase H atomic IIS release-directory / physical-path
+  switching, automatic database rollback, runner-label changes, and build-once artifact promotion from
+  TEST to PROD. No successful TEST or PROD deployment is claimed by this release.
+- No migration and no database change.
+
+**Guided Tour impact: not applicable.** The update modal is a global system-state safety message; it
+does not add or change a business route, page, menu, drawer, or existing guided-tour target.
+
+## [v2.216.1] - 2026-07-29
+
+### Fixed — Timezone Display on Request History and Timeline
+
+- **History timestamps corrected (−2h offset eliminated)**: request history ("Histórico do Pedido") and both timeline surfaces (summarized and inline) now display correct Angola local time (WAT, UTC+1). The root cause was a two-layer defect: `System.Text.Json` serialized `DateTime` with `DateTimeKind.Unspecified` without a timezone suffix, and the frontend's `new Date()` parsed the result as browser-local time — `getUTCHours()` then subtracted the local offset a second time. In Angola (UTC+1) the net effect was −2 hours.
+- **Backend: dual-strategy serialization fix**: for the timeline DTO (built in-memory), `CompletedAt` was changed to `DateTimeOffset?` and wrapped with a new `AsUtcOffset()` helper that forces `DateTimeKind.Utc`. For the history DTOs (built inside EF Core LINQ-to-SQL expressions where custom methods cannot be translated), a property-level `[JsonConverter(typeof(UtcDateTimeJsonConverter))]` forces the `+00:00` suffix at serialization time without changing the LINQ projection. Both strategies produce identical JSON output.
+- **Frontend: `Intl.DateTimeFormat`-based Angola formatters**: new `formatDateAngola`, `formatTimeAngola`, and `formatDateTimeAngola` use `parseUtcInstant` (handles both legacy no-suffix and new `+00:00` strings) with `timeZone: 'Africa/Luanda'` — timezone-correct regardless of the browser's own locale. Original `formatDate`/`formatTime`/`formatDateTime` are preserved unchanged for other consumers.
+- **Validated against Request 162**: all 6 acceptance values match (e.g. `COTACAO_ADICIONADA` DB 09:43 UTC → display 10:43 WAT). 22 unit tests pass in 3 browser timezone configurations (Africa/Luanda, UTC, Europe/Berlin). Midnight date rollover verified.
+- **No migration and no database change.**
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.216.0] - 2026-07-29
 

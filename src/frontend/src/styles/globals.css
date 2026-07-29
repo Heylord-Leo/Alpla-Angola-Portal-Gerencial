@@ -561,43 +561,90 @@ tr:hover td {
 }
 
 /* ─────────────────────────────────────────────────────── */
-/*  Responsive Layout — AppShell & Topbar breakpoints     */
-/*  Structural fixes for laptop screens at 100% zoom.     */
+/*  Responsive Layout — Token-driven breakpoints           */
+/*  Override CSS custom properties per viewport tier.      */
+/*  Default values are in tokens.css (spacious desktop).   */
 /* ─────────────────────────────────────────────────────── */
+
+/* Standard desktop: 1600px and below (laptops at 100%, desktops at 125%) */
+@media (max-width: 1600px) {
+    :root {
+        --spacing-shell-x: 1.5rem;
+        --spacing-shell-gap: 1.5rem;
+        --spacing-page-y: 20px;
+        --spacing-page-x: 24px;
+        --spacing-page-gap: 24px;
+        --kpi-padding: 20px;
+        --kpi-value-size: 2rem;
+        --kpi-icon-size: 36px;
+        --heading-h1-size: 1.35rem;
+        --table-th-padding: 10px 12px;
+        --table-td-padding: 8px 12px;
+        --table-td-font-size: 0.8125rem;
+    }
+}
 
 /* Medium laptops: 1440px and below */
 @media (max-width: 1440px) {
-    .app-shell-grid {
-        padding: 1.5rem 1.5rem !important;
-        gap: 1rem !important;
+    :root {
+        --spacing-shell-gap: 1rem;
+        --spacing-page-y: 20px;
+        --spacing-page-x: 20px;
+        --kpi-padding: 18px;
+        --kpi-value-size: 1.875rem;
+        --kpi-icon-size: 34px;
+        --heading-h1-size: 1.25rem;
     }
 
     .app-shell-topbar {
         padding-left: 1.5rem !important;
         padding-right: 1.5rem !important;
     }
-
-    .page-container {
-        padding: 20px 20px !important;
-    }
 }
 
 /* Small laptops: 1366px and below */
 @media (max-width: 1366px) {
-    .app-shell-grid {
-        padding: 1rem 1rem !important;
-        gap: 0.75rem !important;
+    :root {
+        --spacing-shell-x: 1rem;
+        --spacing-shell-gap: 0.75rem;
+        --spacing-page-y: 16px;
+        --spacing-page-x: 16px;
+        --kpi-padding: 16px;
+        --kpi-value-size: 1.75rem;
+        --kpi-icon-size: 32px;
+        --heading-h1-size: 1.15rem;
+        --table-th-padding: 8px 10px;
+        --table-td-padding: 8px 10px;
     }
 
     .app-shell-topbar {
         padding-left: 1rem !important;
         padding-right: 1rem !important;
     }
+}
 
-    .page-container {
-        padding: 16px 16px !important;
-        gap: 24px !important;
-    }
+/* ─────────────────────────────────────────────────────── */
+/*  Scoped table density — opt-in via .data-table-responsive */
+/*  No global th/td rules. Applied per-table by className. */
+/* ─────────────────────────────────────────────────────── */
+
+.data-table-responsive th {
+    padding: var(--table-th-padding, 14px 16px);
+    font-size: var(--table-th-font-size, 0.7rem);
+}
+
+.data-table-responsive td {
+    padding: var(--table-td-padding, 12px 16px);
+    font-size: var(--table-td-font-size, 0.875rem);
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  Wizard / Modal container — dvh with vh fallback        */
+/* ─────────────────────────────────────────────────────── */
+
+.wizard-modal-container {
+    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
 }
 
 /* ─────────────────────────────────────────────────────── */
