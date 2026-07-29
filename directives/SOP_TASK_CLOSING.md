@@ -29,15 +29,17 @@ The system provides two operational workflows (slash-commands) to satisfy this S
 **Focus**: Finalization, official record, and commit/push. This is the **ONLY** authorized workflow for Git persistence.
 
 1. **Final Review**: Execute all steps from the Review phase.
-2. **Integrity Check**: If there are unstable or unrelated changes, the process must stop and request cleanup.
+2. **Integrity Check**: If there are unstable or unrelated changes, the process must stop and request cleanup. This repository may be edited by more than one agent at once — never assume every pending file belongs to the current task, and never discard or overwrite another agent's work.
 3. **Update Docs**: Apply required changes to `docs/` and `directives/`.
 4. **Versioning**:
    - Update `docs/CHANGELOG.md` with a concise delivery description.
    - Update `docs/VERSION.md` with the new version number.
    - Automatically update `src/frontend/src/config.ts` (`APP_VERSION`) to keep the UI in sync.
+   - Apply an increment only when this SOP requires one for the change type; a documentation/workflow-only task that does not warrant a bump leaves these files unchanged.
 5. **Service Restart**: If code was changed, restart backend and frontend services before final confirmation (if requested).
-6. **Commit**: Create a commit using **Conventional Commits** (`feat:`, `fix:`, `docs:`, `refactor:`, etc.).
-7. **Push**: Send to `origin/main` only when the work is stable and coherent.
+6. **Staging**: Stage only the intended task files, explicitly by path. Unrestricted staging (`git add .` / `-A` / `--all`) is prohibited unless every pending file is proven to belong exclusively to this task.
+7. **Commit**: Create a commit using **Conventional Commits** (`feat:`, `fix:`, `docs:`, `refactor:`, etc.). A `Co-Authored-By` trailer is optional and used only for a real, known coauthor — never invented.
+8. **Push**: Requires explicit user authorization. Push only to the remote counterpart of the current validated branch (e.g. `origin/Portal-Gerencial-rev1`, `origin/release/vX.Y.Z`); display the exact destination and stop if ambiguous. **Never push or merge to `main` automatically** — that requires a separate owner-approved action, and TEST validation must succeed before any later merge to `main`. No force push, amend (unless approved), rebase, or destructive reset.
 
 ## 3. Documentation Hygiene (Mandatory)
 
@@ -65,3 +67,5 @@ To keep project documentation consistent and minimal, follow these analysis rule
 - **Truth Source**: `CHANGELOG.md` is the absolute truth for versioning; `VERSION.md` simply follows it.
 - **User Validation**: If there is ambiguity regarding the versioning level (Patch/Minor/Major), always request user confirmation.
 - **No Implicit Writes**: Actions that modify Git must be explicitly confirmed or localized to the `/task-publish` prompt.
+- **Branch Safety**: Never push or merge to `main` automatically. Push only to the remote counterpart of the current validated branch, with explicit authorization and after TEST validation for anything destined for `main`.
+- **Explicit Staging**: Stage intended files by path only; never use unrestricted `git add`. Preserve unrelated work from other agents.

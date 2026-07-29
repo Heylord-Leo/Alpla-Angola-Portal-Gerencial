@@ -7,49 +7,90 @@ description: Official task finalization, logging, and commit/push
 > 👉 **[directives/SOP_TASK_CLOSING.md](file:///C:/dev/alpla-portal/directives/SOP_TASK_CLOSING.md)**
 >
 > This is the **ONLY** authorized workflow for `git commit` and `git push`.
+> Push always requires **explicit user authorization** and never targets `main` automatically.
 
-1. **Validation**
-   - Ensure all steps from `/task-review` are satisfied and the work is stable.
+## 1. Preconditions
 
-2. **Guided Tour Impact Check**
-   - Check if the task added, removed, renamed, moved or changed screens, menus, submenus, routes, drawers, modals, quick overview panels, workflow functions, buttons, cards, action menus, or guided UI sections.
-   - If a task introduces a new user-facing screen, route, module, menu, submenu, drawer, modal, quick overview panel, workflow function, or important action area, and no guided tour exists for it, the agent must create the appropriate tour before publishing.
-   - Examples:
-     - New page added → create a page tour.
-     - New module added → create a module tour.
-     - New drawer/quick overview added → create a contextual drawer tour.
-     - New important workflow action added to an existing page → update the existing page tour.
-     - New important section added to an existing module dashboard → update the module/page tour.
-   - If a change was made, inspect and update the affected tour definitions under `src/frontend/src/features/guided-tour/tours/`.
-   - Check and update `src/frontend/src/features/guided-tour/guidedTourRegistry.ts` and `src/frontend/src/features/guided-tour/guidedTourTypes.ts` as needed.
-   - Remove or update obsolete tour steps that point to removed UI elements.
-   - Add new stable `data-tour` anchors when the new UI element is important for user orientation or workflow understanding.
-   - Verify missing-target behavior so tours do not break when RBAC hides a section or when data is empty.
-   - Follow: 👉 **[docs/GUIDED_TOUR_SYSTEM.md](file:///C:/dev/alpla-portal/docs/GUIDED_TOUR_SYSTEM.md)**
-   
-   **Guided Tour checklist**:
-   - [ ] Did this task add/remove/rename a route, page, menu or submenu?
-   - [ ] Did this task add/remove/change a drawer, modal or quick overview panel?
-   - [ ] Did this task add/remove/change important buttons, cards, filters, action menus or workflow actions?
-   - [ ] Are existing tour steps still pointing to valid data-tour targets?
-   - [ ] Are new data-tour anchors needed?
-   - [ ] Do tours still work with empty data and restricted user access?
-   - [ ] Was docs/GUIDED_TOUR_SYSTEM.md followed?
-   - [ ] Was the Guided Tour impact result documented in the publish walkthrough?
+- Ensure all steps from `/task-review` are satisfied and the work is a stable, coherent unit.
+- Re-verify the working tree (do not trust the earlier snapshot) and **re-confirm the intended file set** for this task.
+- If there are unstable or unrelated changes, **stop and report** — do not proceed.
 
-   > [!IMPORTANT]
-   > You MUST NOT publish until the Guided Tour impact is fully handled and explicitly documented in your walkthrough with one of the following exact phrases:
-   > - "Guided Tour impact: not applicable."
-   > - "Guided Tour impact: existing tour reviewed, no changes needed."
-   > - "Guided Tour impact: existing tour updated."
-   > - "Guided Tour impact: new tour created and registered."
+## 2. Guided Tour Impact Check
 
-3. **Persistence**
-   - Finalize documentation (`CHANGELOG.md`, `VERSION.md`), update the UI Version in frontend `config.ts`, and perform Git commit/push.
-   - If the Guided Tour changed user-facing behavior, ensure related documentation is updated if needed.
+- Check if the task added, removed, renamed, moved or changed screens, menus, submenus, routes, drawers, modals, quick overview panels, workflow functions, buttons, cards, action menus, or guided UI sections.
+- If a task introduces a new user-facing screen, route, module, menu, submenu, drawer, modal, quick overview panel, workflow function, or important action area, and no guided tour exists for it, the agent must create the appropriate tour before publishing.
+- Examples:
+  - New page added → create a page tour.
+  - New module added → create a module tour.
+  - New drawer/quick overview added → create a contextual drawer tour.
+  - New important workflow action added to an existing page → update the existing page tour.
+  - New important section added to an existing module dashboard → update the module/page tour.
+- If a change was made, inspect and update the affected tour definitions under `src/frontend/src/features/guided-tour/tours/`.
+- Check and update `src/frontend/src/features/guided-tour/guidedTourRegistry.ts` and `src/frontend/src/features/guided-tour/guidedTourTypes.ts` as needed.
+- Remove or update obsolete tour steps that point to removed UI elements.
+- Add new stable `data-tour` anchors when the new UI element is important for user orientation or workflow understanding.
+- Verify missing-target behavior so tours do not break when RBAC hides a section or when data is empty.
+- Follow: 👉 **[docs/GUIDED_TOUR_SYSTEM.md](file:///C:/dev/alpla-portal/docs/GUIDED_TOUR_SYSTEM.md)**
 
-4. **Convention**
-   - Use **Conventional Commits** (`feat:`, `fix:`, `docs:`, etc.) for the message.
+  **Guided Tour checklist**:
+  - [ ] Did this task add/remove/rename a route, page, menu or submenu?
+  - [ ] Did this task add/remove/change a drawer, modal or quick overview panel?
+  - [ ] Did this task add/remove/change important buttons, cards, filters, action menus or workflow actions?
+  - [ ] Are existing tour steps still pointing to valid data-tour targets?
+  - [ ] Are new data-tour anchors needed?
+  - [ ] Do tours still work with empty data and restricted user access?
+  - [ ] Was docs/GUIDED_TOUR_SYSTEM.md followed?
+  - [ ] Was the Guided Tour impact result documented in the publish walkthrough?
 
-5. **Safety**
-   - Only push to `origin/main` when the task is fully coherent and verified.
+  > [!IMPORTANT]
+  > You MUST NOT publish until the Guided Tour impact is fully handled and explicitly documented in your walkthrough with one of the following exact phrases:
+  > - "Guided Tour impact: not applicable."
+  > - "Guided Tour impact: existing tour reviewed, no changes needed."
+  > - "Guided Tour impact: existing tour updated."
+  > - "Guided Tour impact: new tour created and registered."
+
+## 3. Persistence & Versioning
+
+- Finalize documentation. Version source of truth (SOP §4): **`docs/CHANGELOG.md` is authoritative**, `docs/VERSION.md` follows it, and `src/frontend/src/config.ts` (`APP_VERSION`) is the UI mirror — keep the three consistent.
+- Apply a version increment **only** when the SOP requires one for this type of change (PATCH/MINOR/MAJOR per SOP §2.1). For a documentation/workflow-only task that the SOP does not require to bump, leave version and changelog unchanged and record them as **NOT APPLICABLE**. If the level is ambiguous, request user confirmation.
+- Validate the changelog entry against the **actual diff**: no unimplemented claims; disclose migrations, config, and deployment-sensitive changes.
+- Do **not** fabricate build/deployment metadata locally (Git SHA, run ID, deployment ID, timestamps, artifact hashes). Those are generated by GitHub Actions at build/deploy time; this workflow only verifies that such automation exists.
+- If the Guided Tour changed user-facing behavior, update related documentation if needed.
+
+## 4. Working-tree & staging safety (multi-agent aware)
+
+This repository may be edited by more than one agent at once. Only the **intended** task files may be committed.
+
+- **Stage intended files explicitly by path.** Unrestricted staging is **prohibited** unless you have first proven every pending file belongs exclusively to this task:
+  - ❌ `git add .`
+  - ❌ `git add -A`
+  - ❌ `git add --all`
+- Before committing, display: **intended files · staged files · unstaged files · untracked files · excluded pending files · a staged-diff summary.**
+- If a shared file carries changes from more than one task, **stop and report the overlap** — do not split, rewrite, or guess ownership.
+- **Never** discard, reset, stash, `checkout --`, or otherwise overwrite another agent's work. **No destructive cleanup** without explicit authorization.
+
+## 5. Commit convention
+
+- Use **Conventional Commits** (`feat:`, `fix:`, `docs:`, `refactor:`, etc.) for the message.
+- A `Co-Authored-By` trailer is **not mandatory**. Add one only when there is a real, known coauthor and the attribution is appropriate (user-approved or genuinely required by repository policy). Preserve any legitimate existing commit-trailer policy; do not invent attribution. **Default: no `Co-Authored-By` trailer.**
+
+## 6. Branch & push safety
+
+- Push requires **explicit user authorization** for each publish.
+- Determine the **current local branch**; confirm HEAD is not detached; confirm its remote tracking counterpart.
+- The only allowed push destination is the remote counterpart of the current validated branch (e.g. local `Portal-Gerencial-rev1` → `origin/Portal-Gerencial-rev1`; local `release/v2.216.1` → `origin/release/v2.216.1`). **Display the exact push destination and stop if it is ambiguous.**
+- **Never push or merge to `main` automatically.** A push/merge to `main` requires a separate, explicit owner-approved action, and **TEST validation must succeed before any later merge to `main`**.
+- No force push. No `--amend` unless explicitly approved. No rebase. No reset that could destroy pending work. No branch switching unless explicitly authorized.
+
+## 7. Service Restart
+
+- If code was changed, restart backend and frontend services before final confirmation (only if requested).
+
+## 8. Standardized task-closing report
+
+Report each item using: `PASS | FAIL | WARNING | NOT APPLICABLE | NOT EXECUTED | AWAITING AUTHORIZATION`.
+
+- **Task scope**: task name · branch · HEAD · intended files · actual modified files · staged files · unrelated pending files · migrations · workflow/config changes.
+- **Validation**: source review · backend build · frontend TypeScript · frontend Vite build · relevant tests · manual validation · security review · deployment impact · rollback considerations.
+- **Release**: previous version · proposed version · increment type · authoritative version source · changelog status · documentation status · Guided Tour impact · build-metadata readiness.
+- **Git**: exact staged files · excluded pending files · proposed commit message · local commit SHA · push authorization · push status · remote branch · remote SHA · `main` status · TEST validation status.
