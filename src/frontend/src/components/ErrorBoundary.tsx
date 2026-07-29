@@ -1,4 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { isChunkLoadError } from '../lib/chunkErrorHandler';
+import { versionSignal } from '../lib/versionSignal';
 
 interface Props {
     children: ReactNode;
@@ -23,6 +25,11 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+        // A failed lazy/Suspense import surfaces here (not always via window events). Route it into the
+        // version-mismatch update flow instead of showing a raw render-error panel.
+        if (isChunkLoadError(error)) {
+            versionSignal.markOutdated('chunk');
+        }
         console.error(`[ErrorBoundary][${this.props.fallbackName || 'Unknown'}] Caught render error:`, error, errorInfo);
         this.setState({ errorInfo });
     }

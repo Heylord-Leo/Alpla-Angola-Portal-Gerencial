@@ -52,10 +52,54 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
 
+    outputs:
+      build_id: ${{ steps.meta.outputs.build_id }}
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+
     steps:
       # --- Checkout ---
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # --- Validate version consistency & compute canonical build metadata ---
+      # Authoritative version = docs/CHANGELOG.md ("Current Version"); VERSION.md + config.ts must
+      # agree; the manual input is a CONFIRMATION only and must equal it. Any inconsistency fails the
+      # build (never silently corrected). buildId = <version>+<shortSha> (environment-independent).
+      - name: Validate version and compute build metadata
+        id: meta
+        shell: pwsh
+        run: |
+          function Get-CurrentVersion($text) {
+            if ($text -match '(?ms)Current Version\s*\r?\n\s*\r?\n\s*v?([0-9]+\.[0-9]+\.[0-9]+)') { return $Matches[1] }
+            return $null
+          }
+          $changelog = Get-Content docs/CHANGELOG.md -Raw
+          $versionMd = Get-Content docs/VERSION.md -Raw
+          $configTs  = Get-Content src/frontend/src/config.ts -Raw
+
+          $chVer = Get-CurrentVersion $changelog
+          $vmVer = Get-CurrentVersion $versionMd
+          $cfgVer = $null
+          if ($configTs -match "APP_VERSION\s*=\s*'v?([0-9]+\.[0-9]+\.[0-9]+)'") { $cfgVer = $Matches[1] }
+
+          $inputVer = "${{ inputs.version }}".Trim().TrimStart('v')
+
+          if ([string]::IsNullOrWhiteSpace($chVer)) { throw "Could not read 'Current Version' from docs/CHANGELOG.md" }
+          if ($chVer -ne $vmVer)  { throw "Version inconsistency: CHANGELOG=$chVer but VERSION.md=$vmVer" }
+          if ($chVer -ne $cfgVer) { throw "Version inconsistency: CHANGELOG=$chVer but config.ts=$cfgVer" }
+          if ([string]::IsNullOrWhiteSpace($inputVer)) { throw "Workflow version input is required." }
+          if ($inputVer -ne $chVer) { throw "Workflow input ($inputVer) does not match repository version ($chVer). Aborting." }
+
+          $shortSha = "${{ github.sha }}".Substring(0,7)
+          $buildId  = "$chVer+$shortSha"
+          $builtAt  = [DateTime]::UtcNow.ToString("o")
+
+          Write-Host "::notice::Validated version $chVer; buildId=$buildId"
+          "version=$chVer"      | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "short_sha=$shortSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "build_id=$buildId"   | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "built_at=$builtAt"   | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       # --- Backend (.NET 8) ---
       - name: Setup .NET 8 SDK
@@ -94,6 +138,13 @@ jobs:
 
       - name: Build frontend
         working-directory: src/frontend
+        env:
+          # Compile the canonical build identity into the bundle (public, non-secret). NEVER put
+          # secrets in VITE_* — they are visible in the browser.
+          VITE_APP_VERSION: ${{ steps.meta.outputs.version }}
+          VITE_APP_BUILD_ID: ${{ steps.meta.outputs.build_id }}
+          VITE_APP_SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          VITE_APP_BUILT_AT: ${{ steps.meta.outputs.built_at }}
         run: npm run build
 
       - name: Copy frontend dist to artifact folder
@@ -121,6 +172,23 @@ jobs:
           Write-Host "  JS files: $($jsFiles.Count)"
           Write-Host "  CSS files: $($cssFiles.Count)"
 
+      # --- Build manifest + public frontend metadata (canonical build identity) ---
+      - name: Generate build manifest and frontend metadata
+        shell: pwsh
+        run: |
+          $manifest = [ordered]@{
+            version    = "${{ steps.meta.outputs.version }}"
+            gitSha     = "${{ github.sha }}"
+            shortSha   = "${{ steps.meta.outputs.short_sha }}"
+            buildId    = "${{ steps.meta.outputs.build_id }}"
+            builtAtUtc = "${{ steps.meta.outputs.built_at }}"
+          }
+          $json = $manifest | ConvertTo-Json -Depth 5
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/api/build-manifest.json" -Encoding UTF8
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/web/build-manifest.json" -Encoding UTF8
+          $json | Set-Content -Path "${{ github.workspace }}/artifacts/web/build-metadata.json" -Encoding UTF8
+          Write-Host "::notice::Build manifest written to both artifacts (buildId=${{ steps.meta.outputs.build_id }})"
+
       # --- Generate Expected Migration List (DEC-139) ---
       - name: Generate expected migration list
         shell: pwsh
@@ -133,6 +201,32 @@ jobs:
             Sort-Object
           $migrations | Set-Content -Path $outputFile -Encoding UTF8
           Write-Host "Generated expected-migrations.txt with $($migrations.Count) migrations"
+
+      # --- Artifact integrity (SHA-256) ---
+      # Deterministic folder hash over the FINAL artifact contents (excluding the hash file), written into
+      # each artifact as artifact-sha256.txt so the runner can re-hash and compare before touching PROD.
+      - name: Compute artifact SHA-256
+        shell: pwsh
+        run: |
+          function Get-FolderSha256($path) {
+            $root = (Resolve-Path $path).Path.TrimEnd('\')
+            $files = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -ne 'artifact-sha256.txt' }
+            $lines = foreach ($f in $files) {
+              $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$rel $h"
+            }
+            $joined = ($lines | Sort-Object) -join "`n"
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-','').ToLowerInvariant()
+          }
+          $apiSha = Get-FolderSha256 "${{ github.workspace }}/artifacts/api"
+          $webSha = Get-FolderSha256 "${{ github.workspace }}/artifacts/web"
+          $apiSha | Set-Content -Path "${{ github.workspace }}/artifacts/api/artifact-sha256.txt" -Encoding ascii -NoNewline
+          $webSha | Set-Content -Path "${{ github.workspace }}/artifacts/web/artifact-sha256.txt" -Encoding ascii -NoNewline
+          Write-Host "::notice::apiArtifactSha256=$apiSha"
+          Write-Host "::notice::webArtifactSha256=$webSha"
 
       # --- Upload Artifacts ---
       - name: Upload API artifact
@@ -168,7 +262,9 @@ jobs:
     name: Deploy PRODUCTION (${{ inputs.version }})
     needs: build
     runs-on: [self-hosted, Windows, X64, iis]
-    timeout-minutes: 20
+    # 45 min to match TEST: the self-hosted runner's egress to the artifact backend is slow
+    # (~0.6 Mbit/s measured) and the api-artifact is ~121 MB, which can exceed a 20 min budget.
+    timeout-minutes: 45
     environment: production
 
     env:
@@ -176,6 +272,17 @@ jobs:
       ARTIFACT_WEB_PATH: C:\ActionsArtifacts\AlplaPortal\prod\web
 
     steps:
+      # --- Fail-fast: required deployment variables (before ANY server-touching work) ---
+      - name: Validate deployment variables
+        shell: pwsh
+        run: |
+          $portal = "${{ vars.PROD_PORTAL_URL }}"
+          if ([string]::IsNullOrWhiteSpace($portal)) { throw "Repository variable PROD_PORTAL_URL is not set (expected https://portalgerencial.alpla.net)." }
+          if ($portal -notmatch '^https://') { throw "PROD_PORTAL_URL must be an https:// URL. Got: $portal" }
+          if ($portal -match '(?i)portalgerencial-test\.alpla\.net') { throw "PROD_PORTAL_URL points to the TEST host — aborting to prevent a cross-environment deploy." }
+          if ($portal -notmatch '(?i)^https://portalgerencial\.alpla\.net') { throw "PROD_PORTAL_URL does not match the PRODUCTION host (expected https://portalgerencial.alpla.net). Got: $portal" }
+          Write-Host "::notice::PROD_PORTAL_URL validated: $portal"
+
       # --- Download Artifacts ---
       - name: Clean artifact staging directories
         shell: pwsh
@@ -200,6 +307,52 @@ jobs:
         with:
           name: web-artifact-prod
           path: ${{ env.ARTIFACT_WEB_PATH }}
+
+      # --- GATE: build identity (FE == BE == expected) — before any server mutation ---
+      - name: Verify build manifests (frontend == backend == expected)
+        shell: pwsh
+        run: |
+          $expected = "${{ needs.build.outputs.build_id }}"
+          $apiManifest = Join-Path "${{ env.ARTIFACT_API_PATH }}" "build-manifest.json"
+          $webManifest = Join-Path "${{ env.ARTIFACT_WEB_PATH }}" "build-manifest.json"
+          foreach ($m in @($apiManifest, $webManifest)) {
+            if (-not (Test-Path $m)) { throw "FATAL: build manifest missing ($m). Deployment metadata invalid — aborting fail-closed." }
+          }
+          $api = Get-Content $apiManifest -Raw | ConvertFrom-Json
+          $web = Get-Content $webManifest -Raw | ConvertFrom-Json
+          if ([string]::IsNullOrWhiteSpace($api.buildId)) { throw "FATAL: API manifest has no buildId (malformed)." }
+          if ($api.buildId -ne $web.buildId) { throw "FATAL: build identity mismatch api=$($api.buildId) web=$($web.buildId). Aborting before touching PRODUCTION." }
+          if ($expected -and $api.buildId -ne $expected) { throw "FATAL: artifact buildId ($($api.buildId)) != expected ($expected). Aborting." }
+          Write-Host "::notice::Build identity verified: $($api.buildId)"
+
+      # --- GATE: artifact integrity (SHA-256) — before any server mutation ---
+      - name: Verify artifact SHA-256 (integrity)
+        shell: pwsh
+        run: |
+          function Get-FolderSha256($path) {
+            $root = (Resolve-Path $path).Path.TrimEnd('\')
+            $files = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -ne 'artifact-sha256.txt' }
+            $lines = foreach ($f in $files) {
+              $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+              $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$rel $h"
+            }
+            $joined = ($lines | Sort-Object) -join "`n"
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-','').ToLowerInvariant()
+          }
+          function Confirm-Artifact($path, $label) {
+            $expectedFile = Join-Path $path "artifact-sha256.txt"
+            if (-not (Test-Path $expectedFile)) { throw "artifact-sha256.txt missing in $label ($path) — cannot verify integrity." }
+            $expected = (Get-Content $expectedFile -Raw).Trim()
+            $actual = Get-FolderSha256 $path
+            Write-Host "${label}: expected=$expected actual=$actual"
+            if ($expected -ne $actual) { throw "ARTIFACT INTEGRITY FAILURE ($label): expected $expected, actual $actual. Aborting before touching PRODUCTION." }
+          }
+          Confirm-Artifact "${{ env.ARTIFACT_API_PATH }}" "api"
+          Confirm-Artifact "${{ env.ARTIFACT_WEB_PATH }}" "web"
+          Write-Host "::notice::Artifact SHA-256 verified (api + web)."
 
       # --- Pre-Deploy Database Validation & Backup ---
       - name: Validate Production database name
@@ -316,6 +469,37 @@ jobs:
             Write-Host "::warning::Database backup failed: $_"
             Write-Host "::warning::Deployment will continue. Manual backup recommended before verifying."
           }
+
+      # --- GATE: database readiness + pending migrations — BEFORE stopping pools / replacing files ---
+      # Corrected activation order: a pending-migration failure aborts with the PREVIOUS version still
+      # live (pools never stopped) — new code is never activated against an un-migrated schema.
+      - name: Verify database migration readiness
+        shell: pwsh
+        run: |
+          $connStr = "${{ secrets.PROD_DB_CONNECTION_STRING }}"
+          if ([string]::IsNullOrWhiteSpace($connStr)) {
+            $configFile = Join-Path "${{ vars.API_DEPLOY_PATH }}" "appsettings.Production.json"
+            if (Test-Path $configFile) { $connStr = (Get-Content $configFile -Raw | ConvertFrom-Json).ConnectionStrings.DefaultConnection }
+          }
+          if ([string]::IsNullOrWhiteSpace($connStr)) { throw "No PRODUCTION connection string available — cannot verify migrations (set PROD_DB_CONNECTION_STRING)." }
+
+          $migrationListFile = Join-Path "${{ env.ARTIFACT_API_PATH }}" "expected-migrations.txt"
+          if (-not (Test-Path $migrationListFile)) { throw "expected-migrations.txt not found in artifact (DEC-139)." }
+          $expected = Get-Content $migrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
+
+          $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+          $conn.Open()
+          $dbName = (New-Object System.Data.SqlClient.SqlCommand("SELECT DB_NAME()", $conn)).ExecuteScalar()
+          if ($dbName -eq "Portal-Gerencial-Test") { $conn.Close(); throw "CRITICAL SAFETY CHECK: connection resolves to TEST database. PRODUCTION deployment BLOCKED." }
+          $cmd = $conn.CreateCommand(); $cmd.CommandText = "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId"
+          $reader = $cmd.ExecuteReader(); $applied = @(); while ($reader.Read()) { $applied += $reader["MigrationId"].ToString() }; $reader.Close(); $conn.Close()
+
+          $pending = @(); foreach ($m in $expected) { if ($applied -notcontains $m) { $pending += $m } }
+          if ($pending.Count -gt 0) {
+            foreach ($m in $pending) { Write-Host "::error::PENDING migration: $m" }
+            throw "DEPLOYMENT BLOCKED: $($pending.Count) pending migration(s) in PRODUCTION [$dbName]. Run 'Apply PRODUCTION Migrations' first. The previous version remains live."
+          }
+          Write-Host "::notice::All $($expected.Count) expected migrations are applied in PRODUCTION [$dbName]."
 
       # --- Backup Current Files ---
       - name: Create timestamped file backup
@@ -481,102 +665,74 @@ jobs:
           # Reset exit code
           $global:LASTEXITCODE = 0
 
-      # --- Check for Pending EF Core Migrations (DEC-137 + DEC-139) ---
-      # This step detects pending migrations BEFORE starting the App Pools.
-      # If any migrations are missing, the deployment fails early with a clear
-      # message instead of letting the API crash with HTTP 500.30.
-      # The expected migration list is auto-generated from the migrations folder
-      # and packaged in expected-migrations.txt during the build job (DEC-139).
-      - name: Check for pending EF Core migrations
+      # --- Ensure + verify web.config cache policy (fail-closed, before activation) ---
+      # PROD preserves its own server-side web.config (port-5002 reverse proxy), so the cache <location>
+      # blocks are PATCHED into it here (add/normalise, never removing existing rules), then validated.
+      # The deploy fails before activation if the port-5002 proxy or any cache rule is missing — the PROD
+      # cache policy can never be silently absent.
+      - name: Ensure web.config cache policy
         shell: pwsh
         run: |
-          $connStr = "${{ secrets.PROD_DB_CONNECTION_STRING }}"
-          if ([string]::IsNullOrWhiteSpace($connStr)) {
-            # Fallback: try reading from preserved appsettings.Production.json
-            $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
-            $configFile = Join-Path $apiDeploy "appsettings.Production.json"
-            if (Test-Path $configFile) {
-              $config = Get-Content $configFile -Raw | ConvertFrom-Json
-              $connStr = $config.ConnectionStrings.DefaultConnection
+          $webConfig = Join-Path "${{ vars.WEB_DEPLOY_PATH }}" "web.config"
+          if (-not (Test-Path $webConfig)) { throw "web.config not found at $webConfig - cannot ensure cache policy." }
+          [xml]$xml = Get-Content $webConfig
+          $config = $xml.DocumentElement
+          function Set-CacheLocation($xml, $config, $path, $value) {
+            $existing = @($config.location) | Where-Object { $_.path -eq $path }
+            if ($existing) {
+              $add = @($existing.'system.webServer'.httpProtocol.customHeaders.add) | Where-Object { $_.name -eq 'Cache-Control' } | Select-Object -First 1
+              if ($add) { $add.value = $value; return }
             }
+            $loc = $xml.CreateElement('location'); $loc.SetAttribute('path', $path)
+            $sws = $xml.CreateElement('system.webServer')
+            $http = $xml.CreateElement('httpProtocol')
+            $ch = $xml.CreateElement('customHeaders')
+            $rem = $xml.CreateElement('remove'); $rem.SetAttribute('name','Cache-Control'); [void]$ch.AppendChild($rem)
+            $addN = $xml.CreateElement('add'); $addN.SetAttribute('name','Cache-Control'); $addN.SetAttribute('value',$value); [void]$ch.AppendChild($addN)
+            [void]$http.AppendChild($ch); [void]$sws.AppendChild($http); [void]$loc.AppendChild($sws)
+            [void]$config.AppendChild($loc)
           }
+          Set-CacheLocation $xml $config 'index.html' 'no-cache, must-revalidate'
+          Set-CacheLocation $xml $config 'build-metadata.json' 'no-cache, must-revalidate'
+          Set-CacheLocation $xml $config 'assets' 'public, max-age=31536000, immutable'
+          $xml.Save($webConfig)
 
-          if ([string]::IsNullOrWhiteSpace($connStr)) {
-            Write-Host "::warning::No connection string available. Skipping migration check."
-            Write-Host "::warning::The API may fail to start if migrations are pending."
-            exit 0
+          # Fail-closed validation: port-5002 proxy AND all three cache rules must be present.
+          [xml]$check = Get-Content $webConfig
+          $proxy = $check.SelectNodes("//rewrite/rules/rule/action[@type='Rewrite']") | Where-Object { $_.url -match 'localhost:5002' }
+          if (-not $proxy) { throw "web.config no longer contains the PRODUCTION reverse-proxy rule to localhost:5002. Aborting." }
+          $req = @{ 'index.html' = 'no-cache'; 'build-metadata.json' = 'no-cache'; 'assets' = 'immutable' }
+          foreach ($p in $req.Keys) {
+            $loc = @($check.configuration.location) | Where-Object { $_.path -eq $p }
+            if (-not $loc) { throw "web.config missing cache <location path='$p'> after patch." }
+            $add = @($loc.'system.webServer'.httpProtocol.customHeaders.add) | Where-Object { $_.name -eq 'Cache-Control' } | Select-Object -First 1
+            if (-not $add -or ($add.value -notmatch [regex]::Escape($req[$p]))) { throw "web.config cache rule for '$p' missing/incorrect after patch." }
           }
+          Write-Host "::notice::PROD web.config cache policy ensured; port-5002 proxy preserved."
 
-          Write-Host "::notice::Checking EF Core migrations against PRODUCTION database..."
+      # --- Stamp deployment-time metadata into the deployed backend manifest ---
+      # Migration readiness was already validated BEFORE the pools were stopped (gate above), so there
+      # is no post-deploy migration check here — activation cannot proceed against an un-migrated schema.
+      - name: Write deployment metadata
+        shell: pwsh
+        run: |
+          $manifestPath = Join-Path "${{ vars.API_DEPLOY_PATH }}" "build-manifest.json"
+          if (-not (Test-Path $manifestPath)) { throw "build-manifest.json not found in deployed API folder." }
+          $m = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $m | Add-Member -NotePropertyName environment -NotePropertyValue "PROD" -Force
+          $m | Add-Member -NotePropertyName deploymentId -NotePropertyValue "${{ github.run_id }}-${{ github.run_attempt }}" -Force
+          $m | Add-Member -NotePropertyName githubRunId -NotePropertyValue "${{ github.run_id }}" -Force
+          $m | Add-Member -NotePropertyName githubRunNumber -NotePropertyValue "${{ github.run_number }}" -Force
+          $m | Add-Member -NotePropertyName githubRunAttempt -NotePropertyValue "${{ github.run_attempt }}" -Force
+          $m | Add-Member -NotePropertyName deploymentStartedAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString("o")) -Force
+          $m | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+          Write-Host "::notice::Deployment metadata written (deploymentId=${{ github.run_id }}-${{ github.run_attempt }})"
 
-          try {
-            $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
-            $conn.Open()
-
-            # Safety check: confirm database name is NOT the Test database
-            $dbCmd = $conn.CreateCommand()
-            $dbCmd.CommandText = "SELECT DB_NAME()"
-            $dbName = $dbCmd.ExecuteScalar()
-            Write-Host "Connected to database: [$dbName]"
-
-            if ($dbName -eq "Portal-Gerencial-Test") {
-              $conn.Close()
-              throw "CRITICAL SAFETY CHECK: Connection string resolves to TEST database. PRODUCTION deployment BLOCKED."
-            }
-
-            # Read applied migrations
-            $cmd = $conn.CreateCommand()
-            $cmd.CommandText = "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId"
-            $reader = $cmd.ExecuteReader()
-            $applied = @()
-            while ($reader.Read()) { $applied += $reader["MigrationId"].ToString() }
-            $reader.Close()
-            $conn.Close()
-
-            Write-Host "Applied migrations in [$dbName]: $($applied.Count)"
-
-            # Load expected migrations from auto-generated file (DEC-139)
-            $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
-            $migrationListFile = Join-Path $apiDeploy "expected-migrations.txt"
-            if (Test-Path $migrationListFile) {
-              $expected = Get-Content $migrationListFile | Where-Object { $_ -match '\S' } | ForEach-Object { $_.Trim() }
-              Write-Host "::notice::Loaded $($expected.Count) expected migrations from expected-migrations.txt (DEC-139)"
-            } else {
-              Write-Host "::error::expected-migrations.txt not found at $migrationListFile."
-              Write-Host "::error::This file is generated during the build step. Ensure the build includes the migration list generation step (DEC-139)."
-              throw "expected-migrations.txt not found — cannot verify database migrations."
-            }
-
-            $pending = @()
-            foreach ($m in $expected) {
-              if ($applied -notcontains $m) { $pending += $m }
-            }
-
-            if ($pending.Count -gt 0) {
-              Write-Host ""
-              Write-Host "::error::$($pending.Count) PENDING migration(s) detected in PRODUCTION [$dbName]!"
-              foreach ($m in $pending) {
-                Write-Host "::error::  PENDING: $m"
-              }
-              Write-Host ""
-              Write-Host "::error::REMEDIATION:"
-              Write-Host "::error::  1. Run the 'Apply PRODUCTION Migrations' workflow first."
-              Write-Host "::error::  2. Or apply migrations manually using SSMS/sqlcmd with a DBA account."
-              Write-Host "::error::  3. Re-run this deployment after migrations are applied."
-              Write-Host "::error::  See: docs/DEPLOYMENT_CHECKLIST.md"
-              throw "DEPLOYMENT BLOCKED: $($pending.Count) pending EF Core migration(s) in PRODUCTION [$dbName]. Apply migrations before deploying."
-            }
-
-            Write-Host "::notice::All $($expected.Count) expected EF Core migrations are applied in PRODUCTION [$dbName]."
-          } catch {
-            if ($_.Exception.Message -match "DEPLOYMENT BLOCKED|CRITICAL SAFETY CHECK") { throw }
-            Write-Host "::warning::Migration check failed: $_"
-            Write-Host "::warning::The deployment will continue, but the API may fail to start if migrations are pending."
-          }
-
-      # --- Start PRODUCTION IIS App Pools ---
+      # --- Start PRODUCTION IIS App Pools (ACTIVATION) ---
+      # Conditional on all prior gates (if: success()) — never if: always(). New code must not be
+      # activated after a failed migration/metadata/deploy gate. Availability recovery is separate.
       - name: Start Production IIS App Pools
-        if: always()
+        if: success()
         shell: pwsh
         run: |
           Import-Module WebAdministration
@@ -635,6 +791,52 @@ jobs:
             Write-Host "::error::Check the application event log on AOVIA1VMS011 for startup errors."
             Write-Host "::error::Health URL: $healthUrl"
             throw "Smoke test failed — check server logs for database migration or startup errors."
+          }
+
+      # --- Verify running build identity (API + frontend == expected) ---
+      - name: Verify running build identity
+        shell: pwsh
+        run: |
+          $expected = "${{ needs.build.outputs.build_id }}"
+          $portal = "${{ vars.PROD_PORTAL_URL }}"
+          if ([string]::IsNullOrWhiteSpace($portal)) {
+            $h = "${{ vars.PROD_API_HEALTH_URL }}"
+            if ($h -match '^(https?://[^/]+)') { $b = $Matches[1] } else { $b = "" }
+            if ($b -and ($b -notmatch 'localhost')) { $portal = $b }
+          }
+          if ([string]::IsNullOrWhiteSpace($portal)) {
+            throw "Cannot verify build identity: set repository variable PROD_PORTAL_URL (e.g. https://portalgerencial.alpla.net)."
+          }
+          $portal = $portal.TrimEnd('/')
+          Start-Sleep -Seconds 3
+
+          $apiVer = Invoke-RestMethod -Uri "$portal/api/app/version" -TimeoutSec 30
+          Write-Host "API   : buildId=$($apiVer.buildId) status=$($apiVer.buildMetadataStatus)"
+          if ($apiVer.buildMetadataStatus -ne 'Valid') { throw "API build metadata status is '$($apiVer.buildMetadataStatus)' (expected Valid)." }
+          if ($apiVer.buildId -ne $expected) { throw "API buildId '$($apiVer.buildId)' != expected '$expected'." }
+
+          $fe = Invoke-RestMethod -Uri "$portal/build-metadata.json" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 30
+          Write-Host "Front : buildId=$($fe.buildId)"
+          if ($fe.buildId -ne $expected) { throw "Frontend buildId '$($fe.buildId)' != expected '$expected'." }
+          if ($fe.buildId -ne $apiVer.buildId) { throw "Frontend/API buildId mismatch." }
+
+          Write-Host "::notice::Live build identity verified (API == frontend == $expected)."
+
+      # --- Availability recovery (failure only) ---
+      # Activation is gated on success(); if a step AFTER the pools were stopped failed, restore
+      # availability. Safe because migration readiness was validated BEFORE the pools were stopped.
+      - name: Restore Production IIS App Pools (availability recovery)
+        if: failure() || cancelled()
+        shell: pwsh
+        run: |
+          Import-Module WebAdministration
+          foreach ($pool in @("${{ vars.IIS_API_APPPOOL }}", "${{ vars.IIS_WEB_APPPOOL }}")) {
+            try {
+              if ((Get-WebAppPoolState -Name $pool).Value -ne "Started") {
+                Write-Host "Recovery: starting App Pool '$pool'"
+                Start-WebAppPool -Name $pool
+              }
+            } catch { Write-Host "::error::Recovery failed to start App Pool '$pool': $_" }
           }
 
       # --- Verify Test Environment Not Impacted ---

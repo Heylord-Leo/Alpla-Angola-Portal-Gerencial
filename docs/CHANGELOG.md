@@ -4,7 +4,65 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.216.1
+v2.217.0
+
+## [v2.217.0] - 2026-07-29
+
+### Added — Version-Mismatch Protection & Deployment Validation (Phases A–G)
+
+Protects users who keep an **older Portal browser tab open** after a newer backend is deployed, so an
+outdated frontend can no longer silently perform incompatible operations.
+
+- **Outdated-client detection & blocking modal**: the frontend detects when a newer Portal has been
+  deployed (on load, on tab focus/visibility, every 5 minutes while visible, and when the backend
+  signals it) and shows a blocking **"Nova versão disponível"** update modal ("ATUALIZAR AGORA"). While
+  it is shown, new save/approve/submit/upload actions are prevented; it will not reload on top of an
+  active upload/mutation or unsaved work without a deliberate confirmation. A failed version check is
+  treated as transient and never triggers the modal.
+- **Stale JavaScript chunk handling**: a lazy-loaded route whose old file was removed by a deploy no
+  longer shows a broken page — the same update modal appears and reloads the fresh app. Includes a
+  per-build guard against reload loops.
+- **Backend write enforcement (authoritative)**: the API rejects **write** requests (POST/PUT/PATCH/
+  DELETE) from an incompatible frontend with a structured `409 CLIENT_VERSION_OUTDATED`. Reads, auth,
+  health, the version/environment endpoints, and file downloads are exempt. Rollout is staged
+  (`Disabled → Observe → EnforceMismatch → EnforceAll`); **TEST and PROD ship in `Observe`** (log-only),
+  DEV is non-enforcing, and the mode is environment-configurable without a redeploy.
+- **Canonical build identity**: one immutable `buildId` (`<version>+<shortGitSha>`, environment-
+  independent) is compiled into the frontend and written to a backend `build-manifest.json`, becoming
+  the single runtime source of version truth (the stale hard-coded backend version literals are
+  retired). Compatibility is decided by **exact `buildId` equality** — never by ordering a Git SHA.
+- **New endpoint `GET /api/app/version`**: anonymous, database-independent, returns
+  `version/buildId/shortSha/environment/builtAtUtc/buildMetadataStatus`.
+- **Centralized frontend build headers**: every API request carries `X-Portal-Frontend-Build` /
+  `X-Portal-Frontend-Version` (untrusted metadata; never used for authentication/authorization).
+- **Cache-policy corrections (IIS)**: `index.html` and `build-metadata.json` are served
+  `no-cache, must-revalidate`; hashed assets are `immutable`. TEST verifies this fail-closed; PROD
+  patches its preserved (port-5002) `web.config` in place and validates it fail-closed before activation.
+- **GitHub Actions deployment validation** (both TEST and PROD): validate that the workflow version
+  input matches the authoritative repository version (CHANGELOG→VERSION→config.ts); generate a shared
+  build manifest and per-artifact **SHA-256**; verify **artifact identity (manifest equality)** and
+  **artifact integrity (SHA-256)** before touching the server; validate the required portal-URL
+  variable fail-fast; and, after deploy, verify the **running API and frontend both report the expected
+  build id**.
+- **Migration-readiness & activation safety**: database migration readiness is now checked **before**
+  IIS pools are stopped or files replaced, and IIS activation is **conditional on all gates passing**
+  (no unconditional `if: always()` activation) — new code is never activated against an un-migrated
+  schema; a separate failure-only step restores availability. PROD deploy timeout raised to 45 minutes.
+- **Backend unit tests** added for the enforcement decision logic (unsafe-method, exempt-path, header
+  classification, per-mode matrix, fail-open on invalid server metadata).
+
+**Operational notes / limitations:**
+- The new deployment workflow changes are **not yet execution-tested on the self-hosted runner** — a
+  **TEST deployment dry-run for v2.217.0 is required** before relying on the new gates or the first PROD
+  deploy. TEST and PROD remain in **`Observe`** until validated.
+- After merge, create the GitHub repository variables `TEST_PORTAL_URL` and `PROD_PORTAL_URL`.
+- **Not included** (explicitly out of scope): Phase H atomic IIS release-directory / physical-path
+  switching, automatic database rollback, runner-label changes, and build-once artifact promotion from
+  TEST to PROD. No successful TEST or PROD deployment is claimed by this release.
+- No migration and no database change.
+
+**Guided Tour impact: not applicable.** The update modal is a global system-state safety message; it
+does not add or change a business route, page, menu, drawer, or existing guided-tour target.
 
 ## [v2.216.1] - 2026-07-29
 

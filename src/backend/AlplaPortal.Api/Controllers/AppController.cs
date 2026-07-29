@@ -1,3 +1,4 @@
+using AlplaPortal.Api.Services;
 using AlplaPortal.Application.Models.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,10 +15,12 @@ namespace AlplaPortal.Api.Controllers;
 public class AppController : ControllerBase
 {
     private readonly AppEnvironmentOptions _envOptions;
+    private readonly IBuildInfoProvider _buildInfo;
 
-    public AppController(IOptions<AppEnvironmentOptions> envOptions)
+    public AppController(IOptions<AppEnvironmentOptions> envOptions, IBuildInfoProvider buildInfo)
     {
         _envOptions = envOptions.Value;
+        _buildInfo = buildInfo;
     }
 
     /// <summary>
@@ -35,6 +38,30 @@ public class AppController : ControllerBase
             code = _envOptions.Code,
             name = _envOptions.Name,
             showBanner = _envOptions.ShowBanner
+        });
+    }
+
+    /// <summary>
+    /// Returns the running backend's canonical build identity so the frontend can detect a newer
+    /// deployment (version-mismatch protection). Anonymous (the login page must reach it before auth),
+    /// database-independent, and DETERMINISTIC — it only echoes metadata loaded once at startup.
+    /// Only non-sensitive fields are exposed here; audit fields (gitSha, deployment/run IDs) are on the
+    /// authenticated diagnostics endpoint. Environment comes from AppEnvironment config (single source),
+    /// not the manifest.
+    /// </summary>
+    [HttpGet("version")]
+    [AllowAnonymous]
+    public IActionResult GetVersion()
+    {
+        var b = _buildInfo.Current;
+        return Ok(new
+        {
+            version = b.Version,
+            buildId = b.BuildId,
+            shortSha = b.ShortSha,
+            environment = _envOptions.Code,
+            builtAtUtc = b.BuiltAtUtc,
+            buildMetadataStatus = b.Status.ToString()
         });
     }
 }

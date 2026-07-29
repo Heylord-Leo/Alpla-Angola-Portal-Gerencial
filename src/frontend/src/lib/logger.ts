@@ -11,7 +11,8 @@ export type FrontendEventType =
     | 'OCR_SETTINGS_UI_ERROR'
     | 'FRONTEND_EVENT'
     | 'QUOTATION_SAVE_FAILED'
-    | 'OCR_CLIENT_PROCESSING_ERROR';
+    | 'OCR_CLIENT_PROCESSING_ERROR'
+    | 'STALE_CHUNK_DETECTED';
 
 interface LogPayload {
     level: LogLevel;

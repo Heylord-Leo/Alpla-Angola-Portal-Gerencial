@@ -1,3 +1,4 @@
+using AlplaPortal.Api.Services;
 using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
@@ -28,13 +29,16 @@ public class AdminDiagnosticsController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
     private readonly IDocumentExtractionSettingsService _extractionSettingsService;
+    private readonly IBuildInfoProvider _buildInfo;
 
     public AdminDiagnosticsController(
         ApplicationDbContext db,
-        IDocumentExtractionSettingsService extractionSettingsService)
+        IDocumentExtractionSettingsService extractionSettingsService,
+        IBuildInfoProvider buildInfo)
     {
         _db = db;
         _extractionSettingsService = extractionSettingsService;
+        _buildInfo = buildInfo;
     }
 
     [HttpGet("health")]
@@ -91,9 +95,29 @@ public class AdminDiagnosticsController : ControllerBase
         return Ok(health);
     }
 
+    /// <summary>
+    /// Authenticated diagnostics view of the running build identity — includes audit fields
+    /// (gitSha, deployment/run IDs) that the anonymous <c>/api/app/version</c> does not expose.
+    /// Reads the same single source of truth (<see cref="IBuildInfoProvider"/>); the previous
+    /// hard-coded literal is retired.
+    /// </summary>
     [HttpGet("version")]
     public ActionResult<object> GetVersion()
     {
-        return Ok(new { version = "2.0.1" });
+        var b = _buildInfo.Current;
+        return Ok(new
+        {
+            version = b.Version,
+            buildId = b.BuildId,
+            shortSha = b.ShortSha,
+            gitSha = b.GitSha,
+            builtAtUtc = b.BuiltAtUtc,
+            deploymentId = b.DeploymentId,
+            githubRunId = b.GithubRunId,
+            githubRunNumber = b.GithubRunNumber,
+            githubRunAttempt = b.GithubRunAttempt,
+            deploymentStartedAtUtc = b.DeploymentStartedAtUtc,
+            buildMetadataStatus = b.Status.ToString()
+        });
     }
 }

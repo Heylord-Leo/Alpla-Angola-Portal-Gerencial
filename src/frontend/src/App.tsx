@@ -6,6 +6,8 @@ import { LoadingSkeleton } from './components/ui/LoadingSkeleton';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ROLES } from './constants/roles';
 import { EnvironmentProvider } from './contexts/EnvironmentContext';
+import { VersionProvider } from './contexts/VersionContext';
+import { UpdateRequiredModal } from './components/ui/UpdateRequiredModal';
 
 // ─── Eagerly loaded (critical path / small) ───
 import LoginPage from './pages/LoginPage';
@@ -399,9 +401,13 @@ export default function App() {
     return (
         <BrowserRouter>
             <EnvironmentProvider>
-                <AuthProvider>
-                    <AppContent />
-                </AuthProvider>
+                <VersionProvider>
+                    <AuthProvider>
+                        <AppContent />
+                    </AuthProvider>
+                    {/* Global blocking modal for version-mismatch / stale-chunk (overlays everything). */}
+                    <UpdateRequiredModal />
+                </VersionProvider>
             </EnvironmentProvider>
         </BrowserRouter>
     );

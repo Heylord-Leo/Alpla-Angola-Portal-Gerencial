@@ -2,7 +2,30 @@
 
 ## Current Version
 
-v2.216.1
+v2.217.0
+
+## [v2.217.0] - 2026-07-29
+
+### Added — Version-Mismatch Protection & Deployment Validation (Phases A–G)
+
+- Detects an outdated Portal browser tab after a newer backend deploy and shows a blocking
+  "Nova versão disponível" update modal; prevents unsafe operations from an outdated frontend.
+- Handles stale lazy-loaded JavaScript chunks via the same update flow (with reload-loop guard).
+- Canonical frontend/backend build identity (`buildId = <version>+<shortGitSha>`, equality-only);
+  new anonymous `GET /api/app/version`; centralized `X-Portal-Frontend-Build/-Version` request headers.
+- Staged backend write enforcement (`Disabled/Observe/EnforceMismatch/EnforceAll`); TEST and PROD ship
+  in `Observe`; DEV non-enforcing; `409 CLIENT_VERSION_OUTDATED` for outdated writes.
+- IIS cache-policy corrections (no-cache `index.html`/`build-metadata.json`, immutable assets),
+  verified/patched fail-closed by the deploy workflows.
+- GitHub Actions: version-source validation, build manifest + artifact SHA-256, artifact identity and
+  integrity gates, deployment URL validation, and post-deploy live API/frontend build-identity verification.
+- Migration-readiness validated before pool-stop; IIS activation conditional on all gates (no
+  unconditional `if: always()` activation); PROD deploy timeout raised to 45 minutes.
+- Requires a TEST deployment dry-run before relying on the new gates; TEST/PROD remain in `Observe`.
+  Excludes Phase H (atomic path switching), automatic DB rollback, runner-label changes, and artifact
+  promotion. No migration and no database change.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.216.1] - 2026-07-29
 
