@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.217.0
+v2.217.1
+
+## [v2.217.1] - 2026-07-29
+
+### Fixed — CI Artifact-Integrity Hardening (TEST + PROD)
+
+- Persisted per-file canonical artifact inventory (`artifact-inventory.sha256`) written into each artifact.
+- Aggregate `artifact-sha256.txt` derived from the inventory file's exact UTF-8 (no BOM) bytes.
+- Deterministic `StringComparer.Ordinal` path ordering across the build and self-hosted runners.
+- Line-by-line comparison of downloaded artifacts before any server change (drift diagnostics).
+- Strict staging cleanup with terminating errors and empty-folder verification.
+- Byte-identical integrity controls in `deploy-test.yml` and `deploy-prod.yml`.
+- No application runtime or API behavior change. Historic root cause remains unrecoverable; the next
+  TEST deploy will provide definitive line-level diagnostics if drift recurs.
 
 ## [v2.217.0] - 2026-07-29
 

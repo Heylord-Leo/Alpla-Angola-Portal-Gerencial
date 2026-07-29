@@ -4,7 +4,46 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.217.0
+v2.217.1
+
+## [v2.217.1] - 2026-07-29
+
+### Fixed — CI Artifact-Integrity Hardening (TEST + PROD deploy workflows)
+
+Hardens the deployment artifact-integrity validation after a TEST deploy of `v2.217.0` aborted at the
+integrity gate (fail-closed, before touching the server). This is a **CI/deployment-only** change: there
+is **no application runtime, API, database, or user-facing behavior change**.
+
+- **Persisted canonical artifact inventory**: the build now writes a line-level `artifact-inventory.sha256`
+  into each artifact (API and Web) — one `<relative-path> <sha256>` line per file — so the exact per-file
+  content is auditable, not just an opaque aggregate.
+- **Aggregate tied to the inventory file**: `artifact-sha256.txt` is now the SHA-256 of the exact
+  UTF-8-without-BOM bytes of `artifact-inventory.sha256` (chain: files → inventory → aggregate), instead
+  of a separately rebuilt in-memory string.
+- **Deterministic ordinal ordering**: canonical inventory lines are sorted with `StringComparer.Ordinal`
+  (never culture-sensitive `Sort-Object`), so the build runner and the self-hosted runner construct a
+  byte-identical canonical input.
+- **Line-by-line downloaded-artifact comparison**: before any server change, the runner re-derives the
+  inventory from the downloaded files and diffs it against the shipped inventory, reporting added/removed
+  files and per-file SHA differences (paths only) — definitive drift diagnostics instead of an opaque
+  hash mismatch.
+- **Strict staging cleanup**: staging-folder deletion now uses terminating errors (`-ErrorAction Stop`)
+  and verifies the folders are removed and recreated empty before download; a partial cleanup aborts the
+  job instead of silently continuing.
+- **Identical controls in TEST and PROD**: the inventory, aggregate, and verification blocks are
+  byte-identical across `deploy-test.yml` and `deploy-prod.yml`.
+
+**Notes / limitations:**
+- The **historic root cause of the `v2.217.0` mismatch remains unrecoverable** — the prior workflow
+  shipped only the aggregate, never a line-level inventory, so the specific differing file(s) cannot be
+  reconstructed. The specific differing file was **not** identified.
+- The integrity gate was **not weakened or bypassed**; both checks remain fail-closed before pool-stop,
+  file copy, or web.config patching, and IIS activation stays conditional (no unconditional
+  `if: always()` activation).
+- A **TEST deploy for `v2.217.1` has not yet been run**; the next TEST deploy will provide definitive
+  line-level diagnostics if drift recurs.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.217.0] - 2026-07-29
 

@@ -202,31 +202,50 @@ jobs:
           $migrations | Set-Content -Path $outputFile -Encoding UTF8
           Write-Host "Generated expected-migrations.txt with $($migrations.Count) migrations"
 
-      # --- Artifact integrity (SHA-256) ---
-      # Deterministic folder hash over the FINAL artifact contents (excluding the hash file), written into
-      # each artifact as artifact-sha256.txt so the runner can re-hash and compare before touching PROD.
-      - name: Compute artifact SHA-256
+      # --- Artifact integrity: canonical inventory + aggregate (SHA-256) ---
+      # Writes a PERSISTED, line-level canonical inventory (artifact-inventory.sha256) into EACH artifact,
+      # plus an aggregate (artifact-sha256.txt) = SHA-256 of that inventory file's exact UTF-8 (no BOM)
+      # bytes. Ordinal sort only (culture-independent). The self-hosted runner re-derives the inventory
+      # from the downloaded files and compares it LINE BY LINE, so any content/set drift is provable — not
+      # an opaque hash mismatch. Chain: files -> artifact-inventory.sha256 -> artifact-sha256.txt. Both
+      # integrity files are excluded from the inventory. SEPARATE control from manifest-equality
+      # (binary integrity vs build identity).
+      - name: Compute artifact inventory and SHA-256
         shell: pwsh
         run: |
-          function Get-FolderSha256($path) {
-            $root = (Resolve-Path $path).Path.TrimEnd('\')
-            $files = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -ne 'artifact-sha256.txt' }
+          $ErrorActionPreference = 'Stop'
+          # Canonical inventory: one "<relpath> <sha256>" line per file, lowercased forward-slash paths,
+          # ORDINAL sort (never culture-sensitive Sort-Object), excluding both integrity files.
+          function Get-CanonicalInventory($path) {
+            $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
+            $files = Get-ChildItem -LiteralPath $root -Recurse -File |
+              Where-Object { $_.Name -ine 'artifact-sha256.txt' -and $_.Name -ine 'artifact-inventory.sha256' }
             $lines = foreach ($f in $files) {
               $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
               $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
               "$rel $h"
             }
-            $joined = ($lines | Sort-Object) -join "`n"
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
-            $sha = [System.Security.Cryptography.SHA256]::Create()
-            return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-','').ToLowerInvariant()
+            $arr = [string[]]@($lines)
+            [Array]::Sort($arr, [System.StringComparer]::Ordinal)
+            return , $arr
           }
-          $apiSha = Get-FolderSha256 "${{ github.workspace }}/artifacts/api"
-          $webSha = Get-FolderSha256 "${{ github.workspace }}/artifacts/web"
-          $apiSha | Set-Content -Path "${{ github.workspace }}/artifacts/api/artifact-sha256.txt" -Encoding ascii -NoNewline
-          $webSha | Set-Content -Path "${{ github.workspace }}/artifacts/web/artifact-sha256.txt" -Encoding ascii -NoNewline
-          Write-Host "::notice::apiArtifactSha256=$apiSha"
-          Write-Host "::notice::webArtifactSha256=$webSha"
+          function Write-Utf8NoBom($filePath, $text) {
+            $enc = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($filePath, $text, $enc)
+          }
+          foreach ($a in @(
+            @{ Path = "${{ github.workspace }}/artifacts/api"; Label = 'api' },
+            @{ Path = "${{ github.workspace }}/artifacts/web"; Label = 'web' }
+          )) {
+            $inv = Get-CanonicalInventory $a.Path
+            $joined = ($inv -join "`n")
+            $invFile = Join-Path $a.Path 'artifact-inventory.sha256'
+            Write-Utf8NoBom $invFile $joined
+            # Aggregate is the SHA-256 of the EXACT bytes just written (no independently rebuilt string).
+            $agg = (Get-FileHash -LiteralPath $invFile -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Utf8NoBom (Join-Path $a.Path 'artifact-sha256.txt') $agg
+            Write-Host "::notice::$($a.Label)Inventory=$($inv.Count) files; $($a.Label)ArtifactSha256=$agg"
+          }
 
       # --- Upload Artifacts ---
       - name: Upload API artifact
@@ -287,14 +306,25 @@ jobs:
       - name: Clean artifact staging directories
         shell: pwsh
         run: |
-          if (Test-Path "${{ env.ARTIFACT_API_PATH }}") {
-            Remove-Item -Path "${{ env.ARTIFACT_API_PATH }}" -Recurse -Force
+          $ErrorActionPreference = 'Stop'
+          # Static per-environment staging path is RETAINED (not run_id-scoped): the strict clean below
+          # already guarantees an empty tree each run, whereas run_id-scoped folders would accumulate on
+          # the self-hosted runner with no garbage collection. Fail-closed: any partial delete aborts the
+          # job BEFORE download, so a stale/locked leftover file can never corrupt integrity verification.
+          $paths = @("${{ env.ARTIFACT_API_PATH }}", "${{ env.ARTIFACT_WEB_PATH }}")
+          foreach ($p in $paths) {
+            if (Test-Path -LiteralPath $p) {
+              Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
+            }
+            if (Test-Path -LiteralPath $p) { throw "Staging cleanup FAILED: '$p' still exists after removal. Aborting (a stale/locked file could corrupt integrity verification)." }
           }
-          if (Test-Path "${{ env.ARTIFACT_WEB_PATH }}") {
-            Remove-Item -Path "${{ env.ARTIFACT_WEB_PATH }}" -Recurse -Force
+          foreach ($p in $paths) {
+            New-Item -ItemType Directory -Force -Path $p -ErrorAction Stop | Out-Null
+            if (-not (Test-Path -LiteralPath $p)) { throw "Staging cleanup FAILED: could not create '$p'." }
+            $remaining = @(Get-ChildItem -LiteralPath $p -Force -ErrorAction SilentlyContinue)
+            if ($remaining.Count -gt 0) { throw "Staging cleanup FAILED: '$p' is not empty after recreation ($($remaining.Count) item(s))." }
           }
-          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_API_PATH }}" | Out-Null
-          New-Item -ItemType Directory -Force -Path "${{ env.ARTIFACT_WEB_PATH }}" | Out-Null
+          Write-Host "::notice::Staging directories cleaned and verified empty (api + web)."
 
       - name: Download API artifact
         uses: actions/download-artifact@v4
@@ -325,34 +355,87 @@ jobs:
           if ($expected -and $api.buildId -ne $expected) { throw "FATAL: artifact buildId ($($api.buildId)) != expected ($expected). Aborting." }
           Write-Host "::notice::Build identity verified: $($api.buildId)"
 
-      # --- GATE: artifact integrity (SHA-256) — before any server mutation ---
-      - name: Verify artifact SHA-256 (integrity)
+      # --- GATE: artifact integrity (inventory + SHA-256) — before any server mutation ---
+      # Two independent checks per artifact, BOTH fail-closed before any server change:
+      #   (1) aggregate: SHA-256 of the downloaded artifact-inventory.sha256 file must equal the shipped
+      #       artifact-sha256.txt (detects a corrupt/tampered inventory or aggregate);
+      #   (2) content:  re-derive the canonical inventory from the downloaded files and diff it LINE BY
+      #       LINE against the shipped inventory (detects any added/removed/changed file — the exact
+      #       evidence the previous opaque folder-hash could not provide).
+      # Runs BEFORE DB checks, backup, pool stop, file copy and web.config patch. Separate control from
+      # the manifest-equality (identity) gate above.
+      - name: Verify artifact inventory and SHA-256 (integrity)
         shell: pwsh
         run: |
-          function Get-FolderSha256($path) {
-            $root = (Resolve-Path $path).Path.TrimEnd('\')
-            $files = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -ne 'artifact-sha256.txt' }
+          $ErrorActionPreference = 'Stop'
+          # Same canonical inventory used on the build side (ordinal sort, culture-independent).
+          function Get-CanonicalInventory($path) {
+            $root = (Resolve-Path -LiteralPath $path).Path.TrimEnd('\')
+            $files = Get-ChildItem -LiteralPath $root -Recurse -File |
+              Where-Object { $_.Name -ine 'artifact-sha256.txt' -and $_.Name -ine 'artifact-inventory.sha256' }
             $lines = foreach ($f in $files) {
               $rel = $f.FullName.Substring($root.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
               $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
               "$rel $h"
             }
-            $joined = ($lines | Sort-Object) -join "`n"
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($joined)
-            $sha = [System.Security.Cryptography.SHA256]::Create()
-            return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-','').ToLowerInvariant()
+            $arr = [string[]]@($lines)
+            [Array]::Sort($arr, [System.StringComparer]::Ordinal)
+            return , $arr
+          }
+          function Get-InventoryLines($filePath) {
+            $raw = [System.IO.File]::ReadAllText($filePath)
+            if ([string]::IsNullOrEmpty($raw)) { return , @() }
+            return , @(($raw -split "`n") | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ -ne '' })
+          }
+          function ConvertTo-InventoryMap($lines) {
+            $map = @{}
+            foreach ($ln in $lines) {
+              $idx = $ln.LastIndexOf(' ')
+              if ($idx -lt 1) { throw "Malformed inventory line (no separator): '$ln'" }
+              $map[$ln.Substring(0, $idx)] = $ln.Substring($idx + 1)
+            }
+            return $map
           }
           function Confirm-Artifact($path, $label) {
-            $expectedFile = Join-Path $path "artifact-sha256.txt"
-            if (-not (Test-Path $expectedFile)) { throw "artifact-sha256.txt missing in $label ($path) — cannot verify integrity." }
-            $expected = (Get-Content $expectedFile -Raw).Trim()
-            $actual = Get-FolderSha256 $path
-            Write-Host "${label}: expected=$expected actual=$actual"
-            if ($expected -ne $actual) { throw "ARTIFACT INTEGRITY FAILURE ($label): expected $expected, actual $actual. Aborting before touching PRODUCTION." }
+            $invFile = Join-Path $path 'artifact-inventory.sha256'
+            $aggFile = Join-Path $path 'artifact-sha256.txt'
+            if (-not (Test-Path -LiteralPath $invFile)) { throw "artifact-inventory.sha256 missing in $label ($path) - cannot verify integrity." }
+            if (-not (Test-Path -LiteralPath $aggFile)) { throw "artifact-sha256.txt missing in $label ($path) - cannot verify integrity." }
+
+            # (1) Aggregate gate: shipped aggregate must equal SHA-256 of the shipped inventory FILE bytes.
+            $expectedAgg = ([string][System.IO.File]::ReadAllText($aggFile)).Trim().ToLowerInvariant()
+            $actualAgg = (Get-FileHash -LiteralPath $invFile -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expectedAgg -ne $actualAgg) {
+              Write-Host "${label}: expectedAggregate=$expectedAgg actualInventoryFileAggregate=$actualAgg"
+              throw "ARTIFACT INTEGRITY FAILURE ($label): inventory aggregate mismatch (artifact-inventory.sha256 does not match artifact-sha256.txt). Aborting before touching the server."
+            }
+
+            # (2) Content gate: re-derive inventory from downloaded files, diff LINE BY LINE (paths only).
+            $expectedLines = Get-InventoryLines $invFile
+            $actualLines = Get-CanonicalInventory $path
+            $expectedMap = ConvertTo-InventoryMap $expectedLines
+            $actualMap = ConvertTo-InventoryMap $actualLines
+
+            $onlyExpected = @($expectedMap.Keys | Where-Object { -not $actualMap.ContainsKey($_) } | Sort-Object)
+            $onlyActual   = @($actualMap.Keys   | Where-Object { -not $expectedMap.ContainsKey($_) } | Sort-Object)
+            $shaDiff      = @($expectedMap.Keys | Where-Object { $actualMap.ContainsKey($_) -and ($actualMap[$_] -ne $expectedMap[$_]) } | Sort-Object)
+
+            if (($onlyExpected.Count -gt 0) -or ($onlyActual.Count -gt 0) -or ($shaDiff.Count -gt 0)) {
+              Write-Host "${label}: expectedAggregate=$expectedAgg actualInventoryFileAggregate=$actualAgg"
+              Write-Host "${label}: expectedLines=$($expectedLines.Count) actualLines=$($actualLines.Count)"
+              Write-Host "${label}: onlyInExpected=$($onlyExpected.Count) onlyInActual=$($onlyActual.Count) shaDiffers=$($shaDiff.Count)"
+              $diffs = @()
+              foreach ($p in $onlyExpected) { $diffs += "ONLY-IN-EXPECTED: $p" }
+              foreach ($p in $onlyActual)   { $diffs += "ONLY-IN-ACTUAL:   $p" }
+              foreach ($p in $shaDiff)      { $diffs += "SHA-DIFF:         $p (expected=$($expectedMap[$p]) actual=$($actualMap[$p]))" }
+              $diffs | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+              throw "ARTIFACT INTEGRITY FAILURE ($label): downloaded files do not match the shipped canonical inventory. Aborting before touching the server."
+            }
+            Write-Host "${label}: integrity OK (aggregate=$expectedAgg, $($actualLines.Count) files)."
           }
           Confirm-Artifact "${{ env.ARTIFACT_API_PATH }}" "api"
           Confirm-Artifact "${{ env.ARTIFACT_WEB_PATH }}" "web"
-          Write-Host "::notice::Artifact SHA-256 verified (api + web)."
+          Write-Host "::notice::Artifact inventory + SHA-256 verified (api + web)."
 
       # --- Pre-Deploy Database Validation & Backup ---
       - name: Validate Production database name
