@@ -72,7 +72,8 @@ public class QuotationReconciliationControllerTests
             new Mock<IPrimaveraRequestValidationService>().Object, new Mock<IGroupBuilderService>().Object,
             new Mock<IRequestStatusSyncService>().Object, new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object, new Mock<IRequestLineItemSubmissionValidator>().Object,
-            new Mock<IQuotationItemEligibilityService>().Object, new Mock<IBatchExtraItemDecisionService>().Object);
+            new Mock<IQuotationItemEligibilityService>().Object, new Mock<IBatchExtraItemDecisionService>().Object,
+            Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var identity = new ClaimsIdentity(new[]
         {

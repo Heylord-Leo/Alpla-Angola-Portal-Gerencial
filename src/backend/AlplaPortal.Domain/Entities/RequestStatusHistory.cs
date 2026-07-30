@@ -21,5 +21,15 @@ public class RequestStatusHistory
 
     public string? Comment { get; set; }
 
+    /// <summary>
+    /// Stable business identity of the event that produced this row, used to deduplicate
+    /// retried transitions (e.g. FI_VAL:{GroupId}:{AttachmentId}, GC:{GroupId}:{FiscalReceiptAttachmentId},
+    /// RC:{RequestId}:{CompletionCycleId}). Built exclusively by
+    /// <see cref="Services.PostPaymentIdempotencyKeys"/> — never a date and never a per-attempt GUID.
+    /// Nullable: every pre-existing row and every event without a defined key stays null,
+    /// which is why the uniqueness index is filtered on IS NOT NULL.
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 }

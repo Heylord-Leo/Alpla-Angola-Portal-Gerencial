@@ -4,7 +4,56 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.218.0
+v2.219.0
+
+## [v2.219.0] - 2026-07-30
+
+### Added — Post-Payment Completion — Release 1: Domain Foundation
+
+Schema and code foundation for the post-payment completion workflow (Operational Receipt,
+Final Invoice, Fiscal Receipt). **Foundation only — the feature is disabled and nothing in the
+product behaves differently.**
+
+- **`PostPaymentCompletion` configuration section** (`Enabled: false`,
+  `EffectiveDateUtc: 9999-12-31T23:59:59Z`). Three layers keep it off: the C# option defaults,
+  the committed `appsettings.json` value, and the absence of the section from the server-side
+  TEST/PROD configuration files. The effective date is evaluated against `Request.CreatedAtUtc`
+  and only decides *when classification is enforced at creation* — it never lets an open grouped
+  request skip classification.
+- **Domain fields**: `RequestPoGroup` gains the three independent post-payment dimensions
+  (operational receipt, final invoice, fiscal receipt — 14 fields) plus `CompletedAtUtc`;
+  `Request` gains `BillingDocumentType` and `CompletionCycleId`; `Quotation` gains `DocumentType`;
+  `RequestStatusHistory` gains `IdempotencyKey`.
+- **Concurrency**: `rowversion` tokens on `Requests` and `RequestPoGroups` — the project's first
+  proper concurrency tokens.
+- **Stable idempotency keys** (`PostPaymentIdempotencyKeys`): every key derives from persisted
+  business identifiers only — no date and no per-attempt GUID — so a retried transition recomputes
+  a byte-identical key. Group completion is keyed by its Fiscal Receipt attachment; request
+  completion by the persisted `Request.CompletionCycleId`.
+- **Constants**: `BillingDocumentTypes` (`PROFORMA`, `FINAL_INVOICE` — no default),
+  `FinalInvoiceStatuses` (default `UNCLASSIFIED`), `FiscalReceiptStatuses`, `CompletionPolicies`,
+  `FINAL_INVOICE`/`FISCAL_RECEIPT` attachment types, and 14 workflow event codes (declared only,
+  no handler registered).
+- **`IRequestCompletionService`**: the two-phase completion architecture (group completion inside
+  the caller's transaction, parent completion in a short transaction *after* commit) is declared
+  and injectable but **inactive** — both phases are no-ops while the feature is disabled.
+- **`FinalizeRequest` guard** placed entirely inside an `if (feature enabled)` branch; with the
+  flag false the endpoint executes its previous code path with no additional query.
+- **Migration `AddPostPaymentDimensions`**: purely additive — 20 `ADD COLUMN`, 1 `CREATE TABLE`
+  (`FinalInvoiceReconciliations`, empty until Release 3), 3 indexes including a filtered UNIQUE
+  index on `RequestStatusHistories.IdempotencyKey`, and 1 new `WAITING_FISCAL_RECEIPT` lookup row
+  (seeded, assigned to nothing). No `DROP`, `DELETE`, `UPDATE`, `TRUNCATE` or `ALTER COLUMN`.
+- **`UNCLASSIFIED` is the safe default** for `RequestPoGroup.FinalInvoiceStatus`, on new and
+  pre-existing rows: an unknown billing document type is never treated as "no invoice required".
+- **Read-only SQL**: an audit report and a post-migration verification script, both `SELECT`-only.
+- **70 new foundation tests**; existing suite unchanged apart from one added constructor argument.
+
+**Explicitly not in this delivery**: no frontend change; no new endpoint; no DTO; no OCR or
+reconciliation logic; no notification handler; no automatic completion; no historical data change
+or backfill; no `RECEIPT` attachment renamed or reclassified; Releases 2–5 are not part of this
+commit.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.218.0] - 2026-07-29
 

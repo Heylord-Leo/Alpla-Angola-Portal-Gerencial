@@ -27,6 +27,8 @@ using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Validation;
+using AlplaPortal.Domain.Configuration;
+using Microsoft.Extensions.Options;
 
 
 [Authorize]
@@ -47,6 +49,7 @@ public class RequestsController : BaseController
     private readonly IRequestLineItemSubmissionValidator _lineItemValidator;
     private readonly IQuotationItemEligibilityService _quotationEligibility;
     private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
+    private readonly PostPaymentCompletionOptions _postPaymentOptions;
 
     public RequestsController(
         ApplicationDbContext context,
@@ -62,8 +65,10 @@ public class RequestsController : BaseController
         ILineItemFactory lineItemFactory,
         IRequestLineItemSubmissionValidator lineItemValidator,
         IQuotationItemEligibilityService quotationEligibility,
-        IBatchExtraItemDecisionService extraItemDecisionService) : base(context)
+        IBatchExtraItemDecisionService extraItemDecisionService,
+        IOptions<PostPaymentCompletionOptions> postPaymentOptions) : base(context)
     {
+        _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
         _extractionService = extractionService;
         _adminLog = adminLog;
         _logger = logger;
@@ -7073,6 +7078,49 @@ public class RequestsController : BaseController
             if (request.Status!.Code == "COMPLETED")
             {
                 return Ok(new { Message = "Pedido já finalizado.", StatusCode = "COMPLETED" });
+            }
+
+            // ── Post-Payment Completion Workflow guard (Release 1 foundation) ──
+            // Entirely inside the feature-enabled branch: while PostPaymentCompletion.Enabled is
+            // false — the Release 1 state in every environment — this block is skipped before any
+            // query runs and FinalizeRequest executes exactly the code path it executed before.
+            //
+            // Once enabled, a request that owns PO groups may no longer be finalized here: an
+            // UNCLASSIFIED group must be classified first (rule R15), and a classified one
+            // completes through RequestCompletionService after the Fiscal Receipt upload. The
+            // legacy fallback survives only for historical requests that have no PO group at all.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                var hasPoGroups = await _context.RequestPoGroups
+                    .AnyAsync(g => g.RequestId == id);
+
+                if (hasPoGroups)
+                {
+                    var anyUnclassified = await _context.RequestPoGroups
+                        .AnyAsync(g => g.RequestId == id &&
+                                       g.FinalInvoiceStatus == RequestConstants.FinalInvoiceStatuses.Unclassified);
+
+                    if (anyUnclassified)
+                    {
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Classificação Obrigatória",
+                            Detail = "Este pedido possui grupos sem classificação de documento. " +
+                                     "Classifique o tipo de faturação antes de finalizar.",
+                            Status = 400
+                        });
+                    }
+
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Fluxo Atualizado",
+                        Detail = "Este pedido utiliza o novo fluxo de conclusão pós-pagamento. " +
+                                 "A finalização ocorre automaticamente após o upload do Recibo Fiscal.",
+                        Status = 400
+                    });
+                }
+
+                // No PO groups → historical groupless request → legacy fallback below is allowed.
             }
 
             // Status Rule: Finance finalization ONLY from WAITING_RECEIPT

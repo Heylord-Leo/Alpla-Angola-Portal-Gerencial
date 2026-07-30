@@ -73,6 +73,13 @@ public static class RequestConstants
         public const string WaitingSupplierDelivery = "WAITING_SUPPLIER_DELIVERY";
         public const string WaitingReconciliation = "WAITING_RECONCILIATION";
         public const string PoPartiallyUploaded = "PO_PARTIALLY_UPLOADED";
+
+        // ── Post-Payment Completion Workflow ──
+        /// <summary>
+        /// Operational receipt and Final Invoice satisfied; only the Fiscal Receipt is missing.
+        /// Release 1 seeds the lookup row; NO code assigns this status until Release 4.
+        /// </summary>
+        public const string WaitingFiscalReceipt = "WAITING_FISCAL_RECEIPT";
     }
 
     /// <summary>
@@ -118,6 +125,14 @@ public static class RequestConstants
         public const string WaitingReconciliation = "WAITING_RECONCILIATION";
         /// <summary>Group in follow-up for partial receiving.</summary>
         public const string InFollowup = "IN_FOLLOWUP";
+
+        /// <summary>
+        /// Post-Payment Completion Workflow: operational receipt done and Final Invoice satisfied,
+        /// waiting only for Finance to upload the Fiscal Receipt.
+        /// Release 1 declares the constant; NO code assigns it and it is deliberately absent from
+        /// the finalization helper arrays below until Release 4 activates the workflow.
+        /// </summary>
+        public const string WaitingFiscalReceipt = "WAITING_FISCAL_RECEIPT";
 
         // ── Terminal ──
         /// <summary>Group fully completed (all operational steps done).</summary>
@@ -207,6 +222,118 @@ public static class RequestConstants
 
         /// <summary>Statuses whose lines compose the quotation's financial totals.</summary>
         public static readonly string[] Considered = { Mapped, Substitute, ExtraItem };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Post-Payment Completion Workflow — Release 1 foundation constants.
+    // No code writes these values while PostPaymentCompletion.Enabled is false.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Billing document that originated a request or PO group. These two values are the
+    /// complete set — no other initial billing document type exists (rule R1).
+    /// Neither field carrying this value has a default: PROFORMA vs FINAL_INVOICE must always
+    /// be an explicit human decision (rules R13/R14).
+    /// </summary>
+    public static class BillingDocumentTypes
+    {
+        /// <summary>Proforma invoice — always requires a subsequent Final Invoice (rule R2).</summary>
+        public const string Proforma = "PROFORMA";
+        /// <summary>Final invoice supplied up front — no subsequent Final Invoice required (rule R3).</summary>
+        public const string FinalInvoice = "FINAL_INVOICE";
+
+        public static readonly string[] ValidValues = { Proforma, FinalInvoice };
+
+        public static bool IsValid(string? type) =>
+            ValidValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// True only for PROFORMA. A null/unknown type returns false here and must be handled as
+        /// UNCLASSIFIED by the caller — it is never silently treated as "nothing required" (rule R12).
+        /// </summary>
+        public static bool RequiresFinalInvoice(string? type) =>
+            string.Equals(type, Proforma, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Maps a billing document type to the Final Invoice obligation state of a PO group.
+        /// Null/unknown → UNCLASSIFIED (blocks completion until Finance classifies it).
+        /// </summary>
+        public static string ToFinalInvoiceStatus(string? type)
+        {
+            if (RequiresFinalInvoice(type)) return FinalInvoiceStatuses.PendingUpload;
+            if (string.Equals(type, FinalInvoice, StringComparison.OrdinalIgnoreCase))
+                return FinalInvoiceStatuses.NotApplicableInitialFinalInvoice;
+            return FinalInvoiceStatuses.Unclassified;
+        }
+    }
+
+    /// <summary>
+    /// Final Invoice obligation state of a RequestPoGroup (post-payment dimension 2).
+    /// UNCLASSIFIED is the persisted default: an unclassified group can never complete and can
+    /// never accept a Fiscal Receipt (rule R15).
+    /// </summary>
+    public static class FinalInvoiceStatuses
+    {
+        /// <summary>Billing document type unknown. Default for every group. Blocks completion.</summary>
+        public const string Unclassified = "UNCLASSIFIED";
+        /// <summary>Request started with a FINAL_INVOICE — no subsequent invoice is owed.</summary>
+        public const string NotApplicableInitialFinalInvoice = "NOT_APPLICABLE";
+        /// <summary>Started with a PROFORMA — a Final Invoice is owed and not yet uploaded.</summary>
+        public const string PendingUpload = "PENDING_UPLOAD";
+        /// <summary>Uploaded, awaiting Finance validation (rule R10).</summary>
+        public const string PendingValidation = "PENDING_VALIDATION";
+        /// <summary>Validated by Finance. Obligation satisfied.</summary>
+        public const string Validated = "VALIDATED";
+        /// <summary>Rejected by Finance. A new upload is expected.</summary>
+        public const string Rejected = "REJECTED";
+        /// <summary>Finance asked for a replacement document.</summary>
+        public const string ReplacementRequested = "REPLACEMENT_REQUESTED";
+        /// <summary>Reconciliation found a divergence Finance must decide on explicitly.</summary>
+        public const string DivergenceDetected = "DIVERGENCE_DETECTED";
+
+        /// <summary>States in which the Final Invoice dimension counts as done.</summary>
+        public static readonly string[] Satisfied =
+            { NotApplicableInitialFinalInvoice, Validated };
+
+        /// <summary>States in which a new Final Invoice upload is accepted.</summary>
+        public static readonly string[] AcceptsUpload =
+            { PendingUpload, Rejected, ReplacementRequested };
+
+        /// <summary>States that block group completion and Fiscal Receipt upload.</summary>
+        public static readonly string[] Blocking =
+            { Unclassified, PendingUpload, PendingValidation,
+              Rejected, ReplacementRequested, DivergenceDetected };
+
+        public static bool IsSatisfied(string? status) =>
+            Satisfied.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+
+        public static bool IsBlocking(string? status) =>
+            Blocking.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Fiscal Receipt state (post-payment dimension 3). DERIVED, never persisted as a column —
+    /// see <see cref="Services.FiscalReceiptStateDeriver"/>. The Fiscal Receipt is the terminal
+    /// closing step and only Finance may upload it (rules R5/R6).
+    /// </summary>
+    public static class FiscalReceiptStatuses
+    {
+        /// <summary>Other dimensions still pending — upload not yet available.</summary>
+        public const string Locked = "LOCKED";
+        /// <summary>All other dimensions satisfied — Finance may upload.</summary>
+        public const string PendingUpload = "PENDING";
+        /// <summary>Fiscal receipt attached. Group is completable.</summary>
+        public const string Uploaded = "UPLOADED";
+    }
+
+    /// <summary>
+    /// Completion policy markers. Requests completed before the post-payment workflow existed
+    /// stay completed and are never reconstructed or backfilled (rule R16).
+    /// </summary>
+    public static class CompletionPolicies
+    {
+        /// <summary>Completed under the pre-post-payment rules. No historical fact invention.</summary>
+        public const string LegacyCompleted = "LEGACY_COMPLETED";
     }
 
     /// <summary>

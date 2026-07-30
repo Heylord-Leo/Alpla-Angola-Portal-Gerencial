@@ -172,7 +172,8 @@ public class QuotationReuseAuthorizationIntegrationTests
             new Mock<IPrimaveraRequestValidationService>().Object, new Mock<IGroupBuilderService>().Object,
             new Mock<IRequestStatusSyncService>().Object, new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object, new Mock<IRequestLineItemSubmissionValidator>().Object,
-            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx));
+            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx),
+            Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
         SetUser(controller, actorId, roles);
         return controller;
     }

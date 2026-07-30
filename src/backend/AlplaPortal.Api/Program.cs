@@ -19,7 +19,9 @@ using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Infrastructure.Services.Requests;
 using AlplaPortal.Infrastructure.Services.Suppliers;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Application.Interfaces.Finance;
+using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
 using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Infrastructure.Services.MonthlyChanges;
@@ -131,6 +133,15 @@ builder.Services.AddScoped<IRequestLineItemSubmissionValidator, RequestLineItemS
 
 // Phase 3 — shared supplier matching + DRAFT creation (general admin + contextual payment-OCR endpoints)
 builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
+
+// Post-Payment Completion Workflow — Release 1 foundation.
+// The options bind to a section that ships with Enabled=false in every environment; when the
+// section is absent the class defaults (Enabled=false, EffectiveDateUtc=MaxValue) apply, so an
+// unconfigured environment can never switch the workflow on by accident.
+// The service is a two-phase skeleton and is a no-op while disabled — nothing calls it yet.
+builder.Services.Configure<PostPaymentCompletionOptions>(
+    builder.Configuration.GetSection(PostPaymentCompletionOptions.SectionName));
+builder.Services.AddScoped<IRequestCompletionService, RequestCompletionService>();
 
 // Department Manager redesign — single source of truth for area-approval routing
 builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();

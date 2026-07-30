@@ -130,6 +130,9 @@ public class ApplicationDbContext : DbContext
     // Email Outbox (async email delivery queue)
     public DbSet<EmailOutboxEntry> EmailOutbox => Set<EmailOutboxEntry>();
 
+    // Post-Payment Completion Workflow (Release 1: table created, first rows written in Release 3)
+    public DbSet<FinalInvoiceReconciliation> FinalInvoiceReconciliations => Set<FinalInvoiceReconciliation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -984,7 +987,12 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 26, Code = "WAITING_RECONCILIATION", Name = "Ag. Reconciliação", DisplayOrder = 26, BadgeColor = "#fd7e14" },
             new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" },
             new RequestStatus { Id = 27, Code = "PO_PARTIALLY_UPLOADED", Name = "P.O Parcialmente Registrada", DisplayOrder = 27, BadgeColor = "orange" },
-            new RequestStatus { Id = 28, Code = "ADVANCE_PAYMENT_SCHEDULED", Name = "Adiantamento Agendado", DisplayOrder = 28, BadgeColor = "#17a2b8" }
+            new RequestStatus { Id = 28, Code = "ADVANCE_PAYMENT_SCHEDULED", Name = "Adiantamento Agendado", DisplayOrder = 28, BadgeColor = "#17a2b8" },
+
+            // Post-Payment Completion Workflow — lookup row only. Release 1 seeds it so the code
+            // exists before the workflow needs it; NO request or PO group is assigned this status
+            // until Release 4 activates the workflow.
+            new RequestStatus { Id = 29, Code = "WAITING_FISCAL_RECEIPT", Name = "Aguardando Recibo Fiscal", DisplayOrder = 29, BadgeColor = "#8b5cf6" }
         );
 
         modelBuilder.Entity<Currency>().HasData(

@@ -1,4 +1,6 @@
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -20,7 +22,15 @@ public class RequestConfiguration : IEntityTypeConfiguration<Request>
         builder.Property(r => r.ApprovedTotalAmount).HasColumnType("decimal(18,2)");
         builder.Property(r => r.ApprovedCurrencyCode).HasMaxLength(10);
         builder.Property(r => r.ActualPaidAmount).HasColumnType("decimal(18,2)");
-        
+
+        // ── Post-Payment Completion Workflow (Release 1 foundation) ──
+        builder.Property(r => r.BillingDocumentType).HasMaxLength(50);
+
+        // Concurrency token: selects a single winner for the parent-completion transition when
+        // several PO groups of the same request complete concurrently (plan v6 §11.4/§19).
+        builder.Property(r => r.RowVersion).IsRowVersion();
+
+
         // Strict mapping: A Request has many LineItems, Histories, Attachments
         builder.HasMany(r => r.LineItems)
                .WithOne(li => li.Request)
@@ -213,6 +223,10 @@ public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
         builder.Property(q => q.SourceType).IsRequired().HasMaxLength(20);
         builder.Property(q => q.SourceFileName).HasMaxLength(255);
 
+        // Post-Payment Completion Workflow (Release 1 foundation): no default — the Buyer must
+        // choose PROFORMA or FINAL_INVOICE explicitly (rule R13). Consumed from Release 2.
+        builder.Property(q => q.DocumentType).HasMaxLength(50);
+
         builder.HasOne(q => q.Request)
                .WithMany(r => r.Quotations)
                .HasForeignKey(q => q.RequestId)
@@ -334,6 +348,23 @@ public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGro
         builder.Property(g => g.PurchaseOrderNumber).HasMaxLength(100);
         builder.Property(g => g.TotalAmount).HasColumnType("decimal(18,2)");
         builder.Property(g => g.AdvancePaymentPercent).HasColumnType("decimal(9,4)");
+
+        // ── Post-Payment Completion Workflow (Release 1 foundation) ──
+
+        // Concurrency token: the three dimensions below are written by different roles and can
+        // collide (Finance validating an invoice while Receiving confirms receipt).
+        builder.Property(g => g.RowVersion).IsRowVersion();
+
+        builder.Property(g => g.BillingDocumentType).HasMaxLength(50);
+
+        // UNCLASSIFIED is the persisted default, for new AND pre-existing rows: a group whose
+        // billing document type is unknown must never look like "no invoice required" (rule R12).
+        builder.Property(g => g.FinalInvoiceStatus)
+               .IsRequired()
+               .HasMaxLength(50)
+               .HasDefaultValue(RequestConstants.FinalInvoiceStatuses.Unclassified);
+
+        builder.Property(g => g.FinalInvoiceRejectionReason).HasMaxLength(2000);
 
         builder.HasOne(g => g.Supplier)
                .WithMany()
@@ -478,6 +509,69 @@ public class ApprovalBatchExtraItemDecisionConfiguration : IEntityTypeConfigurat
 
         builder.HasIndex(d => d.ApprovalBatchId)
                .HasDatabaseName("IX_ApprovalBatchExtraItemDecision_BatchId");
+    }
+}
+
+// ── Post-Payment Completion Workflow — Release 1 foundation ──
+
+/// <summary>
+/// RequestStatusHistory previously relied on convention only. This configuration adds nothing to
+/// the existing mapping beyond the new IdempotencyKey column and its uniqueness guarantee.
+/// </summary>
+public class RequestStatusHistoryConfiguration : IEntityTypeConfiguration<RequestStatusHistory>
+{
+    public void Configure(EntityTypeBuilder<RequestStatusHistory> builder)
+    {
+        builder.HasKey(h => h.Id);
+
+        builder.Property(h => h.IdempotencyKey)
+               .HasMaxLength(PostPaymentIdempotencyKeys.MaxLength);
+
+        // The application-level "does this key already exist?" check is a fast path, not a
+        // guarantee — two concurrent transactions can both pass it. This index is the actual
+        // invariant. FILTERED on IS NOT NULL so that every pre-existing row, and every event
+        // without a defined key, is unaffected.
+        //
+        // Releases 3–4 note (transaction safety): a duplicate-key violation must NOT be handled
+        // by catching SQL error 2601/2627 and continuing, because the failing SaveChanges also
+        // carries the business-state change and SQL Server may abort the whole transaction.
+        // The centralized handling must instead reload/re-evaluate state, or isolate the history
+        // insert behind a savepoint or a conditional (NOT EXISTS) insert, so a duplicate event
+        // can never silently discard the state update that justified it.
+        builder.HasIndex(h => h.IdempotencyKey)
+               .IsUnique()
+               .HasFilter("[IdempotencyKey] IS NOT NULL")
+               .HasDatabaseName("UX_RequestStatusHistory_IdempotencyKey");
+    }
+}
+
+/// <summary>
+/// Immutable Final Invoice reconciliation snapshots. Table created in Release 1; first rows are
+/// written in Release 3.
+/// </summary>
+public class FinalInvoiceReconciliationConfiguration : IEntityTypeConfiguration<FinalInvoiceReconciliation>
+{
+    public void Configure(EntityTypeBuilder<FinalInvoiceReconciliation> builder)
+    {
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.BaselineTotal).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.InvoiceTotal).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.ResidualVariance).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.ToleranceApplied).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.DivergenceJustification).HasMaxLength(2000);
+        builder.Property(r => r.ReconciliationDataJson).IsRequired();
+
+        builder.HasOne(r => r.RequestPoGroup)
+               .WithMany()
+               .HasForeignKey(r => r.RequestPoGroupId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(r => r.RequestPoGroupId)
+               .HasDatabaseName("IX_FinalInvoiceReconciliation_PoGroupId");
+
+        builder.HasIndex(r => r.FinalInvoiceAttachmentId)
+               .HasDatabaseName("IX_FinalInvoiceReconciliation_AttachmentId");
     }
 }
 

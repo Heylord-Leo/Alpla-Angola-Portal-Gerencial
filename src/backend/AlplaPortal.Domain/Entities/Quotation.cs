@@ -15,6 +15,13 @@ public class Quotation
 
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>
+    /// Post-Payment Completion Workflow (Release 1 foundation): billing document type of this
+    /// quotation — PROFORMA | FINAL_INVOICE | null. No default; the Buyer must select explicitly
+    /// (rule R13). Propagated to the PO group by GroupBuilderService from Release 2 onwards.
+    /// </summary>
+    public string? DocumentType { get; set; }
     public string Currency { get; set; } = string.Empty;
 
     // Financial Totals

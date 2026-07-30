@@ -2,7 +2,25 @@
 
 ## Current Version
 
-v2.218.0
+v2.219.0
+
+## [v2.219.0] - 2026-07-30
+
+### Added — Post-Payment Completion — Release 1: Domain Foundation
+
+- **Feature remains disabled**: `PostPaymentCompletion.Enabled = false` in every committed
+  configuration. No user-facing behaviour changed and no frontend file was touched.
+- **Domain foundation**: post-payment dimension fields on `RequestPoGroup`;
+  `Request.BillingDocumentType` and `Request.CompletionCycleId`; `Quotation.DocumentType`;
+  `RequestStatusHistory.IdempotencyKey`; `rowversion` concurrency tokens on `Requests` and
+  `RequestPoGroups`; the `FinalInvoiceReconciliations` table.
+- **Migration `AddPostPaymentDimensions`** — additive only (20 columns, 1 table, 3 indexes,
+  1 new lookup row). No historical data was updated and no `RECEIPT` value was renamed.
+- **Two-phase completion service** declared but inactive; automatic completion is not enabled.
+- **`UNCLASSIFIED`** is the persisted default for the Final Invoice obligation.
+- Releases 2–5 are not part of this delivery.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.218.0] - 2026-07-29
 

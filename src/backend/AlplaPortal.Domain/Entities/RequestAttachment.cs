@@ -22,7 +22,18 @@ public class RequestAttachment
     public const string TYPE_PO = "PO";
     public const string TYPE_PAYMENT_PROOF = "PAYMENT_PROOF";
     public const string TYPE_PAYMENT_SCHEDULE = "PAYMENT_SCHEDULE";
+    /// <summary>
+    /// Legacy supplier receipt. Semantically ambiguous (fiscal receipt vs. delivery note) and
+    /// therefore NEVER renamed or reclassified automatically — historical rows keep this code
+    /// exactly as recorded (rule R18). New fiscal receipts use <see cref="TYPE_FISCAL_RECEIPT"/>.
+    /// </summary>
     public const string TYPE_RECEIPT = "RECEIPT";
+
+    // ── Post-Payment Completion Workflow (Release 1 foundation) ──
+    /// <summary>Final Invoice ("Fatura Final") uploaded post-payment by Requester, Buyer or Finance.</summary>
+    public const string TYPE_FINAL_INVOICE = "FINAL_INVOICE";
+    /// <summary>Fiscal receipt ("Recibo Fiscal") — terminal closing document, uploaded by Finance only.</summary>
+    public const string TYPE_FISCAL_RECEIPT = "FISCAL_RECEIPT";
 
     // Buy-to-Pay
     public const string TYPE_ADVANCE_PAYMENT_PROOF = "ADVANCE_PAYMENT_PROOF";
