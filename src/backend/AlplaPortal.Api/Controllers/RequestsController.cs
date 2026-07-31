@@ -1121,6 +1121,7 @@ public class RequestsController : BaseController
                 CurrencyCode = r.Currency != null ? r.Currency.Code : null,
 
                 // B2P: Payment Condition
+                BillingDocumentType = r.BillingDocumentType,
                 PaymentConditionCode = r.PaymentConditionCode,
                 AdvancePaymentPercent = r.AdvancePaymentPercent,
                 PaymentConditionSource = r.PaymentConditionSource,
@@ -1237,6 +1238,7 @@ public class RequestsController : BaseController
                     SupplierPrimaveraCode = q.Supplier != null ? q.Supplier.PrimaveraCode : null,
                     SupplierRegistrationStatus = q.Supplier != null ? q.Supplier.RegistrationStatus : null,
                     DocumentNumber = q.DocumentNumber,
+                    DocumentType = q.DocumentType,
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
@@ -1852,6 +1854,25 @@ public class RequestsController : BaseController
             }
         }
 
+        // 2.2. Post-Payment Completion (Release 2) — billing document type.
+        // Format-checked here; the mandatory rule lives at submission (a draft may be saved
+        // without it). Only PAYMENT carries it on the Request: a QUOTATION derives the obligation
+        // from its winning Quotation.DocumentType instead, so the field stays null there.
+        string? billingDocumentType = null;
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            billingDocumentType = RequestConstants.BillingDocumentTypes.Normalize(dto.BillingDocumentType);
+            if (billingDocumentType != null && !RequestConstants.BillingDocumentTypes.IsValid(billingDocumentType))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Erro de Validação",
+                    Detail = "O Tipo de Documento de Faturação é inválido. Selecione 'Fatura Proforma' ou 'Fatura Final'.",
+                    Status = 400
+                });
+            }
+        }
+
         var initialStatusCode = requestTypeEntity.Code == "QUOTATION" ? "WAITING_QUOTATION" : "DRAFT";
         var initialStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == initialStatusCode);
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
@@ -1946,6 +1967,7 @@ public class RequestsController : BaseController
             NeedByDateUtc = dto.NeedByDateUtc,
             
             SupplierId = dto.SupplierId,
+            BillingDocumentType = billingDocumentType, // PAYMENT only; null until explicitly chosen
             BuyerId = dto.BuyerId, // Let it be null
             // Phase B: AreaApproverId is no longer nominated — it stays null until an
             // area manager actually decides (routing via DepartmentManagers at submit).
@@ -2299,6 +2321,32 @@ public class RequestsController : BaseController
             TrackField("EstimatedTotalAmount", "Valor Bruto Estimado", request.EstimatedTotalAmount.ToString("F2"), dto.EstimatedTotalAmount.ToString("F2"));
             request.EstimatedTotalAmount = dto.EstimatedTotalAmount; changedFields.Add("Valor Bruto Estimado"); changed = true;
         }
+        // Post-Payment Completion (Release 2): the billing document type is editable only while the
+        // request is still a DRAFT. Once submitted it is locked — the classification is what the
+        // downstream Final Invoice obligation is computed from.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment && statusCode == "DRAFT")
+        {
+            var newBillingDocumentType = RequestConstants.BillingDocumentTypes.Normalize(dto.BillingDocumentType);
+            if (newBillingDocumentType != null && !RequestConstants.BillingDocumentTypes.IsValid(newBillingDocumentType))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Erro de Validação",
+                    Detail = "O Tipo de Documento de Faturação é inválido. Selecione 'Fatura Proforma' ou 'Fatura Final'.",
+                    Status = 400
+                });
+            }
+
+            if (request.BillingDocumentType != newBillingDocumentType)
+            {
+                TrackField("BillingDocumentType", "Tipo de Documento de Faturação",
+                    RequestConstants.BillingDocumentTypes.DisplayName(request.BillingDocumentType),
+                    RequestConstants.BillingDocumentTypes.DisplayName(newBillingDocumentType));
+                request.BillingDocumentType = newBillingDocumentType;
+                changedFields.Add("Tipo de Documento de Faturação"); changed = true;
+            }
+        }
+
         if (request.DiscountAmount != dto.DiscountAmount)
         {
             TrackField("DiscountAmount", "Desconto Global", request.DiscountAmount.ToString("F2"), dto.DiscountAmount.ToString("F2"));
@@ -2533,6 +2581,18 @@ public class RequestsController : BaseController
         // QUOTATION: NeedByDateUtc is required at header level
         if (request.RequestType!.Code == "QUOTATION" && request.NeedByDateUtc == null)
             errors.Add("A Data de Necessidade (Necessário Até) é obrigatória para pedidos de Cotação.");
+
+        // PAYMENT: Post-Payment Completion (Release 2) — the billing document type becomes
+        // mandatory at submission, never at draft. Gated twice: the feature must be on, and the
+        // request must fall on or after the effective date (PostPaymentCompletionPolicy evaluates
+        // Request.CreatedAtUtc). A request created before the cut-off keeps the old submission
+        // rules and is classified later through the Release 5 Finance workflow instead.
+        if (request.RequestType!.Code == RequestConstants.Types.Payment &&
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request) &&
+            !RequestConstants.BillingDocumentTypes.IsValid(request.BillingDocumentType))
+        {
+            errors.Add("O Tipo de Documento de Faturação é obrigatório. Selecione 'Fatura Proforma' ou 'Fatura Final' antes de submeter.");
+        }
 
         // Conditional Item Validation
         // Phase 2 — a QUOTATION can only be submitted with at least one VALID item; an attachment no
@@ -3822,6 +3882,9 @@ public class RequestsController : BaseController
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
         var unitAllowsDecimal = await _context.Units.ToDictionaryAsync(u => u.Id, u => u.AllowsDecimalQuantity);
 
+        var documentTypeProblem = ValidateQuotationDocumentType(request, dto.DocumentType, out var quotationDocumentType);
+        if (documentTypeProblem != null) return BadRequest(documentTypeProblem);
+
         var quotation = new Quotation
         {
             Id = Guid.NewGuid(),
@@ -3830,6 +3893,7 @@ public class RequestsController : BaseController
             SupplierNameSnapshot = supplier.Name, // Explicit snapshot from the current record
             DocumentNumber = dto.DocumentNumber?.Trim(),
             DocumentDate = dto.DocumentDate,
+            DocumentType = quotationDocumentType,
             Currency = dto.Currency.ToUpper(),
             SourceType = dto.SourceType ?? "MANUAL",
             SourceFileName = dto.SourceFileName,
@@ -4021,6 +4085,7 @@ public class RequestsController : BaseController
             SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
+            DocumentType = quotation.DocumentType,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -4127,10 +4192,14 @@ public class RequestsController : BaseController
             quotation.ProformaAttachmentId = dto.ProformaAttachmentId;
         }
         
+        var updateDocumentTypeProblem = ValidateQuotationDocumentType(request, dto.DocumentType, out var updatedDocumentType);
+        if (updateDocumentTypeProblem != null) return BadRequest(updateDocumentTypeProblem);
+
         quotation.SupplierId = dto.SupplierId;
         quotation.SupplierNameSnapshot = supplier.Name;
         quotation.DocumentNumber = dto.DocumentNumber?.Trim();
         quotation.DocumentDate = dto.DocumentDate;
+        quotation.DocumentType = updatedDocumentType;
         quotation.Currency = dto.Currency.ToUpper();
 
         // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints)
@@ -4373,6 +4442,7 @@ public class RequestsController : BaseController
             SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
+            DocumentType = quotation.DocumentType,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -5647,6 +5717,19 @@ public class RequestsController : BaseController
                         CreatedAtUtc = DateTime.UtcNow,
                         CreatedByUserId = actorId
                     };
+
+                    // Post-Payment Completion (Release 2): carry the request's classification onto
+                    // the group and derive its Final Invoice obligation.
+                    //   PROFORMA      → PENDING_UPLOAD (a Final Invoice is owed later)
+                    //   FINAL_INVOICE → NOT_APPLICABLE (the obligation was met up front)
+                    //   null/unknown  → UNCLASSIFIED   (blocks completion until classified)
+                    // Skipped entirely while the feature is disabled, leaving the schema default.
+                    if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+                    {
+                        paymentGroup.BillingDocumentType = request.BillingDocumentType;
+                        paymentGroup.FinalInvoiceStatus =
+                            RequestConstants.BillingDocumentTypes.ToFinalInvoiceStatus(request.BillingDocumentType);
+                    }
 
                     _context.RequestPoGroups.Add(paymentGroup);
 
@@ -7995,6 +8078,42 @@ public class RequestsController : BaseController
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Post-Payment Completion (Release 2): validates the quotation's billing document type.
+    ///
+    /// <para>Returns null when acceptable, or the ProblemDetails to return otherwise. The value is
+    /// mandatory only when the new workflow applies to the parent request (feature enabled AND the
+    /// request falls on/after the effective date); a quotation on an older request stays
+    /// unclassified here and is handled by the Release 5 Finance classification workflow.</para>
+    /// </summary>
+    private ProblemDetails? ValidateQuotationDocumentType(Request request, string? rawDocumentType, out string? normalized)
+    {
+        normalized = RequestConstants.BillingDocumentTypes.Normalize(rawDocumentType);
+
+        if (normalized != null && !RequestConstants.BillingDocumentTypes.IsValid(normalized))
+        {
+            return new ProblemDetails
+            {
+                Title = "Validação de Cotação",
+                Detail = "O Tipo de Documento é inválido. Selecione 'Fatura Proforma' ou 'Fatura Final'.",
+                Status = 400
+            };
+        }
+
+        if (normalized == null &&
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request))
+        {
+            return new ProblemDetails
+            {
+                Title = "Validação de Cotação",
+                Detail = "O Tipo de Documento é obrigatório. Selecione 'Fatura Proforma' ou 'Fatura Final' antes de guardar a cotação.",
+                Status = 400
+            };
+        }
+
+        return null;
     }
 
     private async Task<bool> HasAttachmentAsync(Guid requestId, string typeCode)

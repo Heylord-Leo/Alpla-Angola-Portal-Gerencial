@@ -21,10 +21,15 @@ import { ReconcilableItem, ItemResolution } from '../../types';
 import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
+import { BillingDocumentTypeField } from '../../components/requests/BillingDocumentTypeField';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 
 export function RequestCreate() {
     const navigate = useNavigate();
+    // Post-Payment Completion (Release 2). Flags start off, so the form renders exactly as before
+    // until the server confirms the feature is enabled.
+    const { flags: featureFlags } = useFeatureFlags();
     const [searchParams] = useSearchParams();
     const location = useLocation() as { state: { fromList?: string } | null };
     
@@ -101,7 +106,9 @@ export function RequestCreate() {
         plantId: '',
         buyerId: '',
         areaApproverId: '',
-        finalApproverId: ''
+        finalApproverId: '',
+        // Post-Payment Completion (Release 2): PROFORMA | FINAL_INVOICE | '' (nothing chosen).
+        billingDocumentType: ''
     });
 
     // Reconciliation Engine — unified for both payment and requester items
@@ -773,6 +780,12 @@ export function RequestCreate() {
             buyerId: formData.buyerId || null,
             // areaApproverId removido (Fase B): o backend resolve o roteamento de área
             finalApproverId: formData.finalApproverId || null,
+            // Post-Payment Completion (Release 2). PAYMENT only, and only when the feature is on.
+            // A PAYMENT request is created as a DRAFT, so an empty value is legitimate here — the
+            // mandatory rule applies at submission.
+            billingDocumentType: Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled
+                ? (formData.billingDocumentType || null)
+                : null,
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
                 description: item.description,
@@ -1806,6 +1819,24 @@ export function RequestCreate() {
                          </AnimatePresence>
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                            {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
+                                Sits beside the other header fields so the classification is made
+                                while the requester still has the document in front of them. */}
+                            {featureFlags.postPaymentCompletionEnabled && Number(formData.requestTypeId) === 2 && (
+                                <BillingDocumentTypeField
+                                    data-guide="request-billing-document-type"
+                                    value={formData.billingDocumentType}
+                                    onChange={(val) => {
+                                        setFormData(prev => ({ ...prev, billingDocumentType: val }));
+                                        clearFieldError('BillingDocumentType');
+                                    }}
+                                    required={featureFlags.billingDocumentTypeRequired}
+                                    error={getFieldErrors('BillingDocumentType')?.[0] ?? null}
+                                    labelStyle={labelStyle}
+                                    inputStyle={getInputStyle('BillingDocumentType')}
+                                />
+                            )}
+
                             <label data-guide="request-need-level" style={labelStyle}>
                                 Grau de Necessidade <span style={{ color: 'red' }}>*</span>
                                 <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} style={getInputStyle('NeedLevelId')}>

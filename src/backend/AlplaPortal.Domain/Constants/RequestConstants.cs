@@ -248,6 +248,21 @@ public static class RequestConstants
             ValidValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
+        /// Canonical form of a submitted value: trimmed and upper-cased, or null when blank.
+        /// A blank selection stays null — it is never coerced into a type on the user's behalf.
+        /// </summary>
+        public static string? Normalize(string? type) =>
+            string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToUpperInvariant();
+
+        /// <summary>Portuguese label used in validation messages and history entries.</summary>
+        public static string DisplayName(string? type) => type switch
+        {
+            Proforma => "Fatura Proforma",
+            FinalInvoice => "Fatura Final",
+            _ => "Não classificado"
+        };
+
+        /// <summary>
         /// True only for PROFORMA. A null/unknown type returns false here and must be handled as
         /// UNCLASSIFIED by the caller — it is never silently treated as "nothing required" (rule R12).
         /// </summary>

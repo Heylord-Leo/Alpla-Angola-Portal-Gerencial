@@ -3,20 +3,31 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AlplaPortal.Infrastructure.Services.Purchasing;
 
 public class GroupBuilderService : IGroupBuilderService
 {
     private readonly ApplicationDbContext _context;
+    private readonly PostPaymentCompletionOptions _postPaymentOptions;
 
-    public GroupBuilderService(ApplicationDbContext context)
+    /// <summary>
+    /// <paramref name="postPaymentOptions"/> is optional so existing call sites that only care
+    /// about grouping keep working; when omitted the Post-Payment classification is treated as
+    /// disabled, which is the safe default.
+    /// </summary>
+    public GroupBuilderService(
+        ApplicationDbContext context,
+        IOptions<PostPaymentCompletionOptions>? postPaymentOptions = null)
     {
         _context = context;
+        _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
     }
 
     public async Task BuildGroupsForRequestAsync(Guid requestId, CancellationToken cancellationToken = default)
@@ -103,6 +114,11 @@ public class GroupBuilderService : IGroupBuilderService
 
             // Calculate total for the group based on the awarded quotation items (not line item estimates)
             existingGroup.TotalAmount = group.Sum(x => x.QuotationItem!.LineTotal);
+
+            // Post-Payment Completion (Release 2): derive the group's Final Invoice obligation from
+            // the WINNING quotation(s) behind its awarded items. Losing quotations never contribute,
+            // because only items carrying SelectedQuotationItemId reach this point.
+            ApplyBillingClassification(existingGroup, group.Select(x => x.QuotationItem!.Quotation));
         }
 
         // Clean up any empty groups (e.g. after a correction/return flow)
@@ -190,6 +206,9 @@ public class GroupBuilderService : IGroupBuilderService
 
             _context.RequestPoGroups.Add(poGroup);
 
+            // Post-Payment Completion (Release 2) — see ApplyBillingClassification.
+            ApplyBillingClassification(poGroup, group.Select(x => x.QuotationItem!.Quotation));
+
             // Assign the LineItems to this group
             foreach (var item in group)
             {
@@ -198,5 +217,48 @@ public class GroupBuilderService : IGroupBuilderService
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Post-Payment Completion (Release 2): sets a PO group's <c>BillingDocumentType</c> and derived
+    /// <c>FinalInvoiceStatus</c> from the winning quotations behind its awarded items.
+    ///
+    /// <list type="bullet">
+    /// <item>PROFORMA → PENDING_UPLOAD — a Final Invoice is owed after payment.</item>
+    /// <item>FINAL_INVOICE → NOT_APPLICABLE — the obligation was already met.</item>
+    /// <item>missing, or two winning quotations disagreeing → UNCLASSIFIED, which blocks completion
+    /// until a human classifies it. Guessing an obligation is never acceptable.</item>
+    /// </list>
+    ///
+    /// <para><b>Winner replacement.</b> Groups are rebuilt whenever the award changes, so this runs
+    /// again and recomputes the obligation. It refuses to touch a group that has already started its
+    /// post-payment lifecycle (an invoice uploaded, a fiscal receipt attached, or the operational
+    /// receipt confirmed): silently rewriting an obligation that documents already answer would
+    /// discard real evidence. In practice groups are rebuilt only before the operational stages, so
+    /// that guard is a safety net rather than a routine path.</para>
+    /// </summary>
+    private void ApplyBillingClassification(RequestPoGroup poGroup, IEnumerable<Quotation> winningQuotations)
+    {
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return;
+
+        var hasPostPaymentActivity =
+            poGroup.FinalInvoiceAttachmentId != null ||
+            poGroup.FiscalReceiptAttachmentId != null ||
+            poGroup.OperationalReceiptCompletedAtUtc != null;
+
+        if (hasPostPaymentActivity)
+            return;
+
+        var distinctTypes = winningQuotations
+            .Select(q => RequestConstants.BillingDocumentTypes.Normalize(q.DocumentType))
+            .Distinct()
+            .ToList();
+
+        // Exactly one agreed classification is required; anything else stays UNCLASSIFIED.
+        var resolved = distinctTypes.Count == 1 ? distinctTypes[0] : null;
+
+        poGroup.BillingDocumentType = resolved;
+        poGroup.FinalInvoiceStatus = RequestConstants.BillingDocumentTypes.ToFinalInvoiceStatus(resolved);
     }
 }

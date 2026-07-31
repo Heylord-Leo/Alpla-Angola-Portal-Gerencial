@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.219.0
+v2.220.0
+
+## [v2.220.0] - 2026-07-31
+
+### Added — Post-Payment Completion — Release 2: Document Classification
+
+- **Feature remains disabled** in every committed configuration; nothing below is visible until an
+  environment is explicitly switched on.
+- **"Tipo de Documento de Faturação"** on PAYMENT requests — no default, optional on a draft,
+  mandatory at submission, read-only once submitted.
+- **`Quotation.DocumentType` now persists** — the wizard already collected it, but the value never
+  reached the API.
+- **Obligation propagation**: `PROFORMA` → `PENDING_UPLOAD`, `FINAL_INVOICE` → `NOT_APPLICABLE`,
+  missing or ambiguous → `UNCLASSIFIED`. Only winning quotations contribute.
+- **New endpoint** `GET /api/v1/config/features` (booleans only).
+- **No migration, no schema change, no historical data change.**
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.219.0] - 2026-07-30
 

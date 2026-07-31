@@ -9,6 +9,14 @@ public class SaveQuotationRequestDto
     public string SupplierNameSnapshot { get; set; } = string.Empty;
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>
+    /// Post-Payment Completion (Release 2): billing document type of this quotation —
+    /// PROFORMA or FINAL_INVOICE. No default; the Buyer must select explicitly. Only the WINNING
+    /// quotation's value ever produces a Final Invoice obligation on the PO group.
+    /// </summary>
+    public string? DocumentType { get; set; }
+
     public string Currency { get; set; } = string.Empty;
     public decimal TotalGrossAmount { get; set; }
     public decimal DiscountAmount { get; set; }
@@ -133,6 +141,10 @@ public class SavedQuotationDto
     public string SupplierNameSnapshot { get; set; } = string.Empty;
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE, or null when unclassified.</summary>
+    public string? DocumentType { get; set; }
+
     public string Currency { get; set; } = string.Empty;
     public decimal TotalGrossAmount { get; set; }
     public decimal DiscountAmount { get; set; }

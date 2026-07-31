@@ -4,7 +4,51 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.219.0
+v2.220.0
+
+## [v2.220.0] - 2026-07-31
+
+### Added — Post-Payment Completion — Release 2: Document Classification
+
+Captures **which billing document originated a purchase**, so the system knows whether a Final
+Invoice will still be owed after payment. The workflow remains **disabled in every committed
+configuration** — none of the below is visible until the feature is switched on for an environment.
+
+- **New field "Tipo de Documento de Faturação"** on PAYMENT requests (`Fatura Proforma` →
+  `PROFORMA`, `Fatura Final` → `FINAL_INVOICE`). **No default and no auto-selection**: the
+  placeholder stays selected until a person chooses, so an unclassified request always means
+  somebody did not decide — never that the system decided for them. Inline help states the
+  consequence of each choice, because the selection commits the request to a later obligation.
+- **Draft stays permissive, submission is strict.** A draft may be saved unclassified; submission
+  requires a valid value. Enforced in `SubmitRequest` server-side, mirrored in the UI, and gated on
+  the request falling on/after the effective date — a request created before the cut-off keeps the
+  old submission rules.
+- **Locked after submission.** The classification is editable only while the request is `DRAFT`;
+  afterwards it renders read-only, since the Final Invoice obligation is derived from it.
+  Changes while still a draft are recorded in `RequestFieldChangeHistory`.
+- **Quotation classification now persists.** The Quotation Wizard has always collected "Tipo de
+  Documento da Cotação", but the value was dropped before reaching the API. It is now validated,
+  stored on `Quotation.DocumentType`, returned by the API, and rehydrated when a quotation is
+  reopened for editing.
+- **Obligation propagation to PO groups.** At Final Approval (PAYMENT) and when groups are built
+  from a batch (QUOTATION): `PROFORMA` → `PENDING_UPLOAD`, `FINAL_INVOICE` → `NOT_APPLICABLE`,
+  missing → `UNCLASSIFIED`. Only **winning** quotations contribute; a losing quotation can never
+  clear an obligation. Two winning quotations that disagree resolve to `UNCLASSIFIED` rather than
+  to a guess.
+- **Winner replacement recalculates safely.** Rebuilding groups recomputes the obligation, but
+  refuses to touch a group that already has an uploaded invoice, a fiscal receipt, or a confirmed
+  operational receipt — correcting a classification must never discard existing evidence.
+- **New endpoint `GET /api/v1/config/features`** returning feature booleans only. The frontend
+  starts with every flag off and fails off on error, so a configuration hiccup can never surface a
+  mandatory field the server would not enforce.
+- **Guided Tour**: a step explaining the classification and its downstream consequence, shown only
+  when the field is actually on screen.
+- **32 new backend tests** covering the obligation mapping, the submission gate, winning-vs-losing
+  quotation propagation, winner replacement, and the disabled-feature path.
+- **No migration and no database change** — Release 1 already created the columns. No historical
+  data was modified.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.219.0] - 2026-07-30
 

@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload, FeatureFlagsDto } from '../types';
 import { logger, FrontendComponentKey } from './logger';
 import { buildInfo } from '../buildInfo';
 import { versionSignal } from './versionSignal';
@@ -1196,6 +1196,18 @@ export const api = {
                 method: 'DELETE'
             });
             if (!response.ok) return handleApiError(response, 'Falha ao remover anexo.');
+        }
+    },
+    config: {
+        /**
+         * Runtime feature flags. The Post-Payment Completion workflow is configuration-driven, so
+         * the UI asks the server what to render rather than assuming. Failures are non-fatal:
+         * callers fall back to "everything off", which is the pre-feature behaviour.
+         */
+        getFeatures: async (): Promise<FeatureFlagsDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/config/features`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar configuração de funcionalidades.');
+            return response.json();
         }
     },
     lookups: {

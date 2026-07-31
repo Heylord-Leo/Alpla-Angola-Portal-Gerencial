@@ -15,6 +15,7 @@ import { ShieldCheck, AlertCircle, AlertTriangle, UserPlus } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { DateInput } from '../../../components/DateInput';
+import { BillingDocumentTypeField } from '../../../components/requests/BillingDocumentTypeField';
 import { LookupDto } from '../../../types';
 
 export interface RequestGeneralDataSectionProps {
@@ -50,6 +51,9 @@ export interface RequestGeneralDataSectionProps {
     status: string | null;
     lineItemsCount: number;
 
+    /** Post-Payment Completion (Release 2). Absent/false renders the pre-feature layout. */
+    featureFlags?: { postPaymentCompletionEnabled: boolean; billingDocumentTypeRequired: boolean };
+
     // Style helpers (Phase 4A: CSS Module class names)
     sectionTitleClassName: string;
     labelClassName: string;
@@ -63,7 +67,7 @@ export function RequestGeneralDataSection({
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
     needLevels, departments, companies, plants,
     canEditHeader, canEditSupplier, isQuotationPartiallyEditable, isQuotationStage, hasSavedQuotations,
-    requestTypeCode, requestNumber, status, lineItemsCount,
+    requestTypeCode, requestNumber, status, lineItemsCount, featureFlags,
     sectionTitleClassName, labelClassName, getInputClassName, renderFieldError, getFieldErrors
 }: RequestGeneralDataSectionProps) {
     return (
@@ -233,6 +237,26 @@ export function RequestGeneralDataSection({
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                        {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
+                            Editable while the request is a DRAFT; locked afterwards, because the
+                            Final Invoice obligation is derived from this choice at Final Approval. */}
+                        {featureFlags?.postPaymentCompletionEnabled &&
+                         (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
+                            <BillingDocumentTypeField
+                                data-guide="request-billing-document-type"
+                                value={formData.billingDocumentType || ''}
+                                onChange={(val) => {
+                                    setFormData(prev => ({ ...prev, billingDocumentType: val }));
+                                    clearFieldError('BillingDocumentType');
+                                }}
+                                readOnly={status !== 'DRAFT'}
+                                required={featureFlags?.billingDocumentTypeRequired}
+                                error={getFieldErrors('BillingDocumentType')?.[0] ?? null}
+                                labelClassName={labelClassName}
+                                inputClassName={getInputClassName('BillingDocumentType')}
+                            />
+                        )}
+
                         <label className={labelClassName}>
                             Grau de Necessidade <span style={{ color: 'red' }}>*</span>
                             <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} className={getInputClassName('NeedLevelId')} disabled={!canEditHeader}>

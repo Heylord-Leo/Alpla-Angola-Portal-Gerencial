@@ -8,6 +8,8 @@ import { FeedbackType } from '../../../components/ui/Feedback';
 import { ApprovalActionType } from '../../../components/ApprovalModal';
 import { scrollToFirstError } from '../../../lib/validation';
 import { completeQuotationAction } from '../../../lib/workflow';
+import { isBillingDocumentType } from '../../../lib/billingDocumentType';
+import { useFeatureFlags } from '../../../hooks/useFeatureFlags';
 import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
 
 export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClose?: () => void } = {}) {
@@ -18,6 +20,9 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [searchParams] = useSearchParams();
 
     const { user } = useAuth();
+    // Post-Payment Completion (Release 2). Defaults to every flag off, so the screen renders its
+    // pre-feature layout until the server says otherwise.
+    const { flags: featureFlags } = useFeatureFlags();
     
     // Derived Configuration
     const copyFromId = searchParams.get('copyFrom');
@@ -57,7 +62,9 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         capexOpexClassificationId: '',
         supplierId: '',
         areaApproverId: '',
-        finalApproverId: ''
+        finalApproverId: '',
+        // Post-Payment Completion (Release 2): PROFORMA | FINAL_INVOICE | '' (unclassified).
+        billingDocumentType: ''
     });
     const [initialFormData, setInitialFormData] = useState<any>(null);
     const [supplierName, setSupplierName] = useState('');
@@ -506,7 +513,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 capexOpexClassificationId: data.capexOpexClassificationId != null ? data.capexOpexClassificationId.toString() : '',
                 supplierId: data.supplierId?.toString() || '',
                 areaApproverId: data.areaApproverId || '',
-                finalApproverId: data.finalApproverId || ''
+                finalApproverId: data.finalApproverId || '',
+                billingDocumentType: data.billingDocumentType || ''
             };
 
             if (!isCopyMode) {
@@ -656,7 +664,10 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 : null,
             buyerId: formData.buyerId || null,
             // areaApproverId removido (Fase B): o backend resolve o roteamento de área
-            finalApproverId: formData.finalApproverId || null
+            finalApproverId: formData.finalApproverId || null,
+            // Post-Payment Completion (Release 2). Empty string means "not chosen" and is sent as
+            // null — the backend accepts that on a draft and blocks it at submission instead.
+            billingDocumentType: formData.billingDocumentType || null
         };
 
         setSaving(true);
@@ -920,6 +931,19 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             }
         }
 
+        // 1.05 Post-Payment Completion (Release 2) — the billing document type becomes mandatory at
+        // submission, never while the request is still a draft. Mirrors the authoritative backend
+        // rule in SubmitRequest; the server re-checks it regardless of what the UI allows.
+        if (requestTypeCode === 'PAYMENT' && featureFlags.billingDocumentTypeRequired &&
+            !isBillingDocumentType(formData.billingDocumentType)) {
+            setFeedback({
+                type: 'error',
+                message: 'Selecione o Tipo de Documento de Faturação (Fatura Proforma ou Fatura Final) antes de submeter o pedido.'
+            });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
         // 1.1 Mandatory Proforma check (Only for PAYMENT types)
         if (requestTypeCode === 'PAYMENT' && !hasAttachment('PROFORMA')) {
             setFeedback({
@@ -1022,6 +1046,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         formData,
         setFormData,
         initialFormData,
+        // Post-Payment Completion (Release 2): drives whether the classification field renders.
+        featureFlags,
         supplierName,
         setSupplierName,
         supplierPortalCode,

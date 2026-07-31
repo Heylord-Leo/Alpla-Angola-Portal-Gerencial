@@ -41,14 +41,22 @@ Three independent layers keep the workflow off:
    `PostPaymentCompletion` section — they therefore inherit `false` from the base file.
 3. `appsettings.Development.json` (gitignored, local-only) also carries `false`.
 
-**Local override for Release 2+ development** — never commit an enabled value:
+**Local override for Release 2+ development** — never commit an enabled value. From Release 2 the
+agreed method is the **gitignored `appsettings.Development.json`**, which is local-only and never
+deployed:
 
-```powershell
-$env:PostPaymentCompletion__Enabled = 'true'
-$env:PostPaymentCompletion__EffectiveDateUtc = '2020-01-01T00:00:00Z'
+```jsonc
+"PostPaymentCompletion": {
+  "Enabled": true,
+  "EffectiveDateUtc": "2020-01-01T00:00:00Z"
+}
 ```
 
-Enabling the flag in TEST is a **separately approved Release 2 change**, not part of Release 1.
+An environment override (`$env:PostPaymentCompletion__Enabled = 'true'`) works identically and is
+equally safe if preferred. Either way the committed `appsettings.json` stays `false`, and TEST/PROD
+read server-side files that contain no `PostPaymentCompletion` section at all.
+
+Enabling the flag in TEST is a **separately approved change**, not part of Release 1 or Release 2.
 
 ### Effective-date semantics
 

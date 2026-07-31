@@ -38,6 +38,12 @@ public class UpdateRequestDraftDto
 
     public int? SupplierId { get; set; }
 
+    /// <summary>
+    /// Post-Payment Completion (Release 2): billing document type of this PAYMENT request.
+    /// Editable while the request is still a draft; locked once submitted.
+    /// </summary>
+    public string? BillingDocumentType { get; set; }
+
     // Workflow Participants.
     // (Phase B: AreaApproverId removed — area routing comes from DepartmentManagers;
     // Request.AreaApproverId records who decided, never a nomination.)

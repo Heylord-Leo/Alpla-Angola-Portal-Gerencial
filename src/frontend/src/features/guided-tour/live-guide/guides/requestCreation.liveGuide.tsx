@@ -208,6 +208,47 @@ export function createRequestCreationSteps(
             },
         },
 
+        // ── Step: Tipo de Documento de Faturação (Pagamento, quando a funcionalidade está ativa) ──
+        // A condição observa o próprio campo no DOM: enquanto a funcionalidade estiver desativada o
+        // campo não é renderizado e o passo desaparece sozinho, sem duplicar aqui a feature flag.
+        {
+            id: 'request-billing-document-type',
+            target: '[data-guide="request-billing-document-type"]',
+            title: 'Tipo de Documento de Faturação',
+            content: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <p style={{ margin: 0 }}>
+                        Selecione o tipo de documento que originou este pedido. Esta escolha define o que
+                        será exigido depois do pagamento — não é apenas uma etiqueta.
+                    </p>
+
+                    <div>
+                        <strong style={{ color: 'var(--color-warning, #d97706)' }}>Fatura Proforma</strong>
+                        <p style={{ margin: '2px 0 6px 0', fontSize: '0.85rem' }}>
+                            O fornecedor enviou uma proforma. Depois do pagamento <strong>será exigida a
+                            Fatura Final</strong> para concluir o pedido.
+                        </p>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--color-border, #e5e7eb)', paddingTop: '6px' }}>
+                        <strong style={{ color: 'var(--color-primary, #2563eb)' }}>Fatura Final</strong>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem' }}>
+                            O fornecedor já enviou a fatura definitiva. <strong>Não será exigida outra
+                            fatura</strong> depois do pagamento.
+                        </p>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted, #6b7280)' }}>
+                        Pode guardar o rascunho sem escolher, mas a seleção é obrigatória para submeter o pedido.
+                    </p>
+                </div>
+            ),
+            placement: 'bottom',
+            requiredAction: 'none',
+            allowSkip: true,
+            condition: () => !!document.querySelector('[data-guide="request-billing-document-type"]'),
+        },
+
         // ── Step: Grau de Necessidade ──
         {
             id: 'request-need-level',

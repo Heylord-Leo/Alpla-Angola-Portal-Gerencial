@@ -36,6 +36,7 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
+import { toCanonicalBillingDocumentType } from '../../lib/billingDocumentType';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -261,6 +262,11 @@ function buildQuotationPayload(draft: OcrDraft) {
         supplierNameSnapshot: draft.supplierNameSnapshot,
         documentNumber: draft.documentNumber,
         documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
+        // Post-Payment Completion (Release 2): the wizard has always collected "Tipo de Documento
+        // da Cotação" but the value was dropped before reaching the API. It is now persisted, and
+        // the winning quotation's value becomes the PO group's Final Invoice obligation.
+        // Mapped to the canonical domain value ('FINAL' → 'FINAL_INVOICE').
+        documentType: toCanonicalBillingDocumentType(draft.documentType),
         currency: draft.currency || 'AOA',
         discountAmount: draft.discountAmount || 0,
         totalAmount: draft.totalAmount || 0,
@@ -786,6 +792,12 @@ export function BuyerItemsList() {
                 supplierNameSnapshot: editQuotation.supplierNameSnapshot || '',
                 documentNumber: editQuotation.documentNumber || '',
                 documentDate: editQuotation.documentDate ? editQuotation.documentDate.split('T')[0] : '',
+                // Post-Payment Completion (Release 2): rehydrate the persisted classification so
+                // reopening a quotation does not silently drop it. Stored canonically
+                // ('FINAL_INVOICE'); the wizard's own select uses 'FINAL', so map it back.
+                documentType: editQuotation.documentType === 'FINAL_INVOICE'
+                    ? 'FINAL'
+                    : (editQuotation.documentType as OcrDraft['documentType']) || undefined,
                 currency: editQuotation.currency || 'AOA',
                 totalAmount: editQuotation.totalAmount || 0,
                 discountAmount: editQuotation.discountAmount || 0,

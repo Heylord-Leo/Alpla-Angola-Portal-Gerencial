@@ -72,6 +72,13 @@ public class RequestDetailsDto
     public decimal DiscountAmount { get; set; }
     public string? CurrencyCode { get; set; }
 
+    /// <summary>
+    /// Post-Payment Completion (Release 2): billing document that originated a PAYMENT request —
+    /// PROFORMA or FINAL_INVOICE. Null on QUOTATION requests (their obligation comes from the
+    /// winning quotation) and on requests created before the feature was activated.
+    /// </summary>
+    public string? BillingDocumentType { get; set; }
+
     // B2P: Payment Condition
     public string? PaymentConditionCode { get; set; }
     public decimal? AdvancePaymentPercent { get; set; }

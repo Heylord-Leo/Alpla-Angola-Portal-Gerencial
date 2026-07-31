@@ -261,6 +261,8 @@ export interface SavedQuotationDto {
     supplierRegistrationStatus?: string;
     documentNumber?: string;
     documentDate?: string;
+    /** Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE, null when unclassified. */
+    documentType?: string | null;
     currency: string;
     totalGrossAmount: number;
     totalDiscountAmount: number;
@@ -437,6 +439,17 @@ export interface ExtraItemDecisionState {
 }
 
 // Keep details types minimal just to prove routing works later
+/**
+ * Post-Payment Completion feature flags (GET /api/v1/config/features).
+ * Booleans only — the UI needs to know what to render, not how the server is configured.
+ */
+export interface FeatureFlagsDto {
+    /** Workflow is switched on. While false the UI renders exactly what it did before the feature. */
+    postPaymentCompletionEnabled: boolean;
+    /** A request created now must carry an explicit billing document type before submission. */
+    billingDocumentTypeRequired: boolean;
+}
+
 export interface RequestDetailsDto extends RequestListItemDto {
     /** Fase B: nomes dos managers elegíveis enquanto a aprovação de área está pendente e sem decisor. */
     eligibleAreaManagerNames?: string[] | null;
@@ -447,6 +460,12 @@ export interface RequestDetailsDto extends RequestListItemDto {
     poGroups: RequestPoGroupDto[];
     approvalBatches?: ApprovalBatchSummary[];
     statusHistory: RequestStatusHistoryDto[];
+    /**
+     * Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE for a PAYMENT request.
+     * Null on QUOTATION requests and on requests created before the feature was activated.
+     */
+    billingDocumentType?: string | null;
+
     // B2P: Payment Condition
     paymentConditionCode?: string | null;
     advancePaymentPercent?: number | null;

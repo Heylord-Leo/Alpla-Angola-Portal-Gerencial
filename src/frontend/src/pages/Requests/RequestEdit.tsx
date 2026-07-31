@@ -58,6 +58,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         requestNumber,
         formData,
         setFormData,
+        featureFlags,
         initialFormData,
         supplierName,
         setSupplierName,
@@ -389,6 +390,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     requestNumber={requestNumber}
                     status={status}
                     lineItemsCount={lineItems.length}
+                    featureFlags={featureFlags}
                     sectionTitleClassName={styles.sectionTitle}
                     labelClassName={styles.formLabel}
                     getInputClassName={getInputClassName}
