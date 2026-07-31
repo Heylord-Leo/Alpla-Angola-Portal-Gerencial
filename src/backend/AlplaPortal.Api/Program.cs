@@ -6,6 +6,7 @@ using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Application.Versioning;
+using AlplaPortal.Api.Helpers;
 using AlplaPortal.Api.Services;
 using AlplaPortal.Api.Middleware;
 using AlplaPortal.Infrastructure.Data;
@@ -139,8 +140,7 @@ builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 // section is absent the class defaults (Enabled=false, EffectiveDateUtc=MaxValue) apply, so an
 // unconfigured environment can never switch the workflow on by accident.
 // The service is a two-phase skeleton and is a no-op while disabled — nothing calls it yet.
-builder.Services.Configure<PostPaymentCompletionOptions>(
-    builder.Configuration.GetSection(PostPaymentCompletionOptions.SectionName));
+builder.Services.AddPostPaymentCompletionOptions(builder.Configuration);
 builder.Services.AddScoped<IRequestCompletionService, RequestCompletionService>();
 
 // Department Manager redesign — single source of truth for area-approval routing
