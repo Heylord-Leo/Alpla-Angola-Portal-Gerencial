@@ -34,11 +34,11 @@ public static class PostPaymentPendingReason
         if (group.OperationalReceiptCompletedAtUtc == null)
             reasons.Add(OperationalReceipt);
 
-        if (RequestConstants.FinalInvoiceStatuses.IsBlocking(group.FinalInvoiceStatus))
+        if (RequestConstants.OperationInvoiceStatuses.IsBlocking(group.OperationInvoiceStatus))
         {
             reasons.Add(string.Equals(
-                    group.FinalInvoiceStatus,
-                    RequestConstants.FinalInvoiceStatuses.Unclassified,
+                    group.OperationInvoiceStatus,
+                    RequestConstants.OperationInvoiceStatuses.Unclassified,
                     StringComparison.OrdinalIgnoreCase)
                 ? ClassificationPending
                 : FinalInvoice);

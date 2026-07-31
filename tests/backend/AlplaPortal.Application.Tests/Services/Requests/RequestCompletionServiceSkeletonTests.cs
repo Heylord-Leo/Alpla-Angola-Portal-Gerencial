@@ -169,13 +169,13 @@ public class RequestCompletionServiceSkeletonTests
     }
 
     [Fact]
-    public void Po_group_final_invoice_status_defaults_to_unclassified_in_the_database()
+    public void Po_group_operation_invoice_status_defaults_to_unclassified_in_the_database()
     {
         using var context = ModelOnlyContext();
-        var property = context.Model.FindEntityType(typeof(RequestPoGroup))!.FindProperty("FinalInvoiceStatus")!;
+        var property = context.Model.FindEntityType(typeof(RequestPoGroup))!.FindProperty("OperationInvoiceStatus")!;
 
         Assert.False(property.IsNullable);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.Unclassified, property.GetDefaultValue());
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Unclassified, property.GetDefaultValue());
     }
 
     [Fact]

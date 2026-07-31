@@ -21,7 +21,12 @@ import { ReconcilableItem, ItemResolution } from '../../types';
 import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
-import { BillingDocumentTypeField } from '../../components/requests/BillingDocumentTypeField';
+import {
+    SourceDocumentTypeField,
+    evaluateClassificationConflict,
+    CONFLICT_JUSTIFICATION_MIN_LENGTH,
+    type ClassificationConflictState
+} from '../../components/requests/SourceDocumentTypeField';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
 
 
@@ -107,8 +112,14 @@ export function RequestCreate() {
         buyerId: '',
         areaApproverId: '',
         finalApproverId: '',
-        // Post-Payment Completion (Release 2): PROFORMA | FINAL_INVOICE | '' (nothing chosen).
-        billingDocumentType: ''
+        // Post-Payment Completion (Release 2 corrected): identity of the attached document.
+        sourceDocumentType: ''
+    });
+
+    // Conflict between the user's classification and what the document extraction read.
+    // Held separately from formData because it is evidence about the choice, not the choice.
+    const [classificationConflict, setClassificationConflict] = useState<ClassificationConflictState>({
+        hasConflict: false, isHighRisk: false, acknowledged: false, justification: ''
     });
 
     // Reconciliation Engine — unified for both payment and requester items
@@ -676,6 +687,24 @@ export function RequestCreate() {
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
 
+        // Post-Payment Completion (Release 2 corrected): when the classification contradicts what
+        // the document extraction read, the user must acknowledge it — and for a high-risk conflict
+        // (they chose a non-fiscal type for a document the evidence reads as fiscal, or the
+        // extraction was confident) they must also write down why. A draft may still be saved
+        // unclassified; this only guards a classification that disagrees with the evidence.
+        if (Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled && formData.sourceDocumentType) {
+            const evaluation = evaluateClassificationConflict(
+                formData.sourceDocumentType, paymentDraft?.documentClassification ?? null);
+
+            if (evaluation.hasConflict && !classificationConflict.acknowledged) {
+                newErrors['sourceDocumentType'] = ['Confirme a classificação: ela difere da leitura do documento.'];
+            } else if (evaluation.isHighRisk &&
+                       classificationConflict.justification.trim().length < CONFLICT_JUSTIFICATION_MIN_LENGTH) {
+                newErrors['sourceDocumentType'] = [
+                    `Justifique a classificação (mínimo ${CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres).`];
+            }
+        }
+
         if (Number(formData.requestTypeId) === 1 || Number(formData.requestTypeId) === 2) {
             const isPayment = Number(formData.requestTypeId) === 2;
             if (!formData.needByDateUtc) {
@@ -783,9 +812,24 @@ export function RequestCreate() {
             // Post-Payment Completion (Release 2). PAYMENT only, and only when the feature is on.
             // A PAYMENT request is created as a DRAFT, so an empty value is legitimate here — the
             // mandatory rule applies at submission.
-            billingDocumentType: Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled
-                ? (formData.billingDocumentType || null)
+            sourceDocumentType: Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled
+                ? (formData.sourceDocumentType || null)
                 : null,
+            // Classification evidence: what the extraction proposed, whether the user overrode it,
+            // and why. Persisted so a disputed classification can always be explained afterwards.
+            ...(Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled && formData.sourceDocumentType
+                ? {
+                    sourceDocumentTypeSource:
+                        paymentDraft?.documentClassification?.suggestedType === formData.sourceDocumentType
+                            ? 'OCR_CONFIRMED' : 'USER_SELECTED',
+                    sourceDocumentTypeOcrSuggestion: paymentDraft?.documentClassification?.suggestedType ?? null,
+                    sourceDocumentTypeOcrConfidence: paymentDraft?.documentClassification?.confidence ?? null,
+                    sourceDocumentTypeEvidenceJson: paymentDraft?.documentClassification
+                        ? JSON.stringify(paymentDraft.documentClassification) : null,
+                    classificationConflictAcknowledged: classificationConflict.acknowledged,
+                    classificationJustification: classificationConflict.justification.trim() || null
+                }
+                : {}),
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
                 description: item.description,
@@ -1823,17 +1867,21 @@ export function RequestCreate() {
                                 Sits beside the other header fields so the classification is made
                                 while the requester still has the document in front of them. */}
                             {featureFlags.postPaymentCompletionEnabled && Number(formData.requestTypeId) === 2 && (
-                                <BillingDocumentTypeField
-                                    data-guide="request-billing-document-type"
-                                    value={formData.billingDocumentType}
+                                <SourceDocumentTypeField
+                                    data-guide="request-source-document-type"
+                                    context="PAYMENT_REQUEST"
+                                    value={formData.sourceDocumentType}
                                     onChange={(val) => {
-                                        setFormData(prev => ({ ...prev, billingDocumentType: val }));
-                                        clearFieldError('BillingDocumentType');
+                                        setFormData(prev => ({ ...prev, sourceDocumentType: val }));
+                                        clearFieldError('sourceDocumentType');
                                     }}
-                                    required={featureFlags.billingDocumentTypeRequired}
-                                    error={getFieldErrors('BillingDocumentType')?.[0] ?? null}
+                                    ocr={paymentDraft?.documentClassification ?? null}
+                                    conflict={classificationConflict}
+                                    onConflictChange={setClassificationConflict}
+                                    required={featureFlags.sourceDocumentTypeRequired}
+                                    error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
                                     labelStyle={labelStyle}
-                                    inputStyle={getInputStyle('BillingDocumentType')}
+                                    inputStyle={getInputStyle('sourceDocumentType')}
                                 />
                             )}
 

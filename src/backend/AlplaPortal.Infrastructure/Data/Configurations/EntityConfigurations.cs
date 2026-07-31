@@ -24,7 +24,11 @@ public class RequestConfiguration : IEntityTypeConfiguration<Request>
         builder.Property(r => r.ActualPaidAmount).HasColumnType("decimal(18,2)");
 
         // ── Post-Payment Completion Workflow (Release 1 foundation) ──
-        builder.Property(r => r.BillingDocumentType).HasMaxLength(50);
+        builder.Property(r => r.SourceDocumentType).HasMaxLength(50);
+        builder.Property(r => r.SourceDocumentTypeSource).HasMaxLength(30);
+        builder.Property(r => r.SourceDocumentTypeOcrSuggestion).HasMaxLength(50);
+        builder.Property(r => r.SourceDocumentTypeOcrConfidence).HasColumnType("decimal(5,4)");
+        builder.Property(r => r.ClassificationJustification).HasMaxLength(2000);
 
         // Concurrency token: selects a single winner for the parent-completion transition when
         // several PO groups of the same request complete concurrently (plan v6 §11.4/§19).
@@ -226,6 +230,10 @@ public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
         // Post-Payment Completion Workflow (Release 1 foundation): no default — the Buyer must
         // choose PROFORMA or FINAL_INVOICE explicitly (rule R13). Consumed from Release 2.
         builder.Property(q => q.DocumentType).HasMaxLength(50);
+        builder.Property(q => q.DocumentTypeSource).HasMaxLength(30);
+        builder.Property(q => q.DocumentTypeOcrSuggestion).HasMaxLength(50);
+        builder.Property(q => q.DocumentTypeOcrConfidence).HasColumnType("decimal(5,4)");
+        builder.Property(q => q.ClassificationJustification).HasMaxLength(2000);
 
         builder.HasOne(q => q.Request)
                .WithMany(r => r.Quotations)
@@ -355,14 +363,14 @@ public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGro
         // collide (Finance validating an invoice while Receiving confirms receipt).
         builder.Property(g => g.RowVersion).IsRowVersion();
 
-        builder.Property(g => g.BillingDocumentType).HasMaxLength(50);
+        builder.Property(g => g.SourceDocumentType).HasMaxLength(50);
 
         // UNCLASSIFIED is the persisted default, for new AND pre-existing rows: a group whose
         // billing document type is unknown must never look like "no invoice required" (rule R12).
-        builder.Property(g => g.FinalInvoiceStatus)
+        builder.Property(g => g.OperationInvoiceStatus)
                .IsRequired()
                .HasMaxLength(50)
-               .HasDefaultValue(RequestConstants.FinalInvoiceStatuses.Unclassified);
+               .HasDefaultValue(RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         builder.Property(g => g.FinalInvoiceRejectionReason).HasMaxLength(2000);
 

@@ -15,7 +15,7 @@ import { ShieldCheck, AlertCircle, AlertTriangle, UserPlus } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { DateInput } from '../../../components/DateInput';
-import { BillingDocumentTypeField } from '../../../components/requests/BillingDocumentTypeField';
+import { SourceDocumentTypeField } from '../../../components/requests/SourceDocumentTypeField';
 import { LookupDto } from '../../../types';
 
 export interface RequestGeneralDataSectionProps {
@@ -52,7 +52,7 @@ export interface RequestGeneralDataSectionProps {
     lineItemsCount: number;
 
     /** Post-Payment Completion (Release 2). Absent/false renders the pre-feature layout. */
-    featureFlags?: { postPaymentCompletionEnabled: boolean; billingDocumentTypeRequired: boolean };
+    featureFlags?: { postPaymentCompletionEnabled: boolean; sourceDocumentTypeRequired: boolean };
 
     // Style helpers (Phase 4A: CSS Module class names)
     sectionTitleClassName: string;
@@ -242,18 +242,19 @@ export function RequestGeneralDataSection({
                             Final Invoice obligation is derived from this choice at Final Approval. */}
                         {featureFlags?.postPaymentCompletionEnabled &&
                          (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
-                            <BillingDocumentTypeField
-                                data-guide="request-billing-document-type"
-                                value={formData.billingDocumentType || ''}
+                            <SourceDocumentTypeField
+                                data-guide="request-source-document-type"
+                                context="PAYMENT_REQUEST"
+                                value={formData.sourceDocumentType || ''}
                                 onChange={(val) => {
-                                    setFormData(prev => ({ ...prev, billingDocumentType: val }));
-                                    clearFieldError('BillingDocumentType');
+                                    setFormData(prev => ({ ...prev, sourceDocumentType: val }));
+                                    clearFieldError('sourceDocumentType');
                                 }}
                                 readOnly={status !== 'DRAFT'}
-                                required={featureFlags?.billingDocumentTypeRequired}
-                                error={getFieldErrors('BillingDocumentType')?.[0] ?? null}
+                                required={featureFlags?.sourceDocumentTypeRequired}
+                                error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
                                 labelClassName={labelClassName}
-                                inputClassName={getInputClassName('BillingDocumentType')}
+                                inputClassName={getInputClassName('sourceDocumentType')}
                             />
                         )}
 

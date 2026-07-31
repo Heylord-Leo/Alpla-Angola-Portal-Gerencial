@@ -6,6 +6,7 @@ using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -118,7 +119,7 @@ public class GroupBuilderService : IGroupBuilderService
             // Post-Payment Completion (Release 2): derive the group's Final Invoice obligation from
             // the WINNING quotation(s) behind its awarded items. Losing quotations never contribute,
             // because only items carrying SelectedQuotationItemId reach this point.
-            ApplyBillingClassification(existingGroup, group.Select(x => x.QuotationItem!.Quotation));
+            ApplyDocumentClassification(existingGroup, group.Select(x => x.QuotationItem!.Quotation));
         }
 
         // Clean up any empty groups (e.g. after a correction/return flow)
@@ -207,7 +208,7 @@ public class GroupBuilderService : IGroupBuilderService
             _context.RequestPoGroups.Add(poGroup);
 
             // Post-Payment Completion (Release 2) — see ApplyBillingClassification.
-            ApplyBillingClassification(poGroup, group.Select(x => x.QuotationItem!.Quotation));
+            ApplyDocumentClassification(poGroup, group.Select(x => x.QuotationItem!.Quotation));
 
             // Assign the LineItems to this group
             foreach (var item in group)
@@ -220,24 +221,25 @@ public class GroupBuilderService : IGroupBuilderService
     }
 
     /// <summary>
-    /// Post-Payment Completion (Release 2): sets a PO group's <c>BillingDocumentType</c> and derived
-    /// <c>FinalInvoiceStatus</c> from the winning quotations behind its awarded items.
+    /// Post-Payment Completion (Release 2 corrected): copies the document IDENTITY from the winning
+    /// quotations onto the PO group, then derives every obligation from it through
+    /// <see cref="DocumentObligationResolver"/>.
     ///
-    /// <list type="bullet">
-    /// <item>PROFORMA → PENDING_UPLOAD — a Final Invoice is owed after payment.</item>
-    /// <item>FINAL_INVOICE → NOT_APPLICABLE — the obligation was already met.</item>
-    /// <item>missing, or two winning quotations disagreeing → UNCLASSIFIED, which blocks completion
-    /// until a human classifies it. Guessing an obligation is never acceptable.</item>
-    /// </list>
+    /// <para>Identity and obligations are kept strictly separate: this method never decides what is
+    /// owed, it only records what the document is and asks the resolver. That is what makes a
+    /// Factura de Adiantamento (fiscal, yet still owing an operation invoice AND regularization) and
+    /// a Factura-Recibo (owing no separate receipt) representable at all.</para>
+    ///
+    /// <para>Losing quotations never contribute — only items carrying SelectedQuotationItemId reach
+    /// here. Two winning quotations that disagree resolve to UNCLASSIFIED rather than to a guess.</para>
     ///
     /// <para><b>Winner replacement.</b> Groups are rebuilt whenever the award changes, so this runs
-    /// again and recomputes the obligation. It refuses to touch a group that has already started its
+    /// again and recomputes the obligations. It refuses to touch a group that has already started its
     /// post-payment lifecycle (an invoice uploaded, a fiscal receipt attached, or the operational
     /// receipt confirmed): silently rewriting an obligation that documents already answer would
-    /// discard real evidence. In practice groups are rebuilt only before the operational stages, so
-    /// that guard is a safety net rather than a routine path.</para>
+    /// discard real evidence.</para>
     /// </summary>
-    private void ApplyBillingClassification(RequestPoGroup poGroup, IEnumerable<Quotation> winningQuotations)
+    private void ApplyDocumentClassification(RequestPoGroup poGroup, IEnumerable<Quotation> winningQuotations)
     {
         if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
             return;
@@ -251,14 +253,21 @@ public class GroupBuilderService : IGroupBuilderService
             return;
 
         var distinctTypes = winningQuotations
-            .Select(q => RequestConstants.BillingDocumentTypes.Normalize(q.DocumentType))
+            .Select(q => RequestConstants.SourceDocumentTypes.Normalize(q.DocumentType))
             .Distinct()
             .ToList();
 
-        // Exactly one agreed classification is required; anything else stays UNCLASSIFIED.
-        var resolved = distinctTypes.Count == 1 ? distinctTypes[0] : null;
+        // Exactly one agreed classification is required; anything else stays unclassified.
+        var identity = distinctTypes.Count == 1 ? distinctTypes[0] : null;
 
-        poGroup.BillingDocumentType = resolved;
-        poGroup.FinalInvoiceStatus = RequestConstants.BillingDocumentTypes.ToFinalInvoiceStatus(resolved);
+        var obligations = DocumentObligationResolver.Resolve(
+            identity, DocumentUsageContext.QuotationManagement);
+
+        poGroup.SourceDocumentType = identity;
+        poGroup.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
+        poGroup.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
+        poGroup.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
+        poGroup.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
+        poGroup.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
     }
 }

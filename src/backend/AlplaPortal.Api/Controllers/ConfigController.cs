@@ -42,7 +42,7 @@ public class ConfigController : ControllerBase
         return Ok(new FeatureFlagsDto
         {
             PostPaymentCompletionEnabled = enabled,
-            BillingDocumentTypeRequired = classificationRequired
+            SourceDocumentTypeRequired = classificationRequired
         });
     }
 }

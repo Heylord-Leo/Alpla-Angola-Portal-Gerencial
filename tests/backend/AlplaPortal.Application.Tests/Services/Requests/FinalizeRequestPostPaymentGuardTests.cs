@@ -136,7 +136,7 @@ public class FinalizeRequestPostPaymentGuardTests
                 CurrencyCode = "AOA",
                 TotalAmount = 1000m,
                 Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
-                FinalInvoiceStatus = finalInvoiceStatus,
+                OperationInvoiceStatus = finalInvoiceStatus,
                 CreatedAtUtc = DateTime.UtcNow.AddDays(-10),
                 CreatedByUserId = actor.Id
             };
@@ -166,7 +166,7 @@ public class FinalizeRequestPostPaymentGuardTests
     public async Task Finalize_still_completes_a_grouped_request_while_the_feature_is_disabled()
     {
         using var ctx = NewContext();
-        var seed = await SeedFinalizableAsync(ctx, RequestConstants.FinalInvoiceStatuses.Unclassified);
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         // Default options: Enabled = false. This is the state shipped in every environment.
         var controller = BuildController(ctx, seed.ActorId, new PostPaymentCompletionOptions());
@@ -201,7 +201,7 @@ public class FinalizeRequestPostPaymentGuardTests
     {
         using var ctx = NewContext();
         var seed = await SeedFinalizableAsync(
-            ctx, RequestConstants.FinalInvoiceStatuses.Unclassified, withPoGroup: false);
+            ctx, RequestConstants.OperationInvoiceStatuses.Unclassified, withPoGroup: false);
 
         var controller = BuildController(ctx, seed.ActorId, new PostPaymentCompletionOptions());
 
@@ -222,7 +222,7 @@ public class FinalizeRequestPostPaymentGuardTests
     public async Task Enabled_feature_blocks_finalizing_an_unclassified_grouped_request()
     {
         using var ctx = NewContext();
-        var seed = await SeedFinalizableAsync(ctx, RequestConstants.FinalInvoiceStatuses.Unclassified);
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         var controller = BuildController(ctx, seed.ActorId, EnabledOptions());
 
@@ -241,7 +241,7 @@ public class FinalizeRequestPostPaymentGuardTests
     public async Task Enabled_feature_redirects_a_classified_grouped_request_to_the_new_flow()
     {
         using var ctx = NewContext();
-        var seed = await SeedFinalizableAsync(ctx, RequestConstants.FinalInvoiceStatuses.Validated);
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Validated);
 
         var controller = BuildController(ctx, seed.ActorId, EnabledOptions());
 
@@ -258,7 +258,7 @@ public class FinalizeRequestPostPaymentGuardTests
         // The only state in which the legacy endpoint remains permitted once the feature is on.
         using var ctx = NewContext();
         var seed = await SeedFinalizableAsync(
-            ctx, RequestConstants.FinalInvoiceStatuses.Unclassified, withPoGroup: false);
+            ctx, RequestConstants.OperationInvoiceStatuses.Unclassified, withPoGroup: false);
 
         var controller = BuildController(ctx, seed.ActorId, EnabledOptions());
 
@@ -271,7 +271,7 @@ public class FinalizeRequestPostPaymentGuardTests
     public async Task Enabled_feature_keeps_the_already_completed_response_idempotent()
     {
         using var ctx = NewContext();
-        var seed = await SeedFinalizableAsync(ctx, RequestConstants.FinalInvoiceStatuses.Unclassified);
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         var completedId = await ctx.RequestStatuses
             .Where(s => s.Code == RequestConstants.Statuses.Completed).Select(s => s.Id).FirstAsync();

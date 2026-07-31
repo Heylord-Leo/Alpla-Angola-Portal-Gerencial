@@ -31,6 +31,32 @@ public class ExtractionHeaderDto
     public decimal? PaymentConditionConfidence { get; set; }
     /// <summary>Advance payment percentage extracted from the document (e.g. 50 for "50% adiantado"). Null if not detected.</summary>
     public decimal? PaymentConditionAdvancePercent { get; set; }
+
+    // ── Document classification (Release 2 corrected) ──
+    // A PROPOSAL only. It is surfaced to the user for confirmation and is never written into the
+    // classification field on their behalf. Follows the same shape as the payment-condition block
+    // above, which already proved the suggestion-with-confidence pattern in this pipeline.
+
+    /// <summary>Proposed identity: ESTIMATE, PROFORMA, ADVANCE_INVOICE, INVOICE, INVOICE_RECEIPT, OTHER, or null.</summary>
+    public string? DocumentClassificationType { get; set; }
+
+    /// <summary>Confidence in the proposal (0.0–1.0). A prefix-only match is capped at 0.50.</summary>
+    public decimal? DocumentClassificationConfidence { get; set; }
+
+    /// <summary>The document title read verbatim, e.g. "FACTURA-RECIBO". The strongest evidence.</summary>
+    public string? DocumentClassificationTitleFound { get; set; }
+
+    /// <summary>Verbatim strings supporting the proposal.</summary>
+    public List<string>? DocumentClassificationSupportingEvidence { get; set; }
+
+    /// <summary>Verbatim strings that contradict the proposal — surfaced so a human can judge.</summary>
+    public List<string>? DocumentClassificationConflictingEvidence { get; set; }
+
+    /// <summary>Fiscal certification markers found (AGT certification, fiscal series, …).</summary>
+    public List<string>? DocumentClassificationFiscalMarkers { get; set; }
+
+    /// <summary>Non-fiscal declarations found ("sem valor fiscal", "não serve de factura", …).</summary>
+    public List<string>? DocumentClassificationNonFiscalMarkers { get; set; }
 }
 
 public class ExtractionLineItemDto

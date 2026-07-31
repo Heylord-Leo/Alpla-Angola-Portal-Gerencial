@@ -5,6 +5,11 @@ import { useQuotationWizardState } from './hooks/useQuotationWizardState';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
+import {
+    documentTypeOptionsFor,
+    documentTypeHint,
+    normalizeDocumentType
+} from '../../../lib/sourceDocumentType';
 import { useState } from 'react';
 
 // --- FormattedNumberInput Component ---
@@ -292,18 +297,30 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             )}
                         </div>
 
-                        {/* Document Type */}
+                        {/* Document identity — Release 2 corrected.
+                            Describes WHAT the supplier issued, not what the workflow will do.
+                            A Factura-Recibo is deliberately absent: it states the operation and its
+                            full payment already happened, so it cannot describe a purchase still
+                            being negotiated. */}
                         <div>
-                            <label style={labelStyle}>Tipo de Documento da Cotação</label>
+                            <label style={labelStyle}>Tipo de documento anexado</label>
                             <select
-                                value={draft.documentType || ''}
-                                onChange={e => updateDraftHeader('documentType', e.target.value as 'PROFORMA' | 'FINAL')}
+                                value={normalizeDocumentType(draft.documentType) ?? ''}
+                                onChange={e => updateDraftHeader('documentType', e.target.value)}
                                 style={!draft.documentType ? inputError : inputBase}
                             >
                                 <option value="">Selecione...</option>
-                                <option value="PROFORMA">Fatura Proforma</option>
-                                <option value="FINAL">Fatura Final</option>
+                                {documentTypeOptionsFor('QUOTATION_MANAGEMENT').map(opt => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}{opt.unusual ? ' (invulgar — revisão)' : ''}
+                                    </option>
+                                ))}
                             </select>
+                            {draft.documentType && (
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                                    {documentTypeHint(draft.documentType)}
+                                </div>
+                            )}
                         </div>
 
                         {/* Currency */}

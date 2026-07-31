@@ -77,7 +77,7 @@ public class RequestDetailsDto
     /// PROFORMA or FINAL_INVOICE. Null on QUOTATION requests (their obligation comes from the
     /// winning quotation) and on requests created before the feature was activated.
     /// </summary>
-    public string? BillingDocumentType { get; set; }
+    public string? SourceDocumentType { get; set; }
 
     // B2P: Payment Condition
     public string? PaymentConditionCode { get; set; }

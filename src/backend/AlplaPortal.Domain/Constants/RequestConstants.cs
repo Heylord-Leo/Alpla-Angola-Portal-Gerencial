@@ -235,51 +235,87 @@ public static class RequestConstants
     /// Neither field carrying this value has a default: PROFORMA vs FINAL_INVOICE must always
     /// be an explicit human decision (rules R13/R14).
     /// </summary>
-    public static class BillingDocumentTypes
+    /// <summary>
+    /// The document a supplier actually issued, under Angola's Regime Jurídico das Facturas
+    /// (Presidential Decree 71/25). This is a statement of IDENTITY — what the paper is — and never
+    /// of workflow. What remains owed is derived separately by
+    /// <see cref="Services.DocumentObligationResolver"/>.
+    ///
+    /// <para>Neither field carrying this value has a default: the classification must always be an
+    /// explicit human decision. OCR may propose, never select.</para>
+    /// </summary>
+    public static class SourceDocumentTypes
     {
-        /// <summary>Proforma invoice — always requires a subsequent Final Invoice (rule R2).</summary>
-        public const string Proforma = "PROFORMA";
-        /// <summary>Final invoice supplied up front — no subsequent Final Invoice required (rule R3).</summary>
-        public const string FinalInvoice = "FINAL_INVOICE";
+        /// <summary>Orçamento / Cotação. Non-fiscal. Named ESTIMATE because "QUOTATION" is already
+        /// the request type, the Quotation entity and QuotationLifecycleStatuses.</summary>
+        public const string Estimate = "ESTIMATE";
 
-        public static readonly string[] ValidValues = { Proforma, FinalInvoice };
+        /// <summary>Factura Pró-forma. Non-fiscal — legally not a Factura.</summary>
+        public const string Proforma = "PROFORMA";
+
+        /// <summary>Factura de Adiantamento. Fiscal document for an advance/anticipated payment.</summary>
+        public const string AdvanceInvoice = "ADVANCE_INVOICE";
+
+        /// <summary>Factura. Fiscal document for the actual supply of goods or services.</summary>
+        public const string Invoice = "INVOICE";
+
+        /// <summary>Factura-Recibo. Fiscal; documents the operation AND its full payment.</summary>
+        public const string InvoiceReceipt = "INVOICE_RECEIPT";
+
+        /// <summary>Another document that Finance must review before the process continues.</summary>
+        public const string Other = "OTHER";
+
+        /// <summary>Not classified. The persisted default; blocks progression.</summary>
+        public const string Unclassified = "UNCLASSIFIED";
+
+        /// <summary>
+        /// Legacy code from the superseded binary model. Accepted on READ and mapped to
+        /// <see cref="Invoice"/>; never persisted again. Kept for a couple of releases so a stray
+        /// value is interpreted rather than rejected.
+        /// </summary>
+        public const string LegacyFinalInvoice = "FINAL_INVOICE";
+
+        /// <summary>Every classification a user may hold, excluding UNCLASSIFIED.</summary>
+        public static readonly string[] ValidValues =
+            { Estimate, Proforma, AdvanceInvoice, Invoice, InvoiceReceipt, Other };
+
+        /// <summary>Fiscal documents under Decree 71/25. Estimate and Proforma are NOT fiscal.</summary>
+        public static readonly string[] FiscalValues =
+            { AdvanceInvoice, Invoice, InvoiceReceipt };
 
         public static bool IsValid(string? type) =>
             ValidValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// Canonical form of a submitted value: trimmed and upper-cased, or null when blank.
-        /// A blank selection stays null — it is never coerced into a type on the user's behalf.
+        /// True only for documents with fiscal force. OTHER and UNCLASSIFIED are unknown, not
+        /// non-fiscal — callers must treat them as "needs review", never as "safe".
         /// </summary>
-        public static string? Normalize(string? type) =>
-            string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToUpperInvariant();
+        public static bool IsFiscal(string? type) =>
+            FiscalValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>Portuguese label used in validation messages and history entries.</summary>
-        public static string DisplayName(string? type) => type switch
+        /// <summary>
+        /// Canonical form: trimmed, upper-cased, legacy alias resolved. Blank stays null — a blank
+        /// selection is never coerced into a type on the user's behalf.
+        /// </summary>
+        public static string? Normalize(string? type)
         {
-            Proforma => "Fatura Proforma",
-            FinalInvoice => "Fatura Final",
+            if (string.IsNullOrWhiteSpace(type)) return null;
+
+            var upper = type.Trim().ToUpperInvariant();
+            return upper == LegacyFinalInvoice ? Invoice : upper;
+        }
+
+        /// <summary>Portuguese label used in the UI, validation messages and history entries.</summary>
+        public static string DisplayName(string? type) => Normalize(type) switch
+        {
+            Estimate => "Orçamento / Cotação",
+            Proforma => "Factura Pró-forma",
+            AdvanceInvoice => "Factura de Adiantamento",
+            Invoice => "Factura",
+            InvoiceReceipt => "Factura-Recibo",
+            Other => "Outro documento",
             _ => "Não classificado"
         };
-
-        /// <summary>
-        /// True only for PROFORMA. A null/unknown type returns false here and must be handled as
-        /// UNCLASSIFIED by the caller — it is never silently treated as "nothing required" (rule R12).
-        /// </summary>
-        public static bool RequiresFinalInvoice(string? type) =>
-            string.Equals(type, Proforma, StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Maps a billing document type to the Final Invoice obligation state of a PO group.
-        /// Null/unknown → UNCLASSIFIED (blocks completion until Finance classifies it).
-        /// </summary>
-        public static string ToFinalInvoiceStatus(string? type)
-        {
-            if (RequiresFinalInvoice(type)) return FinalInvoiceStatuses.PendingUpload;
-            if (string.Equals(type, FinalInvoice, StringComparison.OrdinalIgnoreCase))
-                return FinalInvoiceStatuses.NotApplicableInitialFinalInvoice;
-            return FinalInvoiceStatuses.Unclassified;
-        }
     }
 
     /// <summary>
@@ -287,13 +323,21 @@ public static class RequestConstants
     /// UNCLASSIFIED is the persisted default: an unclassified group can never complete and can
     /// never accept a Fiscal Receipt (rule R15).
     /// </summary>
-    public static class FinalInvoiceStatuses
+    /// <summary>
+    /// State of the OPERATION-INVOICE obligation on a PO group — the Factura documenting the actual
+    /// supply. Renamed from FinalInvoiceStatuses: "final" wrongly implied terminality, when a
+    /// Factura is simply the operation document and several other obligations may still be open.
+    ///
+    /// <para>This tracks ONE obligation. Whether the obligation exists at all is decided by
+    /// <see cref="Services.DocumentObligationResolver"/> from the document identity.</para>
+    /// </summary>
+    public static class OperationInvoiceStatuses
     {
-        /// <summary>Billing document type unknown. Default for every group. Blocks completion.</summary>
+        /// <summary>Document identity unknown. Default for every group. Blocks completion.</summary>
         public const string Unclassified = "UNCLASSIFIED";
-        /// <summary>Request started with a FINAL_INVOICE — no subsequent invoice is owed.</summary>
-        public const string NotApplicableInitialFinalInvoice = "NOT_APPLICABLE";
-        /// <summary>Started with a PROFORMA — a Final Invoice is owed and not yet uploaded.</summary>
+        /// <summary>The source document already documents the operation — no further invoice is owed.</summary>
+        public const string NotApplicable = "NOT_APPLICABLE";
+        /// <summary>An operation invoice is owed and not yet uploaded.</summary>
         public const string PendingUpload = "PENDING_UPLOAD";
         /// <summary>Uploaded, awaiting Finance validation (rule R10).</summary>
         public const string PendingValidation = "PENDING_VALIDATION";
@@ -306,11 +350,11 @@ public static class RequestConstants
         /// <summary>Reconciliation found a divergence Finance must decide on explicitly.</summary>
         public const string DivergenceDetected = "DIVERGENCE_DETECTED";
 
-        /// <summary>States in which the Final Invoice dimension counts as done.</summary>
+        /// <summary>States in which the operation-invoice dimension counts as done.</summary>
         public static readonly string[] Satisfied =
-            { NotApplicableInitialFinalInvoice, Validated };
+            { NotApplicable, Validated };
 
-        /// <summary>States in which a new Final Invoice upload is accepted.</summary>
+        /// <summary>States in which a new operation-invoice upload is accepted.</summary>
         public static readonly string[] AcceptsUpload =
             { PendingUpload, Rejected, ReplacementRequested };
 

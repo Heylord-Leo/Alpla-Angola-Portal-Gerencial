@@ -212,8 +212,8 @@ export function createRequestCreationSteps(
         // A condição observa o próprio campo no DOM: enquanto a funcionalidade estiver desativada o
         // campo não é renderizado e o passo desaparece sozinho, sem duplicar aqui a feature flag.
         {
-            id: 'request-billing-document-type',
-            target: '[data-guide="request-billing-document-type"]',
+            id: 'request-source-document-type',
+            target: '[data-guide="request-source-document-type"]',
             title: 'Tipo de Documento de Faturação',
             content: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -246,7 +246,7 @@ export function createRequestCreationSteps(
             placement: 'bottom',
             requiredAction: 'none',
             allowSkip: true,
-            condition: () => !!document.querySelector('[data-guide="request-billing-document-type"]'),
+            condition: () => !!document.querySelector('[data-guide="request-source-document-type"]'),
         },
 
         // ── Step: Grau de Necessidade ──

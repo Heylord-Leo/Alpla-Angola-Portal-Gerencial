@@ -17,5 +17,5 @@ public class FeatureFlagsDto
     /// (PROFORMA or FINAL_INVOICE) before it can be submitted.
     /// False while the feature is off or the effective date has not been reached.
     /// </summary>
-    public bool BillingDocumentTypeRequired { get; set; }
+    public bool SourceDocumentTypeRequired { get; set; }
 }

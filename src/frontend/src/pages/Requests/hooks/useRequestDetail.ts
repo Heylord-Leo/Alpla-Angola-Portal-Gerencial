@@ -8,7 +8,7 @@ import { FeedbackType } from '../../../components/ui/Feedback';
 import { ApprovalActionType } from '../../../components/ApprovalModal';
 import { scrollToFirstError } from '../../../lib/validation';
 import { completeQuotationAction } from '../../../lib/workflow';
-import { isBillingDocumentType } from '../../../lib/billingDocumentType';
+import { isSelectableDocumentType } from '../../../lib/sourceDocumentType';
 import { useFeatureFlags } from '../../../hooks/useFeatureFlags';
 import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
 
@@ -64,7 +64,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         areaApproverId: '',
         finalApproverId: '',
         // Post-Payment Completion (Release 2): PROFORMA | FINAL_INVOICE | '' (unclassified).
-        billingDocumentType: ''
+        sourceDocumentType: ''
     });
     const [initialFormData, setInitialFormData] = useState<any>(null);
     const [supplierName, setSupplierName] = useState('');
@@ -514,7 +514,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 supplierId: data.supplierId?.toString() || '',
                 areaApproverId: data.areaApproverId || '',
                 finalApproverId: data.finalApproverId || '',
-                billingDocumentType: data.billingDocumentType || ''
+                sourceDocumentType: data.sourceDocumentType || ''
             };
 
             if (!isCopyMode) {
@@ -667,7 +667,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             finalApproverId: formData.finalApproverId || null,
             // Post-Payment Completion (Release 2). Empty string means "not chosen" and is sent as
             // null — the backend accepts that on a draft and blocks it at submission instead.
-            billingDocumentType: formData.billingDocumentType || null
+            sourceDocumentType: formData.sourceDocumentType || null
         };
 
         setSaving(true);
@@ -934,8 +934,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         // 1.05 Post-Payment Completion (Release 2) — the billing document type becomes mandatory at
         // submission, never while the request is still a draft. Mirrors the authoritative backend
         // rule in SubmitRequest; the server re-checks it regardless of what the UI allows.
-        if (requestTypeCode === 'PAYMENT' && featureFlags.billingDocumentTypeRequired &&
-            !isBillingDocumentType(formData.billingDocumentType)) {
+        if (requestTypeCode === 'PAYMENT' && featureFlags.sourceDocumentTypeRequired &&
+            !isSelectableDocumentType(formData.sourceDocumentType)) {
             setFeedback({
                 type: 'error',
                 message: 'Selecione o Tipo de Documento de Faturação (Fatura Proforma ou Fatura Final) antes de submeter o pedido.'

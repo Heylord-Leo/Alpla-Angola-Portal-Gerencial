@@ -88,16 +88,33 @@ public static class PostPaymentIdempotencyKeys
     // ── Legacy classification ──
 
     /// <summary>
-    /// LEGACY_DOCUMENT_CLASSIFIED — LC:{GroupId}:{BillingDocumentType}.
+    /// LEGACY_DOCUMENT_CLASSIFIED — LC:{GroupId}:{SourceDocumentType}.
     /// Keyed by the decision itself: re-applying the same classification is a no-op, while
-    /// correcting it to the other type is a distinct, separately audited event.
+    /// correcting it to a different type is a distinct, separately audited event.
     /// </summary>
-    public static string LegacyDocumentClassified(Guid groupId, string billingDocumentType)
+    public static string LegacyDocumentClassified(Guid groupId, string sourceDocumentType)
     {
-        if (string.IsNullOrWhiteSpace(billingDocumentType))
-            throw new ArgumentException("Billing document type is required.", nameof(billingDocumentType));
+        if (string.IsNullOrWhiteSpace(sourceDocumentType))
+            throw new ArgumentException("Source document type is required.", nameof(sourceDocumentType));
 
-        return $"LC:{Format(groupId)}:{billingDocumentType.Trim().ToUpperInvariant()}";
+        return $"LC:{Format(groupId)}:{sourceDocumentType.Trim().ToUpperInvariant()}";
+    }
+
+    // ── Document classification (Release 2 corrected) ──
+
+    /// <summary>
+    /// DOCUMENT_CLASSIFIED — DC:{Scope}:{ScopeId}:{SourceDocumentType}.
+    /// Records the classification decision together with any acknowledged OCR conflict.
+    /// Re-affirming the same classification deduplicates; changing it is a new audited event.
+    /// </summary>
+    public static string DocumentClassified(string scope, Guid scopeId, string sourceDocumentType)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+            throw new ArgumentException("Scope is required.", nameof(scope));
+        if (string.IsNullOrWhiteSpace(sourceDocumentType))
+            throw new ArgumentException("Source document type is required.", nameof(sourceDocumentType));
+
+        return $"DC:{scope.Trim().ToUpperInvariant()}:{Format(scopeId)}:{sourceDocumentType.Trim().ToUpperInvariant()}";
     }
 
     private static string Build(string prefix, Guid scopeId, Guid identityId)

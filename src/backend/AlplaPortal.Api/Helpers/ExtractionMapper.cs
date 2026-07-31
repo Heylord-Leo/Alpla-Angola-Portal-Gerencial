@@ -1,5 +1,6 @@
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Domain.Constants;
 
 namespace AlplaPortal.Api.Helpers;
 
@@ -39,7 +40,12 @@ public static class ExtractionMapper
                 VendorIban = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorIban) ? new OcrValueDto<string> { Value = internalResult.Header.VendorIban, Status = "suggested" } : null,
                 VendorBankAccount = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorBankAccount) ? new OcrValueDto<string> { Value = internalResult.Header.VendorBankAccount, Status = "suggested" } : null,
                 VendorSwift = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorSwift) ? new OcrValueDto<string> { Value = internalResult.Header.VendorSwift, Status = "suggested" } : null,
-                VendorPaymentTerms = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorPaymentTerms) ? new OcrValueDto<string> { Value = internalResult.Header.VendorPaymentTerms, Status = "suggested" } : null
+                VendorPaymentTerms = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorPaymentTerms) ? new OcrValueDto<string> { Value = internalResult.Header.VendorPaymentTerms, Status = "suggested" } : null,
+
+                // Document classification (Release 2 corrected). Passed through as a PROPOSAL with
+                // its evidence so the UI can ask the user to confirm or correct it. Deliberately
+                // never mapped into any field the user's selection is read from.
+                DocumentClassification = BuildDocumentClassification(internalResult.Header)
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {
@@ -93,6 +99,51 @@ public static class ExtractionMapper
                 { "isPartial", internalResult.Metadata?.IsPartial ?? false },
                 { "conflictsDetected", internalResult.Metadata?.ConflictsDetected ?? false }
             }
+        };
+    }
+
+    /// <summary>
+    /// Projects the extraction's document-identity opinion, or null when it had none.
+    ///
+    /// <para>Returning null rather than an empty object matters: "the extraction could not identify
+    /// this document" and "the extraction identified nothing suspicious" are different situations,
+    /// and only the first should leave the UI without a suggestion to reconcile against.</para>
+    /// </summary>
+    private static OcrDocumentClassificationDto? BuildDocumentClassification(ExtractionHeaderDto? header)
+    {
+        if (header == null) return null;
+
+        var hasOpinion = !string.IsNullOrWhiteSpace(header.DocumentClassificationType)
+                         || !string.IsNullOrWhiteSpace(header.DocumentClassificationTitleFound)
+                         || header.DocumentClassificationSupportingEvidence?.Count > 0
+                         || header.DocumentClassificationConflictingEvidence?.Count > 0
+                         || header.DocumentClassificationFiscalMarkers?.Count > 0
+                         || header.DocumentClassificationNonFiscalMarkers?.Count > 0;
+
+        if (!hasOpinion) return null;
+
+        var fiscalMarkers = header.DocumentClassificationFiscalMarkers ?? new List<string>();
+        var nonFiscalMarkers = header.DocumentClassificationNonFiscalMarkers ?? new List<string>();
+
+        var suggested = header.DocumentClassificationType?.Trim().ToUpperInvariant();
+
+        // A fiscal reading is claimed either by the suggested type itself or by certification
+        // markers on the page — unless the document explicitly declares itself non-fiscal, which
+        // always wins ("sem valor fiscal" is a statement by the issuer, not an inference).
+        var indicatesFiscal =
+            nonFiscalMarkers.Count == 0 &&
+            (RequestConstants.SourceDocumentTypes.IsFiscal(suggested) || fiscalMarkers.Count > 0);
+
+        return new OcrDocumentClassificationDto
+        {
+            SuggestedType = suggested,
+            Confidence = header.DocumentClassificationConfidence,
+            TitleFound = header.DocumentClassificationTitleFound,
+            SupportingEvidence = header.DocumentClassificationSupportingEvidence ?? new List<string>(),
+            ConflictingEvidence = header.DocumentClassificationConflictingEvidence ?? new List<string>(),
+            FiscalMarkers = fiscalMarkers,
+            NonFiscalMarkers = nonFiscalMarkers,
+            IndicatesFiscalDocument = indicatesFiscal
         };
     }
 }

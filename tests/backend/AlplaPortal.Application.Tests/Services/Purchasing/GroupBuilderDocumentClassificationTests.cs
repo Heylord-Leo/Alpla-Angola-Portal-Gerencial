@@ -20,7 +20,7 @@ namespace AlplaPortal.Application.Tests.Services.Purchasing;
 /// an ambiguous or absent classification must fall back to UNCLASSIFIED rather than to
 /// "nothing is owed".
 /// </summary>
-public class GroupBuilderBillingClassificationTests
+public class GroupBuilderDocumentClassificationTests
 {
     private static ApplicationDbContext NewContext() =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -99,25 +99,25 @@ public class GroupBuilderBillingClassificationTests
     public async Task Winning_proforma_quotation_leaves_a_pending_final_invoice_obligation()
     {
         using var ctx = NewContext();
-        var requestId = await SeedAsync(ctx, RequestConstants.BillingDocumentTypes.Proforma);
+        var requestId = await SeedAsync(ctx, RequestConstants.SourceDocumentTypes.Proforma);
 
         await Service(ctx, featureEnabled: true).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.BillingDocumentTypes.Proforma, group.BillingDocumentType);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.PendingUpload, group.FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.SourceDocumentTypes.Proforma, group.SourceDocumentType);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.PendingUpload, group.OperationInvoiceStatus);
     }
 
     [Fact]
     public async Task Winning_final_invoice_quotation_owes_nothing_further()
     {
         using var ctx = NewContext();
-        var requestId = await SeedAsync(ctx, RequestConstants.BillingDocumentTypes.FinalInvoice);
+        var requestId = await SeedAsync(ctx, RequestConstants.SourceDocumentTypes.Invoice);
 
         await Service(ctx, featureEnabled: true).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.NotApplicableInitialFinalInvoice, group.FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -129,8 +129,8 @@ public class GroupBuilderBillingClassificationTests
         await Service(ctx, featureEnabled: true).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Null(group.BillingDocumentType);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.Unclassified, group.FinalInvoiceStatus);
+        Assert.Null(group.SourceDocumentType);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Unclassified, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -141,27 +141,27 @@ public class GroupBuilderBillingClassificationTests
         using var ctx = NewContext();
         var requestId = await SeedAsync(
             ctx,
-            winningDocumentType: RequestConstants.BillingDocumentTypes.Proforma,
-            losingDocumentType: RequestConstants.BillingDocumentTypes.FinalInvoice);
+            winningDocumentType: RequestConstants.SourceDocumentTypes.Proforma,
+            losingDocumentType: RequestConstants.SourceDocumentTypes.Invoice);
 
         await Service(ctx, featureEnabled: true).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.BillingDocumentTypes.Proforma, group.BillingDocumentType);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.PendingUpload, group.FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.SourceDocumentTypes.Proforma, group.SourceDocumentType);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.PendingUpload, group.OperationInvoiceStatus);
     }
 
     [Fact]
     public async Task With_the_feature_disabled_the_group_keeps_the_schema_default()
     {
         using var ctx = NewContext();
-        var requestId = await SeedAsync(ctx, RequestConstants.BillingDocumentTypes.Proforma);
+        var requestId = await SeedAsync(ctx, RequestConstants.SourceDocumentTypes.Proforma);
 
         await Service(ctx, featureEnabled: false).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Null(group.BillingDocumentType);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.Unclassified, group.FinalInvoiceStatus);
+        Assert.Null(group.SourceDocumentType);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Unclassified, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -170,22 +170,22 @@ public class GroupBuilderBillingClassificationTests
         // Winner replacement: the award moves to a quotation with a different classification, and
         // the group is rebuilt before any operational stage. The obligation must follow.
         using var ctx = NewContext();
-        var requestId = await SeedAsync(ctx, RequestConstants.BillingDocumentTypes.Proforma);
+        var requestId = await SeedAsync(ctx, RequestConstants.SourceDocumentTypes.Proforma);
         var service = Service(ctx, featureEnabled: true);
 
         await service.BuildGroupsForRequestAsync(requestId);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.PendingUpload,
-            (await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId)).FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            (await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId)).OperationInvoiceStatus);
 
         // The buyer re-classifies the winning quotation and the award is rebuilt.
         var quotation = await ctx.Quotations.FirstAsync(q => q.RequestId == requestId);
-        quotation.DocumentType = RequestConstants.BillingDocumentTypes.FinalInvoice;
+        quotation.DocumentType = RequestConstants.SourceDocumentTypes.Invoice;
         await ctx.SaveChangesAsync();
 
         await service.BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.NotApplicableInitialFinalInvoice, group.FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -194,23 +194,23 @@ public class GroupBuilderBillingClassificationTests
         // Once real documents exist against the obligation, a rebuild must not overwrite it —
         // that would discard evidence rather than correct a classification.
         using var ctx = NewContext();
-        var requestId = await SeedAsync(ctx, RequestConstants.BillingDocumentTypes.Proforma);
+        var requestId = await SeedAsync(ctx, RequestConstants.SourceDocumentTypes.Proforma);
         var service = Service(ctx, featureEnabled: true);
 
         await service.BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
         group.FinalInvoiceAttachmentId = Guid.NewGuid();
-        group.FinalInvoiceStatus = RequestConstants.FinalInvoiceStatuses.Validated;
+        group.OperationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.Validated;
         await ctx.SaveChangesAsync();
 
         var quotation = await ctx.Quotations.FirstAsync(q => q.RequestId == requestId);
-        quotation.DocumentType = RequestConstants.BillingDocumentTypes.FinalInvoice;
+        quotation.DocumentType = RequestConstants.SourceDocumentTypes.Invoice;
         await ctx.SaveChangesAsync();
 
         await service.BuildGroupsForRequestAsync(requestId);
 
         var reloaded = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.Validated, reloaded.FinalInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Validated, reloaded.OperationInvoiceStatus);
     }
 }

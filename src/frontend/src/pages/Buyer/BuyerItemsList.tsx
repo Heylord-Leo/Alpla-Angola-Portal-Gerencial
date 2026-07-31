@@ -36,7 +36,7 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
-import { toCanonicalBillingDocumentType } from '../../lib/billingDocumentType';
+import { normalizeDocumentType } from '../../lib/sourceDocumentType';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -266,7 +266,7 @@ function buildQuotationPayload(draft: OcrDraft) {
         // da Cotação" but the value was dropped before reaching the API. It is now persisted, and
         // the winning quotation's value becomes the PO group's Final Invoice obligation.
         // Mapped to the canonical domain value ('FINAL' → 'FINAL_INVOICE').
-        documentType: toCanonicalBillingDocumentType(draft.documentType),
+        documentType: normalizeDocumentType(draft.documentType),
         currency: draft.currency || 'AOA',
         discountAmount: draft.discountAmount || 0,
         totalAmount: draft.totalAmount || 0,

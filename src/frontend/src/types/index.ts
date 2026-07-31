@@ -447,7 +447,7 @@ export interface FeatureFlagsDto {
     /** Workflow is switched on. While false the UI renders exactly what it did before the feature. */
     postPaymentCompletionEnabled: boolean;
     /** A request created now must carry an explicit billing document type before submission. */
-    billingDocumentTypeRequired: boolean;
+    sourceDocumentTypeRequired: boolean;
 }
 
 export interface RequestDetailsDto extends RequestListItemDto {
@@ -464,7 +464,7 @@ export interface RequestDetailsDto extends RequestListItemDto {
      * Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE for a PAYMENT request.
      * Null on QUOTATION requests and on requests created before the feature was activated.
      */
-    billingDocumentType?: string | null;
+    sourceDocumentType?: string | null;
 
     // B2P: Payment Condition
     paymentConditionCode?: string | null;
@@ -586,7 +586,17 @@ export interface OcrDraft {
     documentNumber: string;
     documentDate: string;
     dueDate?: string;
-    documentType?: 'PROFORMA' | 'FINAL';
+    /**
+     * Identity of the attached document — see lib/sourceDocumentType.
+     * Widened from the superseded binary `'PROFORMA' | 'FINAL'`; the old values still normalize.
+     */
+    documentType?: string;
+
+    /**
+     * What document extraction believes the document is, with its evidence. A PROPOSAL only —
+     * never written into `documentType` automatically.
+     */
+    documentClassification?: OcrDocumentClassificationDto | null;
     currency: string;
     extractedCurrency?: string; // Raw extracted currency for suggestion hint
     discountAmount: number; // Front-end user input
@@ -1445,3 +1455,22 @@ export interface RequestPaymentDto {
     hasDivergence: boolean;
 }
 
+
+/**
+ * Document-classification proposal returned by OCR extraction, with the evidence behind it.
+ * Mirrors `OcrDocumentClassificationDto` on the backend.
+ *
+ * Deliberately a proposal and nothing more: it is shown to the user for confirmation and is never
+ * applied to the classification field automatically.
+ */
+export interface OcrDocumentClassificationDto {
+    suggestedType?: string | null;
+    confidence?: number | null;
+    titleFound?: string | null;
+    supportingEvidence?: string[];
+    conflictingEvidence?: string[];
+    fiscalMarkers?: string[];
+    nonFiscalMarkers?: string[];
+    /** Evidence reads as a fiscal document — raises a non-fiscal selection to a high-risk conflict. */
+    indicatesFiscalDocument?: boolean;
+}

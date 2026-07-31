@@ -42,12 +42,20 @@ public class CreateRequestDraftDto
     public int? SupplierId { get; set; }
 
     /// <summary>
-    /// Post-Payment Completion (Release 2): billing document that originated this PAYMENT request —
-    /// PROFORMA or FINAL_INVOICE. Deliberately has NO default and is NOT [Required]: a draft may be
-    /// saved without it, and the value only becomes mandatory at submission. The Requester must
-    /// choose explicitly; OCR may suggest but never selects on the user's behalf.
+    /// Post-Payment Completion (Release 2 corrected): IDENTITY of the document attached to this
+    /// PAYMENT request — see RequestConstants.SourceDocumentTypes. Deliberately has NO default and
+    /// is NOT [Required]: a draft may be saved without it, and the value only becomes mandatory at
+    /// submission. The Requester must choose explicitly; OCR may suggest but never selects.
     /// </summary>
-    public string? BillingDocumentType { get; set; }
+    public string? SourceDocumentType { get; set; }
+
+    // ── Classification evidence (how the identity was decided) ──
+    public string? SourceDocumentTypeSource { get; set; }
+    public string? SourceDocumentTypeOcrSuggestion { get; set; }
+    public decimal? SourceDocumentTypeOcrConfidence { get; set; }
+    public string? SourceDocumentTypeEvidenceJson { get; set; }
+    public bool? ClassificationConflictAcknowledged { get; set; }
+    public string? ClassificationJustification { get; set; }
 
     // Workflow Participants.
     // (Phase B: AreaApproverId removed — area routing comes from DepartmentManagers;

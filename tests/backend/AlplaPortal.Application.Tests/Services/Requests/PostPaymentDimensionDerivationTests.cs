@@ -15,13 +15,13 @@ public class PostPaymentDimensionDerivationTests
 {
     private static RequestPoGroup Group(
         bool receiptDone = false,
-        string finalInvoiceStatus = RequestConstants.FinalInvoiceStatuses.Unclassified,
+        string operationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.Unclassified,
         bool fiscalUploaded = false,
         Guid? fiscalAttachmentId = null) => new()
         {
             Id = Guid.NewGuid(),
             OperationalReceiptCompletedAtUtc = receiptDone ? DateTime.UtcNow : null,
-            FinalInvoiceStatus = finalInvoiceStatus,
+            OperationInvoiceStatus = operationInvoiceStatus,
             FiscalReceiptUploadedAtUtc = fiscalUploaded ? DateTime.UtcNow : null,
             FiscalReceiptAttachmentId = fiscalUploaded ? (fiscalAttachmentId ?? Guid.NewGuid()) : fiscalAttachmentId
         };
@@ -33,43 +33,50 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = new RequestPoGroup();
 
-        Assert.Equal(RequestConstants.FinalInvoiceStatuses.Unclassified, group.FinalInvoiceStatus);
-        Assert.Null(group.BillingDocumentType);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Unclassified, group.OperationInvoiceStatus);
+        Assert.Null(group.SourceDocumentType);
         Assert.Null(group.OperationalReceiptCompletedAtUtc);
         Assert.Null(group.FiscalReceiptAttachmentId);
         Assert.Null(group.CompletedAtUtc);
     }
 
-    // ── Billing document type → obligation ──
+    // ── Taxonomy shape ──
 
-    [Theory]
-    [InlineData("PROFORMA", "PENDING_UPLOAD")]
-    [InlineData("proforma", "PENDING_UPLOAD")]
-    [InlineData("FINAL_INVOICE", "NOT_APPLICABLE")]
-    [InlineData(null, "UNCLASSIFIED")]
-    [InlineData("", "UNCLASSIFIED")]
-    [InlineData("SOMETHING_ELSE", "UNCLASSIFIED")]
-    public void Billing_document_type_maps_to_the_expected_obligation(string? type, string expected)
+    [Fact]
+    public void Six_selectable_document_types_are_in_scope()
     {
-        Assert.Equal(expected, RequestConstants.BillingDocumentTypes.ToFinalInvoiceStatus(type));
+        Assert.Equal(6, RequestConstants.SourceDocumentTypes.ValidValues.Length);
+        foreach (var t in new[] { "ESTIMATE", "PROFORMA", "ADVANCE_INVOICE", "INVOICE", "INVOICE_RECEIPT", "OTHER" })
+            Assert.True(RequestConstants.SourceDocumentTypes.IsValid(t), t);
+
+        Assert.False(RequestConstants.SourceDocumentTypes.IsValid("UNCLASSIFIED"));
+        Assert.False(RequestConstants.SourceDocumentTypes.IsValid(null));
     }
 
     [Fact]
-    public void Only_proforma_requires_a_subsequent_final_invoice()
+    public void Only_the_three_fiscal_documents_are_marked_fiscal()
     {
-        Assert.True(RequestConstants.BillingDocumentTypes.RequiresFinalInvoice("PROFORMA"));
-        Assert.False(RequestConstants.BillingDocumentTypes.RequiresFinalInvoice("FINAL_INVOICE"));
-        Assert.False(RequestConstants.BillingDocumentTypes.RequiresFinalInvoice(null));
+        Assert.True(RequestConstants.SourceDocumentTypes.IsFiscal("ADVANCE_INVOICE"));
+        Assert.True(RequestConstants.SourceDocumentTypes.IsFiscal("INVOICE"));
+        Assert.True(RequestConstants.SourceDocumentTypes.IsFiscal("INVOICE_RECEIPT"));
+
+        // A Pró-forma and an Orçamento are not Facturas under Decree 71/25.
+        Assert.False(RequestConstants.SourceDocumentTypes.IsFiscal("PROFORMA"));
+        Assert.False(RequestConstants.SourceDocumentTypes.IsFiscal("ESTIMATE"));
+        // OTHER/UNCLASSIFIED are unknown, not "non-fiscal" — but they must never read as fiscal.
+        Assert.False(RequestConstants.SourceDocumentTypes.IsFiscal("OTHER"));
+        Assert.False(RequestConstants.SourceDocumentTypes.IsFiscal(null));
     }
 
     [Fact]
-    public void Only_two_billing_document_types_are_in_scope()
+    public void The_superseded_final_invoice_code_normalizes_to_invoice()
     {
-        Assert.Equal(2, RequestConstants.BillingDocumentTypes.ValidValues.Length);
-        Assert.True(RequestConstants.BillingDocumentTypes.IsValid("PROFORMA"));
-        Assert.True(RequestConstants.BillingDocumentTypes.IsValid("FINAL_INVOICE"));
-        Assert.False(RequestConstants.BillingDocumentTypes.IsValid("RECEIPT"));
-        Assert.False(RequestConstants.BillingDocumentTypes.IsValid(null));
+        // Read-time alias only: a stray legacy value is interpreted, never rejected — and never
+        // written back.
+        Assert.Equal(RequestConstants.SourceDocumentTypes.Invoice,
+            RequestConstants.SourceDocumentTypes.Normalize("FINAL_INVOICE"));
+        Assert.Equal(RequestConstants.SourceDocumentTypes.Invoice,
+            RequestConstants.SourceDocumentTypes.Normalize("final_invoice"));
     }
 
     // ── Fiscal Receipt is the terminal step ──
@@ -77,7 +84,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Fiscal_receipt_is_locked_while_operational_receipt_is_pending()
     {
-        var group = Group(receiptDone: false, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated);
+        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
 
         Assert.Equal(RequestConstants.FiscalReceiptStatuses.Locked, FiscalReceiptStateDeriver.Derive(group));
         Assert.False(FiscalReceiptStateDeriver.CanUploadFiscalReceipt(group));
@@ -86,7 +93,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Fiscal_receipt_is_locked_while_the_final_invoice_is_outstanding()
     {
-        var group = Group(receiptDone: true, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.PendingValidation);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.PendingValidation);
 
         Assert.Equal(RequestConstants.FiscalReceiptStatuses.Locked, FiscalReceiptStateDeriver.Derive(group));
     }
@@ -94,7 +101,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Unclassified_group_can_never_unlock_the_fiscal_receipt()
     {
-        var group = Group(receiptDone: true, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Unclassified);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         Assert.Equal(RequestConstants.FiscalReceiptStatuses.Locked, FiscalReceiptStateDeriver.Derive(group));
         Assert.False(FiscalReceiptStateDeriver.CanUploadFiscalReceipt(group));
@@ -106,7 +113,7 @@ public class PostPaymentDimensionDerivationTests
     [InlineData("NOT_APPLICABLE")]
     public void Fiscal_receipt_unlocks_once_receipt_and_invoice_are_satisfied(string satisfiedStatus)
     {
-        var group = Group(receiptDone: true, finalInvoiceStatus: satisfiedStatus);
+        var group = Group(receiptDone: true, operationInvoiceStatus: satisfiedStatus);
 
         Assert.Equal(RequestConstants.FiscalReceiptStatuses.PendingUpload, FiscalReceiptStateDeriver.Derive(group));
         Assert.True(FiscalReceiptStateDeriver.CanUploadFiscalReceipt(group));
@@ -129,7 +136,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: true,
-            finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
             fiscalUploaded: true);
 
         Assert.True(FiscalReceiptStateDeriver.IsGroupCompletable(group));
@@ -140,7 +147,7 @@ public class PostPaymentDimensionDerivationTests
     {
         // A timestamp without an attachment id would leave GROUP_COMPLETED with no stable
         // identity — the evaluation must refuse rather than invent one.
-        var group = Group(receiptDone: true, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
         group.FiscalReceiptUploadedAtUtc = DateTime.UtcNow;
         group.FiscalReceiptAttachmentId = null;
 
@@ -155,7 +162,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: false,
-            finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
             fiscalUploaded: true);
 
         Assert.False(FiscalReceiptStateDeriver.IsGroupCompletable(group));
@@ -166,7 +173,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_lists_classification_before_anything_invoice_shaped()
     {
-        var group = Group(receiptDone: true, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Unclassified);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Unclassified);
 
         Assert.Equal(PostPaymentPendingReason.ClassificationPending, PostPaymentPendingReason.Compute(group));
     }
@@ -174,7 +181,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_lists_both_open_dimensions()
     {
-        var group = Group(receiptDone: false, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.PendingUpload);
+        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.PendingUpload);
 
         var reason = PostPaymentPendingReason.Compute(group);
 
@@ -186,7 +193,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_never_lists_a_locked_fiscal_receipt_it_is_not_actionable()
     {
-        var group = Group(receiptDone: false, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated);
+        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
 
         Assert.Equal(PostPaymentPendingReason.OperationalReceipt, PostPaymentPendingReason.Compute(group));
     }
@@ -194,7 +201,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_lists_the_fiscal_receipt_once_it_becomes_actionable()
     {
-        var group = Group(receiptDone: true, finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
 
         Assert.Equal(PostPaymentPendingReason.FiscalReceipt, PostPaymentPendingReason.Compute(group));
     }
@@ -204,7 +211,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: true,
-            finalInvoiceStatus: RequestConstants.FinalInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
             fiscalUploaded: true);
 
         Assert.Equal(PostPaymentPendingReason.Completed, PostPaymentPendingReason.Compute(group));
@@ -217,20 +224,20 @@ public class PostPaymentDimensionDerivationTests
     {
         var all = new[]
         {
-            RequestConstants.FinalInvoiceStatuses.Unclassified,
-            RequestConstants.FinalInvoiceStatuses.NotApplicableInitialFinalInvoice,
-            RequestConstants.FinalInvoiceStatuses.PendingUpload,
-            RequestConstants.FinalInvoiceStatuses.PendingValidation,
-            RequestConstants.FinalInvoiceStatuses.Validated,
-            RequestConstants.FinalInvoiceStatuses.Rejected,
-            RequestConstants.FinalInvoiceStatuses.ReplacementRequested,
-            RequestConstants.FinalInvoiceStatuses.DivergenceDetected
+            RequestConstants.OperationInvoiceStatuses.Unclassified,
+            RequestConstants.OperationInvoiceStatuses.NotApplicable,
+            RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            RequestConstants.OperationInvoiceStatuses.PendingValidation,
+            RequestConstants.OperationInvoiceStatuses.Validated,
+            RequestConstants.OperationInvoiceStatuses.Rejected,
+            RequestConstants.OperationInvoiceStatuses.ReplacementRequested,
+            RequestConstants.OperationInvoiceStatuses.DivergenceDetected
         };
 
         foreach (var status in all)
         {
-            var satisfied = RequestConstants.FinalInvoiceStatuses.IsSatisfied(status);
-            var blocking = RequestConstants.FinalInvoiceStatuses.IsBlocking(status);
+            var satisfied = RequestConstants.OperationInvoiceStatuses.IsSatisfied(status);
+            var blocking = RequestConstants.OperationInvoiceStatuses.IsBlocking(status);
 
             Assert.NotEqual(satisfied, blocking);
         }
@@ -240,7 +247,7 @@ public class PostPaymentDimensionDerivationTests
     public void Unclassified_never_accepts_an_upload_classification_comes_first()
     {
         Assert.DoesNotContain(
-            RequestConstants.FinalInvoiceStatuses.Unclassified,
-            RequestConstants.FinalInvoiceStatuses.AcceptsUpload);
+            RequestConstants.OperationInvoiceStatuses.Unclassified,
+            RequestConstants.OperationInvoiceStatuses.AcceptsUpload);
     }
 }

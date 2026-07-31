@@ -39,10 +39,24 @@ public class UpdateRequestDraftDto
     public int? SupplierId { get; set; }
 
     /// <summary>
-    /// Post-Payment Completion (Release 2): billing document type of this PAYMENT request.
-    /// Editable while the request is still a draft; locked once submitted.
+    /// Post-Payment Completion (Release 2 corrected): IDENTITY of the document attached to this
+    /// PAYMENT request. Editable while the request is still a draft; locked once submitted.
     /// </summary>
-    public string? BillingDocumentType { get; set; }
+    public string? SourceDocumentType { get; set; }
+
+    // ── Classification evidence (how the identity was decided) ──
+    /// <summary>USER_SELECTED, OCR_CONFIRMED or FINANCE_REVIEW.</summary>
+    public string? SourceDocumentTypeSource { get; set; }
+    /// <summary>What document extraction proposed. Never auto-applied to the selection.</summary>
+    public string? SourceDocumentTypeOcrSuggestion { get; set; }
+    /// <summary>Extraction confidence for the suggestion (0.0–1.0).</summary>
+    public decimal? SourceDocumentTypeOcrConfidence { get; set; }
+    /// <summary>Serialized evidence behind the suggestion.</summary>
+    public string? SourceDocumentTypeEvidenceJson { get; set; }
+    /// <summary>The user was warned that the selection conflicts with the evidence and proceeded.</summary>
+    public bool? ClassificationConflictAcknowledged { get; set; }
+    /// <summary>Mandatory written reason when a high-risk conflict was overridden.</summary>
+    public string? ClassificationJustification { get; set; }
 
     // Workflow Participants.
     // (Phase B: AreaApproverId removed — area routing comes from DepartmentManagers;

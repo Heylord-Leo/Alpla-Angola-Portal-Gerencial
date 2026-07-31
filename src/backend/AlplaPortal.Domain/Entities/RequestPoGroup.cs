@@ -62,18 +62,38 @@ public class RequestPoGroup
     public DateTime? OperationalReceiptCompletedAtUtc { get; set; }
     public Guid? OperationalReceiptCompletedByUserId { get; set; }
 
-    // Dimension 2: Final Invoice
+    // Dimension 2: Operation Invoice (the Factura documenting the actual supply)
     /// <summary>
-    /// Billing document that originated this group: PROFORMA | FINAL_INVOICE | null.
-    /// Null means the group was never classified — see <see cref="FinalInvoiceStatus"/>.
+    /// IDENTITY of the document that originated this group — see
+    /// RequestConstants.SourceDocumentTypes. Null means never classified.
+    /// Obligations are derived from it by DocumentObligationResolver, never stored in this field.
     /// </summary>
-    public string? BillingDocumentType { get; set; }
+    public string? SourceDocumentType { get; set; }
 
     /// <summary>
-    /// Final Invoice obligation state. Defaults to UNCLASSIFIED: a group whose billing document
-    /// type is unknown must never be silently treated as "no invoice required" (rule R12).
+    /// Operation-invoice obligation state. Defaults to UNCLASSIFIED: a group whose document
+    /// identity is unknown must never be silently treated as "no invoice required" (rule R12).
     /// </summary>
-    public string FinalInvoiceStatus { get; set; } = RequestConstants.FinalInvoiceStatuses.Unclassified;
+    public string OperationInvoiceStatus { get; set; } = RequestConstants.OperationInvoiceStatuses.Unclassified;
+
+    // ── Derived obligations (recomputed from SourceDocumentType; persisted for querying) ──
+    /// <summary>A Factura for the actual supply is still owed.</summary>
+    public bool RequiresOperationInvoice { get; set; }
+
+    /// <summary>
+    /// A separate payment receipt is owed. False for a Factura-Recibo, which already documents
+    /// payment — demanding a further receipt there would be legally wrong.
+    /// </summary>
+    public bool RequiresSeparateFiscalReceipt { get; set; }
+
+    /// <summary>
+    /// Advance regularization is owed (Factura de Adiantamento): operation invoice, Credit Note and
+    /// payment evidence. Discharged through the existing Buy-to-Pay RequestReconciliation flow.
+    /// </summary>
+    public bool RequiresAdvanceRegularization { get; set; }
+
+    /// <summary>Finance must confirm or correct the classification before completion.</summary>
+    public bool RequiresFinanceClassificationReview { get; set; }
 
     public Guid? FinalInvoiceAttachmentId { get; set; }
     public DateTime? FinalInvoiceUploadedAtUtc { get; set; }

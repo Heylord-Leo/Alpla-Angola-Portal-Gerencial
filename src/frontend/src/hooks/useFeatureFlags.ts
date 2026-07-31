@@ -16,7 +16,7 @@ import { FeatureFlagsDto } from '../types';
  */
 const FLAGS_OFF: FeatureFlagsDto = {
     postPaymentCompletionEnabled: false,
-    billingDocumentTypeRequired: false
+    sourceDocumentTypeRequired: false
 };
 
 export function useFeatureFlags() {

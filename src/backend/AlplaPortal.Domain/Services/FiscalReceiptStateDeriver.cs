@@ -26,7 +26,7 @@ public static class FiscalReceiptStateDeriver
             return RequestConstants.FiscalReceiptStatuses.Uploaded;
 
         var receiptDone = group.OperationalReceiptCompletedAtUtc != null;
-        var invoiceDone = RequestConstants.FinalInvoiceStatuses.IsSatisfied(group.FinalInvoiceStatus);
+        var invoiceDone = RequestConstants.OperationInvoiceStatuses.IsSatisfied(group.OperationInvoiceStatus);
 
         return receiptDone && invoiceDone
             ? RequestConstants.FiscalReceiptStatuses.PendingUpload
@@ -50,7 +50,7 @@ public static class FiscalReceiptStateDeriver
         ArgumentNullException.ThrowIfNull(group);
 
         return group.OperationalReceiptCompletedAtUtc != null
-            && RequestConstants.FinalInvoiceStatuses.IsSatisfied(group.FinalInvoiceStatus)
+            && RequestConstants.OperationInvoiceStatuses.IsSatisfied(group.OperationInvoiceStatus)
             && group.FiscalReceiptUploadedAtUtc != null
             && group.FiscalReceiptAttachmentId != null
             && group.FiscalReceiptAttachmentId != Guid.Empty;

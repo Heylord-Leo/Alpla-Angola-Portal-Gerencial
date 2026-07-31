@@ -4,7 +4,62 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.220.0
+v2.221.0
+
+## [v2.221.0] - 2026-07-31
+
+### Changed — Post-Payment Completion — Release 2 corrected: Angolan document taxonomy
+
+Manual testing of v2.220.0 showed the binary `PROFORMA | FINAL_INVOICE` model could not represent
+the documents the Portal actually receives under Angola's *Regime Jurídico das Facturas*
+(Decreto Presidencial 71/25) — and that an `FT` invoice classified as "Fatura Proforma" was accepted
+without any warning. This release replaces that model. **The feature remains disabled in every
+committed configuration.**
+
+- **Seven-value taxonomy** describing what the supplier issued: `ESTIMATE` (Orçamento/Cotação,
+  non-fiscal), `PROFORMA` (non-fiscal), `ADVANCE_INVOICE` (Factura de Adiantamento, fiscal),
+  `INVOICE` (Factura), `INVOICE_RECEIPT` (Factura-Recibo), `OTHER`, `UNCLASSIFIED`.
+  `ESTIMATE` is named so deliberately — `QUOTATION` is already the request type, the `Quotation`
+  entity and `QuotationLifecycleStatuses`.
+- **Identity separated from obligations.** `BillingDocumentType` → `SourceDocumentType` records
+  *what the document is*; a new pure `DocumentObligationResolver.Resolve(type, context)` decides
+  *what remains owed*. The old one-field shortcut (`ToFinalInvoiceStatus`) is gone. This is what
+  makes a Factura de Adiantamento (fiscal, yet still owing an operation invoice **and**
+  regularization) and a Factura-Recibo (owing no separate receipt) representable at all.
+- **Context-aware acceptance.** A **Factura-Recibo can no longer originate a payable request** —
+  it states the operation and its full payment already happened, so accepting it would ask the
+  Portal to pay the same thing twice. An **Orçamento cannot initiate a payment** either: a
+  non-fiscal document does not authorize payment. Both remain valid where they belong —
+  `ESTIMATE` in Quotation Management, `INVOICE_RECEIPT` as post-payment evidence, where it
+  discharges the operation-invoice and payment-receipt obligations together.
+- **`ADVANCE_INVOICE` (provisional ALPLA rule)**: fiscal, may initiate an advance payment, never
+  treated as `PROFORMA` and never as the operation invoice. Requires a later operation invoice,
+  Credit Note regularization, payment evidence and explicit Finance validation. Reuses the existing
+  Buy-to-Pay `RequestReconciliation`/`RequestPayment` machinery rather than duplicating it, so
+  multiple sequenced advances are supported natively.
+- **OCR now classifies the document.** The extraction prompt gained a `documentClassification`
+  block returning suggested type, confidence, the verbatim title found, supporting and conflicting
+  evidence, and fiscal/non-fiscal markers. Evidence priority: explicit title → non-fiscal
+  declarations ("sem valor fiscal") → fiscal certification markers → payment-settlement wording →
+  prefixes. **A prefix alone never decides** and caps confidence at 0.50.
+- **Conflicts are surfaced, never silent.** Matching selection records `OCR_CONFIRMED`; a
+  low-confidence conflict needs acknowledgement; a high-confidence conflict needs acknowledgement
+  **and** a written justification of at least 20 characters. Choosing a non-fiscal type for a
+  document the evidence reads as fiscal is **always** high-risk regardless of confidence — that is
+  precisely the FT→Proforma case. Selection, suggestion, confidence, evidence and justification are
+  all persisted.
+- **UI**: the field is now "Tipo de documento anexado" — it describes the artefact, not the
+  workflow — with a fiscal/non-fiscal badge, the OCR reading and its evidence, and a preview of
+  what the choice will still require.
+- **Renames** (free: no row had ever been classified): `FinalInvoiceStatus` →
+  `OperationInvoiceStatus`, `FINAL_INVOICE` → `INVOICE`. A read-time alias keeps a stray legacy
+  value interpretable; it is never persisted again.
+- **Migration `CorrectDocumentTaxonomy`** — three column renames (data preserved) plus additive
+  columns. No `DROP TABLE`, `DELETE`, `UPDATE` or `TRUNCATE`; no historical data changed.
+- **Plan v7** (`docs/POST_PAYMENT_COMPLETION_PLAN_V7.md`) records the corrected taxonomy, the
+  obligation matrix, the OCR decision model and the revised R3/R4/R4B/R5 sequence.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.220.0] - 2026-07-31
 

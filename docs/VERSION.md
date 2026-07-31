@@ -2,7 +2,27 @@
 
 ## Current Version
 
-v2.220.0
+v2.221.0
+
+## [v2.221.0] - 2026-07-31
+
+### Changed — Post-Payment Completion — Release 2 corrected: Angolan document taxonomy
+
+- **Feature remains disabled** in every committed configuration.
+- **Seven-value taxonomy** (`ESTIMATE`, `PROFORMA`, `ADVANCE_INVOICE`, `INVOICE`,
+  `INVOICE_RECEIPT`, `OTHER`, `UNCLASSIFIED`) replacing the binary model.
+- **Identity split from obligations**: `SourceDocumentType` records what the document is;
+  `DocumentObligationResolver` derives what remains owed, per usage context.
+- **Factura-Recibo can no longer originate a payment**; **Orçamento cannot initiate a payment**.
+- **`ADVANCE_INVOICE`** (provisional rule) requires operation invoice + Credit Note regularization +
+  payment evidence + Finance validation, reusing the existing `RequestReconciliation` flow.
+- **OCR classifies the document** with confidence and evidence; prefixes alone never decide.
+  Conflicts require acknowledgement, and a high-risk conflict requires a written justification.
+- **Renames**: `BillingDocumentType` → `SourceDocumentType`, `FinalInvoiceStatus` →
+  `OperationInvoiceStatus`, `FINAL_INVOICE` → `INVOICE` (read-time alias retained).
+- **Migration `CorrectDocumentTaxonomy`**: 3 renames + additive columns, no data change.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.220.0] - 2026-07-31
 

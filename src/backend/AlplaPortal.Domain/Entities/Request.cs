@@ -136,12 +136,31 @@ public class Request
     public string? PaymentConditionSource { get; set; }
 
     // ── Post-Payment Completion Workflow (Release 1 foundation — inert while disabled) ──
+    // ── Document identity (what the supplier actually issued) ────────────────
     /// <summary>
-    /// Billing document that originated this request: PROFORMA | FINAL_INVOICE | null.
-    /// No default: the Requester must choose explicitly (rule R14). Propagated to the
-    /// request's PO group(s) at Final Approval from Release 2 onwards.
+    /// The document that originated this request — see RequestConstants.SourceDocumentTypes.
+    /// A statement of IDENTITY only. What remains owed is derived by DocumentObligationResolver
+    /// and never stored here. No default: the Requester must choose explicitly.
     /// </summary>
-    public string? BillingDocumentType { get; set; }
+    public string? SourceDocumentType { get; set; }
+
+    /// <summary>How the classification was reached: USER_SELECTED, OCR_CONFIRMED, FINANCE_REVIEW.</summary>
+    public string? SourceDocumentTypeSource { get; set; }
+
+    /// <summary>What document extraction proposed, if anything. Never auto-applied.</summary>
+    public string? SourceDocumentTypeOcrSuggestion { get; set; }
+
+    /// <summary>Extraction confidence for the suggestion (0.0–1.0).</summary>
+    public decimal? SourceDocumentTypeOcrConfidence { get; set; }
+
+    /// <summary>Serialized evidence: title found, supporting/conflicting evidence, fiscal markers.</summary>
+    public string? SourceDocumentTypeEvidenceJson { get; set; }
+
+    /// <summary>The user was shown a conflict with the extracted evidence and proceeded anyway.</summary>
+    public bool ClassificationConflictAcknowledged { get; set; }
+
+    /// <summary>Mandatory written reason when a high-risk conflict was overridden.</summary>
+    public string? ClassificationJustification { get; set; }
 
     /// <summary>
     /// Stable completion identity. Assigned exactly once, by the winning atomic transition of

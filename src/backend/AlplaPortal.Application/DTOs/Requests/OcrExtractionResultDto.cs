@@ -81,6 +81,14 @@ public class OcrHeaderSuggestionsDto
 
     [JsonPropertyName("paymentConditionAdvancePercent")]
     public OcrValueDto<decimal?>? PaymentConditionAdvancePercent { get; set; }
+
+    // ── Document classification (Release 2 corrected) ──
+    /// <summary>
+    /// What the extraction believes the document IS, with the evidence behind it. Surfaced to the
+    /// user for confirmation; the UI must never write it into the classification field on their
+    /// behalf. Null when the extraction could not identify the document.
+    /// </summary>
+    public OcrDocumentClassificationDto? DocumentClassification { get; set; }
 }
 
 public class OcrLineItemSuggestionDto
@@ -174,4 +182,35 @@ public class OcrExtractionResultDto
 
     [JsonPropertyName("metadata")]
     public Dictionary<string, object> Metadata { get; set; } = new();
+}
+
+/// <summary>
+/// The extraction's opinion about the document's identity, with the evidence behind it.
+///
+/// <para>Deliberately a PROPOSAL and nothing more. It is shown to the user so they can confirm or
+/// correct it, and is never applied to the classification field automatically — the observed defect
+/// this design corrects was an FT invoice silently accepted as a Pró-forma because nothing in the
+/// system had an opinion to disagree with.</para>
+/// </summary>
+public class OcrDocumentClassificationDto
+{
+    /// <summary>ESTIMATE, PROFORMA, ADVANCE_INVOICE, INVOICE, INVOICE_RECEIPT or OTHER.</summary>
+    public string? SuggestedType { get; set; }
+
+    /// <summary>0.0–1.0. A prefix-only match is capped at 0.50 by the extraction prompt.</summary>
+    public decimal? Confidence { get; set; }
+
+    /// <summary>The document heading read verbatim — the strongest single piece of evidence.</summary>
+    public string? TitleFound { get; set; }
+
+    public List<string> SupportingEvidence { get; set; } = new();
+    public List<string> ConflictingEvidence { get; set; } = new();
+    public List<string> FiscalMarkers { get; set; } = new();
+    public List<string> NonFiscalMarkers { get; set; } = new();
+
+    /// <summary>
+    /// True when the evidence indicates a fiscal document. Used to raise a selection of a
+    /// non-fiscal type to a high-risk conflict regardless of the numeric confidence.
+    /// </summary>
+    public bool IndicatesFiscalDocument { get; set; }
 }
