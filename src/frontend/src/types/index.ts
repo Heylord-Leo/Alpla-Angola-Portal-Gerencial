@@ -261,8 +261,14 @@ export interface SavedQuotationDto {
     supplierRegistrationStatus?: string;
     documentNumber?: string;
     documentDate?: string;
-    /** Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE, null when unclassified. */
+    /** Post-Payment Completion (Release 2 corrected): the document identity, null when unclassified. */
     documentType?: string | null;
+    /** What extraction proposed when this quotation was saved. Rehydrated on reopen. */
+    documentTypeOcrSuggestion?: string | null;
+    documentTypeOcrConfidence?: number | null;
+    documentTypeEvidenceJson?: string | null;
+    classificationConflictAcknowledged?: boolean;
+    classificationJustification?: string | null;
     currency: string;
     totalGrossAmount: number;
     totalDiscountAmount: number;

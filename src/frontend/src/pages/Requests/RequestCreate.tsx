@@ -21,13 +21,15 @@ import { ReconcilableItem, ItemResolution } from '../../types';
 import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
+import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
 import {
-    SourceDocumentTypeField,
-    evaluateClassificationConflict,
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
+    buildClassificationPayload,
+    evaluateClassificationConflict,
     type ClassificationConflictState
-} from '../../components/requests/SourceDocumentTypeField';
+} from '../../lib/documentClassificationDecision';
 import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+import { FieldMessageIcon } from '../../components/ui/FieldMessageIcon';
 
 
 export function RequestCreate() {
@@ -818,17 +820,24 @@ export function RequestCreate() {
             // Classification evidence: what the extraction proposed, whether the user overrode it,
             // and why. Persisted so a disputed classification can always be explained afterwards.
             ...(Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled && formData.sourceDocumentType
-                ? {
-                    sourceDocumentTypeSource:
-                        paymentDraft?.documentClassification?.suggestedType === formData.sourceDocumentType
-                            ? 'OCR_CONFIRMED' : 'USER_SELECTED',
-                    sourceDocumentTypeOcrSuggestion: paymentDraft?.documentClassification?.suggestedType ?? null,
-                    sourceDocumentTypeOcrConfidence: paymentDraft?.documentClassification?.confidence ?? null,
-                    sourceDocumentTypeEvidenceJson: paymentDraft?.documentClassification
-                        ? JSON.stringify(paymentDraft.documentClassification) : null,
-                    classificationConflictAcknowledged: classificationConflict.acknowledged,
-                    classificationJustification: classificationConflict.justification.trim() || null
-                }
+                ? (() => {
+                    const c = buildClassificationPayload(
+                        formData.sourceDocumentType,
+                        paymentDraft?.documentClassification,
+                        classificationConflict);
+                    return {
+                        sourceDocumentTypeSource: c.source,
+                        sourceDocumentTypeOcrSuggestion: c.suggestion,
+                        sourceDocumentTypeOcrConfidence: c.confidence,
+                        sourceDocumentTypeEvidenceJson: c.evidenceJson,
+                        sourceDocumentTypeTitleFound: c.titleFound,
+                        sourceDocumentTypeConflictingEvidenceJson: c.conflictingEvidenceJson,
+                        sourceDocumentTypeSuggestionSource: c.suggestionSource,
+                        sourceDocumentAttachmentId: paymentDraft?.proformaAttachmentId ?? null,
+                        classificationConflictAcknowledged: c.acknowledged,
+                        classificationJustification: c.justification
+                    };
+                })()
                 : {}),
             lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
@@ -1903,7 +1912,29 @@ export function RequestCreate() {
                                         style={{ overflow: 'hidden' }}
                                     >
                                         <label data-guide="request-needed-by" style={labelStyle}>
-                                            {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                                {/* Contextual, not corrective: the date is legal, it is simply already past.
+                                                    An icon keeps the field's height fixed while the user edits the date. */}
+                                                {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                    <FieldMessageIcon
+                                                        severity="warning"
+                                                        tooltip={Number(formData.requestTypeId) === 2
+                                                            ? 'O documento está vencido. Clique para saber o que isso significa.'
+                                                            : 'A data selecionada está no passado. Clique para saber mais.'}
+                                                        title={Number(formData.requestTypeId) === 2
+                                                            ? 'O documento está vencido'
+                                                            : 'A data selecionada está no passado'}
+                                                        maxWidth={520}
+                                                    >
+                                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                            {Number(formData.requestTypeId) === 2
+                                                                ? 'A data de vencimento indicada já passou, pelo que o documento anexado está vencido. O pedido pode continuar a ser criado e submetido, mas poderá ser necessário obter um documento atualizado junto do fornecedor, e o pagamento pode implicar juros ou penalizações. Verifique a data no documento antes de prosseguir.'
+                                                                : 'A data limite indicada já passou. O pedido pode continuar a ser criado, mas o prazo pedido não é realizável — confirme se a data está correta.'}
+                                                        </p>
+                                                    </FieldMessageIcon>
+                                                )}
+                                            </span>
                                             <DateInput
                                                 required name="needByDateUtc" value={formData.needByDateUtc}
                                                 min={minNeedByDate ?? undefined}
@@ -1933,12 +1964,6 @@ export function RequestCreate() {
                                                     {getMinNeedByHint(selectedNeedLevel.name, minNeedByDate, minNeedByLeadDays)}
                                                 </div>
                                             )}
-                                            {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                                                    <AlertTriangle size={12} />
-                                                    {Number(formData.requestTypeId) === 2 ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
-                                                </div>
-                                            )}
                                         </label>
                                     </motion.div>
                                 )}
@@ -1956,8 +1981,29 @@ export function RequestCreate() {
                             </label>
 
                              <label data-guide="request-company" style={labelStyle}>
-                                Empresa <span style={{ color: 'red' }}>*</span>
-                                <select 
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    Empresa <span style={{ color: 'red' }}>*</span>
+                                    {/* Provenance, not a warning — and provenance never justifies moving the form. */}
+                                    {paymentDraft?.isCompanyOcrAutoFilled && (
+                                        <FieldMessageIcon
+                                            severity="success"
+                                            tooltip="Preenchido automaticamente a partir do documento. Clique para ver a origem."
+                                            title="Empresa identificada automaticamente"
+                                            maxWidth={520}
+                                        >
+                                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                A empresa foi preenchida automaticamente a partir do documento anexado, onde
+                                                foi identificada como <strong>{paymentDraft.extractedCompanyName}</strong>.
+                                            </p>
+                                            <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                                                Trata-se de uma sugestão da leitura do documento, não de uma confirmação.
+                                                Pode alterá-la se a empresa faturada for outra — o valor que ficar
+                                                selecionado é o que será usado no pedido.
+                                            </p>
+                                        </FieldMessageIcon>
+                                    )}
+                                </span>
+                                <select
                                     name="companyId" value={formData.companyId} onChange={handleChange} style={getInputStyle('CompanyId')}
                                     disabled={filteredCompanies.length <= 1}
                                 >
@@ -1965,15 +2011,6 @@ export function RequestCreate() {
                                     {filteredCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                                 {renderFieldError('CompanyId')}
-                                {paymentDraft?.isCompanyOcrAutoFilled && (
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
-                                        style={{ color: '#059669', fontSize: '0.75rem', marginTop: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                    >
-                                        <CheckCircle2 size={14} />
-                                        Preenchido automaticamente conforme identificado ({paymentDraft.extractedCompanyName})
-                                    </motion.div>
-                                )}
                             </label>
 
                             <label data-guide="request-plant" style={labelStyle}>

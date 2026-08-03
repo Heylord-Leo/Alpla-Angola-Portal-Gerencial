@@ -1122,6 +1122,11 @@ public class RequestsController : BaseController
 
                 // B2P: Payment Condition
                 SourceDocumentType = r.SourceDocumentType,
+                SourceDocumentTypeOcrSuggestion = r.SourceDocumentTypeOcrSuggestion,
+                SourceDocumentTypeOcrConfidence = r.SourceDocumentTypeOcrConfidence,
+                SourceDocumentTypeEvidenceJson = r.SourceDocumentTypeEvidenceJson,
+                ClassificationConflictAcknowledged = r.ClassificationConflictAcknowledged,
+                ClassificationJustification = r.ClassificationJustification,
                 PaymentConditionCode = r.PaymentConditionCode,
                 AdvancePaymentPercent = r.AdvancePaymentPercent,
                 PaymentConditionSource = r.PaymentConditionSource,
@@ -1239,6 +1244,11 @@ public class RequestsController : BaseController
                     SupplierRegistrationStatus = q.Supplier != null ? q.Supplier.RegistrationStatus : null,
                     DocumentNumber = q.DocumentNumber,
                     DocumentType = q.DocumentType,
+                    DocumentTypeOcrSuggestion = q.DocumentTypeOcrSuggestion,
+                    DocumentTypeOcrConfidence = q.DocumentTypeOcrConfidence,
+                    DocumentTypeEvidenceJson = q.DocumentTypeEvidenceJson,
+                    ClassificationConflictAcknowledged = q.ClassificationConflictAcknowledged,
+                    ClassificationJustification = q.ClassificationJustification,
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
@@ -1975,6 +1985,22 @@ public class RequestsController : BaseController
             IsCancelled = false
         };
 
+        // 4.0. Classification evidence — what was proposed, whether the requester overrode it, why.
+        // Previously only the update path persisted this, so a request created in one pass with a
+        // contradicted classification kept the choice and lost the reasoning behind it.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            request.SourceDocumentTypeSource = string.IsNullOrWhiteSpace(dto.SourceDocumentTypeSource)
+                ? null : dto.SourceDocumentTypeSource.Trim().ToUpperInvariant();
+            request.SourceDocumentTypeOcrSuggestion =
+                RequestConstants.SourceDocumentTypes.Normalize(dto.SourceDocumentTypeOcrSuggestion);
+            request.SourceDocumentTypeOcrConfidence = dto.SourceDocumentTypeOcrConfidence;
+            request.SourceDocumentTypeEvidenceJson = dto.SourceDocumentTypeEvidenceJson;
+            request.ClassificationConflictAcknowledged = dto.ClassificationConflictAcknowledged ?? false;
+            request.ClassificationJustification = string.IsNullOrWhiteSpace(dto.ClassificationJustification)
+                ? null : dto.ClassificationJustification.Trim();
+        }
+
         // 4.1. Bulk add Line Items if provided (Copy flow)
         if (dto.LineItems != null && dto.LineItems.Any())
         {
@@ -2048,16 +2074,40 @@ public class RequestsController : BaseController
 
         _context.RequestStatusHistories.Add(history);
 
+        // 4.2. A classification that contradicts the reading is admissible, but never silent.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            var overrideProblem = await StageDocumentClassificationOverrideAsync(
+                new DocumentClassificationOverrideRequest
+                {
+                    Context = RequestConstants.DocumentClassificationContexts.PaymentRequest,
+                    ScopeId = request.Id,
+                    AttachmentId = dto.SourceDocumentAttachmentId,
+                    SuggestedType = request.SourceDocumentTypeOcrSuggestion,
+                    Confidence = request.SourceDocumentTypeOcrConfidence,
+                    TitleFound = dto.SourceDocumentTypeTitleFound,
+                    EvidenceJson = request.SourceDocumentTypeEvidenceJson,
+                    ConflictingEvidenceJson = dto.SourceDocumentTypeConflictingEvidenceJson,
+                    SuggestionSource = dto.SourceDocumentTypeSuggestionSource,
+                    SelectedType = request.SourceDocumentType,
+                    Acknowledged = request.ClassificationConflictAcknowledged,
+                    Justification = request.ClassificationJustification
+                },
+                request.Id, quotationId: null, actorId, initialStatus.Id);
+
+            if (overrideProblem != null) return BadRequest(overrideProblem);
+        }
+
         // 5. Persist transaction
         try
         {
-            await _context.SaveChangesAsync();
+            await SaveChangesWithClassificationAuditRetryAsync();
         }
         catch (DbUpdateException ex)
         {
-            return StatusCode(500, new { 
-                Message = "An error occurred while saving the entity changes.", 
-                Details = ex.InnerException?.Message ?? ex.Message 
+            return StatusCode(500, new {
+                Message = "An error occurred while saving the entity changes.",
+                Details = ex.InnerException?.Message ?? ex.Message
             });
         }
 
@@ -2347,6 +2397,27 @@ public class RequestsController : BaseController
             request.ClassificationJustification =
                 string.IsNullOrWhiteSpace(dto.ClassificationJustification)
                     ? request.ClassificationJustification : dto.ClassificationJustification.Trim();
+
+            // A selection that contradicts the reading is admissible, but never silent.
+            var overrideProblem = await StageDocumentClassificationOverrideAsync(
+                new DocumentClassificationOverrideRequest
+                {
+                    Context = RequestConstants.DocumentClassificationContexts.PaymentRequest,
+                    ScopeId = request.Id,
+                    AttachmentId = dto.SourceDocumentAttachmentId,
+                    SuggestedType = request.SourceDocumentTypeOcrSuggestion,
+                    Confidence = request.SourceDocumentTypeOcrConfidence,
+                    TitleFound = dto.SourceDocumentTypeTitleFound,
+                    EvidenceJson = request.SourceDocumentTypeEvidenceJson,
+                    ConflictingEvidenceJson = dto.SourceDocumentTypeConflictingEvidenceJson,
+                    SuggestionSource = dto.SourceDocumentTypeSuggestionSource,
+                    SelectedType = request.SourceDocumentType,
+                    Acknowledged = request.ClassificationConflictAcknowledged,
+                    Justification = request.ClassificationJustification
+                },
+                request.Id, quotationId: null, actorId, request.StatusId);
+
+            if (overrideProblem != null) return BadRequest(overrideProblem);
         }
 
         if (request.DiscountAmount != dto.DiscountAmount)
@@ -2476,7 +2547,7 @@ public class RequestsController : BaseController
             }
         }
 
-        await _context.SaveChangesAsync();
+        await SaveChangesWithClassificationAuditRetryAsync();
 
         // Notification: Notify assigned buyer in WAITING_QUOTATION status if changes occurred
         if (changed && statusCode == "WAITING_QUOTATION" && request.BuyerId.HasValue)
@@ -3929,6 +4000,8 @@ public class RequestsController : BaseController
             CreatedByUserId = actorId
         };
 
+        ApplyQuotationClassificationEvidence(quotation, dto);
+
         if (replaceQuotationId.HasValue)
         {
             var oldQuotation = request.Quotations.FirstOrDefault(q => q.Id == replaceQuotationId.Value);
@@ -4092,8 +4165,14 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(qHistory);
 
-        await _context.SaveChangesAsync();
-        
+        // The Buyer may classify against the reading, but not silently.
+        var quotationOverrideProblem = await StageDocumentClassificationOverrideAsync(
+            BuildQuotationOverrideRequest(quotation, dto),
+            request.Id, quotation.Id, actorId, request.StatusId);
+        if (quotationOverrideProblem != null) return BadRequest(quotationOverrideProblem);
+
+        await SaveChangesWithClassificationAuditRetryAsync();
+
         // RE-QUERY items with Units to ensure the response projection is complete
         var savedItems = await _context.QuotationItems
             .Include(qi => qi.Unit)
@@ -4113,6 +4192,11 @@ public class RequestsController : BaseController
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
             DocumentType = quotation.DocumentType,
+            DocumentTypeOcrSuggestion = quotation.DocumentTypeOcrSuggestion,
+            DocumentTypeOcrConfidence = quotation.DocumentTypeOcrConfidence,
+            DocumentTypeEvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ClassificationConflictAcknowledged = quotation.ClassificationConflictAcknowledged,
+            ClassificationJustification = quotation.ClassificationJustification,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -4227,6 +4311,7 @@ public class RequestsController : BaseController
         quotation.DocumentNumber = dto.DocumentNumber?.Trim();
         quotation.DocumentDate = dto.DocumentDate;
         quotation.DocumentType = updatedDocumentType;
+        ApplyQuotationClassificationEvidence(quotation, dto);
         quotation.Currency = dto.Currency.ToUpper();
 
         // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints)
@@ -4431,9 +4516,16 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(history);
 
-        try 
+        // Re-classifying an already-read document is the same audited decision as classifying it
+        // the first time — and re-saving the same confirmed decision writes nothing new.
+        var quotationUpdateOverrideProblem = await StageDocumentClassificationOverrideAsync(
+            BuildQuotationOverrideRequest(quotation, dto),
+            requestId, quotation.Id, actorId, request.StatusId);
+        if (quotationUpdateOverrideProblem != null) return BadRequest(quotationUpdateOverrideProblem);
+
+        try
         {
-            await _context.SaveChangesAsync();
+            await SaveChangesWithClassificationAuditRetryAsync();
         }
         catch (DbUpdateConcurrencyException ex)
         {
@@ -4470,6 +4562,11 @@ public class RequestsController : BaseController
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
             DocumentType = quotation.DocumentType,
+            DocumentTypeOcrSuggestion = quotation.DocumentTypeOcrSuggestion,
+            DocumentTypeOcrConfidence = quotation.DocumentTypeOcrConfidence,
+            DocumentTypeEvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ClassificationConflictAcknowledged = quotation.ClassificationConflictAcknowledged,
+            ClassificationJustification = quotation.ClassificationJustification,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -8159,6 +8256,198 @@ public class RequestsController : BaseController
 
         return null;
     }
+
+    // ── Document-classification override audit (Release 2 corrective) ────────────────────────
+    //
+    // A user may classify a document as something the evidence says it is not. That is allowed —
+    // the evidence is a reading, not a ruling — but it must be explicit, justified and recorded.
+    // The rules live in DocumentClassificationOverrideRecorder (pure); this layer only persists.
+
+    /// <summary>
+    /// Stages the audit of a classification that contradicts the document, or refuses it.
+    ///
+    /// <para>Nothing is saved here: the audit row and the classification it explains are committed
+    /// by the caller's single <c>SaveChanges</c>, so the record and the fact can never diverge.</para>
+    ///
+    /// <para>Returns a <see cref="ProblemDetails"/> when the override is inadmissible (no explicit
+    /// confirmation, or no written reason where one is owed), and <c>null</c> both when there is
+    /// nothing to record and when the same decision was already recorded — re-saving a draft that
+    /// carries an already-confirmed override must not append a second identical entry.</para>
+    /// </summary>
+    private async Task<ProblemDetails?> StageDocumentClassificationOverrideAsync(
+        DocumentClassificationOverrideRequest overrideRequest,
+        Guid requestId,
+        Guid? quotationId,
+        Guid actorId,
+        int statusId)
+    {
+        var decision = DocumentClassificationOverrideRecorder.Evaluate(overrideRequest);
+
+        if (decision.RejectionReason != null)
+        {
+            return new ProblemDetails
+            {
+                Title = "Classificação Divergente",
+                Detail = decision.RejectionReason,
+                Status = 400
+            };
+        }
+
+        if (!decision.ShouldRecord) return null;
+
+        // Fast path only — the unique index is the actual guarantee (see the retry in
+        // SaveChangesWithClassificationAuditRetryAsync).
+        var alreadyRecorded = await _context.DocumentClassificationOverrides
+            .AnyAsync(o => o.IdempotencyKey == decision.IdempotencyKey);
+        if (alreadyRecorded) return null;
+
+        _context.DocumentClassificationOverrides.Add(new DocumentClassificationOverride
+        {
+            Id = Guid.NewGuid(),
+            Context = decision.NormalizedContext,
+            RequestId = requestId,
+            QuotationId = quotationId,
+            AttachmentId = overrideRequest.AttachmentId,
+            SuggestedType = decision.NormalizedSuggestedType,
+            Confidence = overrideRequest.Confidence,
+            TitleFound = Truncate(overrideRequest.TitleFound, 400),
+            EvidenceJson = overrideRequest.EvidenceJson,
+            ConflictingEvidenceJson = overrideRequest.ConflictingEvidenceJson,
+            SuggestionSource = decision.NormalizedSuggestionSource,
+            SelectedType = decision.NormalizedSelectedType,
+            Acknowledged = overrideRequest.Acknowledged,
+            Justification = Truncate(decision.TrimmedJustification, 2000),
+            ActorUserId = actorId,
+            CreatedAtUtc = DateTime.UtcNow,
+            IdempotencyKey = decision.IdempotencyKey
+        });
+
+        // The same event in the place users actually read: the request timeline. A quotation
+        // override is anchored to the parent request and names the quotation in the sentence,
+        // because RequestStatusHistory has no quotation dimension of its own.
+        var comment = quotationId.HasValue
+            ? $"{decision.HistoryComment} (Cotação {quotationId.Value:D})"
+            : decision.HistoryComment;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "CLASSIFICACAO_DOCUMENTO_DIVERGENTE",
+            PreviousStatusId = statusId,
+            NewStatusId = statusId,
+            Comment = Truncate(comment, 2000),
+            IdempotencyKey = decision.IdempotencyKey,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return null;
+    }
+
+    /// <summary>
+    /// Copies the classification evidence from the wire onto the quotation. Shared by create and
+    /// update so the two can never persist a different subset of the same decision.
+    /// </summary>
+    private static void ApplyQuotationClassificationEvidence(Quotation quotation, SaveQuotationRequestDto dto)
+    {
+        quotation.DocumentTypeSource = string.IsNullOrWhiteSpace(dto.DocumentTypeSource)
+            ? quotation.DocumentTypeSource : dto.DocumentTypeSource.Trim().ToUpperInvariant();
+        quotation.DocumentTypeOcrSuggestion =
+            RequestConstants.SourceDocumentTypes.Normalize(dto.DocumentTypeOcrSuggestion)
+            ?? quotation.DocumentTypeOcrSuggestion;
+        quotation.DocumentTypeOcrConfidence =
+            dto.DocumentTypeOcrConfidence ?? quotation.DocumentTypeOcrConfidence;
+        quotation.DocumentTypeEvidenceJson =
+            dto.DocumentTypeEvidenceJson ?? quotation.DocumentTypeEvidenceJson;
+        quotation.ClassificationConflictAcknowledged =
+            dto.ClassificationConflictAcknowledged ?? quotation.ClassificationConflictAcknowledged;
+        quotation.ClassificationJustification =
+            string.IsNullOrWhiteSpace(dto.ClassificationJustification)
+                ? quotation.ClassificationJustification : dto.ClassificationJustification.Trim();
+    }
+
+    /// <summary>
+    /// Builds the override request for a quotation. The suggestion is read from the quotation
+    /// itself, so a re-save that omits the OCR payload still compares against what was recorded.
+    /// </summary>
+    private static DocumentClassificationOverrideRequest BuildQuotationOverrideRequest(
+        Quotation quotation, SaveQuotationRequestDto dto) =>
+        new()
+        {
+            Context = RequestConstants.DocumentClassificationContexts.QuotationManagement,
+            ScopeId = quotation.Id,
+            AttachmentId = quotation.ProformaAttachmentId,
+            SuggestedType = quotation.DocumentTypeOcrSuggestion,
+            Confidence = quotation.DocumentTypeOcrConfidence,
+            TitleFound = dto.DocumentTypeTitleFound,
+            EvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ConflictingEvidenceJson = dto.DocumentTypeConflictingEvidenceJson,
+            SuggestionSource = dto.DocumentTypeSuggestionSource,
+            SelectedType = quotation.DocumentType,
+            Acknowledged = quotation.ClassificationConflictAcknowledged,
+            Justification = quotation.ClassificationJustification
+        };
+
+    private static string? Truncate(string? value, int maxLength) =>
+        value != null && value.Length > maxLength ? value.Substring(0, maxLength) : value;
+
+    /// <summary>
+    /// Saves, and if the only thing that failed was a duplicate classification-audit row, drops
+    /// that row and saves again.
+    ///
+    /// <para>A duplicate means the decision was already recorded, so the audit is already complete.
+    /// What must never happen is the classification change itself being lost because its explanation
+    /// could not be written a second time — SQL Server aborts the entire transaction on the
+    /// constraint violation, taking the business update with it. Retrying without the audit entity
+    /// is what keeps the update.</para>
+    ///
+    /// <para>Deliberately narrow: it recognises our own two index names rather than SQL error codes
+    /// 2601/2627, so no unrelated uniqueness violation can be quietly swallowed here.</para>
+    /// </summary>
+    private async Task SaveChangesWithClassificationAuditRetryAsync()
+    {
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsClassificationAuditDuplicate(ex))
+        {
+            foreach (var entry in _context.ChangeTracker
+                         .Entries<DocumentClassificationOverride>()
+                         .Where(e => e.State == EntityState.Added)
+                         .ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            foreach (var entry in _context.ChangeTracker
+                         .Entries<RequestStatusHistory>()
+                         .Where(e => e.State == EntityState.Added && IsClassificationOverrideKey(e.Entity.IdempotencyKey))
+                         .ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    private bool IsClassificationAuditDuplicate(DbUpdateException ex)
+    {
+        var message = $"{ex.Message} {ex.InnerException?.Message}";
+
+        if (message.Contains("UX_DocumentClassificationOverride_IdempotencyKey", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // The shared history index only counts as ours when we are actually inserting an override row.
+        return message.Contains("UX_RequestStatusHistory_IdempotencyKey", StringComparison.OrdinalIgnoreCase)
+               && _context.ChangeTracker.Entries<RequestStatusHistory>()
+                   .Any(e => e.State == EntityState.Added && IsClassificationOverrideKey(e.Entity.IdempotencyKey));
+    }
+
+    private static bool IsClassificationOverrideKey(string? key) =>
+        key != null && key.StartsWith("DC_OVERRIDE:", StringComparison.Ordinal);
 
     private ProblemDetails? ValidateQuotationDocumentType(Request request, string? rawDocumentType, out string? normalized)
     {

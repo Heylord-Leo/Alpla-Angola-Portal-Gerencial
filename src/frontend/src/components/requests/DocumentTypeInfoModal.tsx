@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Info } from 'lucide-react';
-import { ModalWrapper } from '../common/ModalWrapper';
+import React, { useRef, useState } from 'react';
+import { HelpCircle } from 'lucide-react';
+import { InfoModal } from '../ui/InfoModal';
 import { ModernTooltip } from '../ui/ModernTooltip';
 import {
     DocumentUsageContext,
@@ -30,18 +30,14 @@ export function DocumentTypeInfoModal({
     isOpen: boolean;
     onClose: () => void;
 }) {
-    // ModalWrapper closes on backdrop click but not on Escape.
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', onKeyDown);
-        return () => document.removeEventListener('keydown', onKeyDown);
-    }, [isOpen, onClose]);
-
-    if (!isOpen) return null;
-
     return (
-        <ModalWrapper title="Tipo de documento anexado" onClose={onClose} width={620}>
+        <InfoModal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Tipo de documento anexado"
+            icon={<HelpCircle size={18} />}
+            maxWidth={620}
+        >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <p style={{
                     margin: 0, fontSize: '0.8125rem', lineHeight: 1.55,
@@ -97,12 +93,16 @@ export function DocumentTypeInfoModal({
                     ))}
                 </div>
             </div>
-        </ModalWrapper>
+        </InfoModal>
     );
 }
 
 /**
- * The info icon beside the field label: a short tooltip on hover, the full explanation on click.
+ * The general "what is this field" icon.
+ *
+ * <p>Distinct from the OCR and conflict icons by shape and colour: a neutral question mark in the
+ * primary colour, never a severity signal. It explains the field itself and says nothing about the
+ * document currently attached.</p>
  *
  * <p>A native <code>&lt;button&gt;</code> so Enter and Space work without re-implementing them.
  * The click is deliberately default-prevented: the field renders inside a <code>&lt;label&gt;</code>
@@ -111,11 +111,6 @@ export function DocumentTypeInfoModal({
 export function DocumentTypeInfoTrigger({ context }: { context: DocumentUsageContext }) {
     const [isOpen, setIsOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
-
-    const close = () => {
-        setIsOpen(false);
-        triggerRef.current?.focus();
-    };
 
     return (
         <>
@@ -137,11 +132,12 @@ export function DocumentTypeInfoTrigger({ context }: { context: DocumentUsageCon
                         color: 'var(--color-primary)', lineHeight: 0
                     }}
                 >
-                    <Info size={14} />
+                    <HelpCircle size={14} />
                 </button>
             </ModernTooltip>
 
-            <DocumentTypeInfoModal context={context} isOpen={isOpen} onClose={close} />
+            {/* InfoModal restores focus to whatever was focused when it opened — the trigger. */}
+            <DocumentTypeInfoModal context={context} isOpen={isOpen} onClose={() => setIsOpen(false)} />
         </>
     );
 }

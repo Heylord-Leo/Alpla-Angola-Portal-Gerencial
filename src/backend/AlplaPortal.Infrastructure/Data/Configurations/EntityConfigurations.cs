@@ -583,3 +583,59 @@ public class FinalInvoiceReconciliationConfiguration : IEntityTypeConfiguration<
     }
 }
 
+/// <summary>
+/// Append-only audit of classifications that contradicted the document's own evidence.
+///
+/// <para>Every relationship is NoAction on purpose: an audit row explaining why someone overrode a
+/// reading must not disappear because the quotation it referred to was later removed. The row is
+/// about the decision, not the object.</para>
+/// </summary>
+public class DocumentClassificationOverrideConfiguration : IEntityTypeConfiguration<DocumentClassificationOverride>
+{
+    public void Configure(EntityTypeBuilder<DocumentClassificationOverride> builder)
+    {
+        builder.HasKey(o => o.Id);
+
+        builder.Property(o => o.Context).IsRequired().HasMaxLength(30);
+        builder.Property(o => o.SelectedType).IsRequired().HasMaxLength(50);
+        builder.Property(o => o.SuggestedType).HasMaxLength(50);
+        builder.Property(o => o.SuggestionSource).HasMaxLength(20);
+        builder.Property(o => o.TitleFound).HasMaxLength(400);
+        builder.Property(o => o.Justification).HasMaxLength(2000);
+        builder.Property(o => o.Confidence).HasColumnType("decimal(5,4)");
+
+        builder.Property(o => o.IdempotencyKey)
+               .IsRequired()
+               .HasMaxLength(PostPaymentIdempotencyKeys.MaxLength);
+
+        builder.HasOne(o => o.Request)
+               .WithMany()
+               .HasForeignKey(o => o.RequestId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(o => o.Quotation)
+               .WithMany()
+               .HasForeignKey(o => o.QuotationId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(o => o.ActorUser)
+               .WithMany()
+               .HasForeignKey(o => o.ActorUserId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // The invariant behind "a repeated save does not duplicate history". The application-level
+        // existence check is only a fast path; two concurrent saves can both pass it, and this index
+        // is what actually holds. Not filtered — unlike RequestStatusHistory, every row here has a
+        // key by construction.
+        builder.HasIndex(o => o.IdempotencyKey)
+               .IsUnique()
+               .HasDatabaseName("UX_DocumentClassificationOverride_IdempotencyKey");
+
+        builder.HasIndex(o => o.RequestId)
+               .HasDatabaseName("IX_DocumentClassificationOverride_RequestId");
+
+        builder.HasIndex(o => o.QuotationId)
+               .HasDatabaseName("IX_DocumentClassificationOverride_QuotationId");
+    }
+}
+

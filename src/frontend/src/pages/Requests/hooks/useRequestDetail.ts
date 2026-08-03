@@ -8,7 +8,27 @@ import { FeedbackType } from '../../../components/ui/Feedback';
 import { ApprovalActionType } from '../../../components/ApprovalModal';
 import { scrollToFirstError } from '../../../lib/validation';
 import { completeQuotationAction } from '../../../lib/workflow';
-import { isSelectableDocumentType } from '../../../lib/sourceDocumentType';
+import { isFiscalDocument, isSelectableDocumentType } from '../../../lib/sourceDocumentType';
+import {
+    CONFLICT_JUSTIFICATION_MIN_LENGTH,
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    OcrDocumentClassification,
+    buildClassificationPayload,
+    canConfirmConflict,
+    evaluateClassificationConflict
+} from '../../../lib/documentClassificationDecision';
+
+/** Rehydrates the stored evidence blob, tolerating anything that is not the shape we wrote. */
+function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentClassification> {
+    if (!json) return {};
+    try {
+        const parsed = JSON.parse(json);
+        return parsed && typeof parsed === 'object' ? parsed as Partial<OcrDocumentClassification> : {};
+    } catch {
+        return {};
+    }
+}
 import { useFeatureFlags } from '../../../hooks/useFeatureFlags';
 import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
 
@@ -67,6 +87,12 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         sourceDocumentType: ''
     });
     const [initialFormData, setInitialFormData] = useState<any>(null);
+    // What the document was read as, and the answer given to any contradiction. Restored from the
+    // saved request so an edit judges the classification against the same evidence as creation did.
+    const [documentClassification, setDocumentClassification] =
+        useState<OcrDocumentClassification | null>(null);
+    const [classificationConflict, setClassificationConflict] =
+        useState<ClassificationConflictState>(EMPTY_CONFLICT);
     const [supplierName, setSupplierName] = useState('');
     const [supplierPortalCode, setSupplierPortalCode] = useState('');
 
@@ -517,6 +543,23 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 sourceDocumentType: data.sourceDocumentType || ''
             };
 
+            // The reading this classification was judged against, restored so the edit screen can
+            // show the same suggestion and detect the same contradiction as the create screen.
+            setDocumentClassification(data.sourceDocumentTypeOcrSuggestion
+                ? {
+                    suggestedType: data.sourceDocumentTypeOcrSuggestion,
+                    confidence: data.sourceDocumentTypeOcrConfidence ?? null,
+                    indicatesFiscalDocument: isFiscalDocument(data.sourceDocumentTypeOcrSuggestion),
+                    ...parseClassificationEvidence(data.sourceDocumentTypeEvidenceJson)
+                }
+                : null);
+            setClassificationConflict({
+                hasConflict: !!data.classificationConflictAcknowledged,
+                isHighRisk: false,
+                acknowledged: !!data.classificationConflictAcknowledged,
+                justification: data.classificationJustification || ''
+            });
+
             if (!isCopyMode) {
                 setSupplierName(data.supplierName || '');
                 setSupplierPortalCode(data.supplierPortalCode || '');
@@ -667,7 +710,24 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             finalApproverId: formData.finalApproverId || null,
             // Post-Payment Completion (Release 2). Empty string means "not chosen" and is sent as
             // null — the backend accepts that on a draft and blocks it at submission instead.
-            sourceDocumentType: formData.sourceDocumentType || null
+            sourceDocumentType: formData.sourceDocumentType || null,
+            // The classification and the reasoning behind it travel together — the backend
+            // re-derives whether this was an override and refuses an unconfirmed one.
+            ...(() => {
+                const c = buildClassificationPayload(
+                    formData.sourceDocumentType, documentClassification, classificationConflict);
+                return {
+                    sourceDocumentTypeSource: c.source,
+                    sourceDocumentTypeOcrSuggestion: c.suggestion,
+                    sourceDocumentTypeOcrConfidence: c.confidence,
+                    sourceDocumentTypeEvidenceJson: c.evidenceJson,
+                    sourceDocumentTypeTitleFound: c.titleFound,
+                    sourceDocumentTypeConflictingEvidenceJson: c.conflictingEvidenceJson,
+                    sourceDocumentTypeSuggestionSource: c.suggestionSource,
+                    classificationConflictAcknowledged: c.acknowledged,
+                    classificationJustification: c.justification
+                };
+            })()
         };
 
         setSaving(true);
@@ -938,10 +998,30 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             !isSelectableDocumentType(formData.sourceDocumentType)) {
             setFeedback({
                 type: 'error',
-                message: 'Selecione o Tipo de Documento de Faturação (Fatura Proforma ou Fatura Final) antes de submeter o pedido.'
+                message: 'Selecione o Tipo de documento anexado antes de submeter o pedido.'
             });
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
+        }
+
+        // 1.06 A classification that contradicts the document reading must have been confirmed —
+        // and justified where the risk warrants it. The backend rejects an unconfirmed one with a
+        // 400; refusing here turns that into an explanation instead of a failed save.
+        if (requestTypeCode === 'PAYMENT' && featureFlags.postPaymentCompletionEnabled) {
+            const evaluation = evaluateClassificationConflict(
+                formData.sourceDocumentType, documentClassification);
+
+            if (!canConfirmConflict(evaluation, classificationConflict.acknowledged,
+                                    classificationConflict.justification)) {
+                setFeedback({
+                    type: 'error',
+                    message: classificationConflict.acknowledged
+                        ? `Justifique a classificação divergente (mínimo ${CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres) antes de submeter.`
+                        : 'A classificação selecionada contradiz o documento. Confirme a divergência no aviso junto ao campo antes de submeter.'
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
         }
 
         // 1.1 Mandatory Proforma check (Only for PAYMENT types)
@@ -1045,6 +1125,9 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setRequestNumber,
         formData,
         setFormData,
+        documentClassification,
+        classificationConflict,
+        setClassificationConflict,
         initialFormData,
         // Post-Payment Completion (Release 2): drives whether the classification field renders.
         featureFlags,

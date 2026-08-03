@@ -319,6 +319,48 @@ public static class RequestConstants
     }
 
     /// <summary>
+    /// Where a classification decision was taken. Part of the override idempotency key, so the same
+    /// document classified in a quotation and later in a payment request stays two distinct events.
+    /// </summary>
+    public static class DocumentClassificationContexts
+    {
+        public const string PaymentRequest = "PAYMENT_REQUEST";
+        public const string QuotationManagement = "QUOTATION_MANAGEMENT";
+
+        public static readonly string[] ValidValues = { PaymentRequest, QuotationManagement };
+
+        public static bool IsValid(string? context) =>
+            ValidValues.Any(v => string.Equals(v, context, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// How the overridden suggestion was reached. Kept in the audit because the two carry very
+    /// different weight: contradicting a document the provider actually read is a stronger act than
+    /// contradicting a guess made from a filename.
+    /// </summary>
+    public static class DocumentClassificationSources
+    {
+        /// <summary>The extraction provider read the document and classified it.</summary>
+        public const string Ocr = "OCR";
+
+        /// <summary>Derived from Portal heuristics (document-number prefix, filename) only.</summary>
+        public const string Fallback = "FALLBACK";
+
+        public static readonly string[] ValidValues = { Ocr, Fallback };
+
+        public static bool IsValid(string? source) =>
+            ValidValues.Any(v => string.Equals(v, source, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Canonical form; anything unrecognised becomes null rather than a false claim.</summary>
+        public static string? Normalize(string? source)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return null;
+            var upper = source.Trim().ToUpperInvariant();
+            return IsValid(upper) ? upper : null;
+        }
+    }
+
+    /// <summary>
     /// Final Invoice obligation state of a RequestPoGroup (post-payment dimension 2).
     /// UNCLASSIFIED is the persisted default: an unclassified group can never complete and can
     /// never accept a Fiscal Receipt (rule R15).

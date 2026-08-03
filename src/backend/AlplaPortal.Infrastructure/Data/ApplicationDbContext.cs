@@ -133,6 +133,10 @@ public class ApplicationDbContext : DbContext
     // Post-Payment Completion Workflow (Release 1: table created, first rows written in Release 3)
     public DbSet<FinalInvoiceReconciliation> FinalInvoiceReconciliations => Set<FinalInvoiceReconciliation>();
 
+    /// <summary>Audit of classifications that contradicted the document's own evidence.</summary>
+    public DbSet<DocumentClassificationOverride> DocumentClassificationOverrides =>
+        Set<DocumentClassificationOverride>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

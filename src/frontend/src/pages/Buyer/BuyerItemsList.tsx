@@ -36,7 +36,24 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
-import { normalizeDocumentType } from '../../lib/sourceDocumentType';
+import { isFiscalDocument, normalizeDocumentType } from '../../lib/sourceDocumentType';
+import {
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    OcrDocumentClassification,
+    buildClassificationPayload
+} from '../../lib/documentClassificationDecision';
+
+/** Rehydrates the stored evidence blob, tolerating anything that is not the shape we wrote. */
+function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentClassification> {
+    if (!json) return {};
+    try {
+        const parsed = JSON.parse(json);
+        return parsed && typeof parsed === 'object' ? parsed as Partial<OcrDocumentClassification> : {};
+    } catch {
+        return {};
+    }
+}
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -255,7 +272,12 @@ const RequestGroupSkeleton: React.FC = () => {
 
 /** Single source of truth for the quotation save/preview wire payload — used by BOTH the save call
  * and the authoritative reconcile-preview so the two never diverge for the same draft. */
-function buildQuotationPayload(draft: OcrDraft) {
+function buildQuotationPayload(draft: OcrDraft, conflict: ClassificationConflictState = EMPTY_CONFLICT) {
+    // The classification and the reasoning behind it travel together — the backend re-derives
+    // whether this was an override and refuses an unconfirmed one.
+    const classification = buildClassificationPayload(
+        draft.documentType, draft.documentClassification, conflict);
+
     return {
         source: 'OCR',
         supplierId: draft.supplierId,
@@ -267,6 +289,15 @@ function buildQuotationPayload(draft: OcrDraft) {
         // the winning quotation's value becomes the PO group's Final Invoice obligation.
         // Mapped to the canonical domain value ('FINAL' → 'FINAL_INVOICE').
         documentType: normalizeDocumentType(draft.documentType),
+        documentTypeSource: classification.source,
+        documentTypeOcrSuggestion: classification.suggestion,
+        documentTypeOcrConfidence: classification.confidence,
+        documentTypeEvidenceJson: classification.evidenceJson,
+        documentTypeTitleFound: classification.titleFound,
+        documentTypeConflictingEvidenceJson: classification.conflictingEvidenceJson,
+        documentTypeSuggestionSource: classification.suggestionSource,
+        classificationConflictAcknowledged: classification.acknowledged,
+        classificationJustification: classification.justification,
         currency: draft.currency || 'AOA',
         discountAmount: draft.discountAmount || 0,
         totalAmount: draft.totalAmount || 0,
@@ -527,7 +558,7 @@ export function BuyerItemsList() {
     > => {
         if (!wizardActiveRequest) return { success: false, error: 'No active request' };
         try {
-            const payload = buildQuotationPayload(draft);
+            const payload = buildQuotationPayload(draft, quotationWizardState.classificationConflict);
 
             setIsSaving(true);
             const requestId = wizardActiveRequest.requestId;
@@ -798,6 +829,17 @@ export function BuyerItemsList() {
                 documentType: editQuotation.documentType === 'FINAL_INVOICE'
                     ? 'FINAL'
                     : (editQuotation.documentType as OcrDraft['documentType']) || undefined,
+                // The reading that was recorded when this quotation was saved. Without it a reopened
+                // quotation would show no suggestion — and a classification that once contradicted
+                // the document could then be changed again with nothing to compare it against.
+                documentClassification: editQuotation.documentTypeOcrSuggestion
+                    ? {
+                        suggestedType: editQuotation.documentTypeOcrSuggestion,
+                        confidence: editQuotation.documentTypeOcrConfidence ?? null,
+                        indicatesFiscalDocument: isFiscalDocument(editQuotation.documentTypeOcrSuggestion),
+                        ...parseClassificationEvidence(editQuotation.documentTypeEvidenceJson)
+                    }
+                    : null,
                 currency: editQuotation.currency || 'AOA',
                 totalAmount: editQuotation.totalAmount || 0,
                 discountAmount: editQuotation.discountAmount || 0,

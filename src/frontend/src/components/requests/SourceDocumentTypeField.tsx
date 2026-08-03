@@ -1,6 +1,9 @@
-import React from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, FileText, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, FileText } from 'lucide-react';
 import { DocumentTypeInfoTrigger } from './DocumentTypeInfoModal';
+import { OcrClassificationModalBody } from './OcrClassificationModal';
+import { ClassificationConflictModal } from './ClassificationConflictModal';
+import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import {
     DocumentUsageContext,
     documentTypeLabel,
@@ -9,31 +12,22 @@ import {
     isSelectableDocumentType,
     normalizeDocumentType
 } from '../../lib/sourceDocumentType';
+import {
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    OcrDocumentClassification,
+    evaluateClassificationConflict
+} from '../../lib/documentClassificationDecision';
 
-/** What document extraction proposed, with the evidence behind it. Never applied automatically. */
-export interface OcrDocumentClassification {
-    suggestedType?: string | null;
-    confidence?: number | null;
-    titleFound?: string | null;
-    supportingEvidence?: string[];
-    conflictingEvidence?: string[];
-    fiscalMarkers?: string[];
-    nonFiscalMarkers?: string[];
-    indicatesFiscalDocument?: boolean;
-    /** Derived from weak Portal heuristics (prefix/filename), not from reading the document. */
-    isFallback?: boolean;
-}
-
-export interface ClassificationConflictState {
-    hasConflict: boolean;
-    isHighRisk: boolean;
-    acknowledged: boolean;
-    justification: string;
-}
+// Re-exported so existing importers keep working while the logic lives in the shared lib.
+export type { OcrDocumentClassification, ClassificationConflictState };
+export { evaluateClassificationConflict };
+export { CONFLICT_JUSTIFICATION_MIN_LENGTH } from '../../lib/documentClassificationDecision';
 
 interface Props {
     context: DocumentUsageContext;
     value: string;
+    /** Called only with a COMMITTED value — a conflicting choice arrives here after confirmation. */
     onChange: (value: string) => void;
     ocr?: OcrDocumentClassification | null;
     conflict?: ClassificationConflictState;
@@ -48,40 +42,20 @@ interface Props {
     'data-guide'?: string;
 }
 
-/** Minimum characters for the written reason when a high-risk conflict is overridden. */
-export const CONFLICT_JUSTIFICATION_MIN_LENGTH = 20;
-
-/**
- * Evaluates a user selection against the extraction's opinion.
- *
- * The rule that matters: choosing a NON-FISCAL type for a document the evidence reads as FISCAL is
- * always high-risk, whatever the numeric confidence. That is exactly the observed defect — an `FT`
- * invoice classified as "Fatura Proforma" — and it is the direction that understates fiscal
- * reality, so it never gets the benefit of the doubt.
- */
-export function evaluateClassificationConflict(
-    selected: string,
-    ocr?: OcrDocumentClassification | null
-): { hasConflict: boolean; isHighRisk: boolean } {
-    const suggestion = normalizeDocumentType(ocr?.suggestedType);
-    const choice = normalizeDocumentType(selected);
-
-    if (!suggestion || !choice || suggestion === choice) {
-        return { hasConflict: false, isHighRisk: false };
-    }
-
-    const confidence = ocr?.confidence ?? 0;
-    const understatesFiscalReality = !!ocr?.indicatesFiscalDocument && !isFiscalDocument(choice);
-
-    return { hasConflict: true, isHighRisk: understatesFiscalReality || confidence >= 0.7 };
-}
-
 /**
  * "Tipo de documento anexado" — the identity of the document the supplier issued.
  *
- * The field describes the artefact, not the workflow: the obligations it triggers are shown as a
- * consequence, never as the thing being chosen. There is no default and no auto-selection, so an
- * unclassified request is always someone not deciding — never the system deciding for them.
+ * <p>The field describes the artefact, not the workflow. There is no default and no auto-selection,
+ * so an unclassified request is always someone not deciding — never the system deciding for them.</p>
+ *
+ * <p><b>Nothing contextual is rendered inline.</b> The label carries at most three icons — what the
+ * field means, what the document was read as, and whether the current choice contradicts that — and
+ * each opens a modal. The field's height is therefore constant, whatever the Portal has to say.</p>
+ *
+ * <p><b>A conflicting selection is pending, not applied.</b> Picking a type that contradicts the
+ * reading opens the conflict modal and leaves the field on its previous value until the user
+ * confirms. Cancelling restores it. This is what makes "the dropdown cannot silently change the
+ * classification after OCR has formed a suggestion" true rather than merely intended.</p>
  */
 export function SourceDocumentTypeField({
     context,
@@ -105,6 +79,37 @@ export function SourceDocumentTypeField({
     const evaluation = evaluateClassificationConflict(value, ocr);
     const confidencePct = ocr?.confidence != null ? Math.round(ocr.confidence * 100) : null;
 
+    /** The choice awaiting confirmation. While set, the select shows it but `value` is unchanged. */
+    const [pendingType, setPendingType] = useState<string | null>(null);
+
+    const pendingEvaluation = evaluateClassificationConflict(pendingType, ocr);
+
+    const handleSelect = (next: string) => {
+        const conflictOnNext = evaluateClassificationConflict(next, ocr);
+
+        if (!conflictOnNext.hasConflict) {
+            setPendingType(null);
+            // Leaving a conflict behind clears the answer given for it — a confirmation belongs to
+            // one specific contradiction, never to whatever is chosen afterwards.
+            if (conflict?.hasConflict) onConflictChange?.(EMPTY_CONFLICT);
+            onChange(next);
+            return;
+        }
+
+        setPendingType(next);
+    };
+
+    const confirmPending = (state: ClassificationConflictState) => {
+        const confirmed = pendingType;
+        setPendingType(null);
+        if (confirmed === null) return;
+        onConflictChange?.(state);
+        onChange(confirmed);
+    };
+
+    /** Escape, "Cancelar alteração" and the close button all land here. */
+    const cancelPending = () => setPendingType(null);
+
     const fiscalBadge = (type: string | null) => {
         if (!type) return null;
         const fiscal = isFiscalDocument(type);
@@ -120,12 +125,67 @@ export function SourceDocumentTypeField({
         );
     };
 
+    /**
+     * The label's icon strip. At most three, in a fixed order — meaning, reading, disagreement —
+     * so their position is predictable and the row never changes height.
+     */
+    const icons = (
+        <>
+            <DocumentTypeInfoTrigger context={context} />
+
+            {suggestion && (
+                <FieldMessageIcon
+                    severity="info"
+                    tooltip="Clique para consultar a classificação sugerida pelo OCR."
+                    ariaLabel="Ver a classificação sugerida pelo OCR"
+                    title={ocr?.isFallback
+                        ? 'Sugestão de classificação (não verificada)'
+                        : `O documento parece ser: ${documentTypeLabel(suggestion)}`}
+                >
+                    <OcrClassificationModalBody ocr={ocr!} />
+                </FieldMessageIcon>
+            )}
+
+            {evaluation.hasConflict && (
+                <FieldMessageIcon
+                    severity={evaluation.isHighRisk ? 'error' : 'warning'}
+                    tooltip={evaluation.isHighRisk
+                        ? 'A classificação selecionada contradiz o documento. Clique para rever.'
+                        : 'A classificação selecionada difere da leitura do documento. Clique para rever.'}
+                    ariaLabel="Rever a divergência de classificação"
+                    title={evaluation.isHighRisk
+                        ? 'A classificação selecionada contradiz o documento'
+                        : 'A classificação selecionada difere da leitura do documento'}
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                            Selecionou <strong>{documentTypeLabel(selected)}</strong>, mas o documento
+                            indica <strong>{documentTypeLabel(suggestion)}</strong>
+                            {confidencePct != null && ` (confiança ${confidencePct}%)`}.
+                            {conflict?.acknowledged && ' Esta divergência já foi confirmada.'}
+                        </p>
+                        {ocr && <OcrClassificationModalBody ocr={ocr} />}
+                        {conflict?.justification && (
+                            <p style={{
+                                margin: 0, padding: '10px 12px', fontSize: '0.78rem', lineHeight: 1.55,
+                                borderRadius: '8px', border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-page)', color: 'var(--color-text-main)'
+                            }}>
+                                <strong>Justificativa registada:</strong> {conflict.justification}
+                            </p>
+                        )}
+                    </div>
+                </FieldMessageIcon>
+            )}
+        </>
+    );
+
     if (readOnly) {
         return (
             <div data-guide={dataGuide} style={labelStyle} className={labelClassName}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     Tipo de documento anexado
-                    <DocumentTypeInfoTrigger context={context} />
+                    {icons}
                 </span>
                 <div style={{
                     marginTop: '8px', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
@@ -147,15 +207,17 @@ export function SourceDocumentTypeField({
 
     return (
         <label data-guide={dataGuide} style={labelStyle} className={labelClassName}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 Tipo de documento anexado {required && <span style={{ color: 'red' }}>*</span>}
-                <DocumentTypeInfoTrigger context={context} />
+                {icons}
             </span>
 
             <select
                 name="sourceDocumentType"
-                value={selected ?? ''}
-                onChange={e => onChange(e.target.value)}
+                // While a conflict is pending the select shows the attempted choice, so the dialog
+                // is visibly about what was just picked — but `value` has not moved.
+                value={pendingType ?? selected ?? ''}
+                onChange={e => handleSelect(e.target.value)}
                 style={inputStyle}
                 className={inputClassName}
             >
@@ -169,147 +231,7 @@ export function SourceDocumentTypeField({
                 ))}
             </select>
 
-            {/* OCR proposal — shown for confirmation, never written into the selection. */}
-            {suggestion && !selected && (
-                <div style={{
-                    marginTop: '6px', padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-                    backgroundColor: '#eff6ff', border: '1px solid #93c5fd'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <Info size={14} color="#1d4ed8" />
-                        <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>
-                            {ocr?.isFallback
-                                ? `Sugestão (não verificada): ${documentTypeLabel(suggestion)}`
-                                : `O documento parece ser: ${documentTypeLabel(suggestion)}`}
-                            {confidencePct != null && ` — confiança ${confidencePct}%`}. Confirme ou corrija.
-                        </span>
-                    </div>
-                    {ocr?.titleFound && (
-                        <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '4px' }}>
-                            Título lido no documento: <strong>{ocr.titleFound}</strong>
-                        </div>
-                    )}
-                    {!!ocr?.supportingEvidence?.length && (
-                        <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '4px' }}>
-                            Evidência: {ocr.supportingEvidence.join('; ')}
-                        </div>
-                    )}
-                    {ocr?.isFallback && (
-                        <div style={{ fontSize: '0.7rem', color: '#1e40af', marginTop: '4px', fontStyle: 'italic' }}>
-                            Baseada apenas em indícios (prefixo/nome do ficheiro), não na leitura do documento.
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Selection agrees with the evidence. */}
-            {suggestion && selected && !evaluation.hasConflict && (
-                <div style={{
-                    marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px',
-                    fontSize: '0.72rem', color: '#15803d', fontWeight: 600
-                }}>
-                    <CheckCircle2 size={13} />
-                    Confirmado: coincide com a leitura do documento.
-                </div>
-            )}
-
-            {/* Conflict. High risk demands an explicit reason before the form may proceed. */}
-            {evaluation.hasConflict && (
-                <div style={{
-                    marginTop: '6px', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                    backgroundColor: evaluation.isHighRisk ? '#fef2f2' : '#fffbeb',
-                    border: `1px solid ${evaluation.isHighRisk ? '#fca5a5' : '#fcd34d'}`
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                        <AlertTriangle size={15} color={evaluation.isHighRisk ? '#b91c1c' : '#b45309'} style={{ marginTop: 2 }} />
-                        <div style={{ flex: 1 }}>
-                            <div style={{
-                                fontSize: '0.78rem', fontWeight: 700,
-                                color: evaluation.isHighRisk ? '#991b1b' : '#92400e'
-                            }}>
-                                {evaluation.isHighRisk
-                                    ? 'A sua seleção contradiz o documento'
-                                    : 'A sua seleção difere da leitura do documento'}
-                            </div>
-                            <div style={{
-                                fontSize: '0.74rem', marginTop: '3px',
-                                color: evaluation.isHighRisk ? '#991b1b' : '#92400e'
-                            }}>
-                                Selecionou <strong>{documentTypeLabel(selected)}</strong>, mas o documento indica{' '}
-                                <strong>{documentTypeLabel(suggestion)}</strong>
-                                {confidencePct != null && ` (confiança ${confidencePct}%)`}.
-                            </div>
-
-                            {ocr?.titleFound && (
-                                <div style={{ fontSize: '0.72rem', marginTop: '4px', color: '#7f1d1d' }}>
-                                    Título lido: <strong>{ocr.titleFound}</strong>
-                                </div>
-                            )}
-                            {!!ocr?.fiscalMarkers?.length && (
-                                <div style={{ fontSize: '0.72rem', marginTop: '2px', color: '#7f1d1d' }}>
-                                    Marcas fiscais encontradas: {ocr.fiscalMarkers.join('; ')}
-                                </div>
-                            )}
-                            {!!ocr?.nonFiscalMarkers?.length && (
-                                <div style={{ fontSize: '0.72rem', marginTop: '2px', color: '#7f1d1d' }}>
-                                    Marcas de documento não fiscal: {ocr.nonFiscalMarkers.join('; ')}
-                                </div>
-                            )}
-                            {!!ocr?.supportingEvidence?.length && (
-                                <div style={{ fontSize: '0.72rem', marginTop: '2px', color: '#7f1d1d' }}>
-                                    Evidência: {ocr.supportingEvidence.slice(0, 3).join('; ')}
-                                </div>
-                            )}
-
-                            {onConflictChange && (
-                                <label style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px',
-                                    fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer',
-                                    color: evaluation.isHighRisk ? '#991b1b' : '#92400e'
-                                }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={conflict?.acknowledged ?? false}
-                                        onChange={e => onConflictChange({
-                                            hasConflict: true,
-                                            isHighRisk: evaluation.isHighRisk,
-                                            acknowledged: e.target.checked,
-                                            justification: conflict?.justification ?? ''
-                                        })}
-                                    />
-                                    Confirmo que a minha seleção está correta apesar da leitura do documento.
-                                </label>
-                            )}
-
-                            {evaluation.isHighRisk && onConflictChange && (
-                                <div style={{ marginTop: '6px' }}>
-                                    <textarea
-                                        value={conflict?.justification ?? ''}
-                                        onChange={e => onConflictChange({
-                                            hasConflict: true,
-                                            isHighRisk: true,
-                                            acknowledged: conflict?.acknowledged ?? false,
-                                            justification: e.target.value
-                                        })}
-                                        placeholder={`Explique por que motivo a classificação está correta (mínimo ${CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres).`}
-                                        rows={2}
-                                        style={{
-                                            width: '100%', padding: '8px', fontSize: '0.75rem',
-                                            borderRadius: 'var(--radius-sm)', border: '1px solid #fca5a5',
-                                            backgroundColor: 'var(--color-bg-surface)',
-                                            color: 'var(--color-text-main)', fontFamily: 'var(--font-family-body)'
-                                        }}
-                                    />
-                                    <div style={{ fontSize: '0.68rem', color: '#991b1b', marginTop: '2px' }}>
-                                        {(conflict?.justification ?? '').trim().length}/{CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres — será registado para auditoria.
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
+            {/* The only inline message left: a validation error the user must fix right now. */}
             {error && (
                 <div style={{
                     color: '#EF4444', fontSize: '0.75rem', marginTop: '4px',
@@ -320,10 +242,20 @@ export function SourceDocumentTypeField({
                 </div>
             )}
 
-            {/* Deliberately nothing here. The consequences of the selection are explained in the
-                modal behind the label's info icon, so choosing a type never changes the height of
-                the form — the previous always-visible block grew and shrank with the selection and
-                pushed the rest of the layout around. */}
+            {pendingType && ocr && (
+                <ClassificationConflictModal
+                    isOpen
+                    pendingType={pendingType}
+                    previousType={selected ?? ''}
+                    ocr={ocr}
+                    evaluation={pendingEvaluation}
+                    initial={conflict}
+                    onConfirm={confirmPending}
+                    onCancel={cancelPending}
+                />
+            )}
         </label>
     );
 }
+
+export { isSelectableDocumentType };

@@ -5,11 +5,7 @@ import { useQuotationWizardState } from './hooks/useQuotationWizardState';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
-import {
-    documentTypeOptionsFor,
-    normalizeDocumentType
-} from '../../../lib/sourceDocumentType';
-import { DocumentTypeInfoTrigger } from '../../../components/requests/DocumentTypeInfoModal';
+import { SourceDocumentTypeField } from '../../../components/requests/SourceDocumentTypeField';
 import { useState } from 'react';
 
 // --- FormattedNumberInput Component ---
@@ -268,27 +264,23 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             Describes WHAT the supplier issued, not what the workflow will do.
                             Sits immediately after the document number because both identify the
                             same artefact; the dates that follow describe when it applies.
-                            A Factura-Recibo is deliberately absent: it states the operation and its
-                            full payment already happened, so it cannot describe a purchase still
-                            being negotiated. */}
+
+                            Uses the same component as the Payment screen so the OCR suggestion, the
+                            conflict modal and the pending-value rule behave identically in both
+                            contexts — the Buyer cannot silently reclassify a document the extraction
+                            already read either. */}
                         <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                <label style={{ ...labelStyle, marginBottom: 0 }}>Tipo de documento anexado</label>
-                                <DocumentTypeInfoTrigger context="QUOTATION_MANAGEMENT" />
-                            </div>
-                            <select
-                                value={normalizeDocumentType(draft.documentType) ?? ''}
-                                onChange={e => updateDraftHeader('documentType', e.target.value)}
-                                style={!draft.documentType ? inputError : inputBase}
-                            >
-                                <option value="">Selecione...</option>
-                                {/* Labels name the document only. "Unusual" and "needs review" are
-                                    derived obligations enforced by the backend resolver and the
-                                    Finance queue — not warnings baked into the option text. */}
-                                {documentTypeOptionsFor('QUOTATION_MANAGEMENT').map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
+                            <SourceDocumentTypeField
+                                context="QUOTATION_MANAGEMENT"
+                                value={draft.documentType ?? ''}
+                                onChange={val => updateDraftHeader('documentType', val)}
+                                ocr={draft.documentClassification ?? null}
+                                conflict={wizardState.classificationConflict}
+                                onConflictChange={wizardState.setClassificationConflict}
+                                error={!draft.documentType ? 'Selecione o tipo de documento anexado.' : null}
+                                labelStyle={{ ...labelStyle, textTransform: 'none' }}
+                                inputStyle={!draft.documentType ? inputError : inputBase}
+                            />
                         </div>
 
                         {/* Doc Date */}

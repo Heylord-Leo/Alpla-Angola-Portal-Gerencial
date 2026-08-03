@@ -3,6 +3,12 @@ import { OcrDraft, OcrDraftItem } from '../../../../types';
 import { isLineItemEligibleForQuotation } from '../../batchEligibility';
 import { validateReconciliationJustification } from '../../../../lib/reconciliationJustificationValidator';
 import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../../lib/lineReconciliation';
+import {
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    canConfirmConflict,
+    evaluateClassificationConflict
+} from '../../../../lib/documentClassificationDecision';
 
 /** Quality-validates a justification, mirroring the backend. An untouched legacy line — status
  * and justification exactly as persisted (tracked via originalReconciliationJustification, set at
@@ -39,7 +45,15 @@ export interface UseQuotationWizardStateReturn {
     removeDraftItem: (index: number, ivaRates?: any[]) => void;
     toggleNotQuotedPlaceholder: (requestItem: any) => void;
     setIsFinalReviewConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
-    
+
+    /**
+     * The Buyer's answer to a classification that contradicts the document reading. Lives on the
+     * wizard rather than the draft because it describes a decision about the draft, not a field of
+     * it — and it must survive the step navigation that rebuilds parts of the draft.
+     */
+    classificationConflict: ClassificationConflictState;
+    setClassificationConflict: React.Dispatch<React.SetStateAction<ClassificationConflictState>>;
+
     // State derivation
     canGoNext: (request: any, ivaRates?: any[], units?: any[]) => boolean;
     canSubmit: boolean;
@@ -52,6 +66,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
     const [isEditing, setIsEditing] = useState(false);
     const [editingQuotationId, setEditingQuotationId] = useState<string | null>(null);
     const [isFinalReviewConfirmed, setIsFinalReviewConfirmed] = useState(false);
+    const [classificationConflict, setClassificationConflict] =
+        useState<ClassificationConflictState>(EMPTY_CONFLICT);
 
     // Live running total of the WHOLE current draft (every item, regardless of reconciliation
     // status). Matches useOcrProcessor's calculateDraftTotal used for the initial post-OCR
@@ -86,6 +102,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         setDraft(initialDraft);
         setCurrentStep(source === 'UPLOAD' ? 'DOCUMENTS_OCR' : 'OVERVIEW');
         setIsFinalReviewConfirmed(false);
+        // A confirmation belongs to one specific contradiction on one specific document.
+        setClassificationConflict(EMPTY_CONFLICT);
         setIsOpen(true);
     };
 
@@ -96,6 +114,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         setEditingQuotationId(null);
         setCurrentStep('OVERVIEW');
         setIsFinalReviewConfirmed(false);
+        setClassificationConflict(EMPTY_CONFLICT);
     };
 
     const goToStep = (step: QuotationWizardStep) => {
@@ -235,7 +254,14 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
                 const hasItems = draft.items.length > 0;
                 const noUncertainIva = draft.items.every(i => !i.ivaUncertain);
                 const allItemsValid = draft.items.every(i => i.totalPrice !== undefined && i.totalPrice >= 0);
-                return hasDocNum && hasDocDate && hasDueDate && hasDocType && hasCurrency && hasItems && noUncertainIva && allItemsValid;
+                // A classification that contradicts the document must be answered before advancing —
+                // the same rule the backend enforces, asked at the step where the choice was made.
+                const classificationSettled = canConfirmConflict(
+                    evaluateClassificationConflict(draft.documentType, draft.documentClassification),
+                    classificationConflict.acknowledged,
+                    classificationConflict.justification);
+                return hasDocNum && hasDocDate && hasDueDate && hasDocType && hasCurrency && hasItems
+                    && noUncertainIva && allItemsValid && classificationSettled;
             }
             case 'RECONCILIATION': {
                 if (!draft || !request) return false;
@@ -287,14 +313,19 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
 
     const canSubmit = useMemo(() => {
         if (!draft) return false;
-        return draft.supplierId !== null && 
-               draft.documentNumber?.trim() !== '' && 
-               draft.documentDate !== null && 
+        return draft.supplierId !== null &&
+               draft.documentNumber?.trim() !== '' &&
+               draft.documentDate !== null &&
                draft.dueDate !== null &&
                draft.documentType !== null &&
                draft.currency !== null &&
-               draft.items.length > 0;
-    }, [draft]);
+               draft.items.length > 0 &&
+               // The backend rejects an unconfirmed contradiction with a 400; refuse to submit one.
+               canConfirmConflict(
+                   evaluateClassificationConflict(draft.documentType, draft.documentClassification),
+                   classificationConflict.acknowledged,
+                   classificationConflict.justification);
+    }, [draft, classificationConflict]);
 
     return {
         isOpen,
@@ -314,7 +345,9 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         removeDraftItem,
         toggleNotQuotedPlaceholder,
         setIsFinalReviewConfirmed,
-        
+        classificationConflict,
+        setClassificationConflict,
+
         canGoNext,
         canSubmit
     };

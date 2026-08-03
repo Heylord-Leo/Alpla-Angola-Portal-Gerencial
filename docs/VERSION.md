@@ -2,7 +2,31 @@
 
 ## Current Version
 
-v2.222.0
+v2.223.0
+
+## [v2.223.0] - 2026-08-03
+
+### Changed/Added — Post-Payment Completion — Release 2 corrective: icons + modals, audited overrides
+
+- **Feature remains disabled** in every committed configuration.
+- **No contextual message is rendered inline.** OCR suggestion, evidence, classification conflict,
+  expired document and auto-identified company are now severity icons beside the field label, each
+  opening a modal. A warning can no longer change the height of the page. Concise validation errors
+  stay inline.
+- **New `InfoModal`** — blurred backdrop, focus trap, Escape, focus returned to the trigger,
+  internal scrolling, dark-mode tokens. Built alongside `ModalWrapper`, which is unchanged.
+- **A conflicting selection is pending, not applied**: the conflict modal opens automatically, the
+  field keeps its previous value until confirmed, and cancelling restores it.
+- **All four flows share one component**: new Payment, Payment edit, Register New Quotation,
+  quotation reopen. The wizard previously had a bare select with no suggestion, conflict or audit.
+- **New `DocumentClassificationOverrides` table** + readable `RequestStatusHistory` entry, keyed by
+  `DC_OVERRIDE:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}` so a repeated save writes nothing
+  and a changed decision is a new event. Duplicate handling is transaction-safe: the audit row is
+  detached and the save retried, never at the cost of the classification change.
+- **Migration `DocumentClassificationOverrideAudit`** — one new table, additive only, applied to the
+  local development clone. No configuration or workflow change.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.222.0] - 2026-08-03
 
@@ -175,7 +199,7 @@ v2.222.0
 - **Manually validated**: REQ-132 shows two Area Approval cards; Lote #1 opens Lote #1 and Lote #2 opens Lote #2; card and drawer values and suppliers match; search by request returns both lots; counts and KPI behavior are coherent.
 - **No migration and no database change.**
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.215.0] - 2026-07-28
 
@@ -189,7 +213,7 @@ v2.222.0
 - **No migration and no database change.**
 - **Known limitation (pending follow-up)**: a request with multiple simultaneously actionable `ApprovalBatch` records is still collapsed into a single request-level queue card, so the amount/lot shown on the card and the lot opened in the drawer can diverge (e.g. REQ-21/07/2026-132 with Lote #1 and Lote #2 both WAITING_AREA_APPROVAL). Redesigning the queue to one card per actionable batch is a separate, not-yet-started task.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.214.0] - 2026-07-28
 
@@ -219,7 +243,7 @@ v2.222.0
 - **Approval Batch Review cleanup**: the "other quotations" comparison area (already collapsed by default) now only lists quotations that actually have a matching item for that specific request line — quotations present on the request but never quoting that line no longer appear as "Não Cotado" placeholders. Updated labels and added an explicit consultation-only disclaimer.
 - Removed the unfinished, unreachable legacy duplicate-supplier replacement modal (dead since the July 14 rewrite; its confirm action was a no-op).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.212.0] - 2026-07-23
 
@@ -244,7 +268,7 @@ v2.222.0
 - `CANCELLED` groups excluded from the frontend's operational-group count (`resolveOperationalGroups`/`hasMultipleOperationalGroups` in `financePaymentsView.ts`) so they can never suppress a valid single-group action or get auto-selected; legacy `PENDING` groups remain resolvable.
 - PREVIEW/APPLY remediation + rollback scripts added for the confirmed 12-row legacy cohort — **not executed** as part of this release.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.210.1] - 2026-07-22
 
@@ -339,7 +363,7 @@ v2.222.0
 
 - Linhas **IGNORED** agora são enviadas e persistidas (com justificativa própria obrigatória quando têm valor); o Integrity Check compara escopos equivalentes (`comparableDocumentTotal = OCR − ignoradas`); totais da cotação incluem apenas linhas consideradas; statuses de reconciliação normalizados no boundary; ciclo de vida do `saveError` corrigido (voltar/editar/trocar documento/reabrir/tentar/sucesso).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.3] - 2026-07-18
 
@@ -349,7 +373,7 @@ v2.222.0
 - **Resposta 409 estruturada** (`APPROVAL_CONCURRENCY_CONFLICT`) para conflitos reais de concorrência na aprovação, sem stack trace; frontend mostra mensagem amigável, encerra "Processando..." e recarrega os dados (sem retry automático).
 - **Testes de regressão SQL** para o padrão de substituição de alocações (antigas `Deleted`, novas `Added`, persistência via INSERT) incluindo guard que reproduz o bug original.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.2] - 2026-07-17
 
@@ -384,7 +408,7 @@ v2.222.0
 - **Bloqueio de NIF interno + fallback de decisão**: o fluxo contextual nunca cadastra NIF de empresa interna (`INTERNAL_COMPANY_TAX_ID`); o modal descarta o NIF, refaz o matching por nome e oferece um fluxo de decisão claro (usar cadastro existente / alternativas / criar sem NIF com confirmação explícita).
 - **Endurecimento de auditoria**: metadados de proveniência (NIF interno descartado, fornecedor sugerido recusado) são resolvidos server-side contra o banco — o texto do cliente nunca é gravado como verdade.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.206.0] - 2026-07-16
 
@@ -397,7 +421,7 @@ v2.222.0
 - **Dados Mestres → Departamentos**: grade de managers por planta/global com auto-criação de escopos de visibilidade (D3); **Cadastro de Usuários**: seção somente leitura de responsabilidades derivadas.
 - **Relatório administrativo** `GET /api/admin/reports/area-approver-reconciliation` (JSON/CSV) com classificações e `LegacyPendingRequests` (gate para remover a compatibilidade temporária `IsLegacyNamedAreaApprover`).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.205.0] - 2026-07-14
 
@@ -452,7 +476,7 @@ v2.222.0
 - **PDF Responsibilities Term Update**: Restructured the "Termo de Responsabilidade" PDF table to support 10 columns using a compact 6.5pt font layout. The PDF now accurately displays equipment values, purchase dates, and purchase document numbers, explicitly rendering "Indisponível" for legacy records without values.
 - **Form UI Update**: Added an always-visible "Compra / Rastreabilidade" section to the Equipment Form modal with validation for mandatory purchase fields or justified absence.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 
 - **HR Sync Logging & Robustness**: Refined the HR Employee Directory Synchronization to handle SQL connection timeouts gracefully without crashing the frontend. Added `EXTERNAL_DB_TIMEOUT` structured backend error. 
@@ -475,7 +499,7 @@ v2.222.0
 - **P.O. Payment Condition Control**: Removed silent POST_PAID default; enforced explicit Buyer selection with OCR auto-detection. Persists detection source (`PaymentConditionSource`) for auditability.
 - **Duplicate Document UX Safety**: Added a 5-second countdown safety delay to the confirmation button on duplicate document warning modals to prevent instinctive overrides.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.199.0] - 2026-06-23
 
@@ -568,7 +592,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 - Fixed a z-index issue that caused the drawer to appear behind the top header and TEST environment banner.
 - Removed the direct "Atribuir" and "Devolver" buttons to enforce the Delivery Terms workflow.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.194.0] - 2026-06-15
 
@@ -623,7 +647,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 **Operational Script:**
 - `scripts/maintenance/ResetITEquipmentData.sql` — controlled purge of IT asset operational data, preserving all master data/catalogs
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 **Files Created:**
 - `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.cs` — Schema migration

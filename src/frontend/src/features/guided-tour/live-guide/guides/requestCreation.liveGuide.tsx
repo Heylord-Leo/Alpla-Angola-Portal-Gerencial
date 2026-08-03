@@ -230,14 +230,17 @@ export function createRequestCreationSteps(
                     </p>
 
                     <p style={{ margin: 0, fontSize: '0.85rem' }}>
-                        Use o ícone <strong>ⓘ</strong> ao lado do rótulo para ver a explicação completa de
-                        cada opção.
+                        Junto ao rótulo aparecem pequenos ícones: <strong>?</strong> explica cada opção,
+                        <strong> ⓘ</strong> mostra o que o OCR leu no documento e um ícone de
+                        <strong> aviso</strong> assinala que a sua escolha diverge dessa leitura. Clique
+                        em qualquer um para ver os detalhes.
                     </p>
 
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted, #6b7280)' }}>
-                        Se o documento tiver sido lido por OCR, o Portal mostra a leitura obtida. Quando a
-                        sua escolha contradiz essa leitura, é pedida uma confirmação e uma justificação.
-                        Pode guardar o rascunho sem escolher, mas a seleção é obrigatória para submeter.
+                        Se escolher um tipo que contradiz a leitura do documento, abre-se uma janela a
+                        pedir confirmação e, nos casos de maior risco, uma justificativa — e a alteração
+                        só é aplicada depois de confirmada. Pode guardar o rascunho sem escolher, mas a
+                        seleção é obrigatória para submeter.
                     </p>
                 </div>
             ),

@@ -53,6 +53,14 @@ public class UpdateRequestDraftDto
     public decimal? SourceDocumentTypeOcrConfidence { get; set; }
     /// <summary>Serialized evidence behind the suggestion.</summary>
     public string? SourceDocumentTypeEvidenceJson { get; set; }
+    /// <summary>Verbatim document title the suggestion was drawn from.</summary>
+    public string? SourceDocumentTypeTitleFound { get; set; }
+    /// <summary>Serialized evidence that pointed away from the suggestion.</summary>
+    public string? SourceDocumentTypeConflictingEvidenceJson { get; set; }
+    /// <summary>OCR or FALLBACK — how the suggestion was reached.</summary>
+    public string? SourceDocumentTypeSuggestionSource { get; set; }
+    /// <summary>The attached document the suggestion was read from, when there is one.</summary>
+    public Guid? SourceDocumentAttachmentId { get; set; }
     /// <summary>The user was warned that the selection conflicts with the evidence and proceeded.</summary>
     public bool? ClassificationConflictAcknowledged { get; set; }
     /// <summary>Mandatory written reason when a high-risk conflict was overridden.</summary>

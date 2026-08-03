@@ -196,6 +196,30 @@ Field order in Quotation Registration: Fornecedor · Nº Documento · **Tipo de 
 Data Documento · Data de vencimento da cotação — the document's identity sits with its number,
 before the dates that qualify it.
 
+**No contextual message is rendered inline** (revised after manual testing of v2.222.0). The OCR
+suggestion, its evidence, the classification conflict, an expired document and an automatically
+identified company were all long text blocks under narrow fields; they are now icons beside the
+label, each opening a modal. Severity is carried by the icon: ⓘ information, ⚠ attention, ⛔ blocking.
+The label of `Tipo de documento anexado` carries at most three, in a fixed order — general
+explanation (?), OCR reading (ⓘ), disagreement (⚠/⛔). Inline text survives for exactly one purpose:
+a validation error the user must fix immediately.
+
+**A conflicting selection is pending, not applied.** Choosing a type that contradicts the reading
+opens the conflict modal automatically and leaves the field on its previous value. Confirming
+commits it; cancelling — including Escape and the close button — restores the previous value, or
+leaves the field unselected if there was none. This makes "the dropdown cannot silently reclassify a
+document the extraction already read" a property of the code rather than an intention. The same
+component now serves the Payment screen (create and edit) and the Quotation wizard (create and
+reopen), so the four flows cannot drift apart.
+
+**Overrides are audited.** A confirmed contradiction writes a `DocumentClassificationOverride` row
+(context, request, quotation, attachment, suggestion, confidence, title, evidence and conflicting
+evidence, suggestion source, selected type, acknowledgement, justification, actor, UTC timestamp)
+plus a readable `RequestStatusHistory` entry — *Classificação do documento alterada de "Factura"
+para "Factura de Adiantamento". Justificativa: …* Both carry the key
+`DC_OVERRIDE:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}`, so re-saving the same decision
+writes nothing while changing it is a new audited event.
+
 ---
 
 ## 7. Migration and compatibility

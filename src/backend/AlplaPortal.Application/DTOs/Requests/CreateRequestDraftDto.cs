@@ -54,6 +54,12 @@ public class CreateRequestDraftDto
     public string? SourceDocumentTypeOcrSuggestion { get; set; }
     public decimal? SourceDocumentTypeOcrConfidence { get; set; }
     public string? SourceDocumentTypeEvidenceJson { get; set; }
+    public string? SourceDocumentTypeTitleFound { get; set; }
+    public string? SourceDocumentTypeConflictingEvidenceJson { get; set; }
+    /// <summary>OCR or FALLBACK — how the suggestion was reached.</summary>
+    public string? SourceDocumentTypeSuggestionSource { get; set; }
+    /// <summary>The attached document the suggestion was read from, when there is one.</summary>
+    public Guid? SourceDocumentAttachmentId { get; set; }
     public bool? ClassificationConflictAcknowledged { get; set; }
     public string? ClassificationJustification { get; set; }
 

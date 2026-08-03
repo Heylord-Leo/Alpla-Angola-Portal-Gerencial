@@ -16,6 +16,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { DateInput } from '../../../components/DateInput';
 import { SourceDocumentTypeField } from '../../../components/requests/SourceDocumentTypeField';
+import { FieldMessageIcon } from '../../../components/ui/FieldMessageIcon';
+import {
+    ClassificationConflictState,
+    OcrDocumentClassification
+} from '../../../lib/documentClassificationDecision';
 import { LookupDto } from '../../../types';
 
 export interface RequestGeneralDataSectionProps {
@@ -54,6 +59,11 @@ export interface RequestGeneralDataSectionProps {
     /** Post-Payment Completion (Release 2). Absent/false renders the pre-feature layout. */
     featureFlags?: { postPaymentCompletionEnabled: boolean; sourceDocumentTypeRequired: boolean };
 
+    /** The reading this request's classification was judged against, restored from the saved data. */
+    documentClassification?: OcrDocumentClassification | null;
+    classificationConflict?: ClassificationConflictState;
+    setClassificationConflict?: React.Dispatch<React.SetStateAction<ClassificationConflictState>>;
+
     // Style helpers (Phase 4A: CSS Module class names)
     sectionTitleClassName: string;
     labelClassName: string;
@@ -66,6 +76,7 @@ export function RequestGeneralDataSection({
     formData, setFormData, handleChange, clearFieldError,
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
     needLevels, departments, companies, plants,
+    documentClassification, classificationConflict, setClassificationConflict,
     canEditHeader, canEditSupplier, isQuotationPartiallyEditable, isQuotationStage, hasSavedQuotations,
     requestTypeCode, requestNumber, status, lineItemsCount, featureFlags,
     sectionTitleClassName, labelClassName, getInputClassName, renderFieldError, getFieldErrors
@@ -250,6 +261,9 @@ export function RequestGeneralDataSection({
                                     setFormData(prev => ({ ...prev, sourceDocumentType: val }));
                                     clearFieldError('sourceDocumentType');
                                 }}
+                                ocr={documentClassification ?? null}
+                                conflict={classificationConflict}
+                                onConflictChange={setClassificationConflict}
                                 readOnly={status !== 'DRAFT'}
                                 required={featureFlags?.sourceDocumentTypeRequired}
                                 error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
@@ -278,7 +292,28 @@ export function RequestGeneralDataSection({
                                     style={{ overflow: 'hidden' }}
                                 >
                                     <label className={labelClassName}>
-                                        {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                            {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                            {/* Contextual, not corrective — see the same treatment on the create screen. */}
+                                            {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                <FieldMessageIcon
+                                                    severity="warning"
+                                                    tooltip={(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                        ? 'O documento está vencido. Clique para saber o que isso significa.'
+                                                        : 'A data selecionada está no passado. Clique para saber mais.'}
+                                                    title={(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                        ? 'O documento está vencido'
+                                                        : 'A data selecionada está no passado'}
+                                                    maxWidth={520}
+                                                >
+                                                    <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                        {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                            ? 'A data de vencimento indicada já passou, pelo que o documento anexado está vencido. O pedido pode continuar, mas poderá ser necessário obter um documento atualizado junto do fornecedor, e o pagamento pode implicar juros ou penalizações. Verifique a data no documento antes de prosseguir.'
+                                                            : 'A data limite indicada já passou. O pedido pode continuar, mas o prazo pedido não é realizável — confirme se a data está correta.'}
+                                                    </p>
+                                                </FieldMessageIcon>
+                                            )}
+                                        </span>
                                         <DateInput
                                             required
                                             name="needByDateUtc"
@@ -291,12 +326,6 @@ export function RequestGeneralDataSection({
                                             disabled={!canEditHeader}
                                         />
                                         {renderFieldError('NeedByDateUtc')}
-                                        {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                            <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                                                <AlertTriangle size={12} />
-                                                {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
-                                            </div>
-                                        )}
                                     </label>
                                 </motion.div>
                             )}

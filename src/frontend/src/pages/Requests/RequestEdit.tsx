@@ -59,6 +59,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         formData,
         setFormData,
         featureFlags,
+        documentClassification,
+        classificationConflict,
+        setClassificationConflict,
         initialFormData,
         supplierName,
         setSupplierName,
@@ -391,6 +394,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     status={status}
                     lineItemsCount={lineItems.length}
                     featureFlags={featureFlags}
+                    documentClassification={documentClassification}
+                    classificationConflict={classificationConflict}
+                    setClassificationConflict={setClassificationConflict}
                     sectionTitleClassName={styles.sectionTitle}
                     labelClassName={styles.formLabel}
                     getInputClassName={getInputClassName}

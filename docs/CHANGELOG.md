@@ -4,7 +4,87 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.222.0
+v2.223.0
+
+## [v2.223.0] - 2026-08-03
+
+### Changed — Post-Payment Completion — Release 2 corrective: contextual messages become icons, conflicts become a decision
+
+Manual testing of v2.222.0 accepted the classification logic but found the inline OCR and conflict
+blocks too narrow to read and disruptive to both forms. **The feature remains disabled in every
+committed configuration.**
+
+- **No contextual message is rendered inline any more.** The OCR suggestion, its evidence, the
+  classification conflict, an expired document and an automatically identified company were all
+  long text under narrow fields, each appearing and disappearing as the user typed. They are now a
+  single icon beside the field label: hover gives one short sentence, click opens a modal with the
+  full explanation. **A warning can no longer change the height of the page.** Inline text survives
+  for exactly one purpose — a validation error the user must fix immediately (required field,
+  invalid date, minimum length). New `FieldMessageIcon` carries the severity: information for a
+  neutral reading, warning for attention, error for a blocking contradiction.
+- **New `InfoModal`** — blurred backdrop, focus trap, Escape to close, focus returned to the
+  trigger, internal scrolling so wide evidence never scrolls the page sideways, and theme tokens
+  throughout so it inverts correctly in dark mode. Built alongside `ModalWrapper` rather than
+  replacing it: adding a focus trap to the shared wrapper would have changed the behaviour of every
+  existing modal in the application.
+- **The OCR suggestion has its own modal**: what the document was read as, the confidence, the
+  verbatim title, supporting and conflicting evidence, fiscal status, and whether the reading came
+  from the provider or from the Portal's fallback heuristics — ending with the statement that
+  nothing was selected on the user's behalf.
+- **A conflicting selection is now pending, not applied.** Choosing a type that contradicts the
+  reading opens the conflict modal automatically and **leaves the field on its previous value**.
+  The modal compares the two classifications side by side with their fiscal status, explains that
+  the choice changes the obligations the Portal will require, and asks for an acknowledgement plus a
+  justification with a live character counter. Confirming commits the selection; cancelling —
+  including Escape and the close button — restores the previous value, or leaves the field
+  unselected if there was none. This is what makes "the dropdown cannot silently reclassify a
+  document the extraction already read" a property of the code rather than an intention.
+- **All four flows share one component**: new Payment request, Payment draft edit, Register New
+  Quotation and quotation reopen. The Quotation wizard previously had its own bare `<select>` and so
+  had no suggestion, no conflict and no audit; it now behaves identically to the Payment screen.
+  Reopening a saved request or quotation restores the reading its classification was judged against,
+  so an edit is measured against the same evidence as the original decision.
+
+### Added — Audit of classifications that contradict the document
+
+- **New `DocumentClassificationOverrides` table** recording context, request, quotation,
+  attachment, suggested type, confidence, title found, evidence and conflicting evidence JSON,
+  suggestion source (OCR or FALLBACK), selected type, acknowledgement, justification, actor and UTC
+  timestamp — plus a readable `RequestStatusHistory` entry: *Classificação do documento alterada de
+  "Factura" para "Factura de Adiantamento". Justificativa: …* A quotation override is anchored to
+  the parent request and names the quotation, because `RequestStatusHistory` has no quotation
+  dimension. Every relationship is `NoAction`: a record of why someone overrode a reading must
+  survive the deletion of the object it referred to.
+- **Idempotency key `DC_OVERRIDE:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}`**, unique in the
+  database. It identifies the *decision*, not the act of saving it, so re-saving a draft that
+  already carries a confirmed override writes nothing, while changing the selection, attaching a
+  different document, or classifying in a different context is a new audited event. A classification
+  made before any document is attached renders the attachment segment as the literal `NONE`, so
+  "no attachment" can never collide with a real identity.
+- **Transaction-safe duplicate handling.** A duplicate audit row is recognised by our own two index
+  names — never by SQL error codes 2601/2627 — and handled by detaching the audit entity and
+  re-saving, so a concurrent duplicate can never discard the classification change that justified
+  it. This applies here the standard the Release 3–4 plan sets for the same problem.
+- **New pure `DocumentClassificationOverrideRecorder`** decides whether an override happened,
+  whether it is admissible, what the timeline should say and what identity the event has — all
+  without touching the database, so the rules are tested directly. It refuses an unacknowledged
+  contradiction, and refuses a high-risk one without a written reason of at least 20 characters.
+  Choosing a non-fiscal type for a document read as fiscal is always high-risk regardless of
+  confidence; that is the direction that understates fiscal reality and the exact defect this
+  mechanism exists to catch.
+- The create-draft path now persists the classification evidence it previously dropped: a request
+  created in one pass with a contradicted classification kept the choice and lost the reasoning.
+
+**Guided Tour impact: existing tour updated.**
+
+**Validation**: backend build 0 errors · frontend `tsc --noEmit` clean · Vite build clean ·
+backend suite 668 passed / 1 pre-existing baseline failure unrelated to this work
+(`GroupBuilderServiceTests.BuildGroupsForRequestAsync_CreatesGroups_WhenLineItemsHaveSelectedQuotation`)
+/ 0 new failures — 32 tests added. Migration `DocumentClassificationOverrideAudit` is purely
+additive (one new table, no change to any existing table) and has been applied to the local
+development clone. No configuration or workflow change. **This repository has no frontend test
+framework, so the UI behaviours listed in the request are covered by manual validation and by unit
+tests of the decision rules, not by automated UI tests.**
 
 ## [v2.222.0] - 2026-08-03
 
@@ -408,7 +488,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Manually validated**: REQ-132 shows two Area Approval cards; Lote #1 opens Lote #1 and Lote #2 opens Lote #2; card and drawer values and suppliers match; search by request returns both lots; counts and KPI behavior are coherent.
 - **No migration and no database change.**
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.215.0] - 2026-07-28
 
@@ -422,7 +502,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **No migration and no database change.**
 - **Known limitation (pending follow-up)**: a request with multiple simultaneously actionable `ApprovalBatch` records is still collapsed into a single request-level queue card, so the amount/lot shown on the card and the lot opened in the drawer can diverge (e.g. REQ-21/07/2026-132 with Lote #1 and Lote #2 both WAITING_AREA_APPROVAL). Redesigning the queue to one card per actionable batch is a separate, not-yet-started task.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.214.0] - 2026-07-28
 
@@ -501,7 +581,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - `scripts/db/rollback-legacy-po-group-status-payment-po-issued.sql` (new, not executed)
 - Tests: `tests/backend/.../Services/Finance/FinancePaymentEligibilityServiceTests.cs`, `FinancePaymentsSearchAndSortQueryTests.cs`, `FinanceMarkAsPaidTransitionTests.cs` (new); `src/frontend/src/lib/financePaymentsView.test.mjs` (new)
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.210.1] - 2026-07-22
 
@@ -633,7 +713,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 
 **Notas operacionais (dev, registradas como débito técnico):** o HMR do Vite não detecta mudanças na árvore OneDrive/junction — reinicie o Vite após alterações de frontend; `dotnet run` pode falhar por política corporativa no apphost `.exe` — inicie o backend dev com `dotnet bin/Debug/net8.0/AlplaPortal.Api.dll`. Portas oficiais inalteradas (5000/5173).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.3] - 2026-07-18
 
@@ -648,7 +728,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Validação runtime (DEV)**: pedido PAYMENT real aprovado com um único POST → HTTP 200, 4 alocações inseridas, status `WAITING_FINAL_APPROVAL`, histórico `APPROVE` registrado, zero erros de concorrência.
 - **Limitações registradas**: QUOTATION individual usa o mesmo bloco corrigido (cobertura estrutural + testes; sem runtime fim-a-fim por ausência de cenário pronto); o contrato 409 foi validado por código/testes, não por corrida física simultânea; `RowVersion` permanece melhoria futura separada (DEC-146).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.2] - 2026-07-17
 
@@ -689,7 +769,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Endurecimento de auditoria (server-side)**: os metadados de proveniência enviados pelo cliente (NIF interno descartado, `RejectedSuggestedSupplierId`) são **validados/resolvidos no backend** — o NIF interno é confirmado contra `Company`, o fornecedor recusado é confirmado como candidato plausível do nome, e o histórico usa apenas nomes/IDs resolvidos do banco. Reivindicações falsas são ignoradas (sem auditoria fabricada).
 - **Testes**: novos testes de unidade e integração (SQL Server) para matching/normalização, exclusão de NIF interno, `TaxIdNormalizer`, resolução de auditoria e validadores. Migrations aditivas validadas (apply/seed/índice/rollback/reapply).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.206.0] - 2026-07-16
 
@@ -705,7 +785,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **`Request.AreaApproverId` intacto** (histórico/decisor); pedidos concluídos preservados (verificado: 25 registros históricos íntegros pós-migration em DEV).
 - Pré-check registrado em DEV antes da migration: OK_DERIVADO 2 · PERDE_ACESSO 2 (Departamento Administracao, Manager Manual) · SO_CADASTRO 3 · 4 atribuições manuais removidas · 3 departamentos ativos ainda sem manager (Admin, Financeiro, Logística — submits bloqueiam até cadastro).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ### Changed — Corte Definitivo: Aprovação de Área por DepartmentManager (Fase B do Redesign)
 
@@ -722,7 +802,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Compatibilidade preservada** apenas para pedidos antigos em andamento (nomeado vê/decide; histórico intacto; pedido sem planta resolve por managers globais).
 - **Testes**: 26 testes na área de Approvals (cascata sem fallback legado, assimetria D1 e-mail×autorização, claim derivada via login real com Moq, D3, D2, planta inativa excluída).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ### Added — Department Managers por Planta (Fase A do Redesign de Aprovação de Área)
 
@@ -734,7 +814,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Testes**: 21 testes unitários novos (cascata, assimetria D1, filtros de inativo/sem e-mail, D3, reativação sem violar unique, classificações D2).
 - **Sem mudança de comportamento em produção**: nenhum fluxo de aprovação, fila, submit ou e-mail foi alterado nesta fase.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ### Added — Prazo Mínimo por Grau de Necessidade (Criação de Pedido)
 
@@ -744,7 +824,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Validação Server-Side**: `POST /requests` rejeita (400) datas anteriores ao prazo mínimo do grau, impedindo bypass via API. Regra centralizada em `RequestConstants.NeedLevels` e espelhada no frontend em `lib/needByDate.ts`.
 - **Escopo**: Pedidos de **Pagamento** são isentos — o mesmo campo carrega a data de vencimento da fatura do fornecedor, que legitimamente pode estar no passado. A edição de rascunhos existentes permanece inalterada (o mínimo é relativo a "hoje" e invalidaria retroativamente rascunhos antigos válidos).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.205.0] - 2026-07-14
 
@@ -762,7 +842,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **Form Validation**: Validação inline contextual de e-mails corporativos no fluxo de termos.
 - **PDF Layout**: Otimização do layout do PDF de Termo de Devolução para caber em página única.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 ## [v2.204.1] - 2026-06-30
 
 ### Fixed — IT Equipment Path Resolution & Email Dispatch Resiliency
@@ -810,7 +890,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **PDF Responsibilities Term Update**: Restructured the "Termo de Responsabilidade" PDF table to support 10 columns using a compact 6.5pt font layout. The PDF now accurately displays equipment values, purchase dates, and purchase document numbers, explicitly rendering "Indisponível" for legacy records without values.
 - **Form UI Update**: Added an always-visible "Compra / Rastreabilidade" section to the Equipment Form modal with validation for mandatory purchase fields or justified absence.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.201.1] - 2026-06-26
 
@@ -863,7 +943,7 @@ does not add or change a business route, page, menu, drawer, or existing guided-
 - **P.O. Payment Condition Control**: Removed silent POST_PAID default; enforced explicit Buyer selection with OCR auto-detection. Persists detection source (`PaymentConditionSource`) for auditability.
 - **Duplicate Document UX Safety**: Added a 5-second countdown safety delay to the confirmation button on duplicate document warning modals to prevent instinctive overrides.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 **Files Created:**
 - `src/backend/AlplaPortal.Domain/Entities/OcrModuleConfig.cs`
@@ -996,7 +1076,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 - Fixed a z-index issue that caused the drawer to appear behind the top header and TEST environment banner.
 - Removed the direct "Atribuir" and "Devolver" buttons to enforce the Delivery Terms workflow.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 **Files Changed:**
 - `src/backend/.../Entities/ITEquipmentDeliveryTerm.cs`
@@ -1061,7 +1141,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 **Operational Script:**
 - `scripts/maintenance/ResetITEquipmentData.sql` — controlled purge of IT operational data preserving all master data
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 **Files Created:**
 - `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.cs`

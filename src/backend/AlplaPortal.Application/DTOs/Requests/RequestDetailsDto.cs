@@ -79,6 +79,14 @@ public class RequestDetailsDto
     /// </summary>
     public string? SourceDocumentType { get; set; }
 
+    // Returned so reopening a draft restores the reading the classification was judged against —
+    // without it, the edit screen would show no suggestion and could not detect a contradiction.
+    public string? SourceDocumentTypeOcrSuggestion { get; set; }
+    public decimal? SourceDocumentTypeOcrConfidence { get; set; }
+    public string? SourceDocumentTypeEvidenceJson { get; set; }
+    public bool ClassificationConflictAcknowledged { get; set; }
+    public string? ClassificationJustification { get; set; }
+
     // B2P: Payment Condition
     public string? PaymentConditionCode { get; set; }
     public decimal? AdvancePaymentPercent { get; set; }

@@ -117,6 +117,34 @@ public static class PostPaymentIdempotencyKeys
         return $"DC:{scope.Trim().ToUpperInvariant()}:{Format(scopeId)}:{sourceDocumentType.Trim().ToUpperInvariant()}";
     }
 
+    /// <summary>
+    /// DOCUMENT_CLASSIFICATION_OVERRIDE — DC_OVERRIDE:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}.
+    ///
+    /// <para>Identifies the DECISION, not the act of saving it. Re-saving a draft that already
+    /// carries the same confirmed override recomputes the same key and writes nothing new, which is
+    /// what keeps an edited draft from accumulating one audit row per keystroke-triggered save.
+    /// Changing the selection to a different type is a genuinely different decision and therefore a
+    /// new, separately audited event — as is attaching a different document, because the evidence
+    /// the user overrode is no longer the same evidence.</para>
+    ///
+    /// <para><paramref name="attachmentId"/> is nullable: a payment draft can be classified before
+    /// any document is attached. Absence is rendered as the literal <c>NONE</c> rather than an empty
+    /// GUID, so "no attachment" can never be confused with a real identity.</para>
+    /// </summary>
+    public static string DocumentClassificationOverride(
+        string context, Guid scopeId, Guid? attachmentId, string selectedType)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+            throw new ArgumentException("Context is required.", nameof(context));
+        if (string.IsNullOrWhiteSpace(selectedType))
+            throw new ArgumentException("Selected document type is required.", nameof(selectedType));
+
+        var attachment = attachmentId.HasValue ? Format(attachmentId.Value) : "NONE";
+
+        return $"DC_OVERRIDE:{context.Trim().ToUpperInvariant()}:{Format(scopeId)}:{attachment}:" +
+               selectedType.Trim().ToUpperInvariant();
+    }
+
     private static string Build(string prefix, Guid scopeId, Guid identityId)
         => $"{prefix}:{Format(scopeId)}:{Format(identityId)}";
 
