@@ -1,14 +1,13 @@
 import React from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, FileText, Info } from 'lucide-react';
+import { DocumentTypeInfoTrigger } from './DocumentTypeInfoModal';
 import {
     DocumentUsageContext,
-    documentTypeHint,
     documentTypeLabel,
     documentTypeOptionsFor,
     isFiscalDocument,
     isSelectableDocumentType,
-    normalizeDocumentType,
-    obligationPreview
+    normalizeDocumentType
 } from '../../lib/sourceDocumentType';
 
 /** What document extraction proposed, with the evidence behind it. Never applied automatically. */
@@ -21,6 +20,8 @@ export interface OcrDocumentClassification {
     fiscalMarkers?: string[];
     nonFiscalMarkers?: string[];
     indicatesFiscalDocument?: boolean;
+    /** Derived from weak Portal heuristics (prefix/filename), not from reading the document. */
+    isFallback?: boolean;
 }
 
 export interface ClassificationConflictState {
@@ -100,8 +101,6 @@ export function SourceDocumentTypeField({
 }: Props) {
     const options = documentTypeOptionsFor(context);
     const selected = normalizeDocumentType(value);
-    const hint = documentTypeHint(value);
-    const obligations = obligationPreview(value);
     const suggestion = normalizeDocumentType(ocr?.suggestedType);
     const evaluation = evaluateClassificationConflict(value, ocr);
     const confidencePct = ocr?.confidence != null ? Math.round(ocr.confidence * 100) : null;
@@ -124,7 +123,10 @@ export function SourceDocumentTypeField({
     if (readOnly) {
         return (
             <div data-guide={dataGuide} style={labelStyle} className={labelClassName}>
-                Tipo de documento anexado
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    Tipo de documento anexado
+                    <DocumentTypeInfoTrigger context={context} />
+                </span>
                 <div style={{
                     marginTop: '8px', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-page)',
@@ -139,16 +141,16 @@ export function SourceDocumentTypeField({
                     </span>
                     {fiscalBadge(selected)}
                 </div>
-                {hint && (
-                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px' }}>{hint}</div>
-                )}
             </div>
         );
     }
 
     return (
         <label data-guide={dataGuide} style={labelStyle} className={labelClassName}>
-            Tipo de documento anexado {required && <span style={{ color: 'red' }}>*</span>}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                Tipo de documento anexado {required && <span style={{ color: 'red' }}>*</span>}
+                <DocumentTypeInfoTrigger context={context} />
+            </span>
 
             <select
                 name="sourceDocumentType"
@@ -158,12 +160,12 @@ export function SourceDocumentTypeField({
                 className={inputClassName}
             >
                 <option value="">-- Selecione --</option>
+                {/* Labels name the document and nothing else. The review requirement is a derived
+                    obligation (DocumentObligationResolver), enforced in validation and surfaced in
+                    the Finance queue — encoding it in the option text made the list read like a
+                    warning instead of a list of documents. */}
                 {options.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                        {opt.unusual ? ' (invulgar — revisão)' : ''}
-                        {!opt.unusual && opt.requiresReview ? ' (revisão do Financeiro)' : ''}
-                    </option>
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
             </select>
 
@@ -176,13 +178,25 @@ export function SourceDocumentTypeField({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <Info size={14} color="#1d4ed8" />
                         <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>
-                            O documento parece ser: {documentTypeLabel(suggestion)}
-                            {confidencePct != null && ` (confiança ${confidencePct}%)`}. Confirme ou corrija.
+                            {ocr?.isFallback
+                                ? `Sugestão (não verificada): ${documentTypeLabel(suggestion)}`
+                                : `O documento parece ser: ${documentTypeLabel(suggestion)}`}
+                            {confidencePct != null && ` — confiança ${confidencePct}%`}. Confirme ou corrija.
                         </span>
                     </div>
                     {ocr?.titleFound && (
                         <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '4px' }}>
                             Título lido no documento: <strong>{ocr.titleFound}</strong>
+                        </div>
+                    )}
+                    {!!ocr?.supportingEvidence?.length && (
+                        <div style={{ fontSize: '0.72rem', color: '#1e40af', marginTop: '4px' }}>
+                            Evidência: {ocr.supportingEvidence.join('; ')}
+                        </div>
+                    )}
+                    {ocr?.isFallback && (
+                        <div style={{ fontSize: '0.7rem', color: '#1e40af', marginTop: '4px', fontStyle: 'italic' }}>
+                            Baseada apenas em indícios (prefixo/nome do ficheiro), não na leitura do documento.
                         </div>
                     )}
                 </div>
@@ -306,30 +320,10 @@ export function SourceDocumentTypeField({
                 </div>
             )}
 
-            {!error && hint && (
-                <div style={{
-                    color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px',
-                    display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap'
-                }}>
-                    {fiscalBadge(selected)}
-                    <span>{hint}</span>
-                </div>
-            )}
-
-            {/* What this choice commits the request to — shown so the consequence is visible now. */}
-            {isSelectableDocumentType(value) && obligations.length > 0 && (
-                <div style={{
-                    marginTop: '6px', padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-                    backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)'
-                }}>
-                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: '3px' }}>
-                        Com esta escolha, será ainda necessário:
-                    </div>
-                    <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.72rem', color: 'var(--color-text-main)' }}>
-                        {obligations.map(o => <li key={o}>{o}</li>)}
-                    </ul>
-                </div>
-            )}
+            {/* Deliberately nothing here. The consequences of the selection are explained in the
+                modal behind the label's info icon, so choosing a type never changes the height of
+                the form — the previous always-visible block grew and shrank with the selection and
+                pushed the rest of the layout around. */}
         </label>
     );
 }

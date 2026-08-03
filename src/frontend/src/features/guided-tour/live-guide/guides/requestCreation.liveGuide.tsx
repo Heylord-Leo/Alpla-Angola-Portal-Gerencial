@@ -208,38 +208,36 @@ export function createRequestCreationSteps(
             },
         },
 
-        // ── Step: Tipo de Documento de Faturação (Pagamento, quando a funcionalidade está ativa) ──
+        // ── Step: Tipo de documento anexado (Pagamento, quando a funcionalidade está ativa) ──
         // A condição observa o próprio campo no DOM: enquanto a funcionalidade estiver desativada o
         // campo não é renderizado e o passo desaparece sozinho, sem duplicar aqui a feature flag.
         {
             id: 'request-source-document-type',
             target: '[data-guide="request-source-document-type"]',
-            title: 'Tipo de Documento de Faturação',
+            title: 'Tipo de documento anexado',
             content: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <p style={{ margin: 0 }}>
-                        Selecione o tipo de documento que originou este pedido. Esta escolha define o que
-                        será exigido depois do pagamento — não é apenas uma etiqueta.
+                        Identifique o documento que o fornecedor emitiu. A escolha define o que será
+                        exigido depois do pagamento — não é apenas uma etiqueta.
                     </p>
 
-                    <div>
-                        <strong style={{ color: 'var(--color-warning, #d97706)' }}>Fatura Proforma</strong>
-                        <p style={{ margin: '2px 0 6px 0', fontSize: '0.85rem' }}>
-                            O fornecedor enviou uma proforma. Depois do pagamento <strong>será exigida a
-                            Fatura Final</strong> para concluir o pedido.
-                        </p>
-                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        <strong>Factura Pró-forma</strong> e <strong>Factura de Adiantamento</strong> deixam
+                        a factura da operação por entregar; uma <strong>Factura</strong> deixa apenas o
+                        comprovativo de pagamento. <strong>Outro documento</strong> segue para revisão do
+                        Financeiro.
+                    </p>
 
-                    <div style={{ borderTop: '1px solid var(--color-border, #e5e7eb)', paddingTop: '6px' }}>
-                        <strong style={{ color: 'var(--color-primary, #2563eb)' }}>Fatura Final</strong>
-                        <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem' }}>
-                            O fornecedor já enviou a fatura definitiva. <strong>Não será exigida outra
-                            fatura</strong> depois do pagamento.
-                        </p>
-                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        Use o ícone <strong>ⓘ</strong> ao lado do rótulo para ver a explicação completa de
+                        cada opção.
+                    </p>
 
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted, #6b7280)' }}>
-                        Pode guardar o rascunho sem escolher, mas a seleção é obrigatória para submeter o pedido.
+                        Se o documento tiver sido lido por OCR, o Portal mostra a leitura obtida. Quando a
+                        sua escolha contradiz essa leitura, é pedida uma confirmação e uma justificação.
+                        Pode guardar o rascunho sem escolher, mas a seleção é obrigatória para submeter.
                     </p>
                 </div>
             ),

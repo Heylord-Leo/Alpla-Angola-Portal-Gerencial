@@ -2903,7 +2903,7 @@ public class RequestsController : BaseController
             var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, "REQUESTS");
 
             // Map back to legacy DTO to preserve frontend compatibility
-            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
+            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult, file.FileName);
 
             await LogOcrExecutionAsync(file.FileName, id, internalResult, null);
 
@@ -3224,7 +3224,7 @@ public class RequestsController : BaseController
             var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, sourceContext);
 
             // Map back to legacy DTO to preserve frontend compatibility
-            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
+            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult, file.FileName);
 
             await LogOcrExecutionAsync(file.FileName, null, internalResult, null);
 

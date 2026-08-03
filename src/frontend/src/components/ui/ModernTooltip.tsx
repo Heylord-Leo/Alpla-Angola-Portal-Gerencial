@@ -8,15 +8,37 @@ interface ModernTooltipProps {
     content: React.ReactNode;
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
+    /**
+     * Also open on click/tap and keep it open until dismissed. Needed on touch devices, where
+     * hover does not exist, and for structured content the user needs time to read.
+     * Off by default so every existing hover-only usage is unaffected.
+     */
+    openOnClick?: boolean;
+    /** Accessible label for the trigger when it wraps an icon with no text of its own. */
+    ariaLabel?: string;
+    /** Widen beyond the 300px default for structured content such as an obligation list. */
+    maxWidth?: number;
+    /**
+     * Set to -1 when the wrapped child is itself focusable (a button), so the tooltip does not add a
+     * second, redundant tab stop in front of it. Focus events still bubble from the child, so the
+     * tooltip continues to appear on keyboard focus.
+     */
+    triggerTabIndex?: number;
 }
 
-export function ModernTooltip({ 
-    children, 
-    content, 
+export function ModernTooltip({
+    children,
+    content,
     side = 'top',
-    align = 'center'
+    align = 'center',
+    openOnClick = false,
+    ariaLabel,
+    maxWidth = 300,
+    triggerTabIndex = 0
 }: ModernTooltipProps) {
     const [isVisible, setIsVisible] = useState(false);
+    // Set by a click/tap or Enter/Space; survives mouseleave so the content can actually be read.
+    const [isPinned, setIsPinned] = useState(false);
     const triggerRef = useRef<HTMLDivElement>(null);
     const [tooltipStyles, setTooltipStyles] = useState<React.CSSProperties>({});
     const [transformOrigin, setTransformOrigin] = useState<string>('bottom');
@@ -81,22 +103,52 @@ export function ModernTooltip({
                 left,
                 transform,
                 zIndex: Z_INDEX.TOOLTIP as any,
-                pointerEvents: 'none',
+                // A pinned tooltip must be interactive (scroll/select); a hover one must not
+                // steal the pointer from the element underneath.
+                pointerEvents: isPinned ? 'auto' : 'none',
                 minWidth: 'auto',
-                maxWidth: '300px',
+                maxWidth: `${maxWidth}px`,
                 fontSize: '0.8rem',
             });
         }
-    }, [isVisible, side, align]);
+    }, [isVisible, isPinned, side, align, maxWidth]);
+
+    // Escape closes a pinned tooltip, and dismissing returns focus to the trigger.
+    useEffect(() => {
+        if (!isPinned) return;
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setIsPinned(false);
+                setIsVisible(false);
+                triggerRef.current?.focus();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [isPinned]);
+
+    const toggle = () => {
+        const next = !isPinned;
+        setIsPinned(next);
+        setIsVisible(next);
+    };
 
     return (
-        <div 
+        <div
             ref={triggerRef}
+            role={openOnClick ? 'button' : undefined}
+            aria-label={ariaLabel}
+            aria-expanded={openOnClick ? isVisible : undefined}
             onMouseEnter={() => setIsVisible(true)}
-            onMouseLeave={() => setIsVisible(false)}
+            onMouseLeave={() => { if (!isPinned) setIsVisible(false); }}
             onFocus={() => setIsVisible(true)}
-            onBlur={() => setIsVisible(false)}
-            tabIndex={0}
+            onBlur={() => { if (!isPinned) setIsVisible(false); }}
+            onClick={openOnClick ? (e) => { e.preventDefault(); e.stopPropagation(); toggle(); } : undefined}
+            onKeyDown={openOnClick ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            } : undefined}
+            tabIndex={triggerTabIndex}
             style={{ display: 'inline-block', position: 'relative', outline: 'none' }}
         >
             {children}

@@ -4,7 +4,72 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.221.0
+v2.222.0
+
+## [v2.222.0] - 2026-08-03
+
+### Fixed — Post-Payment Completion — Release 2 corrective: OCR classification and field presentation
+
+Manual testing of v2.221.0 found the document-classification proposal never reached the screen, and
+that the explanation of the field was harming the form layout. **The feature remains disabled in
+every committed configuration.**
+
+- **The OCR classification never displayed.** `mapOcrResultToDraft` in `useOcrProcessor` builds the
+  draft field by field and was never given `documentClassification`, so the value was permanently
+  `undefined`. Every downstream behaviour — suggestion banner, conflict warning, acknowledgement,
+  justification — was correct but unreachable. This is why an `FT` invoice selected as
+  "Fatura Pró-forma" produced no warning: silence was indistinguishable from agreement. One
+  missing assignment; the rest of the chain needed no change.
+- **Fallback classification** (`DocumentClassificationFallback`). When the provider returns no
+  structured classification block — older provider, truncated response, a scan with little text —
+  the Portal now derives a weak, explicitly labelled suggestion instead of staying silent.
+  Ceilings are deliberate: an explicit title in the text reaches 0.85, a document-number prefix is
+  capped at **0.50**, a filename at **0.35**, and nothing recognisable yields **no suggestion at
+  all** — a fabricated guess would leave the user arguing with noise. The `FA` prefix is
+  deliberately excluded: ALPLA uses it for both *Factura* and *Factura de Adiantamento*, so
+  guessing either way is worse than silence. An explicit "sem valor fiscal" declaration overrides a
+  fiscal reading, because it is a statement by the issuer rather than an inference.
+- **Option labels name the document only.** "(revisão do Financeiro)" and "(invulgar — revisão)"
+  were removed from the dropdown text in both contexts. The review requirement is a derived
+  obligation — enforced by `DocumentObligationResolver`, submission validation and the Finance
+  queue — not a warning baked into a label.
+
+### Changed — Post-Payment Completion — Release 2 corrective: explanation moved to a modal
+
+- **The always-visible helper block under the field is gone.** It rendered the fiscal badge, a hint
+  line and the derived-obligation list, and it changed height whenever the selection changed,
+  pushing the rest of the form around. Selecting a document type now causes **no layout movement
+  at all**.
+- **New `DocumentTypeInfoModal`**, opened by an ⓘ icon beside the "Tipo de documento anexado"
+  label. Hover shows only a one-line tooltip ("Clique para ver a explicação dos tipos de
+  documento"); the modal carries the full explanation — the purpose of the field, then, per option
+  offered in that context, what the document **is** and what the Portal will **require** because of
+  it. That two-part split is the corrected taxonomy's core distinction, and a single sentence
+  cannot express it. Built on the Portal's standard `ModalWrapper` (theme-aware), with Escape to
+  close and focus returned to the icon. No browser-native `title` tooltip anywhere.
+- **The modal is derived from `documentTypeOptionsFor`**, so it can never describe an option the
+  dropdown does not offer, or omit one it does.
+- **Field repositioned in Registrar Nova Cotação**: Fornecedor · Nº Documento ·
+  **Tipo de documento anexado** · Data Documento · Data de vencimento da cotação. The document's
+  identity now sits beside its number, before the dates that qualify it. Grid behaviour is
+  unchanged, so 1920×1080 and 1600×900 reflow as before.
+- **`ModernTooltip`** gained an optional `triggerTabIndex`, so wrapping an already-focusable button
+  no longer inserts a second, redundant tab stop. Default unchanged; every existing usage behaves
+  as before.
+- **Live guide corrected.** The `request-source-document-type` step still described the superseded
+  binary "Fatura Proforma / Fatura Final" model that v2.221.0 replaced; it now describes the seven-
+  value taxonomy and points to the ⓘ icon.
+- `documentTypeHint` and `obligationPreview` were removed from `lib/sourceDocumentType.ts`, their
+  content absorbed into the single explanation model behind the modal, so there is one description
+  per document type rather than three.
+
+**Guided Tour impact: existing tour updated.**
+
+**Validation**: backend build 0 errors · frontend `tsc --noEmit` clean · Vite build clean ·
+backend suite 636 passed / 1 pre-existing baseline failure unrelated to this work
+(`GroupBuilderServiceTests.BuildGroupsForRequestAsync_CreatesGroups_WhenLineItemsHaveSelectedQuotation`).
+No frontend test framework exists in this repository, so the UI changes are covered by manual
+validation only. No migration. No configuration or workflow change.
 
 ## [v2.221.0] - 2026-07-31
 

@@ -227,6 +227,10 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             extractedCompanyName: extractedBilledCompany,
             isCompanyOcrAutoFilled: isCompanyOcrAutoFilled,
             documentNumber: getSafeValue<string>(suggestions?.documentNumber, ''),
+            // Document-identity proposal with its evidence. Carried through verbatim — the field
+            // is never pre-selected from it; the user confirms or corrects it.
+            // (Missing this line was why no OCR suggestion or conflict warning ever appeared.)
+            documentClassification: suggestions?.documentClassification ?? null,
             documentDate: resolveDateAlias(getSafeValue<string>(suggestions?.documentDate, '')),
             dueDate: resolveDateAlias(getSafeValue<string>(suggestions?.dueDate, '')),
             currency: resolveCurrencyAlias(extractedCurrency),

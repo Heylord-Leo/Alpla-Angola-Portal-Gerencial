@@ -1473,4 +1473,10 @@ export interface OcrDocumentClassificationDto {
     nonFiscalMarkers?: string[];
     /** Evidence reads as a fiscal document — raises a non-fiscal selection to a high-risk conflict. */
     indicatesFiscalDocument?: boolean;
+    /**
+     * Derived by the Portal's own weak heuristics (document-number prefix, filename) because the
+     * extraction provider returned no structured classification — not from reading the document.
+     * Labelled differently in the UI so it is never mistaken for a verified reading.
+     */
+    isFallback?: boolean;
 }

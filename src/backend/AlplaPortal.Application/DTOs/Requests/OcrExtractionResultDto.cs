@@ -213,4 +213,11 @@ public class OcrDocumentClassificationDto
     /// non-fiscal type to a high-risk conflict regardless of the numeric confidence.
     /// </summary>
     public bool IndicatesFiscalDocument { get; set; }
+
+    /// <summary>
+    /// The suggestion came from the Portal's own weak heuristics (document-number prefix, filename)
+    /// because the extraction provider returned no structured classification — not from reading the
+    /// document. The UI labels it accordingly so it is never mistaken for a verified reading.
+    /// </summary>
+    public bool IsFallback { get; set; }
 }

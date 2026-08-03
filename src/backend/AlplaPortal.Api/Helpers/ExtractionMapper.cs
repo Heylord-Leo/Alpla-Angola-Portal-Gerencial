@@ -1,6 +1,7 @@
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Services;
 
 namespace AlplaPortal.Api.Helpers;
 
@@ -10,7 +11,8 @@ public static class ExtractionMapper
     /// Temporary mapper to preserve backward compatibility with the frontend's expected OCR response shape.
     /// This should be replaced when the frontend is updated to consume the provider-agnostic ExtractionResultDto.
     /// </summary>
-    public static OcrExtractionResultDto MapToLegacyOcrResult(ExtractionResultDto internalResult)
+    public static OcrExtractionResultDto MapToLegacyOcrResult(
+        ExtractionResultDto internalResult, string? fileName = null)
     {
         var integrationDto = new OcrIntegrationDto
         {
@@ -45,7 +47,7 @@ public static class ExtractionMapper
                 // Document classification (Release 2 corrected). Passed through as a PROPOSAL with
                 // its evidence so the UI can ask the user to confirm or correct it. Deliberately
                 // never mapped into any field the user's selection is read from.
-                DocumentClassification = BuildDocumentClassification(internalResult.Header)
+                DocumentClassification = BuildDocumentClassification(internalResult.Header, fileName)
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {
@@ -109,7 +111,8 @@ public static class ExtractionMapper
     /// this document" and "the extraction identified nothing suspicious" are different situations,
     /// and only the first should leave the UI without a suggestion to reconcile against.</para>
     /// </summary>
-    private static OcrDocumentClassificationDto? BuildDocumentClassification(ExtractionHeaderDto? header)
+    private static OcrDocumentClassificationDto? BuildDocumentClassification(
+        ExtractionHeaderDto? header, string? fileName)
     {
         if (header == null) return null;
 
@@ -120,7 +123,28 @@ public static class ExtractionMapper
                          || header.DocumentClassificationFiscalMarkers?.Count > 0
                          || header.DocumentClassificationNonFiscalMarkers?.Count > 0;
 
-        if (!hasOpinion) return null;
+        // No structured block — older provider, truncated response, or a scan with little text.
+        // Fall back to a weak, clearly-labelled suggestion rather than staying silent: with no
+        // suggestion the UI has nothing to reconcile the user's choice against, which is exactly
+        // how an FT invoice was accepted as a "Fatura Proforma" unchallenged.
+        if (!hasOpinion)
+        {
+            var fallback = DocumentClassificationFallback.Derive(header.DocumentNumber, fileName);
+            if (fallback.SuggestedType == null) return null;
+
+            return new OcrDocumentClassificationDto
+            {
+                SuggestedType = fallback.SuggestedType,
+                Confidence = fallback.Confidence,
+                TitleFound = fallback.TitleFound,
+                SupportingEvidence = fallback.SupportingEvidence,
+                ConflictingEvidence = new List<string>(),
+                FiscalMarkers = new List<string>(),
+                NonFiscalMarkers = fallback.NonFiscalMarkers,
+                IndicatesFiscalDocument = fallback.IndicatesFiscalDocument,
+                IsFallback = true
+            };
+        }
 
         var fiscalMarkers = header.DocumentClassificationFiscalMarkers ?? new List<string>();
         var nonFiscalMarkers = header.DocumentClassificationNonFiscalMarkers ?? new List<string>();

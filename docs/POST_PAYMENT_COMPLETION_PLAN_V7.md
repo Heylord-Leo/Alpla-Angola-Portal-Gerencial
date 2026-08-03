@@ -182,8 +182,19 @@ Factura · Outro documento (review). `ESTIMATE` and `INVOICE_RECEIPT` are not of
 **Quotation Management** — Orçamento/Cotação · Factura Pró-forma · Factura ·
 Factura de Adiantamento (marked unusual, review) · Outro (review). Factura-Recibo is not offered.
 
-Both show a fiscal/non-fiscal badge, the OCR suggestion and evidence, conflict warnings, and a
-derived-obligation preview.
+Both show the OCR suggestion and its evidence, and conflict warnings.
+
+**Explanation lives in a modal, not under the field** (revised after manual testing of v2.221.0).
+The derived-obligation preview was originally rendered permanently beneath the select. It grew and
+shrank as the user changed the selection and pushed the rest of the form around — worst at
+1600×900. It is now behind an ⓘ icon beside the label: hover gives a one-line tooltip, click opens
+a modal explaining the purpose of the field and, for each option offered in that context, what the
+document *is* and what the Portal will *require* because of it. The field itself no longer changes
+height when a type is selected.
+
+Field order in Quotation Registration: Fornecedor · Nº Documento · **Tipo de documento anexado** ·
+Data Documento · Data de vencimento da cotação — the document's identity sits with its number,
+before the dates that qualify it.
 
 ---
 

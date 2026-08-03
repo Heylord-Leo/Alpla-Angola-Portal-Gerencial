@@ -7,9 +7,9 @@ import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
 import {
     documentTypeOptionsFor,
-    documentTypeHint,
     normalizeDocumentType
 } from '../../../lib/sourceDocumentType';
+import { DocumentTypeInfoTrigger } from '../../../components/requests/DocumentTypeInfoModal';
 import { useState } from 'react';
 
 // --- FormattedNumberInput Component ---
@@ -264,6 +264,33 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             </div>
                         </div>
 
+                        {/* Document identity — Release 2 corrected.
+                            Describes WHAT the supplier issued, not what the workflow will do.
+                            Sits immediately after the document number because both identify the
+                            same artefact; the dates that follow describe when it applies.
+                            A Factura-Recibo is deliberately absent: it states the operation and its
+                            full payment already happened, so it cannot describe a purchase still
+                            being negotiated. */}
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                <label style={{ ...labelStyle, marginBottom: 0 }}>Tipo de documento anexado</label>
+                                <DocumentTypeInfoTrigger context="QUOTATION_MANAGEMENT" />
+                            </div>
+                            <select
+                                value={normalizeDocumentType(draft.documentType) ?? ''}
+                                onChange={e => updateDraftHeader('documentType', e.target.value)}
+                                style={!draft.documentType ? inputError : inputBase}
+                            >
+                                <option value="">Selecione...</option>
+                                {/* Labels name the document only. "Unusual" and "needs review" are
+                                    derived obligations enforced by the backend resolver and the
+                                    Finance queue — not warnings baked into the option text. */}
+                                {documentTypeOptionsFor('QUOTATION_MANAGEMENT').map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
                         {/* Doc Date */}
                         <div>
                             <label style={labelStyle}>Data Documento</label>
@@ -293,32 +320,6 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             {!draft.dueDate && (
                                 <div style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px', fontWeight: 600 }}>
                                     Informe a data de vencimento da cotação antes de avançar.
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Document identity — Release 2 corrected.
-                            Describes WHAT the supplier issued, not what the workflow will do.
-                            A Factura-Recibo is deliberately absent: it states the operation and its
-                            full payment already happened, so it cannot describe a purchase still
-                            being negotiated. */}
-                        <div>
-                            <label style={labelStyle}>Tipo de documento anexado</label>
-                            <select
-                                value={normalizeDocumentType(draft.documentType) ?? ''}
-                                onChange={e => updateDraftHeader('documentType', e.target.value)}
-                                style={!draft.documentType ? inputError : inputBase}
-                            >
-                                <option value="">Selecione...</option>
-                                {documentTypeOptionsFor('QUOTATION_MANAGEMENT').map(opt => (
-                                    <option key={opt.value} value={opt.value}>
-                                        {opt.label}{opt.unusual ? ' (invulgar — revisão)' : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {draft.documentType && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                                    {documentTypeHint(draft.documentType)}
                                 </div>
                             )}
                         </div>

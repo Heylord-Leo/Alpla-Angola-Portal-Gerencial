@@ -2,7 +2,30 @@
 
 ## Current Version
 
-v2.221.0
+v2.222.0
+
+## [v2.222.0] - 2026-08-03
+
+### Fixed/Changed — Post-Payment Completion — Release 2 corrective
+
+- **Feature remains disabled** in every committed configuration.
+- **OCR classification now reaches the screen**: `mapOcrResultToDraft` never copied
+  `documentClassification`, so the suggestion, conflict warning and justification prompt were
+  correct but unreachable.
+- **Fallback classification** when the provider returns no classification block — title 0.85,
+  number prefix capped at 0.50, filename at 0.35, nothing recognisable yields no suggestion.
+  `FA` deliberately excluded as ambiguous at ALPLA.
+- **Option labels name the document only**; review requirements stay in the resolver and the
+  Finance queue.
+- **Always-visible helper block removed**; explanation moved to a new `DocumentTypeInfoModal`
+  behind an ⓘ icon (hover = one-line tooltip, click = modal, Escape closes, focus returns).
+  Selecting a type no longer changes the form's height.
+- **Field repositioned in Registrar Nova Cotação**: Fornecedor · Nº Documento · Tipo de documento
+  anexado · Data Documento · Data de vencimento da cotação.
+- **Live guide corrected** — the step still described the superseded binary model.
+- No migration. No configuration or workflow change.
+
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.221.0] - 2026-07-31
 

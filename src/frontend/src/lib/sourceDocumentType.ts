@@ -30,62 +30,95 @@ export type DocumentUsageContext = 'PAYMENT_REQUEST' | 'QUOTATION_MANAGEMENT' | 
 export interface DocumentTypeOption {
     value: SourceDocumentType;
     label: string;
-    /** Short consequence shown under the option, so the choice is made with eyes open. */
-    hint: string;
     isFiscal: boolean;
-    /** Rendered with a "revisão do Financeiro" marker. */
+    /** Routed to the Finance review queue by the backend resolver. */
     requiresReview: boolean;
     /** Legitimate but atypical in this context — offered, but flagged. */
     unusual?: boolean;
 }
 
-const ALL: Record<SourceDocumentType, Omit<DocumentTypeOption, 'value'>> = {
+/**
+ * The two halves of the explanation, kept apart on purpose.
+ *
+ * `whatItIs` describes the artefact the supplier issued; `whatComesNext` describes what the Portal
+ * will require because of it. Collapsing them into one sentence is how the identity of a document
+ * and the obligations it triggers got confused in the first place.
+ */
+interface DocumentTypeDescription {
+    whatItIs: string;
+    whatComesNext: string;
+}
+
+const ALL: Record<SourceDocumentType, Omit<DocumentTypeOption, 'value'> & DocumentTypeDescription> = {
     ESTIMATE: {
         label: 'Orçamento / Cotação',
-        hint: 'Documento não fiscal. Não autoriza pagamento.',
         isFiscal: false,
-        requiresReview: false
+        requiresReview: false,
+        whatItIs: 'Documento não fiscal com a proposta de preços do fornecedor.',
+        whatComesNext: 'Não autoriza pagamento. Se a proposta avançar, serão exigidas a factura da operação e o comprovativo/recibo de pagamento.'
     },
     PROFORMA: {
         label: 'Factura Pró-forma',
-        hint: 'Documento não fiscal. Será exigida a factura da operação após o pagamento.',
         isFiscal: false,
-        requiresReview: false
+        requiresReview: false,
+        whatItIs: 'Documento não fiscal usado antes do pagamento.',
+        whatComesNext: 'Depois será exigida a factura da operação e o comprovativo/recibo de pagamento.'
     },
     ADVANCE_INVOICE: {
         label: 'Factura de Adiantamento',
-        hint: 'Documento fiscal de adiantamento. Exigirá factura da operação, Nota de Crédito e validação do Financeiro.',
         isFiscal: true,
-        requiresReview: true
+        requiresReview: true,
+        whatItIs: 'Documento fiscal relativo a um adiantamento.',
+        whatComesNext: 'Depois serão exigidas a factura da operação, a regularização/Nota de Crédito quando aplicável, o comprovativo de pagamento e a validação do Financeiro.'
     },
     INVOICE: {
         label: 'Factura',
-        hint: 'Documento fiscal da operação. Exigirá comprovativo de pagamento.',
         isFiscal: true,
-        requiresReview: false
+        requiresReview: false,
+        whatItIs: 'Documento fiscal da operação.',
+        whatComesNext: 'Depois serão exigidos apenas o comprovativo/recibo de pagamento e o recebimento operacional.'
     },
     INVOICE_RECEIPT: {
         label: 'Factura-Recibo',
-        hint: 'Documento fiscal que já comprova o pagamento. Não exige recibo separado.',
         isFiscal: true,
-        requiresReview: true
+        requiresReview: true,
+        whatItIs: 'Documento fiscal que já comprova o pagamento da operação.',
+        whatComesNext: 'Não exige recibo separado. Resta apenas o recebimento operacional.'
     },
     OTHER: {
         label: 'Outro documento',
-        hint: 'Será enviado para revisão do Financeiro antes de prosseguir.',
         isFiscal: false,
-        requiresReview: true
+        requiresReview: true,
+        whatItIs: 'Documento que não se enquadra claramente nas categorias acima.',
+        whatComesNext: 'Exige revisão do Financeiro antes de prosseguir.'
     },
     UNCLASSIFIED: {
         label: 'Não classificado',
-        hint: 'Selecione o tipo de documento para prosseguir.',
         isFiscal: false,
-        requiresReview: true
+        requiresReview: true,
+        whatItIs: 'Nenhum tipo foi ainda escolhido.',
+        whatComesNext: 'Selecione o tipo de documento para prosseguir.'
+    }
+};
+
+/** Wording that changes with the context, because the same document plays a different role. */
+const CONTEXT_WORDING: Partial<Record<DocumentUsageContext, Partial<Record<SourceDocumentType, Partial<DocumentTypeDescription>>>>> = {
+    QUOTATION_MANAGEMENT: {
+        ESTIMATE: {
+            whatComesNext: 'É o documento típico desta fase. Não autoriza pagamento por si só.'
+        },
+        PROFORMA: {
+            whatComesNext: 'Se a cotação for escolhida e originar um pagamento, serão depois exigidas a factura da operação e o comprovativo/recibo de pagamento.'
+        },
+        ADVANCE_INVOICE: {
+            whatItIs: 'Documento fiscal relativo a um adiantamento — invulgar nesta fase.'
+        }
     }
 };
 
 function option(value: SourceDocumentType, unusual = false): DocumentTypeOption {
-    return { value, ...ALL[value], unusual };
+    const { label, isFiscal, requiresReview } = ALL[value];
+    return { value, label, isFiscal, requiresReview, unusual };
 }
 
 /**
@@ -127,9 +160,48 @@ export function documentTypeLabel(value?: string | null): string {
     return key ? ALL[key].label : ALL.UNCLASSIFIED.label;
 }
 
-export function documentTypeHint(value?: string | null): string | null {
-    const key = normalizeDocumentType(value);
-    return key && key !== SOURCE_DOCUMENT_TYPES.UNCLASSIFIED ? ALL[key].hint : null;
+export interface DocumentTypeExplanation extends DocumentTypeDescription {
+    value: SourceDocumentType;
+    label: string;
+    isFiscal: boolean;
+}
+
+/**
+ * What the "?" modal explains, one entry per option actually offered in this context.
+ *
+ * Derived from {@link documentTypeOptionsFor} rather than from its own list, so the modal can never
+ * describe a document the dropdown does not offer — or omit one it does.
+ */
+export function documentTypeExplanations(context: DocumentUsageContext): DocumentTypeExplanation[] {
+    return documentTypeOptionsFor(context).map(opt => {
+        const base = ALL[opt.value];
+        const override = CONTEXT_WORDING[context]?.[opt.value];
+        return {
+            value: opt.value,
+            label: base.label,
+            isFiscal: base.isFiscal,
+            whatItIs: override?.whatItIs ?? base.whatItIs,
+            whatComesNext: override?.whatComesNext ?? base.whatComesNext
+        };
+    });
+}
+
+/** Why the field exists at all — the opening paragraph of the modal. */
+export function documentTypeFieldPurpose(context: DocumentUsageContext): string {
+    switch (context) {
+        case 'PAYMENT_REQUEST':
+            return 'Este campo identifica o tipo de documento que está a anexar ao pedido. '
+                + 'A classificação não altera o valor nem o fornecedor — determina o que o Portal irá exigir '
+                + 'mais à frente no processo: factura da operação, comprovativo de pagamento, regularização de '
+                + 'adiantamento ou revisão do Financeiro.';
+        case 'QUOTATION_MANAGEMENT':
+            return 'Este campo identifica o tipo de documento que o fornecedor emitiu e que está a anexar à cotação. '
+                + 'A classificação acompanha a cotação: se esta for escolhida e originar um pagamento, determina o '
+                + 'que o Portal irá exigir mais à frente no processo.';
+        case 'POST_PAYMENT_EVIDENCE':
+            return 'Este campo identifica o tipo de documento que está a anexar como comprovativo. '
+                + 'A classificação determina que obrigações do pedido ficam encerradas e quais permanecem em aberto.';
+    }
 }
 
 export function isFiscalDocument(value?: string | null): boolean {
@@ -161,35 +233,3 @@ export function canInitiatePayment(value?: string | null): boolean {
         || key === SOURCE_DOCUMENT_TYPES.INVOICE;
 }
 
-/**
- * Plain-language preview of what will still be required. Shown next to the field so the requester
- * sees that the choice commits the request to future work, not just labels a file.
- */
-export function obligationPreview(value?: string | null): string[] {
-    const key = normalizeDocumentType(value);
-    if (!key || key === SOURCE_DOCUMENT_TYPES.UNCLASSIFIED) return [];
-
-    const out: string[] = ['Recebimento operacional'];
-
-    switch (key) {
-        case SOURCE_DOCUMENT_TYPES.PROFORMA:
-        case SOURCE_DOCUMENT_TYPES.ESTIMATE:
-            out.push('Factura da operação', 'Recibo/comprovativo de pagamento');
-            break;
-        case SOURCE_DOCUMENT_TYPES.ADVANCE_INVOICE:
-            out.push('Factura da operação', 'Nota de Crédito (regularização do adiantamento)',
-                     'Comprovativo de pagamento', 'Validação do Financeiro');
-            break;
-        case SOURCE_DOCUMENT_TYPES.INVOICE:
-            out.push('Recibo/comprovativo de pagamento');
-            break;
-        case SOURCE_DOCUMENT_TYPES.INVOICE_RECEIPT:
-            // Nothing further: the document already evidences the operation and its payment.
-            break;
-        case SOURCE_DOCUMENT_TYPES.OTHER:
-            out.push('Revisão do Financeiro');
-            break;
-    }
-
-    return out;
-}
