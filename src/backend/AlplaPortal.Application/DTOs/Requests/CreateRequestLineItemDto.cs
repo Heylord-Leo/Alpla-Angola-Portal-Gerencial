@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace AlplaPortal.Application.DTOs.Requests;
@@ -22,6 +23,13 @@ public class CreateRequestLineItemDto
     public int? CurrencyId { get; set; }
 
     public int? PlantId { get; set; }
+
+    /// <summary>
+    /// PAYMENT multi-document: the source document this item is paid against. Mandatory once the
+    /// request carries source documents; ignored on QUOTATION and on legacy requests that have
+    /// none. The item's supplier, plant and currency must agree with the document's.
+    /// </summary>
+    public Guid? PaymentSourceDocumentId { get; set; }
     
     public int? CostCenterId { get; set; }
 

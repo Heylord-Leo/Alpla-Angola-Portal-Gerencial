@@ -145,6 +145,38 @@ public static class PostPaymentIdempotencyKeys
                selectedType.Trim().ToUpperInvariant();
     }
 
+    // ── PAYMENT source documents (Release 3) ──
+
+    /// <summary>
+    /// PAYMENT_SOURCE_DOCUMENT_ADDED — PSD_ADD:{RequestId}:{AttachmentId}.
+    ///
+    /// <para>Keyed on the attachment because the document row does not exist yet, and because the
+    /// attachment is what a retried upload would duplicate. Deliberately covers CREATION only: an
+    /// ordinary field edit must stay repeatable forever, so no key is issued for updates.</para>
+    /// </summary>
+    public static string PaymentSourceDocumentAdded(Guid requestId, Guid attachmentId)
+        => Build("PSD_ADD", requestId, attachmentId);
+
+    /// <summary>PAYMENT_SOURCE_DOCUMENT_VOIDED — PSD_VOID:{PaymentSourceDocumentId}.</summary>
+    public static string PaymentSourceDocumentVoided(Guid paymentSourceDocumentId)
+        => $"PSD_VOID:{Format(paymentSourceDocumentId)}";
+
+    /// <summary>
+    /// PAYMENT_SOURCE_DOCUMENT_REPLACED — PSD_REPL:{PaymentSourceDocumentId}:{NewAttachmentId}.
+    /// The new attachment is part of the identity: replacing the same document twice with two
+    /// different files is two events, replacing it twice with the same file is one.
+    /// </summary>
+    public static string PaymentSourceDocumentReplaced(Guid paymentSourceDocumentId, Guid newAttachmentId)
+        => Build("PSD_REPL", paymentSourceDocumentId, newAttachmentId);
+
+    /// <summary>
+    /// PAYMENT_GROUPS_BUILT — PG_BUILD:{RequestId}.
+    /// Request-scoped and fired once: re-running final approval must never produce a second set of
+    /// PO groups.
+    /// </summary>
+    public static string PaymentGroupsBuilt(Guid requestId)
+        => $"PG_BUILD:{Format(requestId)}";
+
     private static string Build(string prefix, Guid scopeId, Guid identityId)
         => $"{prefix}:{Format(scopeId)}:{Format(identityId)}";
 

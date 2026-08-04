@@ -62,16 +62,24 @@ Plant is the request's **access and routing scope** and stays request-level. No 
 | 8 | `RequestsController:2033` — `PlantId = itemDto.PlantId ?? request.PlantId` | Becomes `itemDto.PlantId ?? sourceDocument.PlantId ?? request.PlantId`. |
 | 9 | `RequestsController:5265` — item created from proforma | Same fallback chain when the item belongs to a source document. |
 
-### 3.3 GROUP — budget allocation (2 sites) — **a latent defect this feature exposes**
+### 3.3 SAFE — budget allocation (2 sites) — **corrected: there is no defect**
 
 | # | Site | Finding |
 |---|---|---|
-| 10 | `BudgetPreviewController:211` | `int plantId = request.PlantId ?? 0;` — the line's **own** `PlantId` is never consulted, even though `RequestLineItem.PlantId` already exists and can already differ. |
-| 11 | `BudgetCalculationHelper:227` | Identical fallback in the authoritative calculation. |
+| 10 | `BudgetPreviewController:211` | **Already correct.** |
+| 11 | `BudgetCalculationHelper:227` | **Already correct.** |
 
-With multi-plant payment requests this misallocates budget to the header plant. **Fix: prefer
-`li.PlantId ?? request.PlantId`.** This is more correct today as well, not only after the change —
-it is a pre-existing bug that multi-document would have turned into a visible one.
+> **Correction (Phase 2b).** The first pass of this audit read `int plantId = request.PlantId ?? 0;`
+> in isolation and reported a latent defect. That was wrong: six lines below, both sites contain
+> `else if (li.PlantId.HasValue) { plantId = li.PlantId.Value; }`. The effective precedence is
+> already **explicit item assignment → line plant → request plant**, which is exactly the behaviour
+> multi-plant payments need. No code change is required.
+>
+> The behaviour was nevertheless unguarded by any test, so Phase 2b adds three
+> (`BudgetPlantResolutionTests`) locking it in: a line with a plant uses it, a line without one
+> falls back to the request plant, and a multi-plant request does not collapse onto the header
+> plant. Those are the tests the correction was supposed to protect; they are worth having whether
+> or not the bug was real.
 
 ### 3.4 FALSE POSITIVES — a different `request` variable (10 sites)
 

@@ -2663,33 +2663,7 @@ public class RequestsController : BaseController
         if (request.RequestType!.Code == RequestConstants.Types.Payment &&
             PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request))
         {
-            if (!RequestConstants.SourceDocumentTypes.IsValid(request.SourceDocumentType))
-            {
-                errors.Add("O tipo de documento anexado é obrigatório. Indique que documento o fornecedor emitiu antes de submeter.");
-            }
-            else
-            {
-                // Re-checked at submission, not only at creation: the identity could have been set
-                // before the feature was enabled, or edited through another path. A document that
-                // cannot originate a payment must never reach approval.
-                var obligations = DocumentObligationResolver.Resolve(
-                    request.SourceDocumentType, DocumentUsageContext.PaymentRequest);
-
-                if (!obligations.CanInitiatePayment)
-                {
-                    errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)}: " +
-                               (obligations.BlockingReason ?? "este documento não pode originar um pedido de pagamento."));
-                }
-                else if (obligations.RequiresFinanceClassificationReview &&
-                         string.IsNullOrWhiteSpace(request.ClassificationJustification) &&
-                         !request.ClassificationConflictAcknowledged)
-                {
-                    // ADVANCE_INVOICE and OTHER commit the request to extra obligations; the
-                    // requester must at least have seen and acknowledged that.
-                    errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)} " +
-                               "requer confirmação: reveja as obrigações associadas antes de submeter.");
-                }
-            }
+            errors.AddRange(await ValidatePaymentSourceDocumentsForSubmissionAsync(request));
         }
 
         // Conditional Item Validation
@@ -5121,6 +5095,18 @@ public class RequestsController : BaseController
             }
         }
 
+        // PAYMENT multi-document: the item must name the document that pays for it, and must not
+        // contradict it. Skipped entirely on QUOTATION and on requests that carry no documents.
+        var (documentBinding, bindingProblem) = await ResolvePaymentSourceDocumentBindingAsync(
+            request, dto.PaymentSourceDocumentId,
+            new PaymentLineItemBinding(null, dto.PlantId, null));
+
+        if (bindingProblem != null) return BadRequest(bindingProblem);
+
+        var effectivePlantId = documentBinding != null
+            ? (dto.PlantId ?? documentBinding.PlantId)
+            : dto.PlantId;
+
         // Build + stage the item and its history through the shared factory
         // (same total/status/line-number math as before; single source of truth
         // shared with the buyer reconciliation workaround).
@@ -5131,7 +5117,7 @@ public class RequestsController : BaseController
             UnitId = dto.UnitId,
             UnitPrice = dto.UnitPrice ?? 0,
             CurrencyId = dto.CurrencyId,
-            PlantId = dto.PlantId,
+            PlantId = effectivePlantId,
             CostCenterId = dto.CostCenterId,
             DiscountPercent = dto.DiscountPercent,
             DiscountAmount = dto.DiscountAmount,
@@ -5142,6 +5128,14 @@ public class RequestsController : BaseController
             DueDate = dto.DueDate,
             ItemPriority = dto.ItemPriority ?? "MEDIUM"
         }, actorId, user.FullName);
+
+        if (documentBinding != null)
+        {
+            newItem.PaymentSourceDocumentId = documentBinding.DocumentId;
+            // Inherited rather than echoed by the client: anything the item left unset takes the
+            // document's value, which is why a mismatch can only come from a stated disagreement.
+            newItem.SupplierId ??= documentBinding.SupplierId;
+        }
 
         await _context.SaveChangesAsync();
 
@@ -5467,7 +5461,26 @@ public class RequestsController : BaseController
         // LineItemStatusId is intentionally NOT updated here — status is backend/buyer-controlled only
         if (request.RequestType?.Code == "PAYMENT")
         {
-            item.SupplierId = request.SupplierId;
+            // Multi-document: the supplier comes from the item's OWN source document, not from the
+            // request header — which is null whenever the documents disagree. Falls back to the
+            // header for requests that carry no documents.
+            var (updatedBinding, updateBindingProblem) = await ResolvePaymentSourceDocumentBindingAsync(
+                request, dto.PaymentSourceDocumentId ?? item.PaymentSourceDocumentId,
+                new PaymentLineItemBinding(null, dto.PlantId ?? item.PlantId, null));
+
+            if (updateBindingProblem != null) return BadRequest(updateBindingProblem);
+
+            if (updatedBinding != null)
+            {
+                item.PaymentSourceDocumentId = updatedBinding.DocumentId;
+                item.SupplierId = updatedBinding.SupplierId;
+                item.PlantId = dto.PlantId ?? updatedBinding.PlantId;
+            }
+            else
+            {
+                item.SupplierId = request.SupplierId;
+            }
+
             item.SupplierName = null;
         }
         else
@@ -5801,77 +5814,18 @@ public class RequestsController : BaseController
             }
             request.ApprovedAtUtc = DateTime.UtcNow;
 
-            // ── Payment Request: Auto-create PO Group ──────────────────────
-            // Payment Requests don't go through the quotation/award/GroupBuilder path.
-            // Create a single PO group from the request's supplier, currency, and
-            // estimated total so the Buyer can register the P.O. after final approval.
+            // ── Payment Request: build PO groups from the source documents ─────
+            // Payment requests do not go through the quotation/award/GroupBuilder path.
+            //
+            // Release 3 replaced the previous behaviour — exactly ONE group per payment request,
+            // taken from the request header — because a request may now carry several source
+            // documents. That single group was wrong in both directions: two invoices for two
+            // plants must not share one, and two documents agreeing on every dimension must not
+            // produce two. Grouping is now over the documents' line items, keyed by
+            // Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
             if (request.RequestType!.Code == RequestConstants.Types.Payment)
             {
-                var existingGroups = await _context.RequestPoGroups
-                    .AnyAsync(g => g.RequestId == id);
-
-                if (!existingGroups)
-                {
-                    var currencyObj = request.CurrencyId.HasValue
-                        ? await _context.Currencies.FindAsync(request.CurrencyId.Value)
-                        : null;
-                    var supplier = request.SupplierId.HasValue
-                        ? await _context.Suppliers.FindAsync(request.SupplierId.Value)
-                        : null;
-
-                    if (supplier == null && request.SupplierId.HasValue)
-                    {
-                        _logger.LogWarning(
-                            "ProcessFinalApproval — Payment Request {RequestId} ({RequestNumber}) has SupplierId={SupplierId} but Supplier entity not found.",
-                            id, request.RequestNumber, request.SupplierId);
-                    }
-
-                    var paymentGroup = new RequestPoGroup
-                    {
-                        RequestId = request.Id,
-                        SupplierId = request.SupplierId,
-                        SupplierNameSnapshot = supplier?.Name ?? "Fornecedor não definido",
-                        SupplierNifSnapshot = supplier?.TaxId,
-                        CurrencyId = currencyObj?.Id,
-                        CurrencyCode = currencyObj?.Code ?? "AOA",
-                        TotalAmount = request.EstimatedTotalAmount,
-                        PaymentConditionCode = request.PaymentConditionCode,
-                        AdvancePaymentPercent = request.AdvancePaymentPercent,
-                        Status = RequestConstants.PoGroupStatuses.WaitingPo,
-                        CreatedAtUtc = DateTime.UtcNow,
-                        CreatedByUserId = actorId
-                    };
-
-                    // Post-Payment Completion (Release 2 corrected): carry the document IDENTITY onto
-                    // the group, then derive every obligation from it through the single resolver.
-                    // Identity is copied; obligations are never hand-assigned here — that separation
-                    // is what lets a Factura de Adiantamento owe an operation invoice AND
-                    // regularization, while a Factura-Recibo owes no separate receipt.
-                    // Skipped entirely while the feature is disabled, leaving the schema defaults.
-                    if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
-                    {
-                        var obligations = DocumentObligationResolver.Resolve(
-                            request.SourceDocumentType, DocumentUsageContext.PaymentRequest);
-
-                        paymentGroup.SourceDocumentType = request.SourceDocumentType;
-                        paymentGroup.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
-                        paymentGroup.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
-                        paymentGroup.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
-                        paymentGroup.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
-                        paymentGroup.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
-                    }
-
-                    _context.RequestPoGroups.Add(paymentGroup);
-
-                    _logger.LogInformation(
-                        "ProcessFinalApproval — Auto-created PO group for Payment Request {RequestId} ({RequestNumber}). " +
-                        "Supplier: {Supplier}, Amount: {Amount:N2} {Currency}, GroupId: {GroupId}",
-                        id, request.RequestNumber,
-                        paymentGroup.SupplierNameSnapshot,
-                        paymentGroup.TotalAmount,
-                        paymentGroup.CurrencyCode,
-                        paymentGroup.Id);
-                }
+                await BuildPaymentPoGroupsAsync(request, actorId);
             }
 
             // ── PO Group Activation: PENDING → WAITING_PO ──────────────────────
@@ -8255,6 +8209,362 @@ public class RequestsController : BaseController
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Every reason a PAYMENT request's origin documents are not yet submittable, gathered in one
+    /// pass so the requester sees the whole list instead of discovering it one refusal at a time.
+    ///
+    /// <para>Each message names the document it belongs to. A request holding three invoices must
+    /// never report that something, somewhere, is wrong.</para>
+    ///
+    /// <para><b>Legacy requests keep the old rule.</b> A request with no <c>PaymentSourceDocument</c>
+    /// rows is validated against the request header exactly as before — nothing is backfilled, so a
+    /// request created before this release must still be submittable.</para>
+    /// </summary>
+    private async Task<List<string>> ValidatePaymentSourceDocumentsForSubmissionAsync(Request request)
+    {
+        var errors = new List<string>();
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .OrderBy(d => d.SequenceNumber)
+            .ToListAsync();
+
+        if (documents.Count == 0)
+        {
+            // ── Pre-multi-document path, unchanged ──
+            if (!RequestConstants.SourceDocumentTypes.IsValid(request.SourceDocumentType))
+            {
+                errors.Add("O tipo de documento anexado é obrigatório. Indique que documento o fornecedor emitiu antes de submeter.");
+                return errors;
+            }
+
+            var headerObligations = DocumentObligationResolver.Resolve(
+                request.SourceDocumentType, DocumentUsageContext.PaymentRequest);
+
+            if (!headerObligations.CanInitiatePayment)
+            {
+                errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)}: " +
+                           (headerObligations.BlockingReason ?? "este documento não pode originar um pedido de pagamento."));
+            }
+            else if (headerObligations.RequiresFinanceClassificationReview &&
+                     string.IsNullOrWhiteSpace(request.ClassificationJustification) &&
+                     !request.ClassificationConflictAcknowledged)
+            {
+                errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)} " +
+                           "requer confirmação: reveja as obrigações associadas antes de submeter.");
+            }
+
+            return errors;
+        }
+
+        // ── Multi-document path ──
+        var itemTotals = await _context.RequestLineItems
+            .Where(i => i.RequestId == request.Id && !i.IsDeleted && i.PaymentSourceDocumentId != null)
+            .GroupBy(i => i.PaymentSourceDocumentId!.Value)
+            .Select(g => new { DocumentId = g.Key, Total = g.Sum(i => i.TotalAmount), Count = g.Count() })
+            .ToDictionaryAsync(x => x.DocumentId, x => x);
+
+        var states = documents.Select(d => new PaymentSourceDocumentState
+        {
+            Id = d.Id,
+            SequenceNumber = d.SequenceNumber,
+            Label = $"Documento {d.SequenceNumber}",
+            HasAttachment = d.AttachmentId != Guid.Empty,
+            SupplierId = d.SupplierId,
+            PlantId = d.PlantId,
+            DocumentNumber = d.DocumentNumber,
+            SourceDocumentType = d.SourceDocumentType,
+            DocumentDate = d.DocumentDate,
+            Currency = d.Currency,
+            GrossAmount = d.GrossAmount,
+            ItemsTotal = itemTotals.TryGetValue(d.Id, out var t) ? t.Total : 0m,
+            ActiveItemCount = itemTotals.TryGetValue(d.Id, out var c) ? c.Count : 0,
+            OcrSuggestion = d.OcrSuggestion,
+            OcrConfidence = d.OcrConfidence,
+            ClassificationConflictAcknowledged = d.ClassificationConflictAcknowledged,
+            ClassificationJustification = d.ClassificationJustification
+        }).ToList();
+
+        var result = PaymentSourceDocumentValidator.Validate(states, requireClassification: true);
+
+        foreach (var problem in result.Problems)
+        {
+            errors.Add(problem.DocumentId == Guid.Empty
+                ? problem.Message
+                : $"{problem.Label}: {problem.Message}");
+        }
+
+        // Every active item must belong to an active document — an orphan would be paid for
+        // without any document accounting for it.
+        var orphanCount = await _context.RequestLineItems
+            .CountAsync(i => i.RequestId == request.Id && !i.IsDeleted && i.PaymentSourceDocumentId == null);
+
+        if (orphanCount > 0)
+        {
+            errors.Add($"{orphanCount} item(ns) não estão associados a nenhum documento de origem. " +
+                       "Associe cada item ao documento que o paga.");
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Resolves the source document an item claims, and refuses anything inconsistent with it.
+    ///
+    /// <para>Returns <c>(null, null)</c> when the rule does not apply — QUOTATION requests, and
+    /// PAYMENT requests that carry no source documents at all. A request created before this
+    /// release has none and must keep working exactly as it did.</para>
+    /// </summary>
+    private async Task<(PaymentSourceDocumentBinding? Binding, ProblemDetails? Problem)>
+        ResolvePaymentSourceDocumentBindingAsync(
+            Request request, Guid? documentId, PaymentLineItemBinding item)
+    {
+        if (request.RequestType?.Code != RequestConstants.Types.Payment)
+            return (null, null);
+
+        var activeCount = await _context.PaymentSourceDocuments
+            .CountAsync(d => d.RequestId == request.Id && !d.IsVoided);
+
+        var required = PaymentLineItemAssociation.IsDocumentRequired(
+            request.RequestType?.Code,
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request),
+            activeCount);
+
+        if (documentId == null || documentId == Guid.Empty)
+        {
+            if (!required) return (null, null);
+
+            return (null, new ProblemDetails
+            {
+                Title = "Documento de origem em falta",
+                Detail = "Indique a que documento de origem este item pertence.",
+                Status = 400
+            });
+        }
+
+        var document = await _context.PaymentSourceDocuments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId.Value);
+
+        var binding = document == null
+            ? null
+            : new PaymentSourceDocumentBinding(
+                document.Id, document.RequestId, document.IsVoided,
+                document.SupplierId, document.PlantId, document.Currency, document.SequenceNumber);
+
+        var problem = PaymentLineItemAssociation.Validate(request.Id, binding, item);
+        if (problem != null)
+        {
+            return (null, new ProblemDetails
+            {
+                Title = "Item incompatível com o documento",
+                Detail = problem,
+                Status = 400
+            });
+        }
+
+        return (binding, null);
+    }
+
+    // ── PAYMENT PO groups from source documents (Release 3) ──────────────────────────────────
+
+    /// <summary>
+    /// Creates the PO groups a PAYMENT request needs, one per distinct
+    /// Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
+    ///
+    /// <para><b>Idempotent.</b> Re-running final approval must never produce a second set of groups,
+    /// so the whole operation is keyed on the request and skipped once it has run. Any group that
+    /// already exists for a key is reused and updated rather than duplicated.</para>
+    ///
+    /// <para><b>Legacy requests keep working.</b> A request with no <c>PaymentSourceDocument</c> rows
+    /// — every request created before this release — falls back to the single group built from the
+    /// header, exactly as before. Nothing is backfilled: inventing a source document nobody recorded
+    /// would manufacture a historical fact.</para>
+    /// </summary>
+    private async Task BuildPaymentPoGroupsAsync(Request request, Guid actorId)
+    {
+        var alreadyBuilt = await _context.RequestStatusHistories
+            .AnyAsync(h => h.IdempotencyKey == PostPaymentIdempotencyKeys.PaymentGroupsBuilt(request.Id));
+
+        if (alreadyBuilt) return;
+
+        var existingGroups = await _context.RequestPoGroups
+            .Where(g => g.RequestId == request.Id)
+            .ToListAsync();
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .ToListAsync();
+
+        var plan = documents.Count == 0
+            ? await BuildLegacyPaymentPlanAsync(request)
+            : await BuildDocumentPaymentPlanAsync(request, documents);
+
+        if (plan.Count == 0) return;
+
+        var currencies = await _context.Currencies.AsNoTracking().ToListAsync();
+        var created = 0;
+
+        foreach (var planned in plan)
+        {
+            // Reuse rather than duplicate: an existing group with the same identity is the same
+            // group, whether it was created by an earlier run or by another path.
+            var group = existingGroups.FirstOrDefault(g =>
+                g.SupplierId == planned.Key.SupplierId &&
+                string.Equals(g.CurrencyCode, planned.Key.CurrencyCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(g.PaymentConditionCode, planned.Key.PaymentConditionCode, StringComparison.OrdinalIgnoreCase) &&
+                g.PlantId == planned.Key.PlantId &&
+                string.Equals(g.SourceDocumentType, planned.Key.SourceDocumentType, StringComparison.OrdinalIgnoreCase));
+
+            if (group == null)
+            {
+                group = new RequestPoGroup
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = request.Id,
+                    SupplierId = planned.Key.SupplierId,
+                    SupplierNameSnapshot = planned.SupplierNameSnapshot ?? "Fornecedor não definido",
+                    SupplierNifSnapshot = planned.SupplierTaxIdSnapshot,
+                    CurrencyCode = planned.Key.CurrencyCode ?? "AOA",
+                    CurrencyId = currencies.FirstOrDefault(c =>
+                        string.Equals(c.Code, planned.Key.CurrencyCode, StringComparison.OrdinalIgnoreCase))?.Id,
+                    PlantId = planned.Key.PlantId,
+                    PaymentConditionCode = planned.Key.PaymentConditionCode,
+                    AdvancePaymentPercent = request.AdvancePaymentPercent,
+                    Status = RequestConstants.PoGroupStatuses.WaitingPo,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    CreatedByUserId = actorId
+                };
+
+                _context.RequestPoGroups.Add(group);
+                existingGroups.Add(group);
+                created++;
+            }
+
+            group.TotalAmount = planned.TotalAmount;
+
+            // Identity is copied; every obligation is derived from it through the single resolver.
+            // Skipped while the feature is disabled, leaving the schema defaults untouched.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                var obligations = DocumentObligationResolver.Resolve(
+                    planned.Key.SourceDocumentType, DocumentUsageContext.PaymentRequest);
+
+                group.SourceDocumentType = planned.Key.SourceDocumentType;
+                group.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
+                group.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
+                group.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
+                group.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
+                group.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
+
+                // The commercial baseline the operation invoices must eventually cover, captured
+                // once. Re-deriving it later would drift as items are edited, silently moving the
+                // finish line.
+                if (obligations.RequiresOperationInvoice && group.ExpectedOperationInvoiceTotal == null)
+                {
+                    group.ExpectedOperationInvoiceTotal = planned.TotalAmount;
+                    group.ExpectedOperationInvoiceCurrency = planned.Key.CurrencyCode;
+                }
+            }
+
+            // Traceability: every contributing item points at the group it landed in.
+            foreach (var itemId in planned.LineItemIds)
+            {
+                var item = request.LineItems.FirstOrDefault(i => i.Id == itemId);
+                if (item != null) item.RequestPoGroupId = group.Id;
+            }
+        }
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "GRUPOS_PAGAMENTO_CRIADOS",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = documents.Count == 0
+                ? $"Grupo de pagamento criado a partir do cabeçalho do pedido (pedido anterior ao multi-documento)."
+                : $"{plan.Count} grupo(s) de pagamento criado(s) a partir de {documents.Count} documento(s) de origem.",
+            IdempotencyKey = PostPaymentIdempotencyKeys.PaymentGroupsBuilt(request.Id),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        _logger.LogInformation(
+            "BuildPaymentPoGroups — Request {RequestId} ({RequestNumber}): {Planned} planned, {Created} created, " +
+            "from {Documents} source document(s).",
+            request.Id, request.RequestNumber, plan.Count, created, documents.Count);
+    }
+
+    /// <summary>Grouping over the request's source documents — the Release 3 path.</summary>
+    private async Task<IReadOnlyList<PlannedPaymentGroup>> BuildDocumentPaymentPlanAsync(
+        Request request, IReadOnlyList<PaymentSourceDocument> documents)
+    {
+        var byId = documents.ToDictionary(d => d.Id);
+
+        var supplierNames = await _context.Suppliers.AsNoTracking()
+            .Where(s => documents.Select(d => d.SupplierId).Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => new { s.Name, s.TaxId });
+
+        var items = request.LineItems
+            .Where(i => !i.IsDeleted && i.PaymentSourceDocumentId.HasValue &&
+                        byId.ContainsKey(i.PaymentSourceDocumentId.Value))
+            .Select(i =>
+            {
+                var d = byId[i.PaymentSourceDocumentId!.Value];
+                var supplier = d.SupplierId.HasValue && supplierNames.ContainsKey(d.SupplierId.Value)
+                    ? supplierNames[d.SupplierId.Value]
+                    : null;
+
+                return new PaymentGroupableItem
+                {
+                    LineItemId = i.Id,
+                    PaymentSourceDocumentId = d.Id,
+                    SupplierId = d.SupplierId,
+                    SupplierNameSnapshot = d.SupplierNameSnapshot ?? supplier?.Name,
+                    SupplierTaxIdSnapshot = d.SupplierTaxIdSnapshot ?? supplier?.TaxId,
+                    CurrencyCode = d.Currency,
+                    PlantId = d.PlantId,
+                    SourceDocumentType = d.SourceDocumentType,
+                    TotalAmount = i.TotalAmount
+                };
+            })
+            .ToList();
+
+        return PaymentGroupPlan.Build(items, request.PaymentConditionCode);
+    }
+
+    /// <summary>
+    /// The pre-multi-document path: one group from the request header. Kept so every request
+    /// created before Release 3 continues to behave exactly as it did.
+    /// </summary>
+    private async Task<IReadOnlyList<PlannedPaymentGroup>> BuildLegacyPaymentPlanAsync(Request request)
+    {
+        var supplier = request.SupplierId.HasValue
+            ? await _context.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.Id == request.SupplierId.Value)
+            : null;
+
+        var currencyCode = request.CurrencyId.HasValue
+            ? (await _context.Currencies.AsNoTracking()
+                .Where(c => c.Id == request.CurrencyId.Value).Select(c => c.Code).FirstOrDefaultAsync())
+            : null;
+
+        return new[]
+        {
+            new PlannedPaymentGroup
+            {
+                Key = PaymentGroupingKey.From(
+                    request.SupplierId, currencyCode ?? "AOA", request.PaymentConditionCode,
+                    request.PlantId, request.SourceDocumentType),
+                SupplierNameSnapshot = supplier?.Name,
+                SupplierTaxIdSnapshot = supplier?.TaxId,
+                TotalAmount = request.EstimatedTotalAmount,
+                LineItemIds = Array.Empty<Guid>(),
+                SourceDocumentIds = Array.Empty<Guid>()
+            }
+        };
     }
 
     // ── Document-classification override audit (Release 2 corrective) ────────────────────────
