@@ -39,6 +39,7 @@ import { RequestStatusActionPanels } from './components/RequestStatusActionPanel
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
+import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -146,6 +147,15 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
     const isDrawerMode = !!onDrawerClose;
+    const { user } = useAuth();
+
+    // Mirrors LookupsController.CanCreateSupplierContextuallyAsync. The scope half is proxied by the
+    // lookup lists this screen loaded, which are themselves scoped to the user; the server remains
+    // the authority and will still refuse if the proxy is ever generous.
+    const canCreateSupplier = canCreateSupplierContextually(user?.roles, {
+        hasPlantScope: plants.length > 0,
+        hasDepartmentScope: departments.length > 0
+    });
 
     // Release 3: the PAYMENT source-document collection. Held here rather than in the hook because
     // the summary is the authoritative source of totals and canSubmit, and the section owns it.
@@ -480,6 +490,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
+                        canCreateSupplier={canCreateSupplier}
                         onSummaryChange={setSourceDocumentsSummary}
                         onEditingStateChange={setDocumentEditingState}
                     />

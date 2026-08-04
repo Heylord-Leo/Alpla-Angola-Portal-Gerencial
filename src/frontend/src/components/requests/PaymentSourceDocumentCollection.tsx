@@ -28,6 +28,8 @@ import { AddPaymentDocumentChoice } from './AddPaymentDocumentChoice';
 import { InfoModal } from '../ui/InfoModal';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { QuickSupplierModal } from '../Buyer/QuickSupplierModal';
+import { SUPPLIER_CREATE_NOT_ALLOWED } from '../../lib/supplierQuickCreate';
 import { formatCurrencyAO } from '../../lib/utils';
 
 interface Props {
@@ -36,6 +38,8 @@ interface Props {
     readOnly?: boolean;
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
+    /** Mirrors the backend rule for `POST /lookups/suppliers/from-payment-ocr`. */
+    canCreateSupplier?: boolean;
     /** Bubbles `canSubmit` so the parent can disable final submission. */
     onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
     /** Opens the existing attachment picker; resolves with the new attachment id, or null. */
@@ -82,6 +86,7 @@ export function PaymentSourceDocumentCollection({
     readOnly = false,
     plants,
     currencies,
+    canCreateSupplier = false,
     onSummaryChange,
     onRequestAttachment,
     renderItems,
@@ -94,6 +99,9 @@ export function PaymentSourceDocumentCollection({
     const [chooserOpen, setChooserOpen] = useState(false);
     /** Documents edited but not yet saved. A pending edit is not part of the request until it is. */
     const [dirtyIds, setDirtyIds] = useState<string[]>([]);
+    /** Supplier quick-create, scoped to the document that asked for it. */
+    const [supplierCreate, setSupplierCreate] =
+        useState<{ documentId: string; name: string; taxId: string } | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const [pendingRemoval, setPendingRemoval] = useState<PaymentSourceDocumentDto | null>(null);
@@ -430,6 +438,14 @@ export function PaymentSourceDocumentCollection({
                         onRemove={() => setPendingRemoval(d)}
                         onDuplicate={() => void addDocument(d)}
                         showDuplicate={!effectiveReadOnly}
+                        // Read-only requests never expose supplier creation: the document cannot be
+                        // changed, so a supplier created for it would have nowhere to go.
+                        onCreateSupplier={canCreateSupplier && !effectiveReadOnly
+                            ? (name, taxId) => setSupplierCreate({ documentId: d.id, name, taxId })
+                            : null}
+                        supplierCreateDisabledReason={
+                            effectiveReadOnly ? null
+                                : canCreateSupplier ? null : SUPPLIER_CREATE_NOT_ALLOWED}
                         plants={plants}
                         currencies={currencies}
                         footer={!effectiveReadOnly ? (
@@ -485,6 +501,31 @@ export function PaymentSourceDocumentCollection({
                     <Plus size={14} /> {isAdding ? 'A adicionar…' : 'Adicionar outro documento'}
                 </button>
             )}
+
+            {/* The same shared quick-create as the creation screen and Quotation Management. */}
+            <QuickSupplierModal
+                isOpen={!!supplierCreate}
+                onClose={() => setSupplierCreate(null)}
+                mode="PAYMENT_OCR"
+                initialName={supplierCreate?.name ?? ''}
+                initialTaxId={supplierCreate?.taxId ?? ''}
+                extractedName={supplierCreate?.name ?? ''}
+                extractedTaxId={supplierCreate?.taxId ?? ''}
+                onSuccess={supplier => {
+                    const target = supplierCreate?.documentId;
+                    setSupplierCreate(null);
+                    if (!target) return;
+
+                    // Applied to the document that asked, and marked dirty: the supplier exists in
+                    // the master data now, but this document's link to it is not saved until the
+                    // user saves the document.
+                    patchDocument(target, {
+                        supplierId: supplier.id,
+                        supplierNameSnapshot: supplier.name
+                    });
+                    setDirtyIds(prev => (prev.includes(target) ? prev : [...prev, target]));
+                }}
+            />
 
             {chooserOpen && (
                 <AddPaymentDocumentChoice

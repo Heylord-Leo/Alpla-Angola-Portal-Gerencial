@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import {
     AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
-    Copy, FileText, Loader2, Paperclip, Trash2
+    Copy, FileText, Loader2, Paperclip, Trash2, UserPlus
 } from 'lucide-react';
 import { PaymentSourceDocumentDto, PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
 import { OcrDocumentClassification, ClassificationConflictState } from '../../lib/documentClassificationDecision';
@@ -51,6 +51,22 @@ export interface PaymentSourceDocumentCardProps {
     /** Hidden while a document is being composed — there is nothing to duplicate from yet. */
     showDuplicate?: boolean;
 
+    /**
+     * Opens the shared supplier quick-create for this document's unmatched supplier.
+     *
+     * <p>Absent when the card is read-only or the user may not create suppliers — the action is not
+     * rendered rather than rendered-and-refused.</p>
+     */
+    onCreateSupplier?: ((name: string, taxId: string) => void) | null;
+    /** Why creation is unavailable, when it is. Shown in place of the action. */
+    supplierCreateDisabledReason?: string | null;
+    /**
+     * The user has tried to confirm or submit. Until then an unmatched OCR supplier is amber, not
+     * red: the extraction read a real name off a real invoice, and calling that corrupt input
+     * before the user has had any chance to act blames them for the Portal not knowing the supplier.
+     */
+    showValidationErrors?: boolean;
+
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
     /** Blocks a second currency before the backend has to refuse it. */
@@ -97,6 +113,9 @@ export function PaymentSourceDocumentCard({
     onRemove,
     onDuplicate,
     showDuplicate = true,
+    onCreateSupplier = null,
+    supplierCreateDisabledReason = null,
+    showValidationErrors = false,
     plants,
     currencies,
     currencyLocked,
@@ -110,6 +129,8 @@ export function PaymentSourceDocumentCard({
 
     const isEditor = variant === 'editor';
     const open = isEditor || isExpanded;
+    /** A name was read (or typed) but does not correspond to a registered supplier. */
+    const supplierUnresolved = !document.supplierId && !!document.supplierNameSnapshot;
     const bodyId = `psd-body-${document.id}`;
     const accent = SEVERITY_COLOR[statusOverride?.severity ?? status.severity];
 
@@ -267,36 +288,90 @@ export function PaymentSourceDocumentCard({
                             list cannot be preloaded here — there are thousands — and an extraction
                             that read a name the portal does not know must still be visible as
                             unresolved rather than silently blank. */}
-                        <div style={{ gridColumn: '1 / -1' }}>
+                        <div style={{ gridColumn: '1 / -1' }} data-document-supplier>
                             <span style={labelStyle}>
                                 Fornecedor
-                                {!document.supplierId && document.supplierNameSnapshot && (
+                                {supplierUnresolved && (
                                     <FieldMessageIcon
                                         severity="warning"
-                                        tooltip="O fornecedor lido não existe no portal."
+                                        tooltip="O fornecedor lido ainda não existe no Portal."
                                         title="Fornecedor não reconhecido"
                                         maxWidth={520}
                                     >
                                         <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55 }}>
                                             O documento indica <strong>{document.supplierNameSnapshot}</strong>,
-                                            que não corresponde a nenhum fornecedor registado. Pesquise o
-                                            fornecedor correto ou registe-o antes de confirmar o documento —
-                                            um pagamento não pode ser dirigido a um fornecedor que o portal
-                                            não conhece.
+                                            que ainda não corresponde a nenhum fornecedor registado no Portal.
+                                        </p>
+                                        <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55 }}>
+                                            Isto não significa que a leitura esteja errada — significa apenas que
+                                            este fornecedor ainda não foi registado. Pode registá-lo a partir daqui
+                                            ou selecionar o fornecedor correto. Um pagamento não pode ser dirigido a
+                                            um fornecedor que o Portal não conhece, por isso o documento só fica
+                                            completo depois de um deles estar escolhido.
                                         </p>
                                     </FieldMessageIcon>
                                 )}
                             </span>
                             <SupplierAutocomplete
                                 initialName={document.supplierNameSnapshot || ''}
-                                isUnresolved={!document.supplierId && !!document.supplierNameSnapshot}
-                                hasError={!document.supplierId && !!document.supplierNameSnapshot}
+                                isUnresolved={supplierUnresolved}
+                                // Amber while it is merely unregistered; red only once the user has
+                                // tried to move on without resolving it.
+                                hasWarning={supplierUnresolved && !showValidationErrors}
+                                hasError={supplierUnresolved && showValidationErrors}
                                 disabled={readOnly}
                                 onChange={(id, name) => onFieldChange({
                                     supplierId: id,
                                     supplierNameSnapshot: name || null
                                 })}
                             />
+
+                            {supplierUnresolved && !readOnly && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                                    marginTop: '6px', fontSize: '0.75rem', color: '#b45309', fontWeight: 600
+                                }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                        <AlertTriangle size={13} />
+                                        Não encontrado no Portal.
+                                    </span>
+
+                                    {onCreateSupplier ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => onCreateSupplier(
+                                                document.supplierNameSnapshot ?? '',
+                                                document.supplierTaxIdSnapshot ?? '')}
+                                            style={{ ...linkButton, textDecoration: 'underline' }}
+                                        >
+                                            <UserPlus size={13} /> Criar fornecedor
+                                        </button>
+                                    ) : supplierCreateDisabledReason ? (
+                                        <FieldMessageIcon
+                                            severity="info"
+                                            tooltip="Registo de fornecedores não disponível para o seu perfil."
+                                            title="Registo de fornecedores"
+                                            maxWidth={520}
+                                        >
+                                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55 }}>
+                                                {supplierCreateDisabledReason}
+                                            </p>
+                                        </FieldMessageIcon>
+                                    ) : null}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const input = window.document.querySelector<HTMLElement>(
+                                                `[data-document-id="${document.id}"] [data-document-supplier] input`);
+                                            input?.focus();
+                                        }}
+                                        style={{ ...linkButton, textDecoration: 'underline' }}
+                                    >
+                                        Selecionar outro fornecedor
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {field('Planta', (

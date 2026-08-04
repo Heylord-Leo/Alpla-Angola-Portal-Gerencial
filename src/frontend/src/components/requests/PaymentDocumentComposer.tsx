@@ -11,6 +11,8 @@ import {
     useFocusOnce
 } from './PaymentDocumentExtractionState';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { QuickSupplierModal } from '../Buyer/QuickSupplierModal';
+import { SUPPLIER_CREATE_NOT_ALLOWED } from '../../lib/supplierQuickCreate';
 import { currencyConflictMessage } from '../../lib/paymentSourceDocuments';
 import { ClassificationConflictState, EMPTY_CONFLICT } from '../../lib/documentClassificationDecision';
 import { PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
@@ -48,6 +50,9 @@ interface Props {
     onPickFile: (purpose: 'NEW' | 'REPLACE') =>
         Promise<{ id: string; fileName: string; file: File } | null>;
 
+    /** Mirrors the backend rule for `POST /lookups/suppliers/from-payment-ocr`. */
+    canCreateSupplier: boolean;
+
     ocrStateFor: (tempId: string) => PaymentDocumentOcrState;
     discrepanciesFor: (tempId: string) => ExtractionDiscrepancy[];
     onRunOcr: (document: TemporaryPaymentDocument) => Promise<void>;
@@ -78,6 +83,7 @@ export function PaymentDocumentComposer({
     units,
     ivaRates,
     onPickFile,
+    canCreateSupplier,
     ocrStateFor,
     discrepanciesFor,
     onRunOcr,
@@ -90,6 +96,15 @@ export function PaymentDocumentComposer({
     const [pendingSwitch, setPendingSwitch] = useState<TemporaryPaymentDocument | null>(null);
     const [currencyErrors, setCurrencyErrors] = useState<Record<string, string | null>>({});
     const [showBlockers, setShowBlockers] = useState(false);
+    /**
+     * Supplier quick-create, scoped to the document that asked for it.
+     *
+     * <p>The tempId is held with the request so the created supplier is applied to the document the
+     * user opened it from — creating a supplier while composing Documento 2 must not touch
+     * Documento 1.</p>
+     */
+    const [supplierCreate, setSupplierCreate] =
+        useState<{ tempId: string; name: string; taxId: string } | null>(null);
     const isAddingRef = useRef(false);
 
     const active = documents.find(d => d.tempId === activeTempId) ?? null;
@@ -366,6 +381,11 @@ export function PaymentDocumentComposer({
                     onRemove={() => setPendingRemoval(active)}
                     onDuplicate={() => { /* duplication starts a NEW document, from the chooser */ }}
                     showDuplicate={false}
+                    onCreateSupplier={canCreateSupplier && !disabled
+                        ? (name, taxId) => setSupplierCreate({ tempId: active.tempId, name, taxId })
+                        : null}
+                    supplierCreateDisabledReason={canCreateSupplier ? null : SUPPLIER_CREATE_NOT_ALLOWED}
+                    showValidationErrors={showBlockers}
                     plants={plants}
                     currencies={currencies}
                     footer={
@@ -550,6 +570,32 @@ export function PaymentDocumentComposer({
                     onCancel={() => setPendingReplace(null)}
                 />
             )}
+
+            {/* The SAME quick-create Quotation Management uses, in its PAYMENT_OCR mode: the
+                supplier lands in the one authoritative supplier source, immediately searchable
+                everywhere. Nothing here is payment-specific except which document gets the id. */}
+            <QuickSupplierModal
+                isOpen={!!supplierCreate}
+                onClose={() => setSupplierCreate(null)}
+                mode="PAYMENT_OCR"
+                initialName={supplierCreate?.name ?? ''}
+                initialTaxId={supplierCreate?.taxId ?? ''}
+                extractedName={supplierCreate?.name ?? ''}
+                extractedTaxId={supplierCreate?.taxId ?? ''}
+                onSuccess={supplier => {
+                    const target = supplierCreate?.tempId;
+                    setSupplierCreate(null);
+                    if (!target) return;
+
+                    // Applied by tempId to the document that asked, and to no other. The extracted
+                    // NIF snapshot is kept: it is the evidence the document itself carried, and the
+                    // registered supplier's own record is a separate fact.
+                    patch(target, {
+                        supplierId: supplier.id,
+                        supplierNameSnapshot: supplier.name
+                    });
+                }}
+            />
 
             {pendingSwitch && active && (
                 <ConfirmationDialog

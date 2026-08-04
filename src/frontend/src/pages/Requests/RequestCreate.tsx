@@ -28,6 +28,8 @@ import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
 import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
 import { activeDraftDisposition, confirmedTotals } from '../../lib/paymentDocumentComposition';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
+import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
+import { useAuth } from '../../features/auth/AuthContext';
 import {
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
     buildClassificationPayload,
@@ -43,6 +45,7 @@ export function RequestCreate() {
     // Post-Payment Completion (Release 2). Flags start off, so the form renders exactly as before
     // until the server confirms the feature is enabled.
     const { flags: featureFlags } = useFeatureFlags();
+    const { user } = useAuth();
     const [searchParams] = useSearchParams();
     const location = useLocation() as { state: { fromList?: string } | null };
     
@@ -391,6 +394,13 @@ export function RequestCreate() {
     }, [isCopyMode, copyFromId, isScopeLoading, plants.length]);
 
     // Derived filtered data based on user scope
+    // Mirrors LookupsController.CanCreateSupplierContextuallyAsync, so the create action is never
+    // offered to someone the server would refuse.
+    const canCreateSupplier = canCreateSupplierContextually(user?.roles, {
+        hasPlantScope: allowedPlantCodes.length > 0,
+        hasDepartmentScope: allowedDepartmentCodes.length > 0
+    });
+
     const filteredPlants = plants.filter(p => allowedPlantCodes.includes(p.code));
     const filteredCompanies = companies.filter(c => 
         filteredPlants.some(p => p.companyId === c.id)
@@ -2122,6 +2132,7 @@ export function RequestCreate() {
                                     disabled={creation.phase === 'CREATING_REQUEST' ||
                                               creation.phase === 'SAVING_DOCUMENTS' ||
                                               creation.phase === 'SAVING_ITEMS'}
+                                    canCreateSupplier={canCreateSupplier}
                                     onPickFile={pickSourceDocumentFile}
                                     ocrStateFor={documentOcr.stateFor}
                                     discrepanciesFor={documentOcr.discrepanciesFor}

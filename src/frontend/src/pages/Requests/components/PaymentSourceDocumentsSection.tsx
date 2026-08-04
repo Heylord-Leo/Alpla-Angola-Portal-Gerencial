@@ -25,6 +25,8 @@ interface Props {
     onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
     /** Active document count, for the section header badge. */
     documentCount: number;
+    /** Mirrors the backend rule for supplier quick-create from a Payment flow. */
+    canCreateSupplier?: boolean;
     /** Bubbles whether a document is mid-edit, so submission can refuse. */
     onEditingStateChange?: (state: { openSequence: number | null; unsavedSequences: number[] }) => void;
 }
@@ -54,6 +56,7 @@ export function PaymentSourceDocumentsSection({
     onToggle,
     onSummaryChange,
     documentCount,
+    canCreateSupplier = false,
     onEditingStateChange
 }: Props) {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,6 +139,7 @@ export function PaymentSourceDocumentsSection({
                 readOnly={readOnly}
                 plants={plants}
                 currencies={currencies}
+                canCreateSupplier={canCreateSupplier}
                 onEditingStateChange={onEditingStateChange}
                 onSummaryChange={onSummaryChange}
                 onRequestAttachment={requestAttachment}
