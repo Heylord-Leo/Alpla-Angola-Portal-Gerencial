@@ -421,11 +421,16 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         requestTypeCode={requestTypeCode}
                         statusCode={status}
                         multiDocumentEnabled={featureFlags.paymentMultiDocumentEnabled}
-                        hasSourceDocuments={(sourceDocumentsSummary?.documents.length ?? 0) > 0}
+                        // The explicit discriminator, not a row count: a NEW multi-document draft has zero
+                        // documents until its first is persisted, and must still show the collection.
+                        hasSourceDocuments={
+                            sourceDocumentsSummary?.usesMultiDocumentModel === true ||
+                            (sourceDocumentsSummary?.documents.length ?? 0) > 0
+                        }
                         documentCount={sourceDocumentsSummary?.documents.length ?? 0}
                         suppliers={[]}
                         plants={plants}
-                        currencies={currencies.map(c => ({ code: c.code, name: c.name }))}
+                        currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
                         onSummaryChange={setSourceDocumentsSummary}

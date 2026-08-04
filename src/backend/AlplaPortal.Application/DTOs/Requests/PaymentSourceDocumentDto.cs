@@ -157,6 +157,13 @@ public class PaymentSourceDocumentsSummaryDto
     public decimal RequestTotal { get; set; }
     public string? Currency { get; set; }
 
+    /// <summary>
+    /// This request uses the multi-source-document model. TRUE with zero documents means a new draft
+    /// awaiting its first one — the collection must render. FALSE with zero documents means a
+    /// historical request that keeps the legacy single-document layout.
+    /// </summary>
+    public bool UsesMultiDocumentModel { get; set; }
+
     /// <summary>True while the request is DRAFT or returned for adjustment.</summary>
     public bool CanEditDocuments { get; set; }
     public string? EditBlockedReason { get; set; }

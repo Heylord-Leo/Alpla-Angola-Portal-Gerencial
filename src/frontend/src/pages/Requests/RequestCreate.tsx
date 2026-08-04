@@ -22,6 +22,9 @@ import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGui
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
 import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
+import { PaymentSourceDocumentDraftCollection } from '../../components/requests/PaymentSourceDocumentDraftCollection';
+import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
+import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
 import {
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
     buildClassificationPayload,
@@ -90,6 +93,80 @@ export function RequestCreate() {
 
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
+
+    // Release 3: when multi-document is on, a PAYMENT request is composed as a COLLECTION of source
+    // documents held client-side (each keyed by a temporary id) and flushed to the server in one
+    // controlled pass after the draft exists. See usePaymentRequestCreation for the staging.
+    const [tempDocuments, setTempDocuments] = useState<TemporaryPaymentDocument[]>([]);
+    const creation = usePaymentRequestCreation();
+
+    // Files chosen before the request exists. Keyed by a placeholder attachment id so the card can
+    // show a filename immediately; the real upload happens in Stage C once there is a request to
+    // upload against. The map is also what stops the same file being uploaded twice on a retry.
+    const pendingFilesRef = useRef<Map<string, File>>(new Map());
+    const uploadedIdsRef = useRef<Map<string, string>>(new Map());
+    const sourceFileInputRef = useRef<HTMLInputElement>(null);
+    const sourceFileResolverRef = useRef<((f: File | null) => void) | null>(null);
+
+    /** Opens the picker and resolves with a placeholder id the card can render straight away. */
+    const pickSourceDocumentFile = useCallback(async () => {
+        const file = await new Promise<File | null>(resolve => {
+            sourceFileResolverRef.current = resolve;
+            sourceFileInputRef.current?.click();
+        });
+
+        if (!file) return null;
+
+        const placeholderId = `pending:${Date.now().toString(36)}:${file.name}`;
+        pendingFilesRef.current.set(placeholderId, file);
+        return { id: placeholderId, fileName: file.name };
+    }, []);
+
+    const handleSourceFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] ?? null;
+        e.target.value = '';
+        const resolve = sourceFileResolverRef.current;
+        sourceFileResolverRef.current = null;
+        resolve?.(file);
+    };
+
+    /**
+     * Stage C.0 — turn placeholder ids into real attachments, once the request exists.
+     * An id already uploaded is reused rather than sent again, so a retry after a partial failure
+     * never uploads the same invoice twice.
+     */
+    const materialiseAttachments = useCallback(async (
+        requestId: string,
+        documents: TemporaryPaymentDocument[]
+    ): Promise<TemporaryPaymentDocument[]> => {
+        const out: TemporaryPaymentDocument[] = [];
+
+        for (const d of documents) {
+            if (!d.attachmentId || !d.attachmentId.startsWith('pending:')) { out.push(d); continue; }
+
+            const already = uploadedIdsRef.current.get(d.attachmentId);
+            if (already) { out.push({ ...d, attachmentId: already }); continue; }
+
+            const file = pendingFilesRef.current.get(d.attachmentId);
+            if (!file) { out.push({ ...d, error: 'O ficheiro deste documento já não está disponível. Volte a anexá-lo.' }); continue; }
+
+            try {
+                const uploaded = await api.attachments.upload(requestId, [file], 'PAYMENT_SOURCE_DOCUMENT');
+                const realId = Array.isArray(uploaded)
+                    ? (uploaded[0]?.id ?? uploaded[0]?.attachmentId)
+                    : (uploaded?.id ?? uploaded?.attachmentId);
+
+                if (!realId) { out.push({ ...d, error: 'O anexo foi carregado mas o servidor não devolveu a sua identificação.' }); continue; }
+
+                uploadedIdsRef.current.set(d.attachmentId, realId as string);
+                out.push({ ...d, attachmentId: realId as string });
+            } catch (err: any) {
+                out.push({ ...d, error: err?.message ?? 'Não foi possível carregar o ficheiro deste documento.' });
+            }
+        }
+
+        return out;
+    }, []);
     const [isManualOcr, setIsManualOcr] = useState(false);
     const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -882,16 +959,58 @@ export function RequestCreate() {
             })) : []
         };
 
+        const isMultiDocumentPayment =
+            featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
+
         try {
-            const result = await api.requests.create(payload);
+            let createdRequestId: string;
+
+            if (isMultiDocumentPayment) {
+                // ── Stages B→C: create the draft once, then persist each document and its items.
+                // Never the other way round: a request must not reach an approver describing
+                // documents that were never saved.
+                const run = await creation.persist(
+                    () => payload,
+                    tempDocuments,
+                    setTempDocuments,
+                    materialiseAttachments);
+
+                if (!run.requestId) {
+                    setFeedback({ type: 'error', message: creation.error ?? 'Não foi possível criar o pedido.' });
+                    setLoading(false);
+                    return;
+                }
+
+                createdRequestId = run.requestId;
+
+                if (!run.allDocumentsPersisted) {
+                    // The request exists and some documents are saved. Say so plainly rather than
+                    // navigating away and letting the user believe everything went through.
+                    setFeedback({
+                        type: 'error',
+                        message: 'O pedido foi criado, mas nem todos os documentos foram guardados. ' +
+                                 'Corrija os documentos assinalados e tente novamente — os que já foram ' +
+                                 'guardados não serão duplicados.'
+                    });
+                    setLoading(false);
+                    return;
+                }
+            } else {
+                const result = await api.requests.create(payload);
+                createdRequestId = result.id;
+            }
+
+            const result = { id: createdRequestId };
 
             // 1. Upload generic supporting documents
             if (attachments.length > 0) {
                 await api.attachments.upload(result.id, attachments, 'SUPPORTING');
             }
 
-            // 2. Upload OCR file correctly classified (Proforma for Payment requests)
-            if (ocrFile) {
+            // 2. Upload OCR file correctly classified (Proforma for Payment requests).
+            //    Skipped for multi-document payments: the source documents own their own
+            //    attachments, and re-uploading here would duplicate the same file.
+            if (ocrFile && !isMultiDocumentPayment) {
                 const targetType = Number(formData.requestTypeId) === 2 ? 'PROFORMA' : 'SUPPORTING';
                 await api.attachments.upload(result.id, [ocrFile], targetType);
             }
@@ -1148,6 +1267,15 @@ export function RequestCreate() {
                     </button>
                 </div>
             )}
+
+            {/* Picker for source-document files, held until the request exists (Stage C). */}
+            <input
+                ref={sourceFileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleSourceFileChosen}
+                style={{ display: 'none' }}
+            />
 
             <form 
                 data-guide="request-form"
@@ -1871,11 +1999,56 @@ export function RequestCreate() {
                              )}
                          </AnimatePresence>
 
+                        {/* Release 3: PAYMENT composed as a collection of source documents. Each
+                            card is the SAME component the edit screen uses — creation and editing
+                            must not grow two visual implementations that drift apart. */}
+                        {featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2 && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <PaymentSourceDocumentDraftCollection
+                                    documents={tempDocuments}
+                                    onChange={setTempDocuments}
+                                    suppliers={[]}
+                                    plants={filteredPlants.map(p => ({ id: p.id, name: p.name }))}
+                                    currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
+                                    disabled={creation.phase === 'CREATING_REQUEST' ||
+                                              creation.phase === 'SAVING_DOCUMENTS' ||
+                                              creation.phase === 'SAVING_ITEMS'}
+                                    onUploadAttachment={pickSourceDocumentFile}
+                                />
+
+                                {creation.phase !== 'NOT_STARTED' && (
+                                    <p style={{
+                                        marginTop: '10px', fontSize: '0.8rem', fontWeight: 600,
+                                        color: creation.phase === 'PARTIAL_FAILURE'
+                                            ? '#b91c1c' : 'var(--color-text-muted)'
+                                    }}>
+                                        {PHASE_LABEL[creation.phase]}
+                                    </p>
+                                )}
+
+                                {creation.failures.length > 0 && (
+                                    <ul role="alert" style={{
+                                        margin: '8px 0 0', paddingLeft: '18px',
+                                        fontSize: '0.78rem', color: '#b91c1c', fontWeight: 600
+                                    }}>
+                                        {creation.failures.map(f => (
+                                            <li key={f.tempId}>{f.label}: {f.message}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
+
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
                             {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
                                 Sits beside the other header fields so the classification is made
                                 while the requester still has the document in front of them. */}
-                            {featureFlags.postPaymentCompletionEnabled && Number(formData.requestTypeId) === 2 && (
+                            {/* Multi-document OFF: the single classification field, unchanged. When
+                                the flag is ON the classification belongs to each document card
+                                below, so this field would be a second, contradictory source. */}
+                            {featureFlags.postPaymentCompletionEnabled &&
+                             !featureFlags.paymentMultiDocumentEnabled &&
+                             Number(formData.requestTypeId) === 2 && (
                                 <SourceDocumentTypeField
                                     data-guide="request-source-document-type"
                                     context="PAYMENT_REQUEST"

@@ -156,6 +156,20 @@ public class Request
     /// <summary>Serialized evidence: title found, supporting/conflicting evidence, fiscal markers.</summary>
     public string? SourceDocumentTypeEvidenceJson { get; set; }
 
+    /// <summary>
+    /// Release 3: this PAYMENT request was created under the multi-source-document model.
+    ///
+    /// <para>The explicit discriminator between a HISTORICAL request that has no source documents
+    /// because the feature did not exist, and a NEW draft that has none yet because its first
+    /// document has not been persisted (or failed to persist). Both look identical from a row count,
+    /// and only the second may show the collection.</para>
+    ///
+    /// <para>Persisted rather than inferred: deducing it from CreatedAtUtc versus the effective date
+    /// would make the answer depend on configuration that can change afterwards, and would silently
+    /// reclassify existing drafts if the date were ever moved.</para>
+    /// </summary>
+    public bool UsesMultiSourceDocuments { get; set; }
+
     /// <summary>The user was shown a conflict with the extracted evidence and proceeded anyway.</summary>
     public bool ClassificationConflictAcknowledged { get; set; }
 

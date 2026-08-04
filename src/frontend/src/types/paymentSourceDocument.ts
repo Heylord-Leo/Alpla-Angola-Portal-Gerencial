@@ -93,6 +93,14 @@ export interface PaymentSourceDocumentsSummaryDto {
     requestTotal: number;
     currency?: string | null;
 
+    /**
+     * This request uses the multi-source-document model. TRUE with zero documents means a NEW draft
+     * awaiting its first one — the collection must render. FALSE with zero documents means a
+     * historical request that keeps the legacy single-document layout. A row count alone cannot
+     * tell those apart, which is why this is persisted server-side rather than inferred.
+     */
+    usesMultiDocumentModel: boolean;
+
     canEditDocuments: boolean;
     editBlockedReason?: string | null;
 

@@ -1990,6 +1990,12 @@ public class RequestsController : BaseController
         // contradicted classification kept the choice and lost the reasoning behind it.
         if (requestTypeEntity.Code == RequestConstants.Types.Payment)
         {
+            // Stamped once, at creation, from the feature state at that moment. This is what lets
+            // the UI tell "historical request, no documents by definition" apart from "new draft
+            // whose first document is not persisted yet" — two states a row count cannot separate.
+            request.UsesMultiSourceDocuments =
+                !PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions);
+
             request.SourceDocumentTypeSource = string.IsNullOrWhiteSpace(dto.SourceDocumentTypeSource)
                 ? null : dto.SourceDocumentTypeSource.Trim().ToUpperInvariant();
             request.SourceDocumentTypeOcrSuggestion =

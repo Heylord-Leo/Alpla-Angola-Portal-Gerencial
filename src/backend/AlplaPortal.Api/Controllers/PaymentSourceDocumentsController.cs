@@ -618,6 +618,7 @@ public class PaymentSourceDocumentsController : BaseController
         return new PaymentSourceDocumentsSummaryDto
         {
             RequestId = request.Id,
+            UsesMultiDocumentModel = request.UsesMultiSourceDocuments,
             Documents = active,
             VoidedDocuments = projected.Where(d => d.IsVoided).ToList(),
             RequestTotal = validation.RequestTotal,
