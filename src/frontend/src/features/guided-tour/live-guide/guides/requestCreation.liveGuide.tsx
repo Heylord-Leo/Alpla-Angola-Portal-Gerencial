@@ -242,6 +242,15 @@ export function createRequestCreationSteps(
                         só é aplicada depois de confirmada. Pode guardar o rascunho sem escolher, mas a
                         seleção é obrigatória para submeter.
                     </p>
+
+                    <p style={{ margin: 0, fontSize: '0.8rem' }}>
+                        <strong>Um pedido de pagamento pode conter vários documentos.</strong> Cada um
+                        tem o seu próprio anexo, a sua própria leitura de OCR e a sua própria
+                        classificação — resolver a classificação do Documento 1 não decide nada sobre o
+                        Documento 2. Os itens pertencem sempre a um documento específico, e o total do
+                        pedido é a soma dos documentos ativos. Documentos de plantas ou tipos diferentes
+                        geram acompanhamentos independentes depois do pagamento.
+                    </p>
                 </div>
             ),
             placement: 'bottom',

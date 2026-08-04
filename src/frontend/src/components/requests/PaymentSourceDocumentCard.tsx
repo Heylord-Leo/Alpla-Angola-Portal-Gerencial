@@ -1,0 +1,436 @@
+import React, { useMemo, useRef } from 'react';
+import {
+    AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
+    Copy, FileText, Loader2, Paperclip, Trash2
+} from 'lucide-react';
+import { PaymentSourceDocumentDto, PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
+import { OcrDocumentClassification, ClassificationConflictState } from '../../lib/documentClassificationDecision';
+import { deriveCardStatus, describeDocument } from '../../lib/paymentSourceDocuments';
+import { SourceDocumentTypeField } from './SourceDocumentTypeField';
+import { FieldMessageIcon } from '../ui/FieldMessageIcon';
+import { formatCurrencyAO } from '../../lib/utils';
+
+export interface PaymentSourceDocumentCardProps {
+    document: PaymentSourceDocumentDto;
+    ocr: PaymentDocumentOcrState;
+    conflict: ClassificationConflictState;
+
+    isExpanded: boolean;
+    onToggle: () => void;
+
+    readOnly: boolean;
+    /** Reported per card: a failure in one document must not discard another's unsaved state. */
+    saveError: string | null;
+    isSaving: boolean;
+
+    onFieldChange: (patch: Partial<PaymentSourceDocumentDto>) => void;
+    onConflictChange: (next: ClassificationConflictState) => void;
+    onReplaceAttachment: () => void;
+    onRemove: () => void;
+    onDuplicate: () => void;
+
+    suppliers: Array<{ id: number; name: string; taxId?: string | null }>;
+    plants: Array<{ id: number; name: string }>;
+    currencies: Array<{ code: string; name: string }>;
+    /** Blocks a second currency before the backend has to refuse it. */
+    currencyLocked: string | null;
+    currencyError: string | null;
+
+    children?: React.ReactNode;
+}
+
+const SEVERITY_COLOR: Record<string, string> = {
+    success: '#15803d',
+    warning: '#b45309',
+    error: '#b91c1c',
+    muted: '#64748b'
+};
+
+/**
+ * One source document of a PAYMENT request, as a collapsible card.
+ *
+ * <p><b>Everything about this document is local to this card.</b> Its OCR result, classification
+ * suggestion, conflict answer, items, totals and concurrency token all arrive as props keyed by the
+ * document's own id — nothing is read from a request-level variable. That is the property the whole
+ * feature rests on: uploading Documento 2 must not touch Documento 1.</p>
+ *
+ * <p>Collapsed, the header identifies the document without opening it. A three-invoice request must
+ * not become one enormous scrolling form, and the user must be able to see which card is the one
+ * still missing something.</p>
+ */
+export function PaymentSourceDocumentCard({
+    document,
+    ocr,
+    conflict,
+    isExpanded,
+    onToggle,
+    readOnly,
+    saveError,
+    isSaving,
+    onFieldChange,
+    onConflictChange,
+    onReplaceAttachment,
+    onRemove,
+    onDuplicate,
+    suppliers,
+    plants,
+    currencies,
+    currencyLocked,
+    currencyError,
+    children
+}: PaymentSourceDocumentCardProps) {
+    const headerRef = useRef<HTMLButtonElement>(null);
+    const status = useMemo(
+        () => deriveCardStatus(document, ocr.isProcessing, ocr.classification),
+        [document, ocr.isProcessing, ocr.classification]);
+
+    const bodyId = `psd-body-${document.id}`;
+    const accent = SEVERITY_COLOR[status.severity];
+
+    const labelStyle: React.CSSProperties = {
+        display: 'block', fontSize: '0.72rem', fontWeight: 700,
+        color: 'var(--color-text-muted)', marginBottom: '4px'
+    };
+    const inputStyle: React.CSSProperties = {
+        width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: '0.85rem',
+        borderRadius: 'var(--radius-sm, 8px)', border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)'
+    };
+
+    const field = (label: string, node: React.ReactNode) => (
+        <label style={labelStyle}>
+            {label}
+            {node}
+        </label>
+    );
+
+    return (
+        <div
+            data-document-id={document.id}
+            style={{
+                border: `1px solid ${isExpanded ? accent : 'var(--color-border)'}`,
+                borderLeft: `3px solid ${accent}`,
+                borderRadius: 'var(--radius-sm, 8px)',
+                backgroundColor: 'var(--color-bg-surface)',
+                opacity: document.isVoided ? 0.6 : 1,
+                overflow: 'hidden'
+            }}
+        >
+            {/* ── Collapsed header: identifies the document without opening it ── */}
+            <button
+                ref={headerRef}
+                type="button"
+                onClick={onToggle}
+                aria-expanded={isExpanded}
+                aria-controls={bodyId}
+                style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                    textAlign: 'left', color: 'var(--color-text-main)'
+                }}
+            >
+                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+
+                <span style={{ fontWeight: 800, fontSize: '0.85rem', flexShrink: 0 }}>
+                    Documento {document.sequenceNumber}
+                </span>
+
+                {/* Long supplier names must wrap, never push the total off the row. */}
+                <span style={{
+                    flex: 1, minWidth: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)',
+                    overflowWrap: 'anywhere'
+                }}>
+                    {describeDocument(document)}
+                </span>
+
+                <span style={{ fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    {formatCurrencyAO(document.grossAmount ?? 0)} {document.currency ?? ''}
+                </span>
+
+                <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                    fontSize: '0.7rem', fontWeight: 700, color: accent, whiteSpace: 'nowrap'
+                }}>
+                    {status.status === 'OCR_PENDING' && <Loader2 size={13} className="spin" />}
+                    {status.status === 'READY' && <CheckCircle2 size={13} />}
+                    {status.status === 'INCOMPLETE' && <AlertTriangle size={13} />}
+                    {status.status === 'CLASSIFICATION_CONFLICT' && <AlertCircle size={13} />}
+                    {status.label}
+                </span>
+            </button>
+
+            {/* Persistent, not a toast: a failed save must stay on screen until it is dealt with. */}
+            {saveError && (
+                <div role="alert" style={{
+                    margin: '0 12px 8px', padding: '8px 10px', borderRadius: '6px',
+                    backgroundColor: 'rgba(185,28,28,0.08)', border: '1px solid #fca5a5',
+                    color: '#b91c1c', fontSize: '0.75rem', fontWeight: 600
+                }}>
+                    {saveError}
+                </div>
+            )}
+
+            {ocr.error && (
+                <div role="alert" style={{
+                    margin: '0 12px 8px', padding: '8px 10px', borderRadius: '6px',
+                    backgroundColor: 'rgba(180,83,9,0.08)', border: '1px solid #fcd34d',
+                    color: '#b45309', fontSize: '0.75rem', fontWeight: 600
+                }}>
+                    {ocr.error}
+                </div>
+            )}
+
+            {isExpanded && (
+                <div id={bodyId} style={{
+                    padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '12px'
+                }}>
+                    {/* ── Attachment ── */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+                        padding: '8px 10px', borderRadius: '6px',
+                        backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)'
+                    }}>
+                        <Paperclip size={14} color="var(--color-text-muted)" />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', overflowWrap: 'anywhere' }}>
+                            {document.attachmentFileName ?? 'Sem anexo'}
+                        </span>
+                        {!readOnly && (
+                            <button type="button" onClick={onReplaceAttachment} style={linkButton}>
+                                Substituir anexo
+                            </button>
+                        )}
+                    </div>
+
+                    {/* ── Identity grid ── */}
+                    <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gap: '10px'
+                    }}>
+                        {field('Fornecedor', (
+                            <select
+                                value={document.supplierId ?? ''}
+                                disabled={readOnly}
+                                onChange={e => {
+                                    const id = e.target.value ? Number(e.target.value) : null;
+                                    const supplier = suppliers.find(s => s.id === id);
+                                    onFieldChange({
+                                        supplierId: id,
+                                        supplierNameSnapshot: supplier?.name ?? null,
+                                        supplierTaxIdSnapshot: supplier?.taxId ?? null
+                                    });
+                                }}
+                                style={inputStyle}
+                            >
+                                <option value="">-- Selecione --</option>
+                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        ))}
+
+                        {field('Planta', (
+                            <select
+                                value={document.plantId ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({
+                                    plantId: e.target.value ? Number(e.target.value) : null
+                                })}
+                                style={inputStyle}
+                            >
+                                <option value="">-- Selecione --</option>
+                                {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        ))}
+
+                        {field('Nº Documento', (
+                            <input
+                                type="text"
+                                value={document.documentNumber ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({ documentNumber: e.target.value })}
+                                style={inputStyle}
+                            />
+                        ))}
+
+                        {field('Série', (
+                            <input
+                                type="text"
+                                value={document.documentSeries ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({ documentSeries: e.target.value })}
+                                style={inputStyle}
+                            />
+                        ))}
+
+                        {/* The Release 2 field, reused whole — classification logic exists once. */}
+                        <SourceDocumentTypeField
+                            context="PAYMENT_REQUEST"
+                            value={document.sourceDocumentType ?? ''}
+                            onChange={val => onFieldChange({ sourceDocumentType: val })}
+                            ocr={ocr.classification}
+                            conflict={conflict}
+                            onConflictChange={onConflictChange}
+                            readOnly={readOnly}
+                            required
+                            labelStyle={labelStyle}
+                            inputStyle={inputStyle}
+                        />
+
+                        {field('Data do documento', (
+                            <input
+                                type="date"
+                                value={(document.documentDate ?? '').substring(0, 10)}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({ documentDate: e.target.value || null })}
+                                style={inputStyle}
+                            />
+                        ))}
+
+                        {field('Data de vencimento', (
+                            <input
+                                type="date"
+                                value={(document.dueDate ?? '').substring(0, 10)}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({ dueDate: e.target.value || null })}
+                                style={inputStyle}
+                            />
+                        ))}
+
+                        <label style={labelStyle}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                Moeda
+                                {currencyLocked && (
+                                    <FieldMessageIcon
+                                        severity="info"
+                                        tooltip="Um pedido de pagamento suporta apenas uma moeda."
+                                        title="Moeda do pedido"
+                                        maxWidth={520}
+                                    >
+                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55 }}>
+                                            Este pedido já está em <strong>{currencyLocked}</strong>. Um pedido de
+                                            pagamento suporta apenas uma moeda, para que o total consolidado
+                                            signifique alguma coisa. Documentos noutra moeda têm de ser pagos num
+                                            pedido separado — os valores nunca são convertidos automaticamente.
+                                        </p>
+                                    </FieldMessageIcon>
+                                )}
+                            </span>
+                            <select
+                                value={document.currency ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({ currency: e.target.value || null })}
+                                style={{
+                                    ...inputStyle,
+                                    borderColor: currencyError ? '#fca5a5' : 'var(--color-border)'
+                                }}
+                            >
+                                <option value="">-- Selecione --</option>
+                                {currencies.map(c => (
+                                    <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                                ))}
+                            </select>
+                            {currencyError && (
+                                <span style={{
+                                    display: 'block', color: '#b91c1c', fontSize: '0.72rem',
+                                    marginTop: '4px', fontWeight: 600
+                                }}>
+                                    {currencyError}
+                                </span>
+                            )}
+                        </label>
+                    </div>
+
+                    {/* ── Amounts ── */}
+                    <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                        gap: '10px'
+                    }}>
+                        {field('Valor líquido', (
+                            <input
+                                type="number" step="0.01"
+                                value={document.netAmount ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({
+                                    netAmount: e.target.value === '' ? null : Number(e.target.value)
+                                })}
+                                style={inputStyle}
+                            />
+                        ))}
+                        {field('IVA', (
+                            <input
+                                type="number" step="0.01"
+                                value={document.taxAmount ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({
+                                    taxAmount: e.target.value === '' ? null : Number(e.target.value)
+                                })}
+                                style={inputStyle}
+                            />
+                        ))}
+                        {field('Total do documento', (
+                            <input
+                                type="number" step="0.01"
+                                value={document.grossAmount ?? ''}
+                                disabled={readOnly}
+                                onChange={e => onFieldChange({
+                                    grossAmount: e.target.value === '' ? null : Number(e.target.value)
+                                })}
+                                style={inputStyle}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Items sum vs document total: the check that keeps group totals honest. */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+                        fontSize: '0.78rem', color: 'var(--color-text-muted)'
+                    }}>
+                        <FileText size={13} />
+                        Soma dos itens: <strong style={{ color: 'var(--color-text-main)' }}>
+                            {formatCurrencyAO(document.itemsTotal)} {document.currency ?? ''}
+                        </strong>
+                        <span>·</span>
+                        {document.items.length} item(ns)
+                    </div>
+
+                    {/* Items belonging to THIS document, supplied by the parent. */}
+                    {children}
+
+                    {/* Concise, inline — a validation error the user must fix right now. */}
+                    {document.validationMessages.length > 0 && (
+                        <ul style={{
+                            margin: 0, paddingLeft: '18px', fontSize: '0.75rem',
+                            color: '#b45309', fontWeight: 600
+                        }}>
+                            {document.validationMessages.map(m => <li key={m}>{m}</li>)}
+                        </ul>
+                    )}
+
+                    {!readOnly && (
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <button type="button" onClick={onDuplicate} style={linkButton}>
+                                <Copy size={13} /> Duplicar dados básicos
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onRemove}
+                                style={{ ...linkButton, color: '#b91c1c' }}
+                            >
+                                <Trash2 size={13} /> Remover documento
+                            </button>
+                            {isSaving && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                    A guardar…
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+const linkButton: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.75rem', padding: 0
+};

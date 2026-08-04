@@ -32,6 +32,8 @@ import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { RequestGeneralDataSection } from './components/RequestGeneralDataSection';
+import { PaymentSourceDocumentsSection } from './components/PaymentSourceDocumentsSection';
+import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocument';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
@@ -143,6 +145,12 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
     const isDrawerMode = !!onDrawerClose;
+
+    // Release 3: the PAYMENT source-document collection. Held here rather than in the hook because
+    // the summary is the authoritative source of totals and canSubmit, and the section owns it.
+    const [sourceDocumentsSummary, setSourceDocumentsSummary] =
+        useState<PaymentSourceDocumentsSummaryDto | null>(null);
+    const [sourceDocsOpen, setSourceDocsOpen] = useState(true);
 
     const getFieldErrors = (fieldName: string) => {
         if (!fieldErrors) return null;
@@ -404,7 +412,25 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getFieldErrors={getFieldErrors}
                 />
 
-
+                {/* Release 3: PAYMENT may carry several source documents, each with its own OCR,
+                    classification and items. Renders nothing when the flag is off or when the
+                    request has no source-document rows (the legacy single-document path). */}
+                {id && (
+                    <PaymentSourceDocumentsSection
+                        requestId={id}
+                        requestTypeCode={requestTypeCode}
+                        statusCode={status}
+                        multiDocumentEnabled={featureFlags.paymentMultiDocumentEnabled}
+                        hasSourceDocuments={(sourceDocumentsSummary?.documents.length ?? 0) > 0}
+                        documentCount={sourceDocumentsSummary?.documents.length ?? 0}
+                        suppliers={[]}
+                        plants={plants}
+                        currencies={currencies.map(c => ({ code: c.code, name: c.name }))}
+                        isOpen={sourceDocsOpen}
+                        onToggle={() => setSourceDocsOpen(o => !o)}
+                        onSummaryChange={setSourceDocumentsSummary}
+                    />
+                )}
 
                 <RequestFinancialSummary
                     formData={formData}

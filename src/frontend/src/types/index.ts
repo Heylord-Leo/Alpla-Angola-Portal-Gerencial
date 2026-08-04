@@ -454,6 +454,11 @@ export interface FeatureFlagsDto {
     postPaymentCompletionEnabled: boolean;
     /** A request created now must carry an explicit billing document type before submission. */
     sourceDocumentTypeRequired: boolean;
+    /**
+     * Release 3: a PAYMENT request may carry several source documents. PAYMENT only — Quotation
+     * Management keeps one document per quotation regardless.
+     */
+    paymentMultiDocumentEnabled: boolean;
 }
 
 export interface RequestDetailsDto extends RequestListItemDto {

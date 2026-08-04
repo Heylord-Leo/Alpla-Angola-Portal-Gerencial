@@ -1,4 +1,11 @@
 import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload, FeatureFlagsDto } from '../types';
+import {
+    PaymentSourceDocumentDto,
+    PaymentSourceDocumentsSummaryDto,
+    SavePaymentSourceDocumentDto,
+    VoidPaymentSourceDocumentDto,
+    PaymentSourceDocumentConflictDto
+} from '../types/paymentSourceDocument';
 import { logger, FrontendComponentKey } from './logger';
 import { buildInfo } from '../buildInfo';
 import { versionSignal } from './versionSignal';
@@ -439,6 +446,69 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar o pedido de rascunho.');
         },
+        // ── PAYMENT source documents (Release 3) ────────────────────────────────────────
+        // PAYMENT only. Quotation Management keeps one document per quotation and never calls these.
+
+        /** Documents, totals, per-document validation and the mixed-type notice, in one read. */
+        getSourceDocuments: async (requestId: string): Promise<PaymentSourceDocumentsSummaryDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/source-documents`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os documentos do pedido.');
+            return response.json();
+        },
+
+        createSourceDocument: async (
+            requestId: string,
+            data: SavePaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/source-documents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao adicionar o documento.');
+            return response.json();
+        },
+
+        /**
+         * Updates one document. A 409 is returned as data rather than thrown, because a concurrency
+         * conflict is a situation the user resolves — not an error the caller should swallow.
+         */
+        updateSourceDocument: async (
+            requestId: string,
+            documentId: string,
+            data: SavePaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentDto | PaymentSourceDocumentConflictDto> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/${documentId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+            if (response.status === 409) return response.json();
+            if (!response.ok) return handleApiError(response, 'Falha ao guardar o documento.');
+            return response.json();
+        },
+
+        /**
+         * Removes a document: deleted outright before the request was ever submitted, voided after.
+         * The backend decides which — the client never chooses to erase an audited decision.
+         */
+        removeSourceDocument: async (
+            requestId: string,
+            documentId: string,
+            data?: VoidPaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentsSummaryDto | PaymentSourceDocumentConflictDto> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/${documentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data ?? {}),
+                });
+            if (response.status === 409) return response.json();
+            if (!response.ok) return handleApiError(response, 'Falha ao remover o documento.');
+            return response.json();
+        },
+
         createLineItem: async (requestId: string, data: any): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items`, {
                 method: 'POST',

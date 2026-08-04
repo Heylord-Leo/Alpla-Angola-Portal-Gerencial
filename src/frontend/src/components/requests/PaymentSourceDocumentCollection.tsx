@@ -1,0 +1,566 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Info, Plus } from 'lucide-react';
+import { api } from '../../lib/api';
+import {
+    PaymentDocumentOcrState,
+    PaymentSourceDocumentConflictDto,
+    PaymentSourceDocumentDto,
+    PaymentSourceDocumentsSummaryDto
+} from '../../types/paymentSourceDocument';
+import {
+    ClassificationConflictState,
+    EMPTY_CONFLICT
+} from '../../lib/documentClassificationDecision';
+import {
+    collectValidationIssues,
+    computeTotals,
+    currencyConflictMessage,
+    duplicateBasicData,
+    establishedCurrency,
+    parseStoredClassification,
+    toSavePayload,
+    ValidationIssue
+} from '../../lib/paymentSourceDocuments';
+import { PaymentSourceDocumentCard } from './PaymentSourceDocumentCard';
+import { InfoModal } from '../ui/InfoModal';
+import { FieldMessageIcon } from '../ui/FieldMessageIcon';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
+import { formatCurrencyAO } from '../../lib/utils';
+
+interface Props {
+    requestId: string;
+    /** DRAFT / AREA_ADJUSTMENT / FINAL_ADJUSTMENT enable editing; anything else is read-only. */
+    readOnly?: boolean;
+    suppliers: Array<{ id: number; name: string; taxId?: string | null }>;
+    plants: Array<{ id: number; name: string }>;
+    currencies: Array<{ code: string; name: string }>;
+    /** Bubbles `canSubmit` so the parent can disable final submission. */
+    onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
+    /** Opens the existing attachment picker; resolves with the new attachment id, or null. */
+    onRequestAttachment?: (purpose: 'NEW' | 'REPLACE') => Promise<string | null>;
+    /** Renders the items belonging to one document. */
+    renderItems?: (document: PaymentSourceDocumentDto) => React.ReactNode;
+}
+
+/** Everything held per document. Keyed by document id — never by array index. */
+interface DocumentUiState {
+    ocr: PaymentDocumentOcrState;
+    conflict: ClassificationConflictState;
+    saveError: string | null;
+    isSaving: boolean;
+    currencyError: string | null;
+}
+
+const EMPTY_UI: DocumentUiState = {
+    ocr: { isProcessing: false, classification: null, error: null },
+    conflict: EMPTY_CONFLICT,
+    saveError: null,
+    isSaving: false,
+    currencyError: null
+};
+
+/**
+ * The documents that originate a PAYMENT request.
+ *
+ * <p><b>State is a map keyed by document id.</b> Not an array of state, not an index — a removal
+ * would silently reassign every subsequent document's OCR result and classification decision to the
+ * wrong file. Nothing about a document's reading is held at request level.</p>
+ *
+ * <p>Cards are collapsed by default with one expanded, because a three-invoice request rendered as
+ * one continuous form is unusable — and the collapsed header is built to answer "which one is still
+ * missing something" without opening anything.</p>
+ */
+export function PaymentSourceDocumentCollection({
+    requestId,
+    readOnly = false,
+    suppliers,
+    plants,
+    currencies,
+    onSummaryChange,
+    onRequestAttachment,
+    renderItems
+}: Props) {
+    const [summary, setSummary] = useState<PaymentSourceDocumentsSummaryDto | null>(null);
+    const [documents, setDocuments] = useState<PaymentSourceDocumentDto[]>([]);
+    const [uiState, setUiState] = useState<Record<string, DocumentUiState>>({});
+    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+
+    const [pendingRemoval, setPendingRemoval] = useState<PaymentSourceDocumentDto | null>(null);
+    const [pendingReplace, setPendingReplace] = useState<PaymentSourceDocumentDto | null>(null);
+    const [conflictDialog, setConflictDialog] = useState<PaymentSourceDocumentConflictDto | null>(null);
+    const [showIssues, setShowIssues] = useState(false);
+
+    /** Guards the Add button against a double click creating two documents. */
+    const isAddingRef = useRef(false);
+    const [isAdding, setIsAdding] = useState(false);
+
+    const effectiveReadOnly = readOnly || summary?.canEditDocuments === false;
+
+    // ── Load ────────────────────────────────────────────────────────────────────────────
+
+    const applySummary = useCallback((next: PaymentSourceDocumentsSummaryDto) => {
+        setSummary(next);
+        setDocuments(next.documents);
+
+        // Seed per-document UI from what was persisted, without disturbing documents already open.
+        setUiState(prev => {
+            const merged: Record<string, DocumentUiState> = {};
+            for (const d of next.documents) {
+                const existing = prev[d.id];
+                merged[d.id] = existing ?? {
+                    ...EMPTY_UI,
+                    ocr: {
+                        isProcessing: false,
+                        classification: parseStoredClassification(d),
+                        error: null
+                    },
+                    conflict: {
+                        hasConflict: d.classificationConflictAcknowledged,
+                        isHighRisk: false,
+                        acknowledged: d.classificationConflictAcknowledged,
+                        justification: d.classificationJustification ?? ''
+                    }
+                };
+            }
+            return merged;
+        });
+
+        onSummaryChange?.(next);
+    }, [onSummaryChange]);
+
+    const reload = useCallback(async () => {
+        try {
+            const next = await api.requests.getSourceDocuments(requestId);
+            applySummary(next);
+            setLoadError(null);
+        } catch {
+            setLoadError('Não foi possível carregar os documentos do pedido. Recarregue a página.');
+        }
+    }, [requestId, applySummary]);
+
+    useEffect(() => { void reload(); }, [reload]);
+
+    // ── Per-document helpers ────────────────────────────────────────────────────────────
+
+    const patchUi = (id: string, patch: Partial<DocumentUiState>) =>
+        setUiState(prev => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_UI), ...patch } }));
+
+    const patchDocument = (id: string, patch: Partial<PaymentSourceDocumentDto>) =>
+        setDocuments(prev => prev.map(d => (d.id === id ? { ...d, ...patch } : d)));
+
+    const lockedCurrency = useMemo(() => establishedCurrency(documents), [documents]);
+
+    /** Persists one document. Only this card shows its own saving and error state. */
+    const save = async (document: PaymentSourceDocumentDto) => {
+        const ui = uiState[document.id] ?? EMPTY_UI;
+        patchUi(document.id, { isSaving: true, saveError: null });
+
+        try {
+            const result = await api.requests.updateSourceDocument(
+                requestId, document.id,
+                toSavePayload(document, ui.ocr.classification, ui.conflict.acknowledged, ui.conflict.justification));
+
+            if ('status' in result && result.status === 409) {
+                setConflictDialog(result as PaymentSourceDocumentConflictDto);
+                patchUi(document.id, { isSaving: false });
+                return;
+            }
+
+            // Reconcile against the backend immediately — it decides totals and validation.
+            await reload();
+            patchUi(document.id, { isSaving: false, saveError: null });
+        } catch (e: any) {
+            patchUi(document.id, {
+                isSaving: false,
+                saveError: e?.message ?? 'Não foi possível guardar este documento.'
+            });
+        }
+    };
+
+    const handleFieldChange = (document: PaymentSourceDocumentDto, patch: Partial<PaymentSourceDocumentDto>) => {
+        // One request, one currency — refused here so the user is not walked into a backend error.
+        if (patch.currency && lockedCurrency && patch.currency !== lockedCurrency &&
+            document.currency !== patch.currency) {
+            patchUi(document.id, { currencyError: currencyConflictMessage(lockedCurrency, patch.currency) });
+            return;
+        }
+
+        patchUi(document.id, { currencyError: null });
+        patchDocument(document.id, patch);
+    };
+
+    // ── Add ─────────────────────────────────────────────────────────────────────────────
+
+    const addDocument = async (basedOn?: PaymentSourceDocumentDto) => {
+        if (isAddingRef.current) return;   // a double click must not create two documents
+        isAddingRef.current = true;
+        setIsAdding(true);
+
+        try {
+            const attachmentId = await onRequestAttachment?.('NEW');
+            if (!attachmentId) return;
+
+            const created = await api.requests.createSourceDocument(requestId, {
+                ...(basedOn ? duplicateBasicData(basedOn) : {}),
+                attachmentId,
+                currency: basedOn?.currency ?? lockedCurrency ?? null
+            });
+
+            await reload();
+            setExpandedId(created.id);
+
+            // Move focus to the new card rather than leaving it at the bottom of the page.
+            requestAnimationFrame(() => {
+                document
+                    .querySelector<HTMLElement>(`[data-document-id="${created.id}"] button`)
+                    ?.focus();
+            });
+        } catch (e: any) {
+            setLoadError(e?.message ?? 'Não foi possível adicionar o documento.');
+        } finally {
+            isAddingRef.current = false;
+            setIsAdding(false);
+        }
+    };
+
+    // ── Remove / replace ────────────────────────────────────────────────────────────────
+
+    const confirmRemoval = async () => {
+        const target = pendingRemoval;
+        setPendingRemoval(null);
+        if (!target) return;
+
+        try {
+            const result = await api.requests.removeSourceDocument(requestId, target.id, {
+                rowVersion: target.rowVersion ?? null
+            });
+
+            if ('status' in result && (result as any).status === 409) {
+                setConflictDialog(result as PaymentSourceDocumentConflictDto);
+                return;
+            }
+
+            applySummary(result as PaymentSourceDocumentsSummaryDto);
+            if (expandedId === target.id) setExpandedId(null);
+        } catch (e: any) {
+            patchUi(target.id, { saveError: e?.message ?? 'Não foi possível remover o documento.' });
+        }
+    };
+
+    const confirmReplace = async () => {
+        const target = pendingReplace;
+        setPendingReplace(null);
+        if (!target) return;
+
+        const attachmentId = await onRequestAttachment?.('REPLACE');
+        if (!attachmentId) return;
+
+        patchUi(target.id, { isSaving: true, saveError: null });
+
+        try {
+            const result = await api.requests.updateSourceDocument(requestId, target.id, {
+                attachmentId,
+                rowVersion: target.rowVersion ?? null
+            });
+
+            if ('status' in result && (result as any).status === 409) {
+                setConflictDialog(result as PaymentSourceDocumentConflictDto);
+                return;
+            }
+
+            // The previous reading and decision belonged to the file that was replaced. The backend
+            // has already discarded them; the UI must not keep showing them.
+            patchUi(target.id, {
+                ocr: { isProcessing: false, classification: null, error: null },
+                conflict: EMPTY_CONFLICT,
+                isSaving: false
+            });
+
+            await reload();
+        } catch (e: any) {
+            patchUi(target.id, { isSaving: false, saveError: e?.message ?? 'Não foi possível substituir o anexo.' });
+        }
+    };
+
+    // ── Derived ─────────────────────────────────────────────────────────────────────────
+
+    const totals = useMemo(() => computeTotals(documents), [documents]);
+    const issues = useMemo(() => collectValidationIssues(summary), [summary]);
+
+    const focusIssue = (issue: ValidationIssue) => {
+        if (!issue.documentId) return;
+        setExpandedId(issue.documentId);
+        setShowIssues(false);
+        requestAnimationFrame(() => {
+            const card = document.querySelector<HTMLElement>(`[data-document-id="${issue.documentId}"]`);
+            card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card?.querySelector<HTMLElement>('button')?.focus();
+        });
+    };
+
+    // ── Render ──────────────────────────────────────────────────────────────────────────
+
+    return (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <header style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{
+                    margin: 0, fontSize: '0.8rem', fontWeight: 900, letterSpacing: '0.05em',
+                    textTransform: 'uppercase', color: 'var(--color-text-muted)'
+                }}>
+                    Documentos do pedido
+                </h3>
+
+                {summary?.mixedTypeNotice && (
+                    <FieldMessageIcon
+                        severity="info"
+                        tooltip="Documentos do mesmo fornecedor com tipos diferentes."
+                        title="Tipos de documento diferentes"
+                        maxWidth={560}
+                    >
+                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                            {summary.mixedTypeNotice}
+                        </p>
+                        <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                            Isto é permitido e não exige justificação. Cada documento gera o seu próprio
+                            grupo e as suas próprias obrigações — nada é agrupado nem fundido.
+                        </p>
+                    </FieldMessageIcon>
+                )}
+            </header>
+
+            {effectiveReadOnly && summary?.editBlockedReason && (
+                <p style={{
+                    margin: 0, padding: '8px 10px', borderRadius: '6px', fontSize: '0.78rem',
+                    backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)',
+                    color: 'var(--color-text-muted)'
+                }}>
+                    {summary.editBlockedReason}
+                </p>
+            )}
+
+            {loadError && (
+                <div role="alert" style={{
+                    padding: '10px 12px', borderRadius: '6px', border: '1px solid #fca5a5',
+                    backgroundColor: 'rgba(185,28,28,0.08)', color: '#b91c1c',
+                    fontSize: '0.78rem', fontWeight: 600
+                }}>
+                    {loadError}
+                </div>
+            )}
+
+            {documents.map(d => (
+                <PaymentSourceDocumentCard
+                    key={d.id}                       // keyed by identity, never by index
+                    document={d}
+                    ocr={(uiState[d.id] ?? EMPTY_UI).ocr}
+                    conflict={(uiState[d.id] ?? EMPTY_UI).conflict}
+                    isExpanded={expandedId === d.id}
+                    onToggle={() => setExpandedId(expandedId === d.id ? null : d.id)}
+                    readOnly={effectiveReadOnly}
+                    saveError={(uiState[d.id] ?? EMPTY_UI).saveError}
+                    isSaving={(uiState[d.id] ?? EMPTY_UI).isSaving}
+                    currencyLocked={lockedCurrency}
+                    currencyError={(uiState[d.id] ?? EMPTY_UI).currencyError}
+                    onFieldChange={patch => handleFieldChange(d, patch)}
+                    onConflictChange={next => patchUi(d.id, { conflict: next })}
+                    onReplaceAttachment={() => setPendingReplace(d)}
+                    onRemove={() => setPendingRemoval(d)}
+                    onDuplicate={() => void addDocument(d)}
+                    suppliers={suppliers}
+                    plants={plants}
+                    currencies={currencies}
+                >
+                    {renderItems?.(d)}
+                    {!effectiveReadOnly && (
+                        <div>
+                            <button type="button" onClick={() => void save(d)} style={primaryButton}>
+                                Guardar documento
+                            </button>
+                        </div>
+                    )}
+                </PaymentSourceDocumentCard>
+            ))}
+
+            {!effectiveReadOnly && (
+                <button
+                    type="button"
+                    onClick={() => void addDocument()}
+                    disabled={isAdding}
+                    style={{ ...primaryButton, alignSelf: 'flex-start', opacity: isAdding ? 0.6 : 1 }}
+                >
+                    <Plus size={14} /> {isAdding ? 'A adicionar…' : 'Adicionar outro documento'}
+                </button>
+            )}
+
+            {/* ── Request-level summary ── */}
+            <div style={{
+                display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center',
+                padding: '10px 12px', borderRadius: '8px',
+                backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)'
+            }}>
+                <Total label="Documentos" value={String(totals.activeCount)} />
+                <Total label="Líquido" value={`${formatCurrencyAO(totals.net)} ${totals.currency ?? ''}`} />
+                <Total label="IVA" value={`${formatCurrencyAO(totals.tax)} ${totals.currency ?? ''}`} />
+                <Total
+                    label="Total"
+                    value={`${formatCurrencyAO(summary?.requestTotal ?? totals.gross)} ${totals.currency ?? ''}`}
+                    strong
+                />
+
+                {issues.length > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setShowIssues(true)}
+                        style={{ ...linkButton, marginLeft: 'auto', color: '#b45309' }}
+                    >
+                        <AlertTriangle size={13} /> {issues.length} pendência(s)
+                    </button>
+                )}
+            </div>
+
+            {/* Every problem at once, each linking to the card that owns it. */}
+            <InfoModal
+                isOpen={showIssues}
+                onClose={() => setShowIssues(false)}
+                title="Pendências dos documentos"
+                icon={<AlertTriangle size={18} />}
+                tone="warning"
+                maxWidth={640}
+            >
+                <p style={{ margin: '0 0 12px', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                    O pedido só pode ser submetido depois de resolver todas as pendências abaixo.
+                    Clique numa pendência para abrir o documento correspondente.
+                </p>
+                <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {issues.map((issue, i) => (
+                        <li key={`${issue.documentId ?? 'request'}-${i}`}>
+                            {issue.documentId ? (
+                                <button type="button" onClick={() => focusIssue(issue)} style={linkButton}>
+                                    {issue.display}
+                                </button>
+                            ) : (
+                                <span style={{ fontSize: '0.8rem' }}>{issue.display}</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </InfoModal>
+
+            {/* ── Confirmations ── */}
+            {pendingRemoval && (
+                <ConfirmationDialog
+                    title={`Remover Documento ${pendingRemoval.sequenceNumber}?`}
+                    message={
+                        'Os itens associados a este documento também serão removidos do pedido. ' +
+                        'Se o pedido já foi submetido alguma vez, o documento é anulado em vez de apagado, ' +
+                        'para que a decisão de classificação registada não se perca.'
+                    }
+                    confirmText="Remover documento"
+                    cancelText="Manter"
+                    variant="destructive"
+                    onConfirm={() => void confirmRemoval()}
+                    onCancel={() => setPendingRemoval(null)}
+                />
+            )}
+
+            {pendingReplace && (
+                <ConfirmationDialog
+                    title={`Substituir o anexo do Documento ${pendingReplace.sequenceNumber}?`}
+                    message={
+                        'A leitura de OCR e a decisão de classificação atuais pertencem ao ficheiro que vai ' +
+                        'substituir e serão descartadas. Se o novo documento gerar um conflito de ' +
+                        'classificação, terá de o confirmar novamente — uma confirmação de uma leitura não ' +
+                        'vale para outra.'
+                    }
+                    confirmText="Substituir anexo"
+                    cancelText="Cancelar"
+                    variant="warning"
+                    onConfirm={() => void confirmReplace()}
+                    onCancel={() => setPendingReplace(null)}
+                />
+            )}
+
+            {/* Never auto-resubmits a human decision after reload. */}
+            <InfoModal
+                isOpen={!!conflictDialog}
+                onClose={() => setConflictDialog(null)}
+                title="Documento alterado entretanto"
+                icon={<Info size={18} />}
+                tone="warning"
+                maxWidth={600}
+                closeOnBackdrop={false}
+                footer={
+                    <>
+                        <button type="button" onClick={() => setConflictDialog(null)} style={secondaryButton}>
+                            Manter o que tenho no ecrã
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setConflictDialog(null); void reload(); }}
+                            style={primaryButton}
+                        >
+                            Recarregar documento
+                        </button>
+                    </>
+                }
+            >
+                <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                    {conflictDialog?.detail}
+                </p>
+                {conflictDialog?.current && (
+                    <div style={{
+                        marginTop: '12px', padding: '10px 12px', borderRadius: '8px',
+                        border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-page)',
+                        fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '4px'
+                    }}>
+                        <strong>Estado atual no servidor</strong>
+                        <span>Documento {conflictDialog.current.sequenceNumber} · {conflictDialog.current.documentNumber ?? 'sem número'}</span>
+                        <span>Fornecedor: {conflictDialog.current.supplierNameSnapshot ?? '—'}</span>
+                        <span>Total: {formatCurrencyAO(conflictDialog.current.grossAmount ?? 0)} {conflictDialog.current.currency ?? ''}</span>
+                    </div>
+                )}
+                <p style={{ margin: '12px 0 0', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                    Se recarregar, qualquer confirmação de classificação que tenha feito terá de ser
+                    decidida de novo — uma decisão sobre uma leitura não é automaticamente uma decisão
+                    sobre outra.
+                </p>
+            </InfoModal>
+        </section>
+    );
+}
+
+function Total({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+    return (
+        <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                {label}
+            </span>
+            <span style={{
+                fontSize: strong ? '0.95rem' : '0.82rem',
+                fontWeight: strong ? 800 : 600,
+                color: 'var(--color-text-main)'
+            }}>
+                {value}
+            </span>
+        </span>
+    );
+}
+
+const primaryButton: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: '6px',
+    padding: '8px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+    backgroundColor: 'var(--color-primary)', color: '#fff', fontWeight: 700, fontSize: '0.8rem'
+};
+
+const secondaryButton: React.CSSProperties = {
+    padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+    backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+    color: 'var(--color-text-main)', fontWeight: 600, fontSize: '0.8rem'
+};
+
+const linkButton: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+    color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.78rem', textAlign: 'left'
+};

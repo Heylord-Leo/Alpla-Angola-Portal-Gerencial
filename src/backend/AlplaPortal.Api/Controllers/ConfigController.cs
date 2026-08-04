@@ -42,7 +42,10 @@ public class ConfigController : ControllerBase
         return Ok(new FeatureFlagsDto
         {
             PostPaymentCompletionEnabled = enabled,
-            SourceDocumentTypeRequired = classificationRequired
+            SourceDocumentTypeRequired = classificationRequired,
+            // Multi-document rides the same switch: it is part of the same workflow, and a
+            // half-enabled payment origin would be worse than none.
+            PaymentMultiDocumentEnabled = enabled
         });
     }
 }

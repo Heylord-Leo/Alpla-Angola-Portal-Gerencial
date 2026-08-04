@@ -18,4 +18,15 @@ public class FeatureFlagsDto
     /// False while the feature is off or the effective date has not been reached.
     /// </summary>
     public bool SourceDocumentTypeRequired { get; set; }
+
+    /// <summary>
+    /// Release 3: a PAYMENT request may carry SEVERAL source documents, each with its own OCR
+    /// reading, classification and items. PAYMENT only — Quotation Management keeps one document
+    /// per quotation regardless of this flag.
+    ///
+    /// <para>While false the payment screens render exactly the single-document layout they
+    /// rendered before, and a request that already holds source-document rows still displays them
+    /// through the legacy path.</para>
+    /// </summary>
+    public bool PaymentMultiDocumentEnabled { get; set; }
 }
