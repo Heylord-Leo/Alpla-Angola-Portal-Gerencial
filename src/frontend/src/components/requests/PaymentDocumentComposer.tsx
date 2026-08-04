@@ -282,6 +282,16 @@ export function PaymentDocumentComposer({
                     conflict={active.conflict}
                     isExpanded
                     onToggle={() => { /* the document being edited does not collapse */ }}
+                    statusOverride={(() => {
+                        const state = ocrStateFor(active.tempId);
+                        const lifecycle = documentLifecycle(
+                            active, state.isProcessing, !!state.error, true);
+                        return {
+                            label: lifecycle.label,
+                            severity: lifecycle.severity,
+                            isExtracting: lifecycle.state === 'EXTRACTING'
+                        };
+                    })()}
                     readOnly={disabled}
                     saveError={active.error}
                     isSaving={false}

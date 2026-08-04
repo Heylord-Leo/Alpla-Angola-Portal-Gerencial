@@ -6,6 +6,7 @@ import {
     VoidPaymentSourceDocumentDto,
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
+import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { logger, FrontendComponentKey } from './logger';
 import { buildInfo } from '../buildInfo';
 import { versionSignal } from './versionSignal';
@@ -827,7 +828,16 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.', 'OcrSettings');
             return response.json();
         },
-        directOcrExtract: async (file: File, sourceContext?: string): Promise<any> => {
+        /**
+         * Raw-file extraction; needs no RequestId.
+         *
+         * <p><b>Answers HTTP 200 even when the extraction failed</b> — callers must check
+         * `success === true`. `sourceContext` is an OCR module allowlist key checked against
+         * `OcrModuleConfigs` (`REQUESTS`, `CONTRACTS`), not a free-text hint: an unconfigured value
+         * makes the server refuse the extraction before any provider is called. Omitting it skips
+         * the allowlist entirely.</p>
+         */
+        directOcrExtract: async (file: File, sourceContext?: string): Promise<OcrExtractionEnvelope> => {
             const formData = new FormData();
             formData.append('file', file);
             const ctxParam = sourceContext ? `?sourceContext=${encodeURIComponent(sourceContext)}` : '';

@@ -1,5 +1,6 @@
 import { PaymentSourceDocumentDto, SavePaymentSourceDocumentDto } from '../types/paymentSourceDocument';
 import { OcrDraft } from '../types';
+import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { ClassificationConflictState, EMPTY_CONFLICT, OcrDocumentClassification } from './documentClassificationDecision';
 
 /**
@@ -469,7 +470,11 @@ export interface ExtractedDocumentFields {
  * of it was written for the single-document editor and all of it applies unchanged to a document in
  * a collection; reimplementing any of it here would be a second, worse copy.</p>
  */
-export function fromOcrDraft(draft: OcrDraft): ExtractedDocumentFields {
+export function fromOcrDraft(
+    draft: OcrDraft,
+    /** The raw envelope, consulted only to tell "read as EUR" from "not read at all". */
+    raw?: OcrExtractionEnvelope | null
+): ExtractedDocumentFields {
     const items: TemporaryPaymentItem[] = (draft.items ?? []).map(i => createTemporaryItem({
         description: i.description ?? '',
         quantity: i.quantity ?? 0,
@@ -492,6 +497,15 @@ export function fromOcrDraft(draft: OcrDraft): ExtractedDocumentFields {
         : null;
     const tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
 
+    // The legacy mapper falls back to 'EUR' when the document names no currency
+    // (`currencyCode || currency || 'EUR'`), which is harmless in a form the user is already
+    // filling in but wrong for a document card: it presents an invented currency as an extracted
+    // one. So the currency is taken only when the envelope actually carried one — and when it did,
+    // the DRAFT's value is used, because that is the one with AKZ→AOA alias resolution applied.
+    const header = raw?.integration?.headerSuggestions;
+    const currencyWasRead = raw === undefined
+        || !!text(header?.currencyCode?.value) || !!text(header?.currency?.value);
+
     return {
         supplierId: draft.supplierId ?? null,
         supplierName: draft.supplierNameSnapshot?.trim() || null,
@@ -499,7 +513,7 @@ export function fromOcrDraft(draft: OcrDraft): ExtractedDocumentFields {
         documentNumber: draft.documentNumber?.trim() || null,
         documentDate: draft.documentDate?.substring(0, 10) || null,
         dueDate: draft.dueDate?.substring(0, 10) || null,
-        currency: draft.currency?.toUpperCase() || null,
+        currency: currencyWasRead ? (draft.currency?.toUpperCase() || null) : null,
         netAmount: net,
         taxAmount: tax != null && tax > 0 ? tax : null,
         grossAmount: gross,
@@ -531,8 +545,10 @@ function num(value: unknown): number | null {
  * <p>Tolerant by design: a provider that omits a block must degrade to "not read", never to a
  * thrown error that would leave the card stuck mid-upload.</p>
  */
-export function extractDocumentFields(ocrResult: any): ExtractedDocumentFields {
-    const h = ocrResult?.integration?.headerSuggestions ?? {};
+export function extractDocumentFields(
+    ocrResult: OcrExtractionEnvelope | null | undefined
+): ExtractedDocumentFields {
+    const h = (ocrResult?.integration?.headerSuggestions ?? {}) as Record<string, unknown>;
 
     const gross = num(h.totalAmount);
     const tax = num(h.taxAmount) ?? num(h.ivaAmount);

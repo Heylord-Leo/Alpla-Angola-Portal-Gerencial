@@ -82,7 +82,7 @@ export function PaymentDocumentSummaryCard({
                     color: accent, border: `1px solid ${accent}`,
                     backgroundColor: 'transparent'
                 }}>
-                    {lifecycle.state === 'EXTRACTING' && <Loader2 size={12} className="spin" />}
+                    {lifecycle.state === 'EXTRACTING' && <Loader2 size={12} className="spin-icon" />}
                     {lifecycle.state === 'CONFIRMED' && <CheckCircle2 size={12} />}
                     {lifecycle.state === 'REVIEW_REQUIRED' && <AlertTriangle size={12} />}
                     {lifecycle.state === 'EDITING' && <Pencil size={12} />}

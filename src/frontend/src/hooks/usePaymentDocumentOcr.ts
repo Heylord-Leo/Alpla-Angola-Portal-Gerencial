@@ -3,6 +3,12 @@ import { api } from '../lib/api';
 import { PaymentDocumentOcrState } from '../types/paymentSourceDocument';
 import { OcrDraft } from '../types';
 import {
+    OCR_MODULE_REQUESTS,
+    OcrExtractionEnvelope,
+    extractionFailureMessage,
+    isSuccessfulExtraction
+} from '../types/ocrExtraction';
+import {
     ExtractionDiscrepancy,
     TemporaryPaymentDocument,
     extractDocumentFields,
@@ -37,7 +43,9 @@ export interface DocumentOcrRunResult {
  * aliases, same IVA matching, same discount cross-validation, same backend-authoritative supplier
  * match. Omitting it falls back to header fields only, with no lines and no supplier resolution.
  */
-export function usePaymentDocumentOcr(mapResult?: (raw: any) => Promise<OcrDraft>) {
+export function usePaymentDocumentOcr(
+    mapResult?: (raw: OcrExtractionEnvelope) => Promise<OcrDraft>
+) {
     const [states, setStates] = useState<Record<string, PaymentDocumentOcrState>>({});
     const [discrepancies, setDiscrepancies] = useState<Record<string, ExtractionDiscrepancy[]>>({});
 
@@ -80,9 +88,29 @@ export function usePaymentDocumentOcr(mapResult?: (raw: any) => Promise<OcrDraft
         patch(document.tempId, { isProcessing: true, error: null });
 
         try {
-            const result = await api.requests.directOcrExtract(file, 'PAYMENT');
+            // The module allowlist key, not a free-text hint: an unconfigured value makes
+            // DocumentExtractionService refuse the extraction before any provider is called.
+            const result: OcrExtractionEnvelope =
+                await api.requests.directOcrExtract(file, OCR_MODULE_REQUESTS);
+
+            // HTTP 200 is not success. A blocked module, a disabled provider, an unreadable file
+            // and a timeout all return 200 with success:false, every field null and zero tokens —
+            // which, taken at face value, produces an empty editor that claims it was read.
+            if (!isSuccessfulExtraction(result)) {
+                patch(document.tempId, {
+                    isProcessing: false,
+                    // The fallback classifier can still guess a type from the FILENAME alone. That
+                    // guess describes the name of the file, not the document, and must not be
+                    // presented as a reading — so nothing is kept from a failed extraction.
+                    classification: null,
+                    error: extractionFailureMessage(result)
+                });
+                setDiscrepancies(prev => ({ ...prev, [document.tempId]: [] }));
+                return null;
+            }
+
             const extracted = mapResult
-                ? fromOcrDraft(await mapResult(result))
+                ? fromOcrDraft(await mapResult(result), result)
                 : extractDocumentFields(result);
             const merged = mergeExtraction(document, extracted, supplierLookup);
 

@@ -27,6 +27,16 @@ export interface PaymentSourceDocumentCardProps {
     variant?: 'collapsible' | 'editor';
     /** Actions that close out the document — "Confirmar e adicionar documento" and its siblings. */
     footer?: React.ReactNode;
+    /**
+     * Replaces the derived card status.
+     *
+     * <p>The composer owns the document's lifecycle while it is open, and its vocabulary is the
+     * honest one for a document being worked on: <i>Em extração</i> while the file is being read,
+     * <i>Em revisão</i> once it has been. A document nobody has had a chance to fill in yet must
+     * never be labelled "Incompleto".</p>
+     */
+    statusOverride?: { label: string; severity: 'success' | 'warning' | 'error' | 'muted';
+                       isExtracting?: boolean } | null;
 
     readOnly: boolean;
     /** Reported per card: a failure in one document must not discard another's unsaved state. */
@@ -77,6 +87,7 @@ export function PaymentSourceDocumentCard({
     onToggle,
     variant = 'collapsible',
     footer,
+    statusOverride = null,
     readOnly,
     saveError,
     isSaving,
@@ -100,7 +111,7 @@ export function PaymentSourceDocumentCard({
     const isEditor = variant === 'editor';
     const open = isEditor || isExpanded;
     const bodyId = `psd-body-${document.id}`;
-    const accent = SEVERITY_COLOR[status.severity];
+    const accent = SEVERITY_COLOR[statusOverride?.severity ?? status.severity];
 
     const labelStyle: React.CSSProperties = {
         display: 'block', fontSize: '0.72rem', fontWeight: 700,
@@ -178,11 +189,24 @@ export function PaymentSourceDocumentCard({
                         display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0,
                         fontSize: '0.7rem', fontWeight: 700, color: accent, whiteSpace: 'nowrap'
                     }}>
-                        {status.status === 'OCR_PENDING' && <Loader2 size={13} className="spin" />}
-                        {status.status === 'READY' && <CheckCircle2 size={13} />}
-                        {status.status === 'INCOMPLETE' && <AlertTriangle size={13} />}
-                        {status.status === 'CLASSIFICATION_CONFLICT' && <AlertCircle size={13} />}
-                        {status.label}
+                        {statusOverride ? (
+                            <>
+                                {statusOverride.isExtracting
+                                    ? <Loader2 size={13} className="spin-icon" />
+                                    : statusOverride.severity === 'success' ? <CheckCircle2 size={13} />
+                                    : statusOverride.severity === 'error' ? <AlertCircle size={13} />
+                                    : <AlertTriangle size={13} />}
+                                {statusOverride.label}
+                            </>
+                        ) : (
+                            <>
+                                {status.status === 'OCR_PENDING' && <Loader2 size={13} className="spin-icon" />}
+                                {status.status === 'READY' && <CheckCircle2 size={13} />}
+                                {status.status === 'INCOMPLETE' && <AlertTriangle size={13} />}
+                                {status.status === 'CLASSIFICATION_CONFLICT' && <AlertCircle size={13} />}
+                                {status.label}
+                            </>
+                        )}
                     </span>
                 </React.Fragment>
             )}
