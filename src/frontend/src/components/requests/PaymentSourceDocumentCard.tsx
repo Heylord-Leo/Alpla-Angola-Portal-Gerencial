@@ -133,7 +133,12 @@ export function PaymentSourceDocumentCard({
     return (
         <div
             data-document-id={document.id}
+            // Programmatically focusable so the review area can be reached once when a reading
+            // lands, without becoming a tab stop of its own.
+            tabIndex={isEditor ? -1 : undefined}
+            aria-label={isEditor ? `Rever Documento ${document.sequenceNumber}` : undefined}
             style={{
+                outline: 'none',
                 border: `1px solid ${open ? accent : 'var(--color-border)'}`,
                 borderLeft: `3px solid ${accent}`,
                 borderRadius: 'var(--radius-sm, 8px)',

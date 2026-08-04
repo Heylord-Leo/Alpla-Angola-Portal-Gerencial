@@ -206,13 +206,30 @@ export function RequestCreate() {
         if (file) documentOcr.registerFile(doc.tempId, file);
 
         const result = await documentOcr.run(doc);
+
+        // A failed reading leaves the document in PENDING_OCR, which is what keeps the failure view
+        // on screen instead of handing the user an empty editor that looks like a fresh start.
         if (!result) return;
 
-        // Merge back by tempId — never by position, and never touching another card.
-        setTempDocuments(prev => prev.map(d =>
-            d.tempId === doc.tempId
-                ? { ...result.document, classification: result.document.classification }
-                : d));
+        // Merge back by tempId — never by position, and never touching another card. The values and
+        // the switch out of the loading state land in the SAME update, so the editor's first render
+        // is already populated: there is no empty-editor frame in between.
+        setTempDocuments(prev => prev.map(d => {
+            if (d.tempId !== doc.tempId) return d;
+
+            // `result.document` was merged onto the snapshot taken when the read began. Anything the
+            // persistence stage wrote in the meantime belongs to the CURRENT document and must not
+            // be undone by a reading that started before it — a reinstated null persistedId would
+            // create the same source document twice.
+            return {
+                ...result.document,
+                entryMode: 'REVIEW' as const,
+                persistedId: d.persistedId,
+                sequenceNumber: d.sequenceNumber,
+                confirmed: d.confirmed,
+                error: d.error
+            };
+        }));
     }, [documentOcr]);
 
     const [formData, setFormData] = useState({

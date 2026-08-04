@@ -43,6 +43,8 @@ export const PHASE_LABEL: Record<CreationPhase, string> = {
  * results and conflict decisions. Keying by array position would reassign one document's reading to
  * another the moment anything was removed.</p>
  */
+export type PaymentDocumentEntryMode = 'PENDING_OCR' | 'REVIEW' | 'MANUAL';
+
 export interface TemporaryPaymentDocument {
     tempId: string;
 
@@ -64,6 +66,24 @@ export interface TemporaryPaymentDocument {
      * document inside the client-side composition, nothing more.</p>
      */
     confirmed: boolean;
+
+    /**
+     * Which view the active document shows, and why.
+     *
+     * <ul>
+     *   <li><b>PENDING_OCR</b> — created by "importar com OCR", not yet read. The document area is
+     *   a blocking loading view (or a failure view); the editor is never rendered in this state, so
+     *   an empty form cannot appear before the values arrive.</li>
+     *   <li><b>REVIEW</b> — read successfully. The editor opens already populated.</li>
+     *   <li><b>MANUAL</b> — the user is filling it in themselves, either by choosing "inserir
+     *   manualmente" or by choosing it after a failed reading.</li>
+     * </ul>
+     *
+     * <p>Kept as an explicit value rather than inferred from "is a request in flight": the gap
+     * between creating the document and the request actually starting is a render in which nothing
+     * is loading and nothing has been read, and inference would show the empty editor in it.</p>
+     */
+    entryMode: PaymentDocumentEntryMode;
 
     /** Set once the file is uploaded. Reused on retry so the same file is never uploaded twice. */
     attachmentId: string | null;
@@ -169,6 +189,9 @@ export function createTemporaryDocument(
         tempId: newTempId('doc'),
         localSequence: 1,
         confirmed: false,
+        // Safe default: a document nobody declared as an OCR import is one the user is typing, and
+        // showing them the editor is never the wrong answer for that.
+        entryMode: 'MANUAL',
         attachmentId: null,
         attachmentFileName: null,
         supplierId: null,

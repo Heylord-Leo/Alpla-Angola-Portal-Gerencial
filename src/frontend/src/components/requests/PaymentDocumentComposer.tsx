@@ -5,6 +5,11 @@ import { PaymentDocumentSummaryCard } from './PaymentDocumentSummaryCard';
 import { PaymentDocumentsSummary } from './PaymentDocumentsSummary';
 import { PaymentDocumentItemsEditor } from './PaymentDocumentItemsEditor';
 import { AddPaymentDocumentChoice, AddDocumentMethod } from './AddPaymentDocumentChoice';
+import {
+    PaymentDocumentExtractionError,
+    PaymentDocumentExtractionLoading,
+    useFocusOnce
+} from './PaymentDocumentExtractionState';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { currencyConflictMessage } from '../../lib/paymentSourceDocuments';
 import { ClassificationConflictState, EMPTY_CONFLICT } from '../../lib/documentClassificationDecision';
@@ -89,6 +94,14 @@ export function PaymentDocumentComposer({
 
     const active = documents.find(d => d.tempId === activeTempId) ?? null;
     const others = documents.filter(d => d.tempId !== activeTempId);
+    const activeOcr = active ? ocrStateFor(active.tempId) : { isProcessing: false, error: null, classification: null };
+
+    /** A document mid-read is not a document anyone may act on — including by leaving it. */
+    const isExtracting = !!active && active.entryMode === 'PENDING_OCR';
+
+    // Focus the review area once, when the reading lands. Once, because a document that finishes
+    // reading while the user has moved on must not pull the caret out of the field they are in.
+    useFocusOnce(active && active.entryMode === 'REVIEW' ? active.tempId : null, true);
     const lockedCurrency = useMemo(() => temporaryEstablishedCurrency(documents), [documents]);
     const totals = useMemo(() => confirmedTotals(documents), [documents]);
 
@@ -110,9 +123,18 @@ export function PaymentDocumentComposer({
             const picked = await onPickFile('NEW');
             if (!picked) return;
 
+            // Manual entry attaches the file but does not read it: the user is typing the data
+            // precisely because the document is not machine-readable, and a failed reading would
+            // only add an error banner to a form they never asked to have filled.
+            const readsFile = method !== 'MANUAL';
+
             const created: TemporaryPaymentDocument = {
                 ...(basedOn ? duplicateTemporaryBasics(basedOn) : createTemporaryDocument()),
                 localSequence: nextLocalSequence(documents),
+                // Set BEFORE the document is rendered, so the loading view is what appears first.
+                // Deriving this from "a request is in flight" would leave one render in which
+                // nothing is loading and nothing has been read — the empty editor flash.
+                entryMode: readsFile ? 'PENDING_OCR' : 'MANUAL',
                 attachmentId: picked.id,
                 attachmentFileName: picked.fileName,
                 currency: basedOn?.currency ?? lockedCurrency ?? null
@@ -122,10 +144,10 @@ export function PaymentDocumentComposer({
             onActiveChange(created.tempId);
             setShowBlockers(false);
 
-            // Manual entry attaches the file but does not read it: the user is typing the data
-            // precisely because the document is not machine-readable, and a failed reading would
-            // only add an error banner to a form they never asked to have filled.
-            if (method !== 'MANUAL') void onRunOcr(created);
+            if (readsFile) {
+                void onRunOcr(created);
+                return;   // focus belongs to the review area, once the reading lands
+            }
 
             requestAnimationFrame(() => {
                 window.document
@@ -139,12 +161,16 @@ export function PaymentDocumentComposer({
 
     /** §6: switching editors must never abandon unsaved changes silently. */
     const requestEdit = (target: TemporaryPaymentDocument) => {
+        // Nothing may be opened while a document is being read: the reading is about to write into
+        // that document, and moving away mid-flight is how a result lands on the wrong card.
+        if (isExtracting) return;
         if (active && active.tempId !== target.tempId) { setPendingSwitch(target); return; }
         onActiveChange(target.tempId);
         setShowBlockers(false);
     };
 
     const requestAdd = () => {
+        if (isExtracting) return;
         if (active) { setPendingSwitch(null); setShowBlockers(true); return; }
         setChooserOpen(true);
     };
@@ -196,8 +222,10 @@ export function PaymentDocumentComposer({
             attachmentFileName: picked.fileName,
             classification: null,
             conflict: EMPTY_CONFLICT,
-            // A document whose file changed is no longer the document that was confirmed.
-            confirmed: false
+            // A document whose file changed is no longer the document that was confirmed, and the
+            // previous document's fields must not stay on screen while the new file is being read.
+            confirmed: false,
+            entryMode: 'PENDING_OCR'
         };
 
         onChange(documents.map(d => (d.tempId === target.tempId ? replaced : d)));
@@ -267,13 +295,46 @@ export function PaymentDocumentComposer({
                         onEdit={() => requestEdit(d)}
                         onReplaceAttachment={() => setPendingReplace(d)}
                         onRemove={() => setPendingRemoval(d)}
-                        disabled={disabled}
+                        // Confirmed documents stay readable while another is read; they just
+                        // cannot be acted on until that reading settles.
+                        disabled={disabled || isExtracting}
                     />
                 );
             })}
 
+            {/* A document being read owns the whole document area: no fields, no item table, no
+                confirm button, nothing to change until the values arrive. */}
+            {active && active.entryMode === 'PENDING_OCR' && !activeOcr.error && (
+                <PaymentDocumentExtractionLoading
+                    fileName={active.attachmentFileName}
+                    sequence={active.localSequence}
+                />
+            )}
+
+            {active && active.entryMode === 'PENDING_OCR' && !!activeOcr.error && (
+                <PaymentDocumentExtractionError
+                    fileName={active.attachmentFileName}
+                    sequence={active.localSequence}
+                    message={activeOcr.error}
+                    onRetry={() => void onRunOcr(active)}
+                    onEnterManually={() => {
+                        // An explicit change of intent: the document stops being a failed reading
+                        // and becomes one the user is filling in. Nothing the failed attempt
+                        // produced is carried over.
+                        onResetOcr(active.tempId);
+                        patch(active.tempId, {
+                            entryMode: 'MANUAL',
+                            classification: null,
+                            conflict: EMPTY_CONFLICT
+                        });
+                    }}
+                    onChooseAnotherFile={() => setPendingReplace(active)}
+                    onRemove={() => setPendingRemoval(active)}
+                />
+            )}
+
             {/* The one document being worked on. */}
-            {active && (
+            {active && active.entryMode !== 'PENDING_OCR' && (
                 <PaymentSourceDocumentCard
                     key={active.tempId}
                     variant="editor"
@@ -372,10 +433,18 @@ export function PaymentDocumentComposer({
 
                     {/* Manual entry never reads the file, so the option has to stay reachable —
                         otherwise choosing "inserir manualmente" is a one-way door. */}
-                    {!disabled && !!active.attachmentId &&
-                     !ocrStateFor(active.tempId).isProcessing && (
-                        <button type="button" onClick={() => void onRunOcr(active)} style={retryButton}>
-                            {ocrStateFor(active.tempId).error
+                    {!disabled && !!active.attachmentId && !activeOcr.isProcessing && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                // A re-read blocks the same way a first read does — the values are
+                                // about to change, so the form must not be editable meanwhile.
+                                patch(active.tempId, { entryMode: 'PENDING_OCR' });
+                                void onRunOcr(active);
+                            }}
+                            style={retryButton}
+                        >
+                            {activeOcr.error
                                 ? 'Tentar ler o documento novamente'
                                 : active.classification
                                     ? 'Ler o documento novamente'
@@ -414,7 +483,7 @@ export function PaymentDocumentComposer({
                 />
             )}
 
-            {!active && documents.length > 0 && !disabled && (
+            {!active && documents.length > 0 && !disabled && !isExtracting && (
                 <button
                     type="button"
                     onClick={requestAdd}
@@ -441,7 +510,9 @@ export function PaymentDocumentComposer({
 
             <PaymentDocumentsSummary
                 totals={totals}
-                provisional={active ? {
+                // Nothing provisional to report while a document is still being read — its values
+                // do not exist yet, and "0,00" would be one of them.
+                provisional={active && !isExtracting ? {
                     sequence: active.localSequence,
                     gross: active.grossAmount ?? 0,
                     currency: active.currency
