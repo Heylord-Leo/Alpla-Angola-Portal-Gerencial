@@ -6,6 +6,8 @@ import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { formatCurrencyAO } from '../../lib/utils';
 import { currencyConflictMessage } from '../../lib/paymentSourceDocuments';
 import { ClassificationConflictState } from '../../lib/documentClassificationDecision';
+import { PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
+import { ExtractionDiscrepancy } from '../../lib/paymentRequestCreation';
 import {
     TemporaryPaymentDocument,
     asCardDocument,
@@ -23,8 +25,18 @@ interface Props {
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
 
-    /** Uploads a file and returns its attachment id, or null. */
-    onUploadAttachment: (purpose: 'NEW' | 'REPLACE') => Promise<{ id: string; fileName: string } | null>;
+    /** Picks a file and returns a placeholder id plus the File itself for OCR. */
+    onPickFile: (purpose: 'NEW' | 'REPLACE') =>
+        Promise<{ id: string; fileName: string; file: File } | null>;
+
+    /** OCR state for one document, keyed by tempId by the caller. */
+    ocrStateFor: (tempId: string) => PaymentDocumentOcrState;
+    discrepanciesFor: (tempId: string) => ExtractionDiscrepancy[];
+    /** Runs (or re-runs) OCR for one document. */
+    onRunOcr: (document: TemporaryPaymentDocument) => Promise<void>;
+    /** Clears everything the previous file produced, on replacement or removal. */
+    onResetOcr: (tempId: string) => void;
+
     disabled?: boolean;
 }
 
@@ -46,7 +58,11 @@ export function PaymentSourceDocumentDraftCollection({
     suppliers,
     plants,
     currencies,
-    onUploadAttachment,
+    onPickFile,
+    ocrStateFor,
+    discrepanciesFor,
+    onRunOcr,
+    onResetOcr,
     disabled = false
 }: Props) {
     const [expandedId, setExpandedId] = useState<string | null>(documents[0]?.tempId ?? null);
@@ -66,18 +82,22 @@ export function PaymentSourceDocumentDraftCollection({
         isAddingRef.current = true;
 
         try {
-            const uploaded = await onUploadAttachment('NEW');
-            if (!uploaded) return;
+            const picked = await onPickFile('NEW');
+            if (!picked) return;
 
             const created: TemporaryPaymentDocument = {
                 ...(basedOn ? duplicateTemporaryBasics(basedOn) : createTemporaryDocument()),
-                attachmentId: uploaded.id,
-                attachmentFileName: uploaded.fileName,
+                attachmentId: picked.id,
+                attachmentFileName: picked.fileName,
                 currency: basedOn?.currency ?? lockedCurrency ?? null
             };
 
             onChange([...documents, created]);
             setExpandedId(created.tempId);
+
+            // Read THIS document. Only its own card shows a processing state; a second card being
+            // read at the same time is unaffected.
+            void onRunOcr(created);
 
             requestAnimationFrame(() => {
                 window.document
@@ -96,6 +116,7 @@ export function PaymentSourceDocumentDraftCollection({
 
         // Nothing is persisted yet, so removal is purely local — no void, no audit to preserve.
         onChange(documents.filter(d => d.tempId !== target.tempId));
+        onResetOcr(target.tempId);
         if (expandedId === target.tempId) setExpandedId(null);
     };
 
@@ -104,16 +125,23 @@ export function PaymentSourceDocumentDraftCollection({
         setPendingReplace(null);
         if (!target) return;
 
-        const uploaded = await onUploadAttachment('REPLACE');
-        if (!uploaded) return;
+        const picked = await onPickFile('REPLACE');
+        if (!picked) return;
 
-        // The previous reading and decision belonged to the file being replaced.
-        patch(target.tempId, {
-            attachmentId: uploaded.id,
-            attachmentFileName: uploaded.fileName,
+        // The previous reading and decision belonged to the file being replaced. Nothing is
+        // persisted yet, so the temporary decision is simply discarded — there is no audit to keep.
+        onResetOcr(target.tempId);
+
+        const replaced: TemporaryPaymentDocument = {
+            ...target,
+            attachmentId: picked.id,
+            attachmentFileName: picked.fileName,
             classification: null,
             conflict: { hasConflict: false, isHighRisk: false, acknowledged: false, justification: '' }
-        });
+        };
+
+        onChange(documents.map(d => (d.tempId === target.tempId ? replaced : d)));
+        void onRunOcr(replaced);
     };
 
     const handleFieldChange = (document: TemporaryPaymentDocument, changes: Record<string, unknown>) => {
@@ -155,7 +183,7 @@ export function PaymentSourceDocumentDraftCollection({
                 <PaymentSourceDocumentCard
                     key={d.tempId}                        // identity, never position
                     document={asCardDocument(d, index + 1)}
-                    ocr={{ isProcessing: false, classification: d.classification, error: null }}
+                    ocr={ocrStateFor(d.tempId)}
                     conflict={d.conflict}
                     isExpanded={expandedId === d.tempId}
                     onToggle={() => setExpandedId(expandedId === d.tempId ? null : d.tempId)}
@@ -173,7 +201,33 @@ export function PaymentSourceDocumentDraftCollection({
                     suppliers={suppliers}
                     plants={plants}
                     currencies={currencies}
-                />
+                >
+                    {ocrStateFor(d.tempId).error && !disabled && (
+                        <button type="button" onClick={() => void onRunOcr(d)} style={retryButton}>
+                            Tentar ler o documento novamente
+                        </button>
+                    )}
+
+                    {/* A disagreement is reported, never silently applied — the user may have
+                        corrected a misread number by hand. */}
+                    {discrepanciesFor(d.tempId).length > 0 && (
+                        <div style={{
+                            padding: '8px 10px', borderRadius: '6px', fontSize: '0.75rem',
+                            border: '1px solid #fcd34d', backgroundColor: 'rgba(180,83,9,0.06)',
+                            color: '#b45309'
+                        }}>
+                            <strong>A leitura difere do que introduziu:</strong>
+                            <ul style={{ margin: '4px 0 0', paddingLeft: '16px' }}>
+                                {discrepanciesFor(d.tempId).map(x => (
+                                    <li key={x.field}>
+                                        {x.label}: manteve <strong>{x.userValue}</strong>,
+                                        o documento indica <strong>{x.extractedValue}</strong>.
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </PaymentSourceDocumentCard>
             ))}
 
             {!disabled && (
@@ -250,6 +304,12 @@ export function PaymentSourceDocumentDraftCollection({
         </section>
     );
 }
+
+const retryButton: React.CSSProperties = {
+    alignSelf: 'flex-start', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+    backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+    color: 'var(--color-text-main)', fontWeight: 600, fontSize: '0.75rem'
+};
 
 function Total({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
     return (

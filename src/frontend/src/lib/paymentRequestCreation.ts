@@ -369,3 +369,134 @@ export function localValidation(document: TemporaryPaymentDocument): string[] {
 
     return problems;
 }
+
+// ── OCR extraction, merged into a temporary document ─────────────────────────────────────────
+
+/** The subset of the extraction response a source-document card can use. */
+export interface ExtractedDocumentFields {
+    supplierName: string | null;
+    supplierTaxId: string | null;
+    documentNumber: string | null;
+    documentDate: string | null;
+    dueDate: string | null;
+    currency: string | null;
+    netAmount: number | null;
+    taxAmount: number | null;
+    grossAmount: number | null;
+    classification: OcrDocumentClassification | null;
+}
+
+function text(value: unknown): string | null {
+    if (value == null) return null;
+    const v = typeof value === 'object' && value !== null && 'value' in (value as any)
+        ? (value as any).value : value;
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+}
+
+function num(value: unknown): number | null {
+    const v = typeof value === 'object' && value !== null && 'value' in (value as any)
+        ? (value as any).value : value;
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
+/**
+ * Reads the legacy extraction envelope produced by <c>ExtractionMapper.MapToLegacyOcrResult</c>.
+ *
+ * <p>Tolerant by design: a provider that omits a block must degrade to "not read", never to a
+ * thrown error that would leave the card stuck mid-upload.</p>
+ */
+export function extractDocumentFields(ocrResult: any): ExtractedDocumentFields {
+    const h = ocrResult?.integration?.headerSuggestions ?? {};
+
+    const gross = num(h.totalAmount);
+    const tax = num(h.taxAmount) ?? num(h.ivaAmount);
+    const net = num(h.netAmount) ?? (gross != null && tax != null ? gross - tax : null);
+
+    const rawDate = text(h.date);
+
+    return {
+        supplierName: text(h.supplierName),
+        supplierTaxId: text(h.supplierTaxId),
+        documentNumber: text(h.documentNumber),
+        documentDate: rawDate ? rawDate.substring(0, 10) : null,
+        dueDate: text(h.dueDate)?.substring(0, 10) ?? null,
+        currency: text(h.currencyCode)?.toUpperCase() ?? null,
+        netAmount: net,
+        taxAmount: tax,
+        grossAmount: gross,
+        // The classification block, carried through verbatim with its evidence. Never applied to
+        // the selection — the user confirms or corrects it.
+        classification: h.documentClassification ?? null
+    };
+}
+
+export interface ExtractionDiscrepancy {
+    field: string;
+    label: string;
+    userValue: string;
+    extractedValue: string;
+}
+
+export interface MergeResult {
+    document: TemporaryPaymentDocument;
+    /** Fields the user had already filled differently. Reported, never overwritten. */
+    discrepancies: ExtractionDiscrepancy[];
+}
+
+/**
+ * Folds an extraction into a document.
+ *
+ * <p>The rule, matching the single-document flow: <b>an empty field may be filled, a field the user
+ * has already set is left alone</b>, and a disagreement is reported rather than silently applied.
+ * This matters on a re-run — the user may have corrected a misread number by hand, and a retry that
+ * quietly reinstated the misreading would be worse than no retry at all.</p>
+ */
+export function mergeExtraction(
+    document: TemporaryPaymentDocument,
+    extracted: ExtractedDocumentFields,
+    supplierLookup?: (name: string, taxId: string | null) => { id: number; name: string; taxId?: string | null } | null
+): MergeResult {
+    const discrepancies: ExtractionDiscrepancy[] = [];
+
+    const take = <T,>(current: T | null, incoming: T | null, field: string, label: string): T | null => {
+        if (incoming == null) return current;
+        if (current == null || current === '') return incoming;
+        if (String(current) !== String(incoming)) {
+            discrepancies.push({
+                field, label,
+                userValue: String(current),
+                extractedValue: String(incoming)
+            });
+        }
+        return current;   // the user's value always survives
+    };
+
+    const supplier = extracted.supplierName && supplierLookup
+        ? supplierLookup(extracted.supplierName, extracted.supplierTaxId)
+        : null;
+
+    return {
+        document: {
+            ...document,
+            supplierId: document.supplierId ?? supplier?.id ?? null,
+            supplierNameSnapshot: document.supplierNameSnapshot ?? supplier?.name ?? extracted.supplierName,
+            supplierTaxIdSnapshot: document.supplierTaxIdSnapshot ?? extracted.supplierTaxId,
+            documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),
+            documentDate: take(document.documentDate, extracted.documentDate, 'documentDate', 'Data do documento'),
+            dueDate: document.dueDate ?? extracted.dueDate,
+            currency: take(document.currency, extracted.currency, 'currency', 'Moeda'),
+            netAmount: take(document.netAmount, extracted.netAmount, 'netAmount', 'Valor líquido'),
+            taxAmount: take(document.taxAmount, extracted.taxAmount, 'taxAmount', 'IVA'),
+            grossAmount: take(document.grossAmount, extracted.grossAmount, 'grossAmount', 'Total'),
+            // The reading itself always replaces: it describes the FILE, not the user's typing, and
+            // this only ever runs for the file currently attached to this document.
+            classification: extracted.classification ?? document.classification,
+            error: null
+        },
+        discrepancies
+    };
+}

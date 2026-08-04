@@ -24,6 +24,7 @@ import { createRequestCreationGuide, type RequestFormValues } from '../../featur
 import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
 import { PaymentSourceDocumentDraftCollection } from '../../components/requests/PaymentSourceDocumentDraftCollection';
 import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
+import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
 import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
 import {
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
@@ -99,6 +100,7 @@ export function RequestCreate() {
     // controlled pass after the draft exists. See usePaymentRequestCreation for the staging.
     const [tempDocuments, setTempDocuments] = useState<TemporaryPaymentDocument[]>([]);
     const creation = usePaymentRequestCreation();
+    const documentOcr = usePaymentDocumentOcr();
 
     // Files chosen before the request exists. Keyed by a placeholder attachment id so the card can
     // show a filename immediately; the real upload happens in Stage C once there is a request to
@@ -108,7 +110,10 @@ export function RequestCreate() {
     const sourceFileInputRef = useRef<HTMLInputElement>(null);
     const sourceFileResolverRef = useRef<((f: File | null) => void) | null>(null);
 
-    /** Opens the picker and resolves with a placeholder id the card can render straight away. */
+    /**
+     * Opens the picker and resolves with a placeholder id the card can render straight away, plus
+     * the File itself so OCR can read it immediately — before any request exists.
+     */
     const pickSourceDocumentFile = useCallback(async () => {
         const file = await new Promise<File | null>(resolve => {
             sourceFileResolverRef.current = resolve;
@@ -119,8 +124,28 @@ export function RequestCreate() {
 
         const placeholderId = `pending:${Date.now().toString(36)}:${file.name}`;
         pendingFilesRef.current.set(placeholderId, file);
-        return { id: placeholderId, fileName: file.name };
+        return { id: placeholderId, fileName: file.name, file };
     }, []);
+
+    /**
+     * Reads one document through POST /requests/direct-ocr, which needs no RequestId — so a
+     * document can be read before anything is persisted, with no early attachment to reconcile
+     * later. The result is stored under the document's own tempId.
+     */
+    const runDocumentOcr = useCallback(async (doc: TemporaryPaymentDocument) => {
+        const placeholder = doc.attachmentId;
+        const file = placeholder ? pendingFilesRef.current.get(placeholder) : undefined;
+        if (file) documentOcr.registerFile(doc.tempId, file);
+
+        const result = await documentOcr.run(doc);
+        if (!result) return;
+
+        // Merge back by tempId — never by position, and never touching another card.
+        setTempDocuments(prev => prev.map(d =>
+            d.tempId === doc.tempId
+                ? { ...result.document, classification: result.document.classification }
+                : d));
+    }, [documentOcr]);
 
     const handleSourceFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
@@ -2013,7 +2038,11 @@ export function RequestCreate() {
                                     disabled={creation.phase === 'CREATING_REQUEST' ||
                                               creation.phase === 'SAVING_DOCUMENTS' ||
                                               creation.phase === 'SAVING_ITEMS'}
-                                    onUploadAttachment={pickSourceDocumentFile}
+                                    onPickFile={pickSourceDocumentFile}
+                                    ocrStateFor={documentOcr.stateFor}
+                                    discrepanciesFor={documentOcr.discrepanciesFor}
+                                    onRunOcr={runDocumentOcr}
+                                    onResetOcr={documentOcr.forget}
                                 />
 
                                 {creation.phase !== 'NOT_STARTED' && (
