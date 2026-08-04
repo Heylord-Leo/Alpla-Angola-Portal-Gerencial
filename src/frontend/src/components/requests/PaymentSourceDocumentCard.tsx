@@ -8,6 +8,7 @@ import { OcrDocumentClassification, ClassificationConflictState } from '../../li
 import { deriveCardStatus, describeDocument } from '../../lib/paymentSourceDocuments';
 import { SourceDocumentTypeField } from './SourceDocumentTypeField';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
+import { SupplierAutocomplete } from '../SupplierAutocomplete';
 import { formatCurrencyAO } from '../../lib/utils';
 
 export interface PaymentSourceDocumentCardProps {
@@ -17,6 +18,15 @@ export interface PaymentSourceDocumentCardProps {
 
     isExpanded: boolean;
     onToggle: () => void;
+
+    /**
+     * <c>editor</c> is the one document currently being worked on: it is always open and its header
+     * cannot be collapsed, because collapsing the thing you are editing is how unsaved changes get
+     * abandoned by accident. <c>collapsible</c> is the ordinary reviewable card.
+     */
+    variant?: 'collapsible' | 'editor';
+    /** Actions that close out the document — "Confirmar e adicionar documento" and its siblings. */
+    footer?: React.ReactNode;
 
     readOnly: boolean;
     /** Reported per card: a failure in one document must not discard another's unsaved state. */
@@ -28,8 +38,9 @@ export interface PaymentSourceDocumentCardProps {
     onReplaceAttachment: () => void;
     onRemove: () => void;
     onDuplicate: () => void;
+    /** Hidden while a document is being composed — there is nothing to duplicate from yet. */
+    showDuplicate?: boolean;
 
-    suppliers: Array<{ id: number; name: string; taxId?: string | null }>;
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
     /** Blocks a second currency before the backend has to refuse it. */
@@ -64,6 +75,8 @@ export function PaymentSourceDocumentCard({
     conflict,
     isExpanded,
     onToggle,
+    variant = 'collapsible',
+    footer,
     readOnly,
     saveError,
     isSaving,
@@ -72,7 +85,7 @@ export function PaymentSourceDocumentCard({
     onReplaceAttachment,
     onRemove,
     onDuplicate,
-    suppliers,
+    showDuplicate = true,
     plants,
     currencies,
     currencyLocked,
@@ -84,6 +97,8 @@ export function PaymentSourceDocumentCard({
         () => deriveCardStatus(document, ocr.isProcessing, ocr.classification),
         [document, ocr.isProcessing, ocr.classification]);
 
+    const isEditor = variant === 'editor';
+    const open = isEditor || isExpanded;
     const bodyId = `psd-body-${document.id}`;
     const accent = SEVERITY_COLOR[status.severity];
 
@@ -108,7 +123,7 @@ export function PaymentSourceDocumentCard({
         <div
             data-document-id={document.id}
             style={{
-                border: `1px solid ${isExpanded ? accent : 'var(--color-border)'}`,
+                border: `1px solid ${open ? accent : 'var(--color-border)'}`,
                 borderLeft: `3px solid ${accent}`,
                 borderRadius: 'var(--radius-sm, 8px)',
                 backgroundColor: 'var(--color-bg-surface)',
@@ -116,48 +131,61 @@ export function PaymentSourceDocumentCard({
                 overflow: 'hidden'
             }}
         >
-            {/* ── Collapsed header: identifies the document without opening it ── */}
-            <button
-                ref={headerRef}
-                type="button"
-                onClick={onToggle}
-                aria-expanded={isExpanded}
-                aria-controls={bodyId}
-                style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
-                    textAlign: 'left', color: 'var(--color-text-main)'
-                }}
-            >
-                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {/* Header. In editor mode it is a caption, not a control: the document being edited is
+                not collapsible, because collapsing it is how unsaved work gets abandoned. */}
+            {React.createElement(
+                isEditor ? 'div' : 'button',
+                isEditor
+                    ? {
+                        style: {
+                            width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px 12px', textAlign: 'left', color: 'var(--color-text-main)',
+                            borderBottom: '1px solid var(--color-border)'
+                        }
+                    }
+                    : {
+                        ref: headerRef,
+                        type: 'button',
+                        onClick: onToggle,
+                        'aria-expanded': isExpanded,
+                        'aria-controls': bodyId,
+                        style: {
+                            width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px 12px', background: 'none', border: 'none',
+                            cursor: 'pointer', textAlign: 'left', color: 'var(--color-text-main)'
+                        }
+                    },
+                <React.Fragment key="header">
+                    {!isEditor && (isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
 
-                <span style={{ fontWeight: 800, fontSize: '0.85rem', flexShrink: 0 }}>
-                    Documento {document.sequenceNumber}
-                </span>
+                    <span style={{ fontWeight: 800, fontSize: '0.85rem', flexShrink: 0 }}>
+                        Documento {document.sequenceNumber}
+                    </span>
 
-                {/* Long supplier names must wrap, never push the total off the row. */}
-                <span style={{
-                    flex: 1, minWidth: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)',
-                    overflowWrap: 'anywhere'
-                }}>
-                    {describeDocument(document)}
-                </span>
+                    {/* Long supplier names must wrap, never push the total off the row. */}
+                    <span style={{
+                        flex: 1, minWidth: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)',
+                        overflowWrap: 'anywhere'
+                    }}>
+                        {describeDocument(document)}
+                    </span>
 
-                <span style={{ fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                    {formatCurrencyAO(document.grossAmount ?? 0)} {document.currency ?? ''}
-                </span>
+                    <span style={{ fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                        {formatCurrencyAO(document.grossAmount ?? 0)} {document.currency ?? ''}
+                    </span>
 
-                <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0,
-                    fontSize: '0.7rem', fontWeight: 700, color: accent, whiteSpace: 'nowrap'
-                }}>
-                    {status.status === 'OCR_PENDING' && <Loader2 size={13} className="spin" />}
-                    {status.status === 'READY' && <CheckCircle2 size={13} />}
-                    {status.status === 'INCOMPLETE' && <AlertTriangle size={13} />}
-                    {status.status === 'CLASSIFICATION_CONFLICT' && <AlertCircle size={13} />}
-                    {status.label}
-                </span>
-            </button>
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                        fontSize: '0.7rem', fontWeight: 700, color: accent, whiteSpace: 'nowrap'
+                    }}>
+                        {status.status === 'OCR_PENDING' && <Loader2 size={13} className="spin" />}
+                        {status.status === 'READY' && <CheckCircle2 size={13} />}
+                        {status.status === 'INCOMPLETE' && <AlertTriangle size={13} />}
+                        {status.status === 'CLASSIFICATION_CONFLICT' && <AlertCircle size={13} />}
+                        {status.label}
+                    </span>
+                </React.Fragment>
+            )}
 
             {/* Persistent, not a toast: a failed save must stay on screen until it is dealt with. */}
             {saveError && (
@@ -180,9 +208,9 @@ export function PaymentSourceDocumentCard({
                 </div>
             )}
 
-            {isExpanded && (
+            {open && (
                 <div id={bodyId} style={{
-                    padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '12px'
+                    padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px'
                 }}>
                     {/* ── Attachment ── */}
                     <div style={{
@@ -206,25 +234,41 @@ export function PaymentSourceDocumentCard({
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
                         gap: '10px'
                     }}>
-                        {field('Fornecedor', (
-                            <select
-                                value={document.supplierId ?? ''}
+                        {/* The same searchable field the single-document editor uses. A supplier
+                            list cannot be preloaded here — there are thousands — and an extraction
+                            that read a name the portal does not know must still be visible as
+                            unresolved rather than silently blank. */}
+                        <div style={{ gridColumn: '1 / -1' }}>
+                            <span style={labelStyle}>
+                                Fornecedor
+                                {!document.supplierId && document.supplierNameSnapshot && (
+                                    <FieldMessageIcon
+                                        severity="warning"
+                                        tooltip="O fornecedor lido não existe no portal."
+                                        title="Fornecedor não reconhecido"
+                                        maxWidth={520}
+                                    >
+                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55 }}>
+                                            O documento indica <strong>{document.supplierNameSnapshot}</strong>,
+                                            que não corresponde a nenhum fornecedor registado. Pesquise o
+                                            fornecedor correto ou registe-o antes de confirmar o documento —
+                                            um pagamento não pode ser dirigido a um fornecedor que o portal
+                                            não conhece.
+                                        </p>
+                                    </FieldMessageIcon>
+                                )}
+                            </span>
+                            <SupplierAutocomplete
+                                initialName={document.supplierNameSnapshot || ''}
+                                isUnresolved={!document.supplierId && !!document.supplierNameSnapshot}
+                                hasError={!document.supplierId && !!document.supplierNameSnapshot}
                                 disabled={readOnly}
-                                onChange={e => {
-                                    const id = e.target.value ? Number(e.target.value) : null;
-                                    const supplier = suppliers.find(s => s.id === id);
-                                    onFieldChange({
-                                        supplierId: id,
-                                        supplierNameSnapshot: supplier?.name ?? null,
-                                        supplierTaxIdSnapshot: supplier?.taxId ?? null
-                                    });
-                                }}
-                                style={inputStyle}
-                            >
-                                <option value="">-- Selecione --</option>
-                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        ))}
+                                onChange={(id, name) => onFieldChange({
+                                    supplierId: id,
+                                    supplierNameSnapshot: name || null
+                                })}
+                            />
+                        </div>
 
                         {field('Planta', (
                             <select
@@ -394,8 +438,10 @@ export function PaymentSourceDocumentCard({
                     {/* Items belonging to THIS document, supplied by the parent. */}
                     {children}
 
-                    {/* Concise, inline — a validation error the user must fix right now. */}
-                    {document.validationMessages.length > 0 && (
+                    {/* Concise, inline — a validation error the user must fix right now. In editor
+                        mode the footer owns this list, and stating it twice would read as two
+                        different problems. */}
+                    {!isEditor && document.validationMessages.length > 0 && (
                         <ul style={{
                             margin: 0, paddingLeft: '18px', fontSize: '0.75rem',
                             color: '#b45309', fontWeight: 600
@@ -406,9 +452,11 @@ export function PaymentSourceDocumentCard({
 
                     {!readOnly && (
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                            <button type="button" onClick={onDuplicate} style={linkButton}>
-                                <Copy size={13} /> Duplicar dados básicos
-                            </button>
+                            {showDuplicate && (
+                                <button type="button" onClick={onDuplicate} style={linkButton}>
+                                    <Copy size={13} /> Duplicar dados básicos
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={onRemove}
@@ -423,6 +471,8 @@ export function PaymentSourceDocumentCard({
                             )}
                         </div>
                     )}
+
+                    {footer}
                 </div>
             )}
         </div>

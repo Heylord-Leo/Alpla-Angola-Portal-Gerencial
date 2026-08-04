@@ -133,9 +133,13 @@ export function usePaymentRequestCreation() {
                                 description: item.description,
                                 quantity: item.quantity,
                                 unitId: item.unitId,
+                                // The backend resolves the unit from its CODE, so both are sent.
+                                unit: item.unitCode ?? undefined,
                                 unitPrice: item.unitPrice,
                                 discountAmount: item.discountAmount,
                                 ivaRateId: item.ivaRateId,
+                                totalAmount: item.totalAmount,
+                                itemCatalogId: item.itemCatalogId,
                                 plantId: document.plantId,
                                 // The mapping that matters: the item names its OWN document's
                                 // persisted id, resolved after that document was created.

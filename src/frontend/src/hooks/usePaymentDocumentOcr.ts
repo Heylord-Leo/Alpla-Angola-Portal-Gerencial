@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { PaymentDocumentOcrState } from '../types/paymentSourceDocument';
+import { OcrDraft } from '../types';
 import {
     ExtractionDiscrepancy,
     TemporaryPaymentDocument,
     extractDocumentFields,
+    fromOcrDraft,
     mergeExtraction
 } from '../lib/paymentRequestCreation';
 
@@ -29,8 +31,13 @@ export interface DocumentOcrRunResult {
  *
  * <p>Nothing here selects a document type. The extraction produces a proposal with its evidence;
  * the user confirms or corrects it through the same Release 2 field the edit screen uses.</p>
+ *
+ * @param mapResult <c>useOcrProcessor.mapOcrResultToDraft</c>. Passing it in is what makes a
+ * document in a collection read exactly like a document in the single-document editor — same unit
+ * aliases, same IVA matching, same discount cross-validation, same backend-authoritative supplier
+ * match. Omitting it falls back to header fields only, with no lines and no supplier resolution.
  */
-export function usePaymentDocumentOcr() {
+export function usePaymentDocumentOcr(mapResult?: (raw: any) => Promise<OcrDraft>) {
     const [states, setStates] = useState<Record<string, PaymentDocumentOcrState>>({});
     const [discrepancies, setDiscrepancies] = useState<Record<string, ExtractionDiscrepancy[]>>({});
 
@@ -74,7 +81,9 @@ export function usePaymentDocumentOcr() {
 
         try {
             const result = await api.requests.directOcrExtract(file, 'PAYMENT');
-            const extracted = extractDocumentFields(result);
+            const extracted = mapResult
+                ? fromOcrDraft(await mapResult(result))
+                : extractDocumentFields(result);
             const merged = mergeExtraction(document, extracted, supplierLookup);
 
             patch(document.tempId, {
@@ -97,7 +106,7 @@ export function usePaymentDocumentOcr() {
         } finally {
             inFlightRef.current.delete(document.tempId);
         }
-    }, []);
+    }, [mapResult]);
 
     /** Everything this document's previous file produced. Used when the attachment is replaced. */
     const reset = useCallback((tempId: string) => {

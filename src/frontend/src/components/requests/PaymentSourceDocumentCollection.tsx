@@ -15,6 +15,7 @@ import {
     collectValidationIssues,
     computeTotals,
     currencyConflictMessage,
+    deriveCardStatus,
     duplicateBasicData,
     establishedCurrency,
     parseStoredClassification,
@@ -22,6 +23,8 @@ import {
     ValidationIssue
 } from '../../lib/paymentSourceDocuments';
 import { PaymentSourceDocumentCard } from './PaymentSourceDocumentCard';
+import { PaymentDocumentSummaryCard } from './PaymentDocumentSummaryCard';
+import { AddPaymentDocumentChoice } from './AddPaymentDocumentChoice';
 import { InfoModal } from '../ui/InfoModal';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
@@ -31,7 +34,6 @@ interface Props {
     requestId: string;
     /** DRAFT / AREA_ADJUSTMENT / FINAL_ADJUSTMENT enable editing; anything else is read-only. */
     readOnly?: boolean;
-    suppliers: Array<{ id: number; name: string; taxId?: string | null }>;
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
     /** Bubbles `canSubmit` so the parent can disable final submission. */
@@ -40,6 +42,11 @@ interface Props {
     onRequestAttachment?: (purpose: 'NEW' | 'REPLACE') => Promise<string | null>;
     /** Renders the items belonging to one document. */
     renderItems?: (document: PaymentSourceDocumentDto) => React.ReactNode;
+    /**
+     * Bubbles whether a document is mid-edit, so submission can refuse rather than send an approver
+     * a request whose contents were still being typed.
+     */
+    onEditingStateChange?: (state: { openSequence: number | null; unsavedSequences: number[] }) => void;
 }
 
 /** Everything held per document. Keyed by document id — never by array index. */
@@ -73,17 +80,20 @@ const EMPTY_UI: DocumentUiState = {
 export function PaymentSourceDocumentCollection({
     requestId,
     readOnly = false,
-    suppliers,
     plants,
     currencies,
     onSummaryChange,
     onRequestAttachment,
-    renderItems
+    renderItems,
+    onEditingStateChange
 }: Props) {
     const [summary, setSummary] = useState<PaymentSourceDocumentsSummaryDto | null>(null);
     const [documents, setDocuments] = useState<PaymentSourceDocumentDto[]>([]);
     const [uiState, setUiState] = useState<Record<string, DocumentUiState>>({});
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [chooserOpen, setChooserOpen] = useState(false);
+    /** Documents edited but not yet saved. A pending edit is not part of the request until it is. */
+    const [dirtyIds, setDirtyIds] = useState<string[]>([]);
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const [pendingRemoval, setPendingRemoval] = useState<PaymentSourceDocumentDto | null>(null);
@@ -169,6 +179,7 @@ export function PaymentSourceDocumentCollection({
 
             // Reconcile against the backend immediately — it decides totals and validation.
             await reload();
+            setDirtyIds(prev => prev.filter(x => x !== document.id));
             patchUi(document.id, { isSaving: false, saveError: null });
         } catch (e: any) {
             patchUi(document.id, {
@@ -188,7 +199,19 @@ export function PaymentSourceDocumentCollection({
 
         patchUi(document.id, { currencyError: null });
         patchDocument(document.id, patch);
+        setDirtyIds(prev => (prev.includes(document.id) ? prev : [...prev, document.id]));
     };
+
+    // Whether anything is mid-edit is the parent's business: it is what stands between a document
+    // being typed and an approver receiving it.
+    useEffect(() => {
+        onEditingStateChange?.({
+            openSequence: documents.find(d => d.id === expandedId)?.sequenceNumber ?? null,
+            unsavedSequences: dirtyIds
+                .map(id => documents.find(d => d.id === id)?.sequenceNumber)
+                .filter((s): s is number => s != null)
+        });
+    }, [expandedId, dirtyIds, documents, onEditingStateChange]);
 
     // ── Add ─────────────────────────────────────────────────────────────────────────────
 
@@ -349,48 +372,133 @@ export function PaymentSourceDocumentCollection({
                 </div>
             )}
 
-            {documents.map(d => (
-                <PaymentSourceDocumentCard
-                    key={d.id}                       // keyed by identity, never by index
-                    document={d}
-                    ocr={(uiState[d.id] ?? EMPTY_UI).ocr}
-                    conflict={(uiState[d.id] ?? EMPTY_UI).conflict}
-                    isExpanded={expandedId === d.id}
-                    onToggle={() => setExpandedId(expandedId === d.id ? null : d.id)}
-                    readOnly={effectiveReadOnly}
-                    saveError={(uiState[d.id] ?? EMPTY_UI).saveError}
-                    isSaving={(uiState[d.id] ?? EMPTY_UI).isSaving}
-                    currencyLocked={lockedCurrency}
-                    currencyError={(uiState[d.id] ?? EMPTY_UI).currencyError}
-                    onFieldChange={patch => handleFieldChange(d, patch)}
-                    onConflictChange={next => patchUi(d.id, { conflict: next })}
-                    onReplaceAttachment={() => setPendingReplace(d)}
-                    onRemove={() => setPendingRemoval(d)}
-                    onDuplicate={() => void addDocument(d)}
-                    suppliers={suppliers}
-                    plants={plants}
-                    currencies={currencies}
-                >
-                    {renderItems?.(d)}
-                    {!effectiveReadOnly && (
-                        <div>
-                            <button type="button" onClick={() => void save(d)} style={primaryButton}>
-                                Guardar documento
+            {/* §17 — the same progressive presentation as creation: everything settled shows as one
+                compact line, and only the document being worked on is a form. A request holding
+                three invoices must never be three open forms stacked down the page. */}
+            {documents.map(d => {
+                const ui = uiState[d.id] ?? EMPTY_UI;
+
+                if (expandedId !== d.id) {
+                    const status = deriveCardStatus(d, ui.ocr.isProcessing, ui.ocr.classification);
+
+                    return (
+                        <PaymentDocumentSummaryCard
+                            key={d.id}                       // keyed by identity, never by index
+                            document={{
+                                sequence: d.sequenceNumber,
+                                supplierName: d.supplierNameSnapshot ?? null,
+                                documentNumber: d.documentNumber ?? null,
+                                plantName: d.plantName ?? plants.find(p => p.id === d.plantId)?.name ?? null,
+                                sourceDocumentType: (d.sourceDocumentType as string | null) ?? null,
+                                grossAmount: d.grossAmount ?? null,
+                                currency: d.currency ?? null,
+                                itemCount: d.items.length
+                            }}
+                            lifecycle={{
+                                state: d.isVoided ? 'REVIEW_REQUIRED'
+                                    : status.status === 'OCR_PENDING' ? 'EXTRACTING'
+                                    : status.status === 'READY' ? 'CONFIRMED' : 'REVIEW_REQUIRED',
+                                label: status.label,
+                                severity: status.severity
+                            }}
+                            issues={status.status === 'READY' ? [] : d.validationMessages}
+                            onEdit={() => setExpandedId(d.id)}
+                            onReplaceAttachment={() => setPendingReplace(d)}
+                            onRemove={() => setPendingRemoval(d)}
+                            readOnly={effectiveReadOnly}
+                        />
+                    );
+                }
+
+                return (
+                    <PaymentSourceDocumentCard
+                        key={d.id}
+                        variant="editor"
+                        document={d}
+                        ocr={ui.ocr}
+                        conflict={ui.conflict}
+                        isExpanded
+                        onToggle={() => setExpandedId(null)}
+                        readOnly={effectiveReadOnly}
+                        saveError={ui.saveError}
+                        isSaving={ui.isSaving}
+                        currencyLocked={lockedCurrency}
+                        currencyError={ui.currencyError}
+                        onFieldChange={patch => handleFieldChange(d, patch)}
+                        onConflictChange={next => patchUi(d.id, { conflict: next })}
+                        onReplaceAttachment={() => setPendingReplace(d)}
+                        onRemove={() => setPendingRemoval(d)}
+                        onDuplicate={() => void addDocument(d)}
+                        showDuplicate={!effectiveReadOnly}
+                        plants={plants}
+                        currencies={currencies}
+                        footer={!effectiveReadOnly ? (
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => void save(d)}
+                                    disabled={ui.isSaving}
+                                    style={primaryButton}
+                                >
+                                    Guardar documento
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedId(null)}
+                                    style={{
+                                        padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-page)',
+                                        color: 'var(--color-text-main)', fontWeight: 700, fontSize: '0.8rem'
+                                    }}
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setExpandedId(null)}
+                                style={{
+                                    alignSelf: 'flex-start', padding: '8px 14px', borderRadius: '8px',
+                                    cursor: 'pointer', border: '1px solid var(--color-border)',
+                                    backgroundColor: 'var(--color-bg-page)',
+                                    color: 'var(--color-text-main)', fontWeight: 700, fontSize: '0.8rem'
+                                }}
+                            >
+                                Fechar
                             </button>
-                        </div>
-                    )}
-                </PaymentSourceDocumentCard>
-            ))}
+                        )}
+                    >
+                        {renderItems?.(d)}
+                    </PaymentSourceDocumentCard>
+                );
+            })}
 
             {!effectiveReadOnly && (
                 <button
                     type="button"
-                    onClick={() => void addDocument()}
+                    onClick={() => setChooserOpen(true)}
                     disabled={isAdding}
                     style={{ ...primaryButton, alignSelf: 'flex-start', opacity: isAdding ? 0.6 : 1 }}
                 >
                     <Plus size={14} /> {isAdding ? 'A adicionar…' : 'Adicionar outro documento'}
                 </button>
+            )}
+
+            {chooserOpen && (
+                <AddPaymentDocumentChoice
+                    variant="modal"
+                    sequence={documents.reduce((m, d) => Math.max(m, d.sequenceNumber), 0) + 1}
+                    duplicateFrom={documents.length > 0
+                        ? documents[documents.length - 1].sequenceNumber : null}
+                    onChoose={method => {
+                        setChooserOpen(false);
+                        void addDocument(method === 'DUPLICATE'
+                            ? documents[documents.length - 1] : undefined);
+                    }}
+                    onCancel={() => setChooserOpen(false)}
+                />
             )}
 
             {/* ── Request-level summary ── */}

@@ -17,7 +17,6 @@ interface Props {
      */
     hasSourceDocuments: boolean;
 
-    suppliers: Array<{ id: number; name: string; taxId?: string | null }>;
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
 
@@ -26,6 +25,8 @@ interface Props {
     onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
     /** Active document count, for the section header badge. */
     documentCount: number;
+    /** Bubbles whether a document is mid-edit, so submission can refuse. */
+    onEditingStateChange?: (state: { openSequence: number | null; unsavedSequences: number[] }) => void;
 }
 
 /** Statuses in which the documents may be changed. Mirrors PaymentSourceDocumentPolicy. */
@@ -47,13 +48,13 @@ export function PaymentSourceDocumentsSection({
     statusCode,
     multiDocumentEnabled,
     hasSourceDocuments,
-    suppliers,
     plants,
     currencies,
     isOpen,
     onToggle,
     onSummaryChange,
-    documentCount
+    documentCount,
+    onEditingStateChange
 }: Props) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const resolverRef = useRef<((id: string | null) => void) | null>(null);
@@ -133,9 +134,9 @@ export function PaymentSourceDocumentsSection({
             <PaymentSourceDocumentCollection
                 requestId={requestId}
                 readOnly={readOnly}
-                suppliers={suppliers}
                 plants={plants}
                 currencies={currencies}
+                onEditingStateChange={onEditingStateChange}
                 onSummaryChange={onSummaryChange}
                 onRequestAttachment={requestAttachment}
             />

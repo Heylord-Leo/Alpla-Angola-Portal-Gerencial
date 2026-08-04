@@ -637,7 +637,59 @@ close makes the aggregate `SATISFIED` below the expected total (§7.1 rule 5).
 
 ## 14. UI
 
-### 14.1 Payment creation — §3.8 (document collection, per-document OCR conflict, live total).
+### 14.1 Payment creation — progressive, one document at a time
+
+**Corrected after manual review of the first Phase 3 implementation.** That version rendered the
+legacy `Input de Documento & Faturamento` editor *and* a second full document collection at the same
+time: two supplier fields, two document numbers, two totals, and an empty `Documento 1` card
+reporting zero next to a form the OCR had already filled. The domain model was right; the screen
+asked for the same invoice twice.
+
+The flow is now progressive. It never shows an empty document card, and never shows two document
+editors at once:
+
+```
+Importar documento ou inserir manualmente
+  → rever os dados                         (one reusable editor, bound to one tempId)
+  → Confirmar e adicionar documento        (blocked while mandatory issues remain)
+  → recolhe num cartão resumido            (supplier · number · type · plant · total · status)
+  → adicionar outro documento, se preciso  (OCR / Manual / Duplicar dados básicos)
+  → total consolidado                      (confirmed documents only)
+  → guardar rascunho ou gerar pedido
+```
+
+Four components, one of each, shared by creation and editing:
+
+| Component | Responsibility |
+|---|---|
+| `AddPaymentDocumentChoice` | How the next document starts. Inline panel for the first, modal for the rest. |
+| `PaymentSourceDocumentCard` (`variant="editor"`) | The one open document. Not collapsible while open. |
+| `PaymentDocumentSummaryCard` | A document already dealt with, as one scannable line. |
+| `PaymentDocumentsSummary` | The consolidated value. Confirmed documents only. |
+
+`lib/paymentDocumentComposition.ts` holds the state model as pure functions — `CompositionState`,
+`DocumentLifecycle` (`EXTRACTING` / `EDITING` / `REVIEW_REQUIRED` / `CONFIRMED` / `ERROR`),
+`confirmationBlockers`, `submissionBlockers`, `activeDraftDisposition`. Whether a document may be
+confirmed is one question with one answer, not something each component decides for itself.
+
+**Confirmation is not submission.** It settles one document inside the client-side composition: its
+value starts counting, the editor collapses, and the next document may begin. The backend re-checks
+everything at submission and stays authoritative — `confirmationBlockers` deliberately mirrors
+`PaymentSourceDocumentValidator` so the user learns about a missing field while looking at the
+document rather than at the end of the request.
+
+Consequences that fall out of the model:
+
+- **Items belong to the open editor**, never to a global grid above the cards. A line has an owner by
+  construction.
+- **Sequence numbers are issued once.** Removing Documento 2 of three leaves Documento 1 and
+  Documento 3 — renumbering would rewrite what the user already called "Documento 3".
+- **Replacing an attachment un-confirms the document.** It is no longer the document that was
+  confirmed, and must not keep saying so.
+- **The plant is not copied** by "Duplicar dados básicos". Two invoices from one supplier for Viana 1
+  and Viana 2 is the case this feature exists for; copying would pre-fill the wrong answer.
+- **The document still open is never lost silently** when a draft is saved (§15 of the corrective
+  brief): complete enough → kept, otherwise the user chooses keep / discard / continue editing.
 
 ### 14.2 Request Details — per group
 

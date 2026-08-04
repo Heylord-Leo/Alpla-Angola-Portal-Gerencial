@@ -22,10 +22,12 @@ import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGui
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
 import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
-import { PaymentSourceDocumentDraftCollection } from '../../components/requests/PaymentSourceDocumentDraftCollection';
+import { PaymentDocumentComposer } from '../../components/requests/PaymentDocumentComposer';
 import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
 import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
 import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
+import { activeDraftDisposition, confirmedTotals } from '../../lib/paymentDocumentComposition';
+import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import {
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
     buildClassificationPayload,
@@ -99,8 +101,14 @@ export function RequestCreate() {
     // documents held client-side (each keyed by a temporary id) and flushed to the server in one
     // controlled pass after the draft exists. See usePaymentRequestCreation for the staging.
     const [tempDocuments, setTempDocuments] = useState<TemporaryPaymentDocument[]>([]);
+    /** The one document open in the composer's editor, or null when all are confirmed. */
+    const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+    /** Asked once, when a draft is saved while a document is still being typed. */
+    const [activeDraftPrompt, setActiveDraftPrompt] =
+        useState<'INCOMPLETE' | 'UNPERSISTABLE' | null>(null);
+    /** A ref, not state: the answer must be readable by the save that resumes on the same tick. */
+    const activeDraftDecisionRef = useRef<'KEEP' | 'DISCARD' | null>(null);
     const creation = usePaymentRequestCreation();
-    const documentOcr = usePaymentDocumentOcr();
 
     // Files chosen before the request exists. Keyed by a placeholder attachment id so the card can
     // show a filename immediately; the real upload happens in Stage C once there is a request to
@@ -126,26 +134,6 @@ export function RequestCreate() {
         pendingFilesRef.current.set(placeholderId, file);
         return { id: placeholderId, fileName: file.name, file };
     }, []);
-
-    /**
-     * Reads one document through POST /requests/direct-ocr, which needs no RequestId — so a
-     * document can be read before anything is persisted, with no early attachment to reconcile
-     * later. The result is stored under the document's own tempId.
-     */
-    const runDocumentOcr = useCallback(async (doc: TemporaryPaymentDocument) => {
-        const placeholder = doc.attachmentId;
-        const file = placeholder ? pendingFilesRef.current.get(placeholder) : undefined;
-        if (file) documentOcr.registerFile(doc.tempId, file);
-
-        const result = await documentOcr.run(doc);
-        if (!result) return;
-
-        // Merge back by tempId — never by position, and never touching another card.
-        setTempDocuments(prev => prev.map(d =>
-            d.tempId === doc.tempId
-                ? { ...result.document, classification: result.document.classification }
-                : d));
-    }, [documentOcr]);
 
     const handleSourceFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
@@ -201,6 +189,31 @@ export function RequestCreate() {
     const [requesterItems, setRequesterItems] = useState<RequesterItem[]>([]);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies, companies);
+
+    // Per-document OCR, reading through the SAME mapper the single-document editor uses: unit
+    // aliases, IVA matching, discount cross-validation and the backend-authoritative supplier match
+    // all apply unchanged to a document inside a collection.
+    const documentOcr = usePaymentDocumentOcr(mapOcrResultToDraft);
+
+    /**
+     * Reads one document through POST /requests/direct-ocr, which needs no RequestId — so a
+     * document can be read before anything is persisted, with no early attachment to reconcile
+     * later. The result is stored under the document's own tempId.
+     */
+    const runDocumentOcr = useCallback(async (doc: TemporaryPaymentDocument) => {
+        const placeholder = doc.attachmentId;
+        const file = placeholder ? pendingFilesRef.current.get(placeholder) : undefined;
+        if (file) documentOcr.registerFile(doc.tempId, file);
+
+        const result = await documentOcr.run(doc);
+        if (!result) return;
+
+        // Merge back by tempId — never by position, and never touching another card.
+        setTempDocuments(prev => prev.map(d =>
+            d.tempId === doc.tempId
+                ? { ...result.document, classification: result.document.classification }
+                : d));
+    }, [documentOcr]);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -881,8 +894,46 @@ export function RequestCreate() {
         }
         setShowReconciliationWarning(false);
 
+        // ── §15: the document still open must never disappear quietly ──
+        // A document the user was in the middle of typing is work they can see on screen; saving
+        // the draft without it, or silently including it half-filled, are both ways of losing it.
+        // Complete enough to stand on its own → keep it. Anything less → the user decides.
+        let documentsForSave = tempDocuments;
+
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2 &&
+            activeDocumentId) {
+            const active = tempDocuments.find(d => d.tempId === activeDocumentId) ?? null;
+            const disposition = activeDraftDisposition(active);
+
+            if (disposition === 'PERSISTABLE') {
+                documentsForSave = tempDocuments.map(d =>
+                    d.tempId === activeDocumentId ? { ...d, confirmed: true } : d);
+                setTempDocuments(documentsForSave);
+                setActiveDocumentId(null);
+            } else if (activeDraftDecisionRef.current === null && disposition !== 'NONE') {
+                setActiveDraftPrompt(disposition);
+                setLoading(false);
+                return;
+            } else if (activeDraftDecisionRef.current === 'DISCARD') {
+                documentsForSave = tempDocuments.filter(d => d.tempId !== activeDocumentId);
+                setTempDocuments(documentsForSave);
+                setActiveDocumentId(null);
+                documentOcr.forget(activeDocumentId);
+            }
+        }
+
         const safeCurrencyId = Number(formData.currencyId) || 1;
         const safePlantId = Number(formData.plantId) || 0;
+
+        // Multi-document: the request's headline figures are the CONSOLIDATED value of the documents,
+        // not a separate number the user typed. `paymentDraft` is null here because the legacy editor
+        // does not render, so every branch below that keys off it falls through to the form values —
+        // which for a payment would be zero. These override that.
+        const multiDocTotals = confirmedTotals(documentsForSave);
+        const multiDocFirst = documentsForSave.find(d => d.confirmed) ?? documentsForSave[0] ?? null;
+
+        const isMultiDocumentPayment =
+            featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
 
         const payload = {
             title: formData.title,
@@ -891,12 +942,16 @@ export function RequestCreate() {
                 : formData.description,
             requestTypeId: Number(formData.requestTypeId),
             needLevelId: Number(formData.needLevelId),
-            currencyId: paymentDraft && Number(formData.requestTypeId) === 2 
-                ? (currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId)
-                : safeCurrencyId,
-            estimatedTotalAmount: paymentDraft && Number(formData.requestTypeId) === 2 
-                ? paymentDraft.totalAmount 
-                : (Number(formData.estimatedTotalAmount) || 0),
+            currencyId: isMultiDocumentPayment
+                ? (currencies.find(c => c.code === multiDocTotals.currency)?.id || safeCurrencyId)
+                : paymentDraft && Number(formData.requestTypeId) === 2
+                    ? (currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId)
+                    : safeCurrencyId,
+            estimatedTotalAmount: isMultiDocumentPayment
+                ? multiDocTotals.gross
+                : paymentDraft && Number(formData.requestTypeId) === 2
+                    ? paymentDraft.totalAmount
+                    : (Number(formData.estimatedTotalAmount) || 0),
             discountAmount: paymentDraft && Number(formData.requestTypeId) === 2 
                 ? (paymentDraft.discountAmount || 0) 
                 : 0,
@@ -904,9 +959,13 @@ export function RequestCreate() {
             companyId: Number(formData.companyId),
             plantId: safePlantId,
             capexOpexClassificationId: (formData as any).capexOpexClassificationId ? Number((formData as any).capexOpexClassificationId) : null,
-            supplierId: Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId 
-                ? paymentDraft.supplierId 
-                : ((formData as any).supplierId ? Number((formData as any).supplierId) : null),
+            // The header supplier is a compatibility echo of the first document. It is not the
+            // authority — each document carries its own supplier, and the backend groups by it.
+            supplierId: isMultiDocumentPayment
+                ? (multiDocFirst?.supplierId ?? null)
+                : Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId
+                    ? paymentDraft.supplierId
+                    : ((formData as any).supplierId ? Number((formData as any).supplierId) : null),
             needByDateUtc: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
                 ? new Date(formData.needByDateUtc).toISOString() 
                 : null,
@@ -941,7 +1000,10 @@ export function RequestCreate() {
                     };
                 })()
                 : {}),
-            lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
+            // Multi-document: items belong to their document and are created in Stage C.2, each
+            // naming its own PaymentSourceDocumentId. Sending them here would produce a second,
+            // ownerless copy of every line.
+            lineItems: isMultiDocumentPayment ? [] : Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
                 description: item.description,
                 quantity: item.quantity,
@@ -984,9 +1046,6 @@ export function RequestCreate() {
             })) : []
         };
 
-        const isMultiDocumentPayment =
-            featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
-
         try {
             let createdRequestId: string;
 
@@ -996,7 +1055,7 @@ export function RequestCreate() {
                 // documents that were never saved.
                 const run = await creation.persist(
                     () => payload,
-                    tempDocuments,
+                    documentsForSave,
                     setTempDocuments,
                     materialiseAttachments);
 
@@ -1554,13 +1613,17 @@ export function RequestCreate() {
                              )}
                          </AnimatePresence>
 
+                         {/* The single-document editor. Hidden entirely when multi-document is on:
+                             the same invoice must never be askable for twice, and this block and
+                             the composer below are two answers to the same question. */}
                          <AnimatePresence>
-                             {Number(formData.requestTypeId) === 2 && (
+                             {Number(formData.requestTypeId) === 2 &&
+                              !featureFlags.paymentMultiDocumentEnabled && (
                                  <motion.div
                                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                                      style={{ position: 'relative' }}
                                  >
-                                     <div data-guide="request-payment-document-section" style={{ 
+                                     <div data-guide="request-payment-document-section" style={{
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
                                          border: '1px solid var(--color-border)',  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)',
                                          position: 'relative'
@@ -2024,17 +2087,21 @@ export function RequestCreate() {
                              )}
                          </AnimatePresence>
 
-                        {/* Release 3: PAYMENT composed as a collection of source documents. Each
-                            card is the SAME component the edit screen uses — creation and editing
-                            must not grow two visual implementations that drift apart. */}
+                        {/* Release 3: PAYMENT composed progressively — import or type one document,
+                            review it, confirm it, then add the next. The editor is the SAME card the
+                            edit screen uses; creation and editing must not grow two visual
+                            implementations that drift apart. */}
                         {featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2 && (
                             <div style={{ marginBottom: '24px' }}>
-                                <PaymentSourceDocumentDraftCollection
+                                <PaymentDocumentComposer
                                     documents={tempDocuments}
                                     onChange={setTempDocuments}
-                                    suppliers={[]}
+                                    activeTempId={activeDocumentId}
+                                    onActiveChange={setActiveDocumentId}
                                     plants={filteredPlants.map(p => ({ id: p.id, name: p.name }))}
                                     currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
+                                    units={units}
+                                    ivaRates={ivaRates}
                                     disabled={creation.phase === 'CREATING_REQUEST' ||
                                               creation.phase === 'SAVING_DOCUMENTS' ||
                                               creation.phase === 'SAVING_ITEMS'}
@@ -2336,6 +2403,60 @@ export function RequestCreate() {
             />
 
             {/* Reconciliation Warning Dialog */}
+            {/* §15 — the document still open when the draft is saved. Never resolved silently. */}
+            {activeDraftPrompt && (
+                <ConfirmationDialog
+                    title={activeDraftPrompt === 'UNPERSISTABLE'
+                        ? 'O documento em revisão não tem ficheiro'
+                        : 'O documento em revisão está incompleto'}
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                {activeDraftPrompt === 'UNPERSISTABLE'
+                                    ? 'Sem ficheiro anexado, este documento não pode ser gravado. Pode ' +
+                                      'descartá-lo e guardar o rascunho com os restantes, ou voltar e ' +
+                                      'anexar o ficheiro.'
+                                    : 'Faltam dados neste documento. Pode guardá-lo assim mesmo — o ' +
+                                      'rascunho aceita documentos incompletos e poderá terminá-lo no ' +
+                                      'pedido — ou descartá-lo.'}
+                            </span>
+                            {activeDraftPrompt === 'INCOMPLETE' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveDraftPrompt(null);
+                                        activeDraftDecisionRef.current = 'DISCARD';
+                                        void handleSubmit({ preventDefault: () => { } } as React.FormEvent);
+                                    }}
+                                    style={{
+                                        alignSelf: 'flex-start', background: 'none', border: 'none',
+                                        padding: 0, cursor: 'pointer', color: '#b91c1c',
+                                        fontWeight: 700, fontSize: '0.78rem', textDecoration: 'underline'
+                                    }}
+                                >
+                                    Descartar este documento e guardar sem ele
+                                </button>
+                            )}
+                        </div>
+                    }
+                    confirmText={activeDraftPrompt === 'UNPERSISTABLE'
+                        ? 'Descartar e guardar' : 'Guardar assim mesmo'}
+                    cancelText="Continuar a editar"
+                    variant="warning"
+                    onConfirm={() => {
+                        setActiveDraftPrompt(null);
+                        activeDraftDecisionRef.current =
+                            activeDraftPrompt === 'UNPERSISTABLE' ? 'DISCARD' : 'KEEP';
+                        void handleSubmit({ preventDefault: () => { } } as React.FormEvent);
+                    }}
+                    onCancel={() => {
+                        setActiveDraftPrompt(null);
+                        activeDraftDecisionRef.current = null;
+                        setLoading(false);
+                    }}
+                />
+            )}
+
             <ReconciliationWarningDialog
                 isOpen={showReconciliationWarning}
                 unresolvedCount={reconciliation.unresolvedCount}

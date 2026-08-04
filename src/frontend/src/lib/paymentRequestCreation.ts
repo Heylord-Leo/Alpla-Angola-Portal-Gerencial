@@ -1,4 +1,5 @@
 import { PaymentSourceDocumentDto, SavePaymentSourceDocumentDto } from '../types/paymentSourceDocument';
+import { OcrDraft } from '../types';
 import { ClassificationConflictState, EMPTY_CONFLICT, OcrDocumentClassification } from './documentClassificationDecision';
 
 /**
@@ -43,6 +44,26 @@ export const PHASE_LABEL: Record<CreationPhase, string> = {
  */
 export interface TemporaryPaymentDocument {
     tempId: string;
+
+    /**
+     * The number this document is called, issued once and never reissued.
+     *
+     * <p>Independent of array position: removing Documento 2 of three must leave Documento 1 and
+     * Documento 3 exactly as they were. Renumbering would rewrite what the user already called
+     * "Documento 3".</p>
+     */
+    localSequence: number;
+
+    /**
+     * The user has reviewed this document and accepted it into the request.
+     *
+     * <p>The hinge of the whole screen. Before it, the document is a draft being worked on and its
+     * value is provisional; after it, the document is settled, collapses to a summary card and
+     * counts towards the consolidated total. It is <b>not</b> a submission — it confirms one
+     * document inside the client-side composition, nothing more.</p>
+     */
+    confirmed: boolean;
+
     /** Set once the file is uploaded. Reused on retry so the same file is never uploaded twice. */
     attachmentId: string | null;
     attachmentFileName: string | null;
@@ -81,12 +102,56 @@ export interface TemporaryPaymentItem {
     description: string;
     quantity: number;
     unitId: number | null;
+    /** The backend resolves the unit from its CODE, so it is carried alongside the id. */
+    unitCode: string | null;
     unitPrice: number;
     discountAmount: number | null;
     ivaRateId: number | null;
     totalAmount: number;
+    /** Catalog match, preserved so reconciliation sees the same item the legacy grid would. */
+    itemCatalogId: number | null;
+    itemCatalogCode: string | null;
     /** Set after the owning document is persisted, never before. */
     persistedId: string | null;
+}
+
+export function createTemporaryItem(seed: Partial<TemporaryPaymentItem> = {}): TemporaryPaymentItem {
+    return {
+        tempId: newTempId('item'),
+        description: '',
+        quantity: 1,
+        unitId: null,
+        unitCode: null,
+        unitPrice: 0,
+        discountAmount: null,
+        ivaRateId: null,
+        totalAmount: 0,
+        itemCatalogId: null,
+        itemCatalogCode: null,
+        persistedId: null,
+        ...seed
+    };
+}
+
+/**
+ * One line's total: (quantity × price − discount) + IVA on that net.
+ *
+ * <p>Rounded at each step, mirroring <c>useOcrProcessor.calculateItemTotal</c> so a document read by
+ * OCR and the same document typed by hand arrive at the same number. A cent of drift between the two
+ * paths would surface as a false "a soma dos itens não corresponde".</p>
+ */
+export function computeItemTotal(
+    item: Pick<TemporaryPaymentItem, 'quantity' | 'unitPrice' | 'discountAmount'>,
+    ivaPercent: number
+): number {
+    const gross = Math.round((item.quantity || 0) * (item.unitPrice || 0) * 100) / 100;
+    const net = Math.max(0, gross - (item.discountAmount || 0));
+    const iva = Math.round(net * (ivaPercent / 100) * 100) / 100;
+    return Math.round((net + iva) * 100) / 100;
+}
+
+export function itemsTotalOf(items: TemporaryPaymentItem[]): number {
+    return Math.round(items.reduce((s, i) => s + (i.totalAmount ?? 0), 0) * 100) / 100;
 }
 
 let counter = 0;
@@ -101,6 +166,8 @@ export function createTemporaryDocument(
 ): TemporaryPaymentDocument {
     return {
         tempId: newTempId('doc'),
+        localSequence: 1,
+        confirmed: false,
         attachmentId: null,
         attachmentFileName: null,
         supplierId: null,
@@ -133,13 +200,17 @@ export function createTemporaryDocument(
  * number and series, its dates, its values, its OCR reading, its classification decision and its
  * items are what make a document a distinct document, and copying any of them would attach one
  * file's evidence to another.</p>
+ *
+ * <p><b>The plant is deliberately not copied.</b> Two invoices from the same supplier for Viana 1
+ * and Viana 2 is the exact case this feature was built for, so carrying the first document's plant
+ * over would pre-fill the wrong answer in the most common reason for adding a second document at
+ * all. The user names it once per document, on purpose.</p>
  */
 export function duplicateTemporaryBasics(source: TemporaryPaymentDocument): TemporaryPaymentDocument {
     return createTemporaryDocument({
         supplierId: source.supplierId,
         supplierNameSnapshot: source.supplierNameSnapshot,
         supplierTaxIdSnapshot: source.supplierTaxIdSnapshot,
-        plantId: source.plantId,
         currency: source.currency
     });
 }
@@ -292,7 +363,7 @@ export function asCardDocument(
 
     return {
         id: document.tempId,
-        sequenceNumber: document.sequenceNumber ?? displaySequence,
+        sequenceNumber: document.sequenceNumber ?? document.localSequence ?? displaySequence,
         attachmentId: document.attachmentId ?? '',
         attachmentFileName: document.attachmentFileName,
         supplierId: document.supplierId,
@@ -335,7 +406,7 @@ export function asCardDocument(
             description: i.description,
             quantity: i.quantity,
             unitId: i.unitId,
-            unitCode: null,
+            unitCode: i.unitCode,
             unitPrice: i.unitPrice,
             discountAmount: i.discountAmount,
             ivaRateId: i.ivaRateId,
@@ -374,6 +445,7 @@ export function localValidation(document: TemporaryPaymentDocument): string[] {
 
 /** The subset of the extraction response a source-document card can use. */
 export interface ExtractedDocumentFields {
+    supplierId: number | null;
     supplierName: string | null;
     supplierTaxId: string | null;
     documentNumber: string | null;
@@ -384,6 +456,56 @@ export interface ExtractedDocumentFields {
     taxAmount: number | null;
     grossAmount: number | null;
     classification: OcrDocumentClassification | null;
+    /** The document's own lines. Empty when the reading produced none. */
+    items: TemporaryPaymentItem[];
+}
+
+/**
+ * Reads an {@link OcrDraft} — the shape <c>useOcrProcessor.mapOcrResultToDraft</c> produces.
+ *
+ * <p>This is the reuse that matters. That mapper is where unit aliases are resolved, IVA rates are
+ * matched, the discount column is cross-validated against the document's own line totals and the
+ * supplier is matched <b>by the backend</b> rather than guessed from a paginated client search. All
+ * of it was written for the single-document editor and all of it applies unchanged to a document in
+ * a collection; reimplementing any of it here would be a second, worse copy.</p>
+ */
+export function fromOcrDraft(draft: OcrDraft): ExtractedDocumentFields {
+    const items: TemporaryPaymentItem[] = (draft.items ?? []).map(i => createTemporaryItem({
+        description: i.description ?? '',
+        quantity: i.quantity ?? 0,
+        unitId: i.unitId ?? null,
+        unitCode: i.unit ?? null,
+        unitPrice: i.unitPrice ?? 0,
+        discountAmount: i.discountAmount ?? null,
+        ivaRateId: i.ivaRateId ?? null,
+        totalAmount: i.totalPrice ?? 0,
+        itemCatalogId: i.itemCatalogId ?? null,
+        itemCatalogCode: i.itemCatalogCode ?? null
+    }));
+
+    // The document's stated grand total is authoritative; net and IVA are derived from the lines so
+    // the three numbers agree with each other rather than with three different readings.
+    const gross = draft.totalAmount > 0 ? draft.totalAmount : null;
+    const net = items.length > 0
+        ? Math.round(items.reduce(
+            (s, i) => s + Math.max(0, (i.quantity * i.unitPrice) - (i.discountAmount ?? 0)), 0) * 100) / 100
+        : null;
+    const tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
+
+    return {
+        supplierId: draft.supplierId ?? null,
+        supplierName: draft.supplierNameSnapshot?.trim() || null,
+        supplierTaxId: draft.supplierTaxId?.trim() || null,
+        documentNumber: draft.documentNumber?.trim() || null,
+        documentDate: draft.documentDate?.substring(0, 10) || null,
+        dueDate: draft.dueDate?.substring(0, 10) || null,
+        currency: draft.currency?.toUpperCase() || null,
+        netAmount: net,
+        taxAmount: tax != null && tax > 0 ? tax : null,
+        grossAmount: gross,
+        classification: (draft.documentClassification as OcrDocumentClassification | null) ?? null,
+        items
+    };
 }
 
 function text(value: unknown): string | null {
@@ -419,6 +541,8 @@ export function extractDocumentFields(ocrResult: any): ExtractedDocumentFields {
     const rawDate = text(h.date);
 
     return {
+        supplierId: null,
+        items: [],
         supplierName: text(h.supplierName),
         supplierTaxId: text(h.supplierTaxId),
         documentNumber: text(h.documentNumber),
@@ -479,10 +603,23 @@ export function mergeExtraction(
         ? supplierLookup(extracted.supplierName, extracted.supplierTaxId)
         : null;
 
+    // Lines the user has already entered are never replaced. On a re-read they would otherwise be
+    // silently swapped for the reading the user had just finished correcting.
+    const keepExistingItems = document.items.length > 0;
+    if (keepExistingItems && extracted.items.length > 0) {
+        discrepancies.push({
+            field: 'items',
+            label: 'Itens',
+            userValue: `${document.items.length} linha(s) introduzida(s)`,
+            extractedValue: `${extracted.items.length} linha(s) lida(s), não aplicadas`
+        });
+    }
+
     return {
         document: {
             ...document,
-            supplierId: document.supplierId ?? supplier?.id ?? null,
+            items: keepExistingItems ? document.items : extracted.items,
+            supplierId: document.supplierId ?? extracted.supplierId ?? supplier?.id ?? null,
             supplierNameSnapshot: document.supplierNameSnapshot ?? supplier?.name ?? extracted.supplierName,
             supplierTaxIdSnapshot: document.supplierTaxIdSnapshot ?? extracted.supplierTaxId,
             documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),

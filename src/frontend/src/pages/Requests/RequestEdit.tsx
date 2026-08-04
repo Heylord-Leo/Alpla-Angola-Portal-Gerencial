@@ -38,6 +38,7 @@ import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
+import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -151,6 +152,53 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     const [sourceDocumentsSummary, setSourceDocumentsSummary] =
         useState<PaymentSourceDocumentsSummaryDto | null>(null);
     const [sourceDocsOpen, setSourceDocsOpen] = useState(true);
+    const [documentEditingState, setDocumentEditingState] =
+        useState<{ openSequence: number | null; unsavedSequences: number[] }>(
+            { openSequence: null, unsavedSequences: [] });
+    /** Why the request cannot be submitted yet. Shown instead of letting the backend refuse. */
+    const [submitBlockers, setSubmitBlockers] = useState<string[] | null>(null);
+
+    /**
+     * §16 — submission preflight for a multi-document PAYMENT.
+     *
+     * <p>Two things must be true before an approver sees this request: nothing is still being typed,
+     * and the backend's own summary says it may be submitted. The server re-checks everything and
+     * stays authoritative; this exists so the user is told <b>which document</b> is the problem
+     * rather than receiving one generic refusal.</p>
+     */
+    const guardedSubmitRequest = () => {
+        const summary = sourceDocumentsSummary;
+        if (!featureFlags.paymentMultiDocumentEnabled || !summary?.usesMultiDocumentModel) {
+            void handleSubmitRequest();
+            return;
+        }
+
+        const problems: string[] = [];
+
+        for (const seq of documentEditingState.unsavedSequences) {
+            problems.push(
+                `Documento ${seq} tem alterações por guardar. Guarde o documento antes de gerar o pedido.`);
+        }
+
+        if (documentEditingState.openSequence != null &&
+            !documentEditingState.unsavedSequences.includes(documentEditingState.openSequence)) {
+            problems.push(
+                `Documento ${documentEditingState.openSequence} ainda está em revisão. ` +
+                'Confirme o documento antes de gerar o pedido.');
+        }
+
+        if (!summary.canSubmit) {
+            problems.push(...summary.requestValidationMessages);
+            for (const d of summary.documents) {
+                for (const m of d.validationMessages) {
+                    problems.push(`Documento ${d.sequenceNumber}: ${m}`);
+                }
+            }
+        }
+
+        if (problems.length > 0) { setSubmitBlockers(problems); return; }
+        void handleSubmitRequest();
+    };
 
     const getFieldErrors = (fieldName: string) => {
         if (!fieldErrors) return null;
@@ -315,7 +363,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 )}
                 {isDraftEditable && (
                     <button
-                        onClick={handleSubmitRequest}
+                        onClick={guardedSubmitRequest}
                         disabled={submitting || saving}
                         className="btn-primary"
                         style={{
@@ -428,12 +476,12 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                             (sourceDocumentsSummary?.documents.length ?? 0) > 0
                         }
                         documentCount={sourceDocumentsSummary?.documents.length ?? 0}
-                        suppliers={[]}
                         plants={plants}
                         currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
                         onSummaryChange={setSourceDocumentsSummary}
+                        onEditingStateChange={setDocumentEditingState}
                     />
                 )}
 
@@ -774,6 +822,23 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 initialName={quickSupplierModal.initialName}
                 initialTaxId={quickSupplierModal.initialTaxId}
             />
+
+            {/* §16 — every remaining document-level issue, named by document. */}
+            {submitBlockers && (
+                <ConfirmationDialog
+                    title="O pedido ainda não pode ser gerado"
+                    message={
+                        <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {submitBlockers.map(b => <li key={b}>{b}</li>)}
+                        </ul>
+                    }
+                    confirmText="Rever documentos"
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => { setSubmitBlockers(null); setSourceDocsOpen(true); }}
+                    onCancel={() => setSubmitBlockers(null)}
+                />
+            )}
 
         </motion.div >
     );
