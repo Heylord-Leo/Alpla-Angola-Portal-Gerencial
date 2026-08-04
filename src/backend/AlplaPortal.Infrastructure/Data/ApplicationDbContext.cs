@@ -131,7 +131,18 @@ public class ApplicationDbContext : DbContext
     public DbSet<EmailOutboxEntry> EmailOutbox => Set<EmailOutboxEntry>();
 
     // Post-Payment Completion Workflow (Release 1: table created, first rows written in Release 3)
-    public DbSet<FinalInvoiceReconciliation> FinalInvoiceReconciliations => Set<FinalInvoiceReconciliation>();
+    public DbSet<OperationInvoiceReconciliation> OperationInvoiceReconciliations =>
+        Set<OperationInvoiceReconciliation>();
+
+    // ── Release 3: multi-document PAYMENT origin, and operation invoices across PO groups ──
+    /// <summary>Documents that ORIGINATE a PAYMENT request. PAYMENT only — never quotations.</summary>
+    public DbSet<PaymentSourceDocument> PaymentSourceDocuments => Set<PaymentSourceDocument>();
+
+    /// <summary>Facturas received after payment, one per document however many groups they cover.</summary>
+    public DbSet<OperationInvoice> OperationInvoices => Set<OperationInvoice>();
+    public DbSet<OperationInvoiceAllocation> OperationInvoiceAllocations => Set<OperationInvoiceAllocation>();
+    public DbSet<OperationInvoiceLine> OperationInvoiceLines => Set<OperationInvoiceLine>();
+    public DbSet<OperationInvoiceShortClose> OperationInvoiceShortCloses => Set<OperationInvoiceShortClose>();
 
     /// <summary>Audit of classifications that contradicted the document's own evidence.</summary>
     public DbSet<DocumentClassificationOverride> DocumentClassificationOverrides =>

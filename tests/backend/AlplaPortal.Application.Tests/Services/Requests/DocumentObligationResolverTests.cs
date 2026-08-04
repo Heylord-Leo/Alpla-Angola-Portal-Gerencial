@@ -124,7 +124,7 @@ public class DocumentObligationResolverTests
         Assert.True(o.RequiresSeparateFiscalReceipt);
         Assert.False(o.RequiresAdvanceRegularization);
         Assert.False(o.RequiresFinanceClassificationReview);
-        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, o.OperationInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotRequired, o.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class DocumentObligationResolverTests
         Assert.False(o.RequiresOperationInvoice);
         Assert.False(o.RequiresSeparateFiscalReceipt);   // demanding one would be legally wrong
         Assert.False(o.BlocksProgression);
-        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, o.OperationInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotRequired, o.OperationInvoiceStatus);
     }
 
     [Fact]

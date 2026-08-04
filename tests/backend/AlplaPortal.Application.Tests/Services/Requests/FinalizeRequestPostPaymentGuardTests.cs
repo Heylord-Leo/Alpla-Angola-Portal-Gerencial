@@ -241,7 +241,7 @@ public class FinalizeRequestPostPaymentGuardTests
     public async Task Enabled_feature_redirects_a_classified_grouped_request_to_the_new_flow()
     {
         using var ctx = NewContext();
-        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Validated);
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Satisfied);
 
         var controller = BuildController(ctx, seed.ActorId, EnabledOptions());
 

@@ -244,8 +244,12 @@ public class GroupBuilderService : IGroupBuilderService
         if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
             return;
 
+        // Release 3: coverage is cumulative, so "an invoice already arrived" is now the presence of
+        // any allocation rather than a single attachment pointer. A group that has started its
+        // post-payment lifecycle keeps the obligation the documents were judged against.
         var hasPostPaymentActivity =
-            poGroup.FinalInvoiceAttachmentId != null ||
+            poGroup.Id != Guid.Empty &&
+            _context.OperationInvoiceAllocations.Any(a => a.RequestPoGroupId == poGroup.Id) ||
             poGroup.FiscalReceiptAttachmentId != null ||
             poGroup.OperationalReceiptCompletedAtUtc != null;
 

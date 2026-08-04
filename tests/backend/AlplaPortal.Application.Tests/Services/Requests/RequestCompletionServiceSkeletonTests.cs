@@ -214,22 +214,30 @@ public class RequestCompletionServiceSkeletonTests
     }
 
     [Fact]
-    public void Final_invoice_reconciliation_table_exists_in_the_model()
+    public void Operation_invoice_reconciliation_table_exists_in_the_model()
     {
         using var context = ModelOnlyContext();
-        var entity = context.Model.FindEntityType(typeof(FinalInvoiceReconciliation));
+        var entity = context.Model.FindEntityType(typeof(OperationInvoiceReconciliation));
 
         Assert.NotNull(entity);
-        Assert.Equal("FinalInvoiceReconciliations", entity!.GetTableName());
+        Assert.Equal("OperationInvoiceReconciliations", entity!.GetTableName());
     }
 
     [Fact]
     public void Legacy_receipt_attachment_type_is_untouched_and_the_new_codes_are_distinct()
     {
+        // TYPE_RECEIPT is semantically ambiguous (fiscal receipt vs delivery note) and historical
+        // rows keep it exactly as recorded — rule R18. It must never collide with a new code.
         Assert.Equal("RECEIPT", RequestAttachment.TYPE_RECEIPT);
-        Assert.Equal("FINAL_INVOICE", RequestAttachment.TYPE_FINAL_INVOICE);
         Assert.Equal("FISCAL_RECEIPT", RequestAttachment.TYPE_FISCAL_RECEIPT);
+
+        // Release 3 renamed FINAL_INVOICE to OPERATION_INVOICE ("final" wrongly implied
+        // terminality) and added the PAYMENT origin code. Nothing carried the old value.
+        Assert.Equal("OPERATION_INVOICE", RequestAttachment.TYPE_OPERATION_INVOICE);
+        Assert.Equal("PAYMENT_SOURCE_DOCUMENT", RequestAttachment.TYPE_PAYMENT_SOURCE_DOCUMENT);
+
         Assert.NotEqual(RequestAttachment.TYPE_RECEIPT, RequestAttachment.TYPE_FISCAL_RECEIPT);
+        Assert.NotEqual(RequestAttachment.TYPE_OPERATION_INVOICE, RequestAttachment.TYPE_PAYMENT_SOURCE_DOCUMENT);
     }
 }
 

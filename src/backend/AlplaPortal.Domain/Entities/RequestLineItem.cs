@@ -66,6 +66,15 @@ public class RequestLineItem
     public Guid? RequestPoGroupId { get; set; }
     public RequestPoGroup? RequestPoGroup { get; set; }
 
+    /// <summary>
+    /// PAYMENT only: the source document this item is being paid against. Authoritative — the
+    /// distribution of a source document across PO groups is derived from its items' RequestPoGroupId,
+    /// which is why no separate allocation table exists. Null on QUOTATION items and on PAYMENT items
+    /// created before the multi-document feature.
+    /// </summary>
+    public Guid? PaymentSourceDocumentId { get; set; }
+    public PaymentSourceDocument? PaymentSourceDocument { get; set; }
+
     public Guid? SelectedQuotationItemId { get; set; }
     public QuotationItem? SelectedQuotationItem { get; set; }
 

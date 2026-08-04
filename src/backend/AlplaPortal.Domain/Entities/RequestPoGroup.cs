@@ -22,6 +22,14 @@ public class RequestPoGroup
     public Currency? Currency { get; set; }
     public string? CurrencyCode { get; set; }
 
+    /// <summary>
+    /// The plant this group serves. Part of the grouping key from Release 3: one supplier billing
+    /// two plants produces two groups, because the obligations are tracked and received separately.
+    /// Null on groups created before the multi-document feature.
+    /// </summary>
+    public int? PlantId { get; set; }
+    public Plant? Plant { get; set; }
+
     public decimal TotalAmount { get; set; }
 
     public string? PaymentConditionCode { get; set; }
@@ -95,12 +103,28 @@ public class RequestPoGroup
     /// <summary>Finance must confirm or correct the classification before completion.</summary>
     public bool RequiresFinanceClassificationReview { get; set; }
 
-    public Guid? FinalInvoiceAttachmentId { get; set; }
-    public DateTime? FinalInvoiceUploadedAtUtc { get; set; }
-    public Guid? FinalInvoiceUploadedByUserId { get; set; }
-    public DateTime? FinalInvoiceValidatedAtUtc { get; set; }
-    public Guid? FinalInvoiceValidatedByUserId { get; set; }
-    public string? FinalInvoiceRejectionReason { get; set; }
+    // ── Cumulative coverage (Release 3) ──
+    //
+    // The single-document columns that used to live here (FinalInvoiceAttachmentId and friends) are
+    // gone. A group may be covered by MANY operation invoices, and one invoice may cover MANY
+    // groups, so a "primary attachment" pointer beside a 1:N set would invite exactly the bug this
+    // model exists to prevent. Coverage lives in OperationInvoiceAllocation.
+
+    /// <summary>
+    /// The commercial value this group must eventually be invoiced for. Captured ONCE when the
+    /// obligation is activated, not re-derived: recomputing it later would drift whenever a
+    /// quotation or line item is edited, silently moving the finish line.
+    ///
+    /// <para>Always the value of what was ORDERED — never what was paid. That is what makes an
+    /// advance behave correctly without a special rule.</para>
+    /// </summary>
+    public decimal? ExpectedOperationInvoiceTotal { get; set; }
+    public string? ExpectedOperationInvoiceCurrency { get; set; }
+
+    /// <summary>Set only when Finance established the expected total by hand, with a reason.</summary>
+    public Guid? ExpectedTotalSetByUserId { get; set; }
+    public DateTime? ExpectedTotalSetAtUtc { get; set; }
+    public string? ExpectedTotalJustification { get; set; }
 
     // Dimension 3: Fiscal Receipt — terminal document, and the stable group-completion identity
     /// <summary>

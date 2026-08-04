@@ -29,9 +29,17 @@ public class RequestAttachment
     /// </summary>
     public const string TYPE_RECEIPT = "RECEIPT";
 
-    // ── Post-Payment Completion Workflow (Release 1 foundation) ──
-    /// <summary>Final Invoice ("Fatura Final") uploaded post-payment by Requester, Buyer or Finance.</summary>
-    public const string TYPE_FINAL_INVOICE = "FINAL_INVOICE";
+    // ── Post-Payment Completion Workflow ──
+    /// <summary>
+    /// Operation Invoice ("Factura da operação") uploaded post-payment by Requester, Buyer or
+    /// Finance. Renamed from FINAL_INVOICE in Release 3: "final" wrongly implied terminality, when
+    /// a Factura is simply the operation document and other obligations may still be open. The old
+    /// code was never written to any row, so nothing carries it.
+    /// </summary>
+    public const string TYPE_OPERATION_INVOICE = "OPERATION_INVOICE";
+
+    /// <summary>A document that ORIGINATES a PAYMENT request. Never an operation invoice.</summary>
+    public const string TYPE_PAYMENT_SOURCE_DOCUMENT = "PAYMENT_SOURCE_DOCUMENT";
     /// <summary>Fiscal receipt ("Recibo Fiscal") — terminal closing document, uploaded by Finance only.</summary>
     public const string TYPE_FISCAL_RECEIPT = "FISCAL_RECEIPT";
 

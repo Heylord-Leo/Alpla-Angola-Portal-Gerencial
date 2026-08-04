@@ -66,7 +66,7 @@ public sealed record DocumentObligations
             ? RequestConstants.OperationInvoiceStatuses.Unclassified
             : RequiresOperationInvoice
                 ? RequestConstants.OperationInvoiceStatuses.PendingUpload
-                : RequestConstants.OperationInvoiceStatuses.NotApplicable;
+                : RequestConstants.OperationInvoiceStatuses.NotRequired;
 }
 
 /// <summary>

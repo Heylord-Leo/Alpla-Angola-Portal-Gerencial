@@ -84,7 +84,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Fiscal_receipt_is_locked_while_operational_receipt_is_pending()
     {
-        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
+        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied);
 
         Assert.Equal(RequestConstants.FiscalReceiptStatuses.Locked, FiscalReceiptStateDeriver.Derive(group));
         Assert.False(FiscalReceiptStateDeriver.CanUploadFiscalReceipt(group));
@@ -109,8 +109,8 @@ public class PostPaymentDimensionDerivationTests
     }
 
     [Theory]
-    [InlineData("VALIDATED")]
-    [InlineData("NOT_APPLICABLE")]
+    [InlineData("SATISFIED")]      // Release 3: cumulative coverage complete, or short-closed
+    [InlineData("NOT_REQUIRED")]   // the source document already documents the operation
     public void Fiscal_receipt_unlocks_once_receipt_and_invoice_are_satisfied(string satisfiedStatus)
     {
         var group = Group(receiptDone: true, operationInvoiceStatus: satisfiedStatus);
@@ -136,7 +136,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: true,
-            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied,
             fiscalUploaded: true);
 
         Assert.True(FiscalReceiptStateDeriver.IsGroupCompletable(group));
@@ -147,7 +147,7 @@ public class PostPaymentDimensionDerivationTests
     {
         // A timestamp without an attachment id would leave GROUP_COMPLETED with no stable
         // identity — the evaluation must refuse rather than invent one.
-        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied);
         group.FiscalReceiptUploadedAtUtc = DateTime.UtcNow;
         group.FiscalReceiptAttachmentId = null;
 
@@ -162,7 +162,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: false,
-            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied,
             fiscalUploaded: true);
 
         Assert.False(FiscalReceiptStateDeriver.IsGroupCompletable(group));
@@ -193,7 +193,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_never_lists_a_locked_fiscal_receipt_it_is_not_actionable()
     {
-        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
+        var group = Group(receiptDone: false, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied);
 
         Assert.Equal(PostPaymentPendingReason.OperationalReceipt, PostPaymentPendingReason.Compute(group));
     }
@@ -201,7 +201,7 @@ public class PostPaymentDimensionDerivationTests
     [Fact]
     public void Pending_reason_lists_the_fiscal_receipt_once_it_becomes_actionable()
     {
-        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated);
+        var group = Group(receiptDone: true, operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied);
 
         Assert.Equal(PostPaymentPendingReason.FiscalReceipt, PostPaymentPendingReason.Compute(group));
     }
@@ -211,7 +211,7 @@ public class PostPaymentDimensionDerivationTests
     {
         var group = Group(
             receiptDone: true,
-            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Validated,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied,
             fiscalUploaded: true);
 
         Assert.Equal(PostPaymentPendingReason.Completed, PostPaymentPendingReason.Compute(group));
@@ -224,13 +224,16 @@ public class PostPaymentDimensionDerivationTests
     {
         var all = new[]
         {
+            // Release 3: REJECTED and REPLACEMENT_REQUESTED are no longer AGGREGATE states — a
+            // rejected document leaves its group PENDING_UPLOAD or PARTIALLY_INVOICED, and the
+            // rejection itself lives on the document. PARTIALLY_INVOICED is new: real coverage,
+            // legitimately short of the total.
             RequestConstants.OperationInvoiceStatuses.Unclassified,
-            RequestConstants.OperationInvoiceStatuses.NotApplicable,
+            RequestConstants.OperationInvoiceStatuses.NotRequired,
             RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            RequestConstants.OperationInvoiceStatuses.PartiallyInvoiced,
             RequestConstants.OperationInvoiceStatuses.PendingValidation,
-            RequestConstants.OperationInvoiceStatuses.Validated,
-            RequestConstants.OperationInvoiceStatuses.Rejected,
-            RequestConstants.OperationInvoiceStatuses.ReplacementRequested,
+            RequestConstants.OperationInvoiceStatuses.Satisfied,
             RequestConstants.OperationInvoiceStatuses.DivergenceDetected
         };
 

@@ -378,38 +378,106 @@ public static class RequestConstants
         /// <summary>Document identity unknown. Default for every group. Blocks completion.</summary>
         public const string Unclassified = "UNCLASSIFIED";
         /// <summary>The source document already documents the operation — no further invoice is owed.</summary>
-        public const string NotApplicable = "NOT_APPLICABLE";
-        /// <summary>An operation invoice is owed and not yet uploaded.</summary>
+        public const string NotRequired = "NOT_REQUIRED";
+        /// <summary>An operation invoice is owed and nothing has been validated yet.</summary>
         public const string PendingUpload = "PENDING_UPLOAD";
-        /// <summary>Uploaded, awaiting Finance validation (rule R10).</summary>
+        /// <summary>Some coverage validated, but less than expected. Legitimate partial invoicing.</summary>
+        public const string PartiallyInvoiced = "PARTIALLY_INVOICED";
+        /// <summary>At least one invoice awaits Finance validation (rule R10).</summary>
         public const string PendingValidation = "PENDING_VALIDATION";
-        /// <summary>Validated by Finance. Obligation satisfied.</summary>
-        public const string Validated = "VALIDATED";
-        /// <summary>Rejected by Finance. A new upload is expected.</summary>
-        public const string Rejected = "REJECTED";
-        /// <summary>Finance asked for a replacement document.</summary>
-        public const string ReplacementRequested = "REPLACEMENT_REQUESTED";
         /// <summary>Reconciliation found a divergence Finance must decide on explicitly.</summary>
         public const string DivergenceDetected = "DIVERGENCE_DETECTED";
+        /// <summary>Cumulative coverage complete, or Finance approved a short close.</summary>
+        public const string Satisfied = "SATISFIED";
 
         /// <summary>States in which the operation-invoice dimension counts as done.</summary>
-        public static readonly string[] Satisfied =
-            { NotApplicable, Validated };
-
-        /// <summary>States in which a new operation-invoice upload is accepted.</summary>
-        public static readonly string[] AcceptsUpload =
-            { PendingUpload, Rejected, ReplacementRequested };
+        public static readonly string[] SatisfiedStates =
+            { NotRequired, Satisfied };
 
         /// <summary>States that block group completion and Fiscal Receipt upload.</summary>
         public static readonly string[] Blocking =
-            { Unclassified, PendingUpload, PendingValidation,
-              Rejected, ReplacementRequested, DivergenceDetected };
+            { Unclassified, PendingUpload, PartiallyInvoiced, PendingValidation, DivergenceDetected };
+
+        /// <summary>
+        /// Aggregate states in which a further operation-invoice upload is accepted. A satisfied or
+        /// not-required group takes no more documents; an unclassified one takes none yet.
+        /// </summary>
+        public static readonly string[] AcceptsUpload =
+            { PendingUpload, PartiallyInvoiced, PendingValidation, DivergenceDetected };
 
         public static bool IsSatisfied(string? status) =>
-            Satisfied.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            SatisfiedStates.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
 
         public static bool IsBlocking(string? status) =>
             Blocking.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+
+        public static bool AcceptsUploadIn(string? status) =>
+            AcceptsUpload.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// State of ONE operation-invoice document. Distinct from the group aggregate above: a document
+    /// is validated or it is not, while a group is measured by cumulative coverage.
+    /// </summary>
+    public static class OperationInvoiceDocumentStatuses
+    {
+        /// <summary>Received; extraction and reconciliation not yet computed. Transient.</summary>
+        public const string Uploaded = "UPLOADED";
+        /// <summary>Computed and queued for Finance.</summary>
+        public const string PendingValidation = "PENDING_VALIDATION";
+        /// <summary>Accepted. Its allocations count toward their groups' coverage.</summary>
+        public const string Validated = "VALIDATED";
+        /// <summary>Judged wrong. Terminal for this document.</summary>
+        public const string Rejected = "REJECTED";
+        /// <summary>Right document, unusable copy. Terminal for this document.</summary>
+        public const string ReplacementRequested = "REPLACEMENT_REQUESTED";
+        /// <summary>Something Finance must decide on explicitly before the document can be accepted.</summary>
+        public const string DivergenceDetected = "DIVERGENCE_DETECTED";
+
+        /// <summary>Contributes to a group's validated coverage.</summary>
+        public static bool CountsTowardCoverage(string? status) =>
+            string.Equals(status, Validated, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Awaiting a Finance decision — the group reads as PENDING_VALIDATION.</summary>
+        public static readonly string[] AwaitingDecision = { Uploaded, PendingValidation };
+
+        /// <summary>Terminal without coverage: contributes nothing but stays visible forever.</summary>
+        public static readonly string[] Terminal = { Rejected, ReplacementRequested };
+
+        public static bool IsAwaitingDecision(string? status) =>
+            AwaitingDecision.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+
+        public static bool IsEditable(string? status) =>
+            !string.Equals(status, Validated, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>How an operation-invoice line relates to the baseline it was allocated against.</summary>
+    public static class OperationInvoiceLineMatchStatuses
+    {
+        public const string Mapped = "MAPPED";
+        public const string Substitute = "SUBSTITUTE";
+        public const string ExtraItem = "EXTRA_ITEM";
+        public const string Ignored = "IGNORED";
+
+        /// <summary>
+        /// Read from the document but not yet attributed to any group. Never silently discarded —
+        /// an unallocated line blocks validation until it is allocated or explicitly ignored.
+        /// </summary>
+        public const string Unallocated = "UNALLOCATED";
+
+        public static bool BlocksValidation(string? status) =>
+            string.Equals(status, Unallocated, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Lifecycle of a proposal to close an obligation below its expected total.</summary>
+    public static class ShortCloseStatuses
+    {
+        public const string Proposed = "PROPOSED";
+        public const string Approved = "APPROVED";
+        public const string Rejected = "REJECTED";
+
+        /// <summary>States that occupy the single active slot per group.</summary>
+        public static readonly string[] Active = { Proposed, Approved };
     }
 
     /// <summary>

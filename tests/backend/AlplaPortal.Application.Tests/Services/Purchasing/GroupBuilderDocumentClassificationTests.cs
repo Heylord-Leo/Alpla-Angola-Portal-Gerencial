@@ -117,7 +117,7 @@ public class GroupBuilderDocumentClassificationTests
         await Service(ctx, featureEnabled: true).BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, group.OperationInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotRequired, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public class GroupBuilderDocumentClassificationTests
         await service.BuildGroupsForRequestAsync(requestId);
 
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotApplicable, group.OperationInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.NotRequired, group.OperationInvoiceStatus);
     }
 
     [Fact]
@@ -199,9 +199,26 @@ public class GroupBuilderDocumentClassificationTests
 
         await service.BuildGroupsForRequestAsync(requestId);
 
+        // Release 3: "an invoice already arrived" is the presence of an ALLOCATION, because one
+        // invoice may cover several groups and one group may hold several invoices.
         var group = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        group.FinalInvoiceAttachmentId = Guid.NewGuid();
-        group.OperationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.Validated;
+        var invoice = new OperationInvoice
+        {
+            RequestId = requestId,
+            AttachmentId = Guid.NewGuid(),
+            Status = RequestConstants.OperationInvoiceDocumentStatuses.Validated,
+            UploadedAtUtc = DateTime.UtcNow,
+            UploadedByUserId = Guid.NewGuid()
+        };
+        ctx.OperationInvoices.Add(invoice);
+        ctx.OperationInvoiceAllocations.Add(new OperationInvoiceAllocation
+        {
+            OperationInvoiceId = invoice.Id,
+            RequestPoGroupId = group.Id,
+            AllocatedGrossAmount = 100m,
+            SequenceNumber = 1
+        });
+        group.OperationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.Satisfied;
         await ctx.SaveChangesAsync();
 
         var quotation = await ctx.Quotations.FirstAsync(q => q.RequestId == requestId);
@@ -211,6 +228,6 @@ public class GroupBuilderDocumentClassificationTests
         await service.BuildGroupsForRequestAsync(requestId);
 
         var reloaded = await ctx.RequestPoGroups.SingleAsync(g => g.RequestId == requestId);
-        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Validated, reloaded.OperationInvoiceStatus);
+        Assert.Equal(RequestConstants.OperationInvoiceStatuses.Satisfied, reloaded.OperationInvoiceStatus);
     }
 }

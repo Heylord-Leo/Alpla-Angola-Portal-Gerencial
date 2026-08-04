@@ -80,6 +80,16 @@ public class RequestLineItemConfiguration : IEntityTypeConfiguration<RequestLine
                .HasForeignKey(li => li.SelectedQuotationItemId)
                .OnDelete(DeleteBehavior.NoAction);
 
+        // PAYMENT multi-document: the item's source document. NoAction because removing a document
+        // after submission voids it rather than deleting it — see PaymentSourceDocument.IsVoided.
+        builder.HasOne(li => li.PaymentSourceDocument)
+               .WithMany(d => d.LineItems)
+               .HasForeignKey(li => li.PaymentSourceDocumentId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(li => li.PaymentSourceDocumentId)
+               .HasDatabaseName("IX_RequestLineItem_PaymentSourceDocumentId");
+
         // ── Provenance & idempotency (buyer reconciliation workaround) ──
         builder.Property(li => li.CreationOrigin).HasMaxLength(50);
         builder.Property(li => li.CreationIdempotencyKey).HasMaxLength(100);
@@ -372,7 +382,19 @@ public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGro
                .HasMaxLength(50)
                .HasDefaultValue(RequestConstants.OperationInvoiceStatuses.Unclassified);
 
-        builder.Property(g => g.FinalInvoiceRejectionReason).HasMaxLength(2000);
+        // ── Release 3: plant is part of the group identity, coverage is cumulative ──
+        builder.Property(g => g.ExpectedOperationInvoiceTotal).HasColumnType("decimal(18,2)");
+        builder.Property(g => g.ExpectedOperationInvoiceCurrency).HasMaxLength(10);
+        builder.Property(g => g.ExpectedTotalJustification).HasMaxLength(2000);
+
+        builder.HasOne(g => g.Plant)
+               .WithMany()
+               .HasForeignKey(g => g.PlantId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // The Finance obligations queue filters thousands of groups by aggregate state.
+        builder.HasIndex(g => g.OperationInvoiceStatus)
+               .HasDatabaseName("IX_RequestPoGroup_OperationInvoiceStatus");
 
         builder.HasOne(g => g.Supplier)
                .WithMany()
@@ -557,9 +579,9 @@ public class RequestStatusHistoryConfiguration : IEntityTypeConfiguration<Reques
 /// Immutable Final Invoice reconciliation snapshots. Table created in Release 1; first rows are
 /// written in Release 3.
 /// </summary>
-public class FinalInvoiceReconciliationConfiguration : IEntityTypeConfiguration<FinalInvoiceReconciliation>
+public class OperationInvoiceReconciliationConfiguration : IEntityTypeConfiguration<OperationInvoiceReconciliation>
 {
-    public void Configure(EntityTypeBuilder<FinalInvoiceReconciliation> builder)
+    public void Configure(EntityTypeBuilder<OperationInvoiceReconciliation> builder)
     {
         builder.HasKey(r => r.Id);
 
@@ -576,10 +598,18 @@ public class FinalInvoiceReconciliationConfiguration : IEntityTypeConfiguration<
                .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(r => r.RequestPoGroupId)
-               .HasDatabaseName("IX_FinalInvoiceReconciliation_PoGroupId");
+               .HasDatabaseName("IX_OperationInvoiceReconciliation_PoGroupId");
 
-        builder.HasIndex(r => r.FinalInvoiceAttachmentId)
-               .HasDatabaseName("IX_FinalInvoiceReconciliation_AttachmentId");
+        builder.HasIndex(r => r.OperationInvoiceAttachmentId)
+               .HasDatabaseName("IX_OperationInvoiceReconciliation_AttachmentId");
+
+        builder.Property(r => r.AllocatedTotal).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.CumulativeValidatedTotalBefore).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.ExpectedTotalAtComparison).HasColumnType("decimal(18,2)");
+        builder.Property(r => r.ClassificationWarning).HasMaxLength(200);
+
+        builder.HasIndex(r => r.OperationInvoiceAllocationId)
+               .HasDatabaseName("IX_OperationInvoiceReconciliation_AllocationId");
     }
 }
 
@@ -636,6 +666,226 @@ public class DocumentClassificationOverrideConfiguration : IEntityTypeConfigurat
 
         builder.HasIndex(o => o.QuotationId)
                .HasDatabaseName("IX_DocumentClassificationOverride_QuotationId");
+    }
+}
+
+// ── Release 3: multi-document PAYMENT origin ──────────────────────────────────────────────
+
+/// <summary>
+/// Documents that originate a PAYMENT request. Cascade from the request (a source document has no
+/// meaning without it), NoAction everywhere else — a supplier or plant must never be deletable in a
+/// way that erases the record of what was paid for.
+/// </summary>
+public class PaymentSourceDocumentConfiguration : IEntityTypeConfiguration<PaymentSourceDocument>
+{
+    public void Configure(EntityTypeBuilder<PaymentSourceDocument> builder)
+    {
+        builder.HasKey(d => d.Id);
+
+        builder.Property(d => d.SourceDocumentType).HasMaxLength(50);
+        builder.Property(d => d.DocumentNumber).HasMaxLength(100);
+        builder.Property(d => d.DocumentSeries).HasMaxLength(50);
+        builder.Property(d => d.Currency).HasMaxLength(10);
+        builder.Property(d => d.SupplierNameSnapshot).HasMaxLength(255);
+        builder.Property(d => d.SupplierTaxIdSnapshot).HasMaxLength(50);
+        builder.Property(d => d.NetAmount).HasColumnType("decimal(18,2)");
+        builder.Property(d => d.TaxAmount).HasColumnType("decimal(18,2)");
+        builder.Property(d => d.GrossAmount).HasColumnType("decimal(18,2)");
+
+        builder.Property(d => d.OcrSuggestion).HasMaxLength(50);
+        builder.Property(d => d.OcrConfidence).HasColumnType("decimal(5,4)");
+        builder.Property(d => d.OcrTitleFound).HasMaxLength(400);
+        builder.Property(d => d.ClassificationSource).HasMaxLength(30);
+        builder.Property(d => d.ClassificationSuggestionSource).HasMaxLength(20);
+        builder.Property(d => d.ClassificationJustification).HasMaxLength(2000);
+        builder.Property(d => d.VoidReason).HasMaxLength(500);
+
+        builder.Property(d => d.RowVersion).IsRowVersion();
+
+        builder.HasOne(d => d.Request)
+               .WithMany()
+               .HasForeignKey(d => d.RequestId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(d => d.Attachment)
+               .WithMany()
+               .HasForeignKey(d => d.AttachmentId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(d => d.Supplier)
+               .WithMany()
+               .HasForeignKey(d => d.SupplierId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(d => d.Plant)
+               .WithMany()
+               .HasForeignKey(d => d.PlantId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // One attachment is one source document. Half of "the same file is never registered twice";
+        // the hash check at upload is the other half.
+        builder.HasIndex(d => d.AttachmentId)
+               .IsUnique()
+               .HasDatabaseName("UX_PaymentSourceDocument_AttachmentId");
+
+        builder.HasIndex(d => new { d.RequestId, d.SequenceNumber })
+               .IsUnique()
+               .HasDatabaseName("UX_PaymentSourceDocument_RequestSequence");
+
+        builder.HasIndex(d => new { d.RequestId, d.IsVoided })
+               .HasDatabaseName("IX_PaymentSourceDocument_RequestActive");
+
+        builder.HasIndex(d => new { d.SupplierId, d.DocumentNumber, d.DocumentSeries })
+               .HasDatabaseName("IX_PaymentSourceDocument_SupplierDocument");
+    }
+}
+
+// ── Release 3: operation invoices across PO groups ────────────────────────────────────────
+
+/// <summary>
+/// The operation-invoice document. Request-scoped so that cross-request consolidation is impossible
+/// to represent rather than merely rejected.
+/// </summary>
+public class OperationInvoiceConfiguration : IEntityTypeConfiguration<OperationInvoice>
+{
+    public void Configure(EntityTypeBuilder<OperationInvoice> builder)
+    {
+        builder.HasKey(i => i.Id);
+
+        builder.Property(i => i.Status).IsRequired().HasMaxLength(30);
+        builder.Property(i => i.DocumentNumber).HasMaxLength(100);
+        builder.Property(i => i.DocumentSeries).HasMaxLength(50);
+        builder.Property(i => i.Currency).HasMaxLength(10);
+        builder.Property(i => i.SupplierTaxIdSnapshot).HasMaxLength(50);
+        builder.Property(i => i.BilledCompanyNameRead).HasMaxLength(255);
+        builder.Property(i => i.RejectionReason).HasMaxLength(2000);
+        builder.Property(i => i.NetAmount).HasColumnType("decimal(18,2)");
+        builder.Property(i => i.TaxAmount).HasColumnType("decimal(18,2)");
+        builder.Property(i => i.GrossAmount).HasColumnType("decimal(18,2)");
+
+        builder.Property(i => i.RowVersion).IsRowVersion();
+
+        builder.HasOne(i => i.Request)
+               .WithMany()
+               .HasForeignKey(i => i.RequestId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(i => i.Attachment)
+               .WithMany()
+               .HasForeignKey(i => i.AttachmentId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(i => i.Supplier)
+               .WithMany()
+               .HasForeignKey(i => i.SupplierId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(i => i.AttachmentId)
+               .IsUnique()
+               .HasDatabaseName("UX_OperationInvoice_AttachmentId");
+
+        builder.HasIndex(i => new { i.RequestId, i.Status })
+               .HasDatabaseName("IX_OperationInvoice_RequestStatus");
+
+        // Duplicate detection: same supplier reissuing the same number in the same series.
+        builder.HasIndex(i => new { i.SupplierId, i.DocumentNumber, i.DocumentSeries })
+               .HasDatabaseName("IX_OperationInvoice_SupplierDocument");
+    }
+}
+
+public class OperationInvoiceAllocationConfiguration : IEntityTypeConfiguration<OperationInvoiceAllocation>
+{
+    public void Configure(EntityTypeBuilder<OperationInvoiceAllocation> builder)
+    {
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.AllocatedNetAmount).HasColumnType("decimal(18,2)");
+        builder.Property(a => a.AllocatedTaxAmount).HasColumnType("decimal(18,2)");
+        builder.Property(a => a.AllocatedGrossAmount).HasColumnType("decimal(18,2)");
+        builder.Property(a => a.RowVersion).IsRowVersion();
+
+        builder.HasOne(a => a.OperationInvoice)
+               .WithMany(i => i.Allocations)
+               .HasForeignKey(a => a.OperationInvoiceId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(a => a.RequestPoGroup)
+               .WithMany()
+               .HasForeignKey(a => a.RequestPoGroupId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // One invoice reaches a group at most once: covering more of it means a LARGER allocation,
+        // never a second row. Without this, two rows could double-count the same document.
+        builder.HasIndex(a => new { a.OperationInvoiceId, a.RequestPoGroupId })
+               .IsUnique()
+               .HasDatabaseName("UX_OperationInvoiceAllocation_InvoiceGroup");
+
+        builder.HasIndex(a => new { a.RequestPoGroupId, a.SequenceNumber })
+               .IsUnique()
+               .HasDatabaseName("UX_OperationInvoiceAllocation_GroupSequence");
+    }
+}
+
+public class OperationInvoiceLineConfiguration : IEntityTypeConfiguration<OperationInvoiceLine>
+{
+    public void Configure(EntityTypeBuilder<OperationInvoiceLine> builder)
+    {
+        builder.HasKey(l => l.Id);
+
+        builder.Property(l => l.Description).IsRequired().HasMaxLength(1000);
+        builder.Property(l => l.MatchStatus).IsRequired().HasMaxLength(30);
+        builder.Property(l => l.BaselineLineType).HasMaxLength(30);
+        builder.Property(l => l.Quantity).HasColumnType("decimal(18,4)");
+        builder.Property(l => l.UnitPrice).HasColumnType("decimal(18,2)");
+        builder.Property(l => l.DiscountAmount).HasColumnType("decimal(18,2)");
+        builder.Property(l => l.TaxAmount).HasColumnType("decimal(18,2)");
+        builder.Property(l => l.LineTotal).HasColumnType("decimal(18,2)");
+
+        builder.HasOne(l => l.OperationInvoice)
+               .WithMany(i => i.Lines)
+               .HasForeignKey(l => l.OperationInvoiceId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        // Cascade is deliberate here too: a line has no meaning without its allocation, and removing
+        // an allocation must not leave lines pointing at nothing.
+        builder.HasOne(l => l.OperationInvoiceAllocation)
+               .WithMany(a => a.Lines)
+               .HasForeignKey(l => l.OperationInvoiceAllocationId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // The cumulative-quantity query runs per baseline line across every validated invoice —
+        // the hottest read path in the whole workflow.
+        builder.HasIndex(l => l.BaselineLineId)
+               .HasDatabaseName("IX_OperationInvoiceLine_BaselineLineId");
+
+        builder.HasIndex(l => l.OperationInvoiceAllocationId)
+               .HasDatabaseName("IX_OperationInvoiceLine_AllocationId");
+    }
+}
+
+public class OperationInvoiceShortCloseConfiguration : IEntityTypeConfiguration<OperationInvoiceShortClose>
+{
+    public void Configure(EntityTypeBuilder<OperationInvoiceShortClose> builder)
+    {
+        builder.HasKey(c => c.Id);
+
+        builder.Property(c => c.Status).IsRequired().HasMaxLength(20);
+        builder.Property(c => c.ProposalJustification).IsRequired().HasMaxLength(2000);
+        builder.Property(c => c.DecisionReason).HasMaxLength(2000);
+        builder.Property(c => c.RemainingAmountAtProposal).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.RowVersion).IsRowVersion();
+
+        builder.HasOne(c => c.RequestPoGroup)
+               .WithMany()
+               .HasForeignKey(c => c.RequestPoGroupId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // At most one live proposal or approval per group. A REJECTED row is free to repeat, which
+        // is what lets a second proposal be made after a refusal.
+        builder.HasIndex(c => c.RequestPoGroupId)
+               .IsUnique()
+               .HasFilter("[Status] IN ('PROPOSED', 'APPROVED')")
+               .HasDatabaseName("UX_OperationInvoiceShortClose_ActivePerGroup");
     }
 }
 

@@ -3,28 +3,58 @@ using System;
 namespace AlplaPortal.Domain.Entities;
 
 /// <summary>
-/// Immutable audit snapshot of a Final Invoice reconciliation: the commercial baseline compared
-/// against the uploaded Final Invoice, plus the explicit decision Finance took about it.
+/// Immutable audit snapshot of a operation invoice reconciliation: the commercial baseline compared
+/// against the uploaded operation invoice, plus the explicit decision Finance took about it.
 ///
 /// Release 1 creates the table only — the calculator and the endpoints that write rows arrive in
 /// Release 3. Rows are never updated: a new upload produces a new snapshot, which is what keeps
 /// the audit trail honest when a document is replaced.
 /// </summary>
-public class FinalInvoiceReconciliation
+public class OperationInvoiceReconciliation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>The PO group whose Final Invoice obligation this snapshot belongs to.</summary>
+    /// <summary>The PO group whose operation-invoice obligation this snapshot belongs to.</summary>
     public Guid RequestPoGroupId { get; set; }
     public RequestPoGroup RequestPoGroup { get; set; } = null!;
 
-    /// <summary>The reconciled Final Invoice attachment (also part of the history idempotency key).</summary>
-    public Guid FinalInvoiceAttachmentId { get; set; }
+    /// <summary>The reconciled operation-invoice attachment.</summary>
+    public Guid OperationInvoiceAttachmentId { get; set; }
+
+    /// <summary>The document this comparison was computed for.</summary>
+    public Guid? OperationInvoiceId { get; set; }
+
+    /// <summary>
+    /// The allocation this comparison belongs to — the natural grain, because the comparison is
+    /// against ONE group's baseline. A consolidated invoice therefore produces one snapshot per
+    /// group it touches, each self-contained.
+    /// </summary>
+    public Guid? OperationInvoiceAllocationId { get; set; }
+
+    /// <summary>The NIF printed on the document matched the registered supplier.</summary>
+    public bool NifMatched { get; set; }
+
+    /// <summary>The billed entity matched the request's company.</summary>
+    public bool CompanyMatched { get; set; }
+
+    /// <summary>OCR read the document as something other than an operation invoice.</summary>
+    public string? ClassificationWarning { get; set; }
+
+    /// <summary>The share of the invoice allocated to this group.</summary>
+    public decimal AllocatedTotal { get; set; }
+
+    /// <summary>
+    /// Cumulative validated coverage of the group BEFORE this comparison, and the expected total as
+    /// it stood then. Stored so the snapshot can be re-read years later without reconstructing the
+    /// state of the world at the time.
+    /// </summary>
+    public decimal CumulativeValidatedTotalBefore { get; set; }
+    public decimal ExpectedTotalAtComparison { get; set; }
 
     /// <summary>Commercial baseline total: winning quotation (QUOTATION) or proforma/request total (PAYMENT).</summary>
     public decimal BaselineTotal { get; set; }
 
-    /// <summary>Grand total read from the Final Invoice.</summary>
+    /// <summary>Grand total read from the operation invoice.</summary>
     public decimal InvoiceTotal { get; set; }
 
     /// <summary>Unexplained difference left after the per-line reconciliation buckets.</summary>
