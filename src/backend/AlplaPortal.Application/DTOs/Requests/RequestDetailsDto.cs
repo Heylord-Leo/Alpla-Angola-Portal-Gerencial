@@ -189,6 +189,18 @@ public class RequestLineItemDto
     public int? PlantId { get; set; }
     public string? PlantName { get; set; }
 
+    /// <summary>
+    /// The source document this item belongs to, on a multi-document PAYMENT request.
+    ///
+    /// <para>Null for quotations and for the legacy single-document path. Exposed so the review
+    /// screen can show which document an item is being paid against — without it, a consolidated
+    /// item list is a set of lines with no stated owner.</para>
+    /// </summary>
+    public Guid? PaymentSourceDocumentId { get; set; }
+
+    /// <summary>Sequence of the owning document, so the UI can say "Documento 2" without a lookup.</summary>
+    public int? PaymentSourceDocumentSequence { get; set; }
+
     public int? CostCenterId { get; set; }
     public string? CostCenterName { get; set; }
     public string? CostCenterCode { get; set; }

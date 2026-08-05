@@ -140,6 +140,9 @@ export interface RequestLineItemDto {
     notes: string | null;
     plantId: number | null;
     plantName: string | null;
+    /** The PaymentSourceDocument this item belongs to; null outside multi-document PAYMENT. */
+    paymentSourceDocumentId?: string | null;
+    paymentSourceDocumentSequence?: number | null;
     lineItemStatusCode: string | null;
     lineItemStatusName: string | null;
     lineItemStatusBadgeColor: string | null;

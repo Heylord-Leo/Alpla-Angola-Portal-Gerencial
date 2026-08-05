@@ -67,6 +67,16 @@ export function PaymentSourceDocumentsSection({
     const readOnly = !EDITABLE_STATUSES.includes(statusCode ?? '');
 
     /**
+     * The review screen presents documents; the composer changes them.
+     *
+     * <p>Editing starts behind one explicit action rather than being permanently available, so the
+     * review screen stays a review — every document and item change happens inside the controlled
+     * composer, where the confirmation rules apply.</p>
+     */
+    const [composerOpen, setComposerOpen] = useState(false);
+    const editing = composerOpen && !readOnly;
+
+    /**
      * Opens the file picker and resolves with the new attachment id. Promise-shaped so the
      * collection can await it inline instead of threading callbacks through three components.
      */
@@ -134,9 +144,36 @@ export function PaymentSourceDocumentsSection({
                 </div>
             )}
 
+            {!readOnly && (
+                <div style={{ marginBottom: '14px' }}>
+                    <button
+                        type="button"
+                        onClick={() => setComposerOpen(o => !o)}
+                        style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '9px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                            border: `1px solid var(--color-primary)`,
+                            backgroundColor: editing ? 'var(--color-primary)' : 'transparent',
+                            color: editing ? '#fff' : 'var(--color-primary)',
+                            fontWeight: 800, fontSize: '0.8rem'
+                        }}
+                    >
+                        {editing ? 'Concluir edição dos documentos' : 'Editar documentos do pedido'}
+                    </button>
+                    {!editing && (
+                        <p style={{
+                            margin: '8px 0 0', fontSize: '0.76rem', color: 'var(--color-text-muted)'
+                        }}>
+                            Os documentos e os seus itens só podem ser alterados aqui — as regras de
+                            confirmação aplicam-se dentro deste editor.
+                        </p>
+                    )}
+                </div>
+            )}
+
             <PaymentSourceDocumentCollection
                 requestId={requestId}
-                readOnly={readOnly}
+                readOnly={readOnly || !editing}
                 plants={plants}
                 currencies={currencies}
                 canCreateSupplier={canCreateSupplier}

@@ -112,6 +112,15 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
     const [departments, setDepartments] = useState<LookupDto[]>([]);
+    /**
+     * This request keeps its document identity on its PaymentSourceDocuments, not on the header.
+     *
+     * <p>Set by the review screen once the source-document summary arrives, from the persisted
+     * discriminator rather than a row count. While true, `Request.SourceDocumentType` and
+     * `Request.SupplierId` are compatibility echoes and must not gate anything: the authoritative
+     * classification lives on each document and is validated there, by the backend, per document.</p>
+     */
+    const [usesMultiSourceDocuments, setUsesMultiSourceDocuments] = useState(false);
     const [companies, setCompanies] = useState<any[]>([]);
     const [plants, setPlants] = useState<LookupDto[]>([]);
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
@@ -994,7 +1003,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         // 1.05 Post-Payment Completion (Release 2) — the billing document type becomes mandatory at
         // submission, never while the request is still a draft. Mirrors the authoritative backend
         // rule in SubmitRequest; the server re-checks it regardless of what the UI allows.
-        if (requestTypeCode === 'PAYMENT' && featureFlags.sourceDocumentTypeRequired &&
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments &&
+            featureFlags.sourceDocumentTypeRequired &&
             !isSelectableDocumentType(formData.sourceDocumentType)) {
             setFeedback({
                 type: 'error',
@@ -1007,7 +1017,10 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         // 1.06 A classification that contradicts the document reading must have been confirmed —
         // and justified where the risk warrants it. The backend rejects an unconfirmed one with a
         // 400; refusing here turns that into an explanation instead of a failed save.
-        if (requestTypeCode === 'PAYMENT' && featureFlags.postPaymentCompletionEnabled) {
+        // Likewise the header-level conflict: on a multi-document request the reading and the
+        // decision belong to a document, and each document carries its own answer.
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments &&
+            featureFlags.postPaymentCompletionEnabled) {
             const evaluation = evaluateClassificationConflict(
                 formData.sourceDocumentType, documentClassification);
 
@@ -1103,6 +1116,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     
 
     return {
+        usesMultiSourceDocuments,
+        setUsesMultiSourceDocuments,
         id,
         isCopyMode,
         copyFromId,

@@ -47,6 +47,14 @@ export interface RequestLineItemsSectionProps {
 
     // Permissions
     canEditItems: boolean;
+    /**
+     * Name the document each item belongs to.
+     *
+     * <p>On a multi-document PAYMENT the consolidated list mixes lines from several invoices. Without
+     * the owner shown, "which document is this line being paid against" is unanswerable from the
+     * screen — and it is the only question that matters when the totals disagree.</p>
+     */
+    showSourceDocumentColumn?: boolean;
 
     // Handlers
     handleSaveItem: (item: any) => void;
@@ -73,6 +81,7 @@ export function RequestLineItemsSection({
     units, plants, costCenters, ivaRates,
     companyId, requestTypeCode, supplierId, fieldErrors, clearFieldError,
     canEditItems,
+    showSourceDocumentColumn = false,
     handleSaveItem, handleDeleteItem,
     isOpen, onToggle,
     isItemsHighlighted, itemsSectionRef,
@@ -132,6 +141,7 @@ export function RequestLineItemsSection({
                         <thead>
                             <tr>
                                 <th>#</th>
+                                {showSourceDocumentColumn && <th>Documento</th>}
                                 <th>Descrição</th>
                                 <th style={{ textAlign: 'center' }}>Unid.</th>
                                 <th style={{ textAlign: 'right' }}>Qtd</th>
@@ -176,6 +186,13 @@ export function RequestLineItemsSection({
                                     return (
                                         <tr key={item.id}>
                                             <td>{item.lineNumber}</td>
+                                            {showSourceDocumentColumn && (
+                                                <td style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+                                                    {item.paymentSourceDocumentSequence != null
+                                                        ? `Documento ${item.paymentSourceDocumentSequence}`
+                                                        : '---'}
+                                                </td>
+                                            )}
                                             <td>{item.description}</td>
                                             <td style={{ textAlign: 'center' }}>{item.unit || '---'}</td>
                                             <td style={{ textAlign: 'right' }}>{item.quantity}</td>

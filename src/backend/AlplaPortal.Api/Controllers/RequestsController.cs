@@ -1157,6 +1157,10 @@ public class RequestsController : BaseController
                     DivergenceNotes = li.DivergenceNotes,
                     PlantId = li.PlantId,
                     PlantName = li.Plant != null ? li.Plant.Name : null,
+                    PaymentSourceDocumentId = li.PaymentSourceDocumentId,
+                    PaymentSourceDocumentSequence = li.PaymentSourceDocument != null
+                        ? li.PaymentSourceDocument.SequenceNumber
+                        : (int?)null,
                     CostCenterId = li.CostCenterId,
                     CostCenterName = li.CostCenter != null ? li.CostCenter.Name : null,
                     CostCenterCode = li.CostCenter != null ? li.CostCenter.Code : null,
@@ -8283,6 +8287,7 @@ public class RequestsController : BaseController
             DocumentNumber = d.DocumentNumber,
             SourceDocumentType = d.SourceDocumentType,
             DocumentDate = d.DocumentDate,
+            DueDate = d.DueDate,
             Currency = d.Currency,
             GrossAmount = d.GrossAmount,
             ItemsTotal = itemTotals.TryGetValue(d.Id, out var t) ? t.Total : 0m,

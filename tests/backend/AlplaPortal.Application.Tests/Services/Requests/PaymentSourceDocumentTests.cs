@@ -59,6 +59,48 @@ public class PaymentSourceDocumentValidatorTests
         params PaymentSourceDocumentState[] docs) =>
         PaymentSourceDocumentValidator.Validate(docs, requireClassification: true);
 
+    // ── The request header is a compatibility echo, not a gate ──
+
+    /// <summary>
+    /// A multi-document request carries its classification on each document. The header's
+    /// <c>SourceDocumentType</c> is a compatibility echo of the first one and must never block
+    /// submission — the review screen used to demand it, leaving a request with a perfectly valid
+    /// PROFORMA document refusing to submit because a field nobody edits was empty.
+    /// </summary>
+    [Fact]
+    public void Documents_carry_the_classification_the_request_header_does_not_need()
+    {
+        // Nothing here mentions Request.SourceDocumentType: the validator is given DOCUMENTS, and
+        // that is the whole point — the header is not one of its inputs and cannot gate the result.
+        var result = Validate(Doc(type: "PROFORMA"));
+
+        Assert.True(result.CanSubmit);
+        Assert.Empty(result.Problems);
+    }
+
+    [Fact]
+    public void A_document_without_a_type_blocks_and_names_itself()
+    {
+        var result = Validate(
+            Doc(label: "Documento 1", type: "PROFORMA"),
+            Doc(label: "Documento 2", type: null));
+
+        Assert.False(result.CanSubmit);
+        var problem = Assert.Single(
+            result.Problems, p => p.Message == "Indique o tipo de documento anexado.");
+        Assert.Equal("Documento 2", problem.Label);
+    }
+
+    [Fact]
+    public void A_document_without_a_supplier_still_blocks()
+    {
+        // Request-level supplier is not required for multi-document; document-level still is.
+        var result = Validate(Doc(supplier: null));
+
+        Assert.False(result.CanSubmit);
+        Assert.Contains(result.Problems, p => p.Message == "Indique o fornecedor.");
+    }
+
     // ── Due date ──
 
     /// <summary>

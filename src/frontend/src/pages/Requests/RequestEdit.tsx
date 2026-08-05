@@ -143,8 +143,20 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         loadData,
         navigate,
         location,
-        poGroups
+        poGroups,
+        setUsesMultiSourceDocuments
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
+
+    /**
+     * This request's documents are the authority, not its header.
+     *
+     * <p>From the persisted discriminator, never a row count or a date: a new multi-document draft
+     * has zero documents until its first is saved and must still be treated as one.</p>
+     */
+    const isMultiDocumentPayment =
+        featureFlags.paymentMultiDocumentEnabled &&
+        requestTypeCode === 'PAYMENT' &&
+        sourceDocumentsSummary?.usesMultiDocumentModel === true;
 
     const isDrawerMode = !!onDrawerClose;
     const { user } = useAuth();
@@ -437,6 +449,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 gap: '32px'
             }}>
                 <RequestGeneralDataSection
+                    isMultiDocumentPayment={isMultiDocumentPayment}
                     formData={formData}
                     setFormData={setFormData}
                     handleChange={handleChange}
@@ -491,11 +504,20 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
                         canCreateSupplier={canCreateSupplier}
-                        onSummaryChange={setSourceDocumentsSummary}
+                        onSummaryChange={summary => {
+                            setSourceDocumentsSummary(summary);
+                            // The submit guards live in the hook and must stop asking for the
+                            // header-level classification the moment the documents own it.
+                            setUsesMultiSourceDocuments(summary?.usesMultiDocumentModel === true);
+                        }}
                         onEditingStateChange={setDocumentEditingState}
                     />
                 )}
 
+                {/* One authoritative total. On a multi-document request the value IS the sum of the
+                    active documents, and the source-document summary already states it — a second
+                    editable copy of currency and discount would be a second, contradictory answer. */}
+                {!isMultiDocumentPayment && (
                 <RequestFinancialSummary
                     formData={formData}
                     setFormData={setFormData}
@@ -512,6 +534,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getInputClassName={getInputClassName}
                     renderFieldError={renderFieldError}
                 />
+                )}
 
             </form>
 
@@ -531,7 +554,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 supplierId={formData.supplierId ?? null}
                 fieldErrors={fieldErrors}
                 clearFieldError={clearFieldError}
-                canEditItems={canEditItems}
+                // Items belong to a document. They are changed inside the document composer, never
+                // from a consolidated list where a line has no stated owner.
+                canEditItems={canEditItems && !isMultiDocumentPayment}
+                showSourceDocumentColumn={isMultiDocumentPayment}
                 handleSaveItem={handleSaveItem}
                 handleDeleteItem={handleDeleteItem}
                 isOpen={sectionsOpen.items}
@@ -614,6 +640,17 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         onRefresh={handleAttachmentRefresh}
                         requestType={requestTypeCode || undefined}
                         status={status || undefined}
+                        showSourceDocuments={isMultiDocumentPayment}
+                        sourceDocuments={isMultiDocumentPayment
+                            ? (sourceDocumentsSummary?.documents ?? []).map(d => ({
+                                sequenceNumber: d.sequenceNumber,
+                                attachmentId: d.attachmentId,
+                                fileName: d.attachmentFileName ?? null,
+                                documentNumber: d.documentNumber ?? null,
+                                sourceDocumentType: (d.sourceDocumentType as string | null) ?? null,
+                                supplierName: d.supplierNameSnapshot ?? null
+                            }))
+                            : []}
                     />
                 </div>
             </CollapsibleSection>

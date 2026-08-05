@@ -58,6 +58,15 @@ export interface RequestGeneralDataSectionProps {
 
     /** Post-Payment Completion (Release 2). Absent/false renders the pre-feature layout. */
     featureFlags?: { postPaymentCompletionEnabled: boolean; sourceDocumentTypeRequired: boolean };
+    /**
+     * The request keeps its supplier and document identity on its PaymentSourceDocuments.
+     *
+     * <p>`Request.SupplierId` and `Request.SourceDocumentType` remain as compatibility echoes of the
+     * first document, but showing them here as editable inputs asks the user to answer, at request
+     * level, a question each document already answers for itself — and then blocks submission on the
+     * unanswered copy. They are removed from this screen instead.</p>
+     */
+    isMultiDocumentPayment?: boolean;
 
     /** The reading this request's classification was judged against, restored from the saved data. */
     documentClassification?: OcrDocumentClassification | null;
@@ -75,6 +84,7 @@ export interface RequestGeneralDataSectionProps {
 export function RequestGeneralDataSection({
     formData, setFormData, handleChange, clearFieldError,
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
+    isMultiDocumentPayment = false,
     needLevels, departments, companies, plants,
     documentClassification, classificationConflict, setClassificationConflict,
     canEditHeader, canEditSupplier, isQuotationPartiallyEditable, isQuotationStage, hasSavedQuotations,
@@ -180,6 +190,19 @@ export function RequestGeneralDataSection({
                             {renderFieldError('RequestTypeId')}
                         </label>
 
+                        {isMultiDocumentPayment ? (
+                            <div className={labelClassName}>
+                                <span>Fornecedor</span>
+                                <p style={{
+                                    margin: '6px 0 0', fontSize: '0.78rem', lineHeight: 1.5,
+                                    color: 'var(--color-text-muted)'
+                                }}>
+                                    Definido por documento, em <strong>Documentos do pedido</strong>. Um
+                                    pedido pode pagar documentos de fornecedores diferentes, por isso não
+                                    há um fornecedor único ao nível do pedido.
+                                </p>
+                            </div>
+                        ) : (
                         <div className={labelClassName}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span>
@@ -245,13 +268,14 @@ export function RequestGeneralDataSection({
                             )}
                             {renderFieldError('SupplierId')}
                         </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
                         {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
                             Editable while the request is a DRAFT; locked afterwards, because the
                             Final Invoice obligation is derived from this choice at Final Approval. */}
-                        {featureFlags?.postPaymentCompletionEnabled &&
+                        {featureFlags?.postPaymentCompletionEnabled && !isMultiDocumentPayment &&
                          (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
                             <SourceDocumentTypeField
                                 data-guide="request-source-document-type"
@@ -274,7 +298,10 @@ export function RequestGeneralDataSection({
 
                         <label className={labelClassName}>
                             Grau de Necessidade <span style={{ color: 'red' }}>*</span>
-                            <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} className={getInputClassName('NeedLevelId')} disabled={!canEditHeader}>
+                            {/* Read-only once the document composition is saved: the review screen
+                                exists to correct the request header, and the urgency was decided
+                                when the request was raised. */}
+                            <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} className={getInputClassName('NeedLevelId')} disabled={!canEditHeader || isMultiDocumentPayment}>
                                 <option value="">-- Selecione --</option>
                                 {needLevels.filter(nl => nl.isActive || Number(formData.needLevelId) === nl.id).map(nl => (
                                     <option key={nl.id} value={nl.id}>{nl.name}</option>
