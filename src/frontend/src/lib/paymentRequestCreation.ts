@@ -480,6 +480,7 @@ export function localValidation(document: TemporaryPaymentDocument): string[] {
     if (!document.plantId) problems.push('Indique a planta.');
     if (!document.documentNumber?.trim()) problems.push('Indique o número do documento.');
     if (!document.documentDate) problems.push('Indique a data do documento.');
+    if (!document.dueDate) problems.push('Informe a data de vencimento do documento.');
     if (!document.currency) problems.push('Indique a moeda.');
     if (!document.sourceDocumentType) problems.push('Indique o tipo de documento anexado.');
     if ((document.grossAmount ?? 0) <= 0) problems.push('Indique o total do documento.');

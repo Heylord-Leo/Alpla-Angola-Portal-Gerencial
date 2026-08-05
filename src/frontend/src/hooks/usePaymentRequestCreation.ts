@@ -140,6 +140,13 @@ export function usePaymentRequestCreation() {
                                 ivaRateId: item.ivaRateId,
                                 totalAmount: item.totalAmount,
                                 itemCatalogId: item.itemCatalogId,
+                                // Mandatory for every PAYMENT item, and taken from the document the
+                                // item belongs to — not from the request. In a request holding two
+                                // invoices due on different dates, the request-level date is the
+                                // right answer for at most one of them.
+                                dueDate: document.dueDate
+                                    ? new Date(document.dueDate).toISOString()
+                                    : undefined,
                                 plantId: document.plantId,
                                 // The mapping that matters: the item names its OWN document's
                                 // persisted id, resolved after that document was created.

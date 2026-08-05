@@ -126,6 +126,10 @@ export function confirmationBlockers(
     if (!document.plantId) problems.push('Indique a planta.');
     if (!document.documentNumber?.trim()) problems.push('Indique o número do documento.');
     if (!document.documentDate) problems.push('Indique a data do documento.');
+    // Every line item of a PAYMENT request must carry a due date, and an item takes it from its
+    // document. Without this the document confirms happily and then fails during persistence, after
+    // the request has already been created — which is exactly the reported defect.
+    if (!document.dueDate) problems.push('Informe a data de vencimento do documento.');
     if (!document.currency) problems.push('Indique a moeda.');
     if (!document.sourceDocumentType) problems.push('Indique o tipo de documento anexado.');
 
@@ -167,6 +171,42 @@ export function canConfirmDocument(
     isExtracting: boolean
 ): boolean {
     return confirmationBlockers(document, isExtracting).length === 0;
+}
+
+/**
+ * The field a blocker is about, so the screen can take the user to it.
+ *
+ * <p>"1 pendência" is not help. The first unresolved field is focused and outlined, because the
+ * point of blocking confirmation is to get the document finished, not to record that it isn't.</p>
+ */
+export function blockerField(message: string): string | null {
+    if (message.startsWith('Anexe')) return 'attachment';
+    if (message.includes('fornecedor')) return 'supplierId';
+    if (message.includes('planta')) return 'plantId';
+    if (message.includes('número do documento')) return 'documentNumber';
+    if (message.includes('data de vencimento')) return 'dueDate';
+    if (message.includes('data do documento')) return 'documentDate';
+    if (message.includes('moeda')) return 'currency';
+    if (message.includes('tipo de documento')) return 'sourceDocumentType';
+    if (message.includes('total do documento')) return 'grossAmount';
+    if (message.includes('itens')) return 'items';
+    return null;
+}
+
+/**
+ * Confirmed documents that no longer satisfy the rules.
+ *
+ * <p>Checked before a request is created, not after. A document can be confirmed and then edited
+ * back into an invalid state, and discovering that during persistence means a request already
+ * exists describing documents that could not be saved.</p>
+ */
+export function invalidConfirmedDocuments(
+    documents: TemporaryPaymentDocument[]
+): Array<{ document: TemporaryPaymentDocument; blockers: string[] }> {
+    return documents
+        .filter(d => d.confirmed)
+        .map(d => ({ document: d, blockers: confirmationBlockers(d, false) }))
+        .filter(x => x.blockers.length > 0);
 }
 
 // ── Sequence ────────────────────────────────────────────────────────────────────────────────

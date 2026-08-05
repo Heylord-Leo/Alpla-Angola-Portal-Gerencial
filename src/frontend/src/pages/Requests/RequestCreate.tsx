@@ -26,7 +26,11 @@ import { PaymentDocumentComposer } from '../../components/requests/PaymentDocume
 import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
 import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
 import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
-import { activeDraftDisposition, confirmedTotals } from '../../lib/paymentDocumentComposition';
+import {
+    activeDraftDisposition,
+    confirmedTotals,
+    invalidConfirmedDocuments
+} from '../../lib/paymentDocumentComposition';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -956,6 +960,28 @@ export function RequestCreate() {
         // not a separate number the user typed. `paymentDraft` is null here because the legacy editor
         // does not render, so every branch below that keys off it falls through to the form values —
         // which for a payment would be zero. These override that.
+        // ── Confirmed-document integrity, BEFORE anything is created ──
+        // Stage B creates the request first, so a document that is invalid in ways the client
+        // already knows about produced a real request that then failed halfway through saving its
+        // documents. Partial-failure recovery exists for networks and servers, not for a missing
+        // field sitting on screen.
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2) {
+            const invalid = invalidConfirmedDocuments(documentsForSave);
+
+            if (invalid.length > 0) {
+                const first = invalid[0];
+                setFeedback({
+                    type: 'error',
+                    message: `Documento ${first.document.localSequence}: ${first.blockers[0]} ` +
+                             'Corrija o documento antes de gerar o pedido.'
+                });
+                setActiveDocumentId(first.document.tempId);
+                setLoading(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
+
         const multiDocTotals = confirmedTotals(documentsForSave);
         const multiDocFirst = documentsForSave.find(d => d.confirmed) ?? documentsForSave[0] ?? null;
 

@@ -21,6 +21,10 @@ public class PaymentSourceDocumentValidatorTests
         string? number = "FT-001",
         string? type = "PROFORMA",
         DateTime? date = null,
+        DateTime? dueDate = null,
+        // A separate flag, because `dueDate: null` cannot express "explicitly none" while the
+        // parameter also carries a default.
+        bool withoutDueDate = false,
         string? currency = "AOA",
         decimal? gross = 500_000m,
         decimal? itemsTotal = null,
@@ -40,6 +44,7 @@ public class PaymentSourceDocumentValidatorTests
             DocumentNumber = number,
             SourceDocumentType = type,
             DocumentDate = date ?? new DateTime(2026, 8, 1),
+            DueDate = withoutDueDate ? null : (dueDate ?? new DateTime(2026, 9, 1)),
             Currency = currency,
             GrossAmount = gross,
             ItemsTotal = itemsTotal ?? gross ?? 0m,
@@ -53,6 +58,42 @@ public class PaymentSourceDocumentValidatorTests
     private static PaymentSourceDocumentValidationResult Validate(
         params PaymentSourceDocumentState[] docs) =>
         PaymentSourceDocumentValidator.Validate(docs, requireClassification: true);
+
+    // ── Due date ──
+
+    /// <summary>
+    /// Every line item of a PAYMENT request must carry a due date, and an item takes it from the
+    /// document it belongs to. Checked at the document so it is caught while the user is looking at
+    /// it — not during persistence, after a request has already been created.
+    /// </summary>
+    [Fact]
+    public void A_document_without_a_due_date_cannot_be_submitted()
+    {
+        var result = Validate(Doc(withoutDueDate: true));
+
+        Assert.False(result.CanSubmit);
+        Assert.Contains(result.Problems, p => p.Message == "Informe a data de vencimento do documento.");
+    }
+
+    [Fact]
+    public void The_due_date_problem_names_its_own_document()
+    {
+        var result = Validate(
+            Doc(label: "Documento 1"),
+            Doc(label: "Documento 2", withoutDueDate: true));
+
+        var problem = Assert.Single(
+            result.Problems, p => p.Message == "Informe a data de vencimento do documento.");
+        Assert.Equal("Documento 2", problem.Label);
+    }
+
+    [Fact]
+    public void A_document_with_a_due_date_passes_that_rule()
+    {
+        var result = Validate(Doc(dueDate: new DateTime(2026, 10, 15)));
+
+        Assert.DoesNotContain(result.Problems, p => p.Message.Contains("data de vencimento"));
+    }
 
     // ── The happy paths ──
 

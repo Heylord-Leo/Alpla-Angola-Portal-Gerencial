@@ -645,6 +645,7 @@ public class PaymentSourceDocumentsController : BaseController
         DocumentNumber = d.DocumentNumber,
         SourceDocumentType = d.SourceDocumentType,
         DocumentDate = d.DocumentDate,
+        DueDate = d.DueDate,
         Currency = d.Currency,
         GrossAmount = d.GrossAmount,
         ItemsTotal = d.ItemsTotal,

@@ -27,6 +27,7 @@ import {
     temporaryEstablishedCurrency
 } from '../../lib/paymentRequestCreation';
 import {
+    blockerField,
     confirmationBlockers,
     confirmedTotals,
     documentLifecycle,
@@ -196,9 +197,34 @@ export function PaymentDocumentComposer({
         ? confirmationBlockers(active, ocrStateFor(active.tempId).isProcessing)
         : [];
 
+    /** Reveals the pending issues and takes the user to the first field that is missing. */
+    const revealBlockers = (blockers: string[]) => {
+        setShowBlockers(true);
+        if (!active) return;
+
+        const field = blockers.map(blockerField).find((f): f is string => !!f);
+        if (!field) return;
+
+        requestAnimationFrame(() => {
+            const scope = window.document
+                .querySelector<HTMLElement>(`[data-document-id="${active.tempId}"]`);
+            const target = scope?.querySelector<HTMLElement>(`[data-field="${field}"]`)
+                ?? scope?.querySelector<HTMLElement>(`[data-document-${field}] input, [data-document-${field}] select`);
+
+            target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target?.focus();
+        });
+    };
+
     const confirmActive = () => {
         if (!active) return;
-        if (activeBlockers.length > 0) { setShowBlockers(true); return; }
+
+        // Re-evaluated here, not trusted from the button's disabled state. A document may only
+        // enter CONFIRMED when the pure rule says so — `disabled` is a hint to the user, never the
+        // guarantee, and an incomplete document that slipped through becomes a request that fails
+        // halfway through being saved.
+        const blockers = confirmationBlockers(active, ocrStateFor(active.tempId).isProcessing);
+        if (blockers.length > 0) { revealBlockers(blockers); return; }
 
         patch(active.tempId, { confirmed: true });
         onActiveChange(null);
@@ -435,10 +461,10 @@ export function PaymentDocumentComposer({
                                     <CheckCircle2 size={15} /> Confirmar e adicionar documento
                                 </button>
 
-                                {activeBlockers.length > 0 && !showBlockers && (
+                                {activeBlockers.length > 0 && (
                                     <button
                                         type="button"
-                                        onClick={() => setShowBlockers(true)}
+                                        onClick={() => revealBlockers(activeBlockers)}
                                         style={{
                                             display: 'inline-flex', alignItems: 'center', gap: '5px',
                                             background: 'none', border: 'none', cursor: 'pointer',
@@ -446,7 +472,9 @@ export function PaymentDocumentComposer({
                                         }}
                                     >
                                         <AlertTriangle size={13} />
-                                        {activeBlockers.length} pendência(s) neste documento
+                                        {activeBlockers.length === 1
+                                            ? '1 pendência neste documento'
+                                            : `${activeBlockers.length} pendências neste documento`}
                                     </button>
                                 )}
                             </div>

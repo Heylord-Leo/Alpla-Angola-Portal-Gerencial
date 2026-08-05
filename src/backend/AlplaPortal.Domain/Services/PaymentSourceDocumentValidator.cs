@@ -18,6 +18,13 @@ public sealed record PaymentSourceDocumentState
     public string? DocumentNumber { get; init; }
     public string? SourceDocumentType { get; init; }
     public DateTime? DocumentDate { get; init; }
+
+    /// <summary>
+    /// When the document must be paid. Mandatory: every line item of a PAYMENT request carries a
+    /// due date (enforced at <c>POST /requests/{id}/line-items</c>), and the item takes it from the
+    /// document it belongs to. A document without one produces items the API will refuse.
+    /// </summary>
+    public DateTime? DueDate { get; init; }
     public string? Currency { get; init; }
     public decimal? GrossAmount { get; init; }
 
@@ -134,6 +141,13 @@ public static class PaymentSourceDocumentValidator
 
         if (d.DocumentDate == null)
             yield return Problem("Indique a data do documento.");
+
+        // Checked HERE, at the document, rather than only when its items are created. The item rule
+        // is real but fires deep inside persistence, long after the user has confirmed the document
+        // and pressed "Gerar Pedido" — which is how an incomplete document reached a request that
+        // then failed halfway.
+        if (d.DueDate == null)
+            yield return Problem("Informe a data de vencimento do documento.");
 
         if (d.PlantId == null)
             yield return Problem("Indique a planta.");

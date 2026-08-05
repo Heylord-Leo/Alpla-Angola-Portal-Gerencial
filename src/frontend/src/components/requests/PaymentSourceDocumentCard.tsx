@@ -369,6 +369,7 @@ export function PaymentSourceDocumentCard({
 
                         {field('Planta', (
                             <select
+                                data-field="plantId"
                                 value={document.plantId ?? ''}
                                 disabled={readOnly}
                                 onChange={e => onFieldChange({
@@ -383,6 +384,7 @@ export function PaymentSourceDocumentCard({
 
                         {field('Nº Documento', (
                             <input
+                                data-field="documentNumber"
                                 type="text"
                                 value={document.documentNumber ?? ''}
                                 disabled={readOnly}
@@ -417,6 +419,7 @@ export function PaymentSourceDocumentCard({
 
                         {field('Data do documento', (
                             <input
+                                data-field="documentDate"
                                 type="date"
                                 value={(document.documentDate ?? '').substring(0, 10)}
                                 disabled={readOnly}
@@ -427,11 +430,18 @@ export function PaymentSourceDocumentCard({
 
                         {field('Data de vencimento', (
                             <input
+                                data-field="dueDate"
                                 type="date"
                                 value={(document.dueDate ?? '').substring(0, 10)}
                                 disabled={readOnly}
                                 onChange={e => onFieldChange({ dueDate: e.target.value || null })}
-                                style={inputStyle}
+                                style={{
+                                    ...inputStyle,
+                                    // A mandatory field the user has not filled, once they have
+                                    // tried to move on. Before that it is simply empty.
+                                    borderColor: showValidationErrors && !document.dueDate
+                                        ? '#fca5a5' : 'var(--color-border)'
+                                }}
                             />
                         ))}
 
@@ -455,6 +465,7 @@ export function PaymentSourceDocumentCard({
                                 )}
                             </span>
                             <select
+                                data-field="currency"
                                 value={document.currency ?? ''}
                                 disabled={readOnly}
                                 onChange={e => onFieldChange({ currency: e.target.value || null })}
@@ -508,6 +519,7 @@ export function PaymentSourceDocumentCard({
                         ))}
                         {field('Total do documento', (
                             <input
+                                data-field="grossAmount"
                                 type="number" step="0.01"
                                 value={document.grossAmount ?? ''}
                                 disabled={readOnly}
