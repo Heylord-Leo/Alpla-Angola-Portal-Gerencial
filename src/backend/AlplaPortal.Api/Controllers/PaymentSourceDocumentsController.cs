@@ -124,6 +124,20 @@ public class PaymentSourceDocumentsController : BaseController
 
         ApplyFields(document, dto);
 
+        // A renamed or re-scanned copy of an invoice already on this request has different bytes but
+        // is the same debt. Supplier + number + series is what identifies it.
+        var sameBusinessDocument = await FindDuplicateBusinessDocumentAsync(requestId, document.Id, document);
+        if (sameBusinessDocument != null)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Documento duplicado",
+                Detail = $"O documento {document.DocumentNumber} deste fornecedor já está registado " +
+                         $"como Documento {sameBusinessDocument.SequenceNumber} neste pedido.",
+                Status = 409
+            });
+        }
+
         _context.PaymentSourceDocuments.Add(document);
         await RecordHistoryAsync(
             request!, "DOCUMENTO_ORIGEM_ADICIONADO",
@@ -359,6 +373,34 @@ public class PaymentSourceDocumentsController : BaseController
             .Where(x => x.a.FileHash == attachment.FileHash)
             .Select(x => x.d)
             .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// The same business document already registered on this request, under a different file.
+    ///
+    /// <para>The hash check only catches the identical file. Renaming, re-scanning or re-exporting
+    /// the same invoice produces different bytes and would otherwise sail through — while being,
+    /// commercially, the same debt about to be paid twice. Supplier plus document number is what
+    /// identifies an invoice; the series distinguishes the legitimate case where two suppliers use
+    /// the same numbering.</para>
+    /// </summary>
+    private async Task<PaymentSourceDocument?> FindDuplicateBusinessDocumentAsync(
+        Guid requestId, Guid documentId, PaymentSourceDocument candidate)
+    {
+        var number = candidate.DocumentNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(number) || candidate.SupplierId == null) return null;
+
+        var series = candidate.DocumentSeries?.Trim();
+
+        var siblings = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == requestId && !d.IsVoided && d.Id != documentId
+                        && d.SupplierId == candidate.SupplierId)
+            .ToListAsync();
+
+        return siblings.FirstOrDefault(d =>
+            string.Equals(d.DocumentNumber?.Trim(), number, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(d.DocumentSeries?.Trim() ?? string.Empty, series ?? string.Empty,
+                          StringComparison.OrdinalIgnoreCase));
     }
 
     private static void ApplyFields(PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)

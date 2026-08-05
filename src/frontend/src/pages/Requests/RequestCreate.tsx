@@ -85,7 +85,7 @@ export function RequestCreate() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [isOcrLoading, setIsOcrLoading] = useState(false);
-    const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
+    const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; cancelCallback?: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
     const [dupCountdown, setDupCountdown] = useState(0);
 
     // Countdown timer for duplicate warning confirm button safety delay
@@ -136,6 +136,33 @@ export function RequestCreate() {
         });
 
         if (!file) return null;
+
+        // ── The same invoice must not be paid twice ──
+        // The single-document flow has always checked this by content hash before reading the file;
+        // the multi-document path added its own picker and simply never called it, so a file already
+        // used by another request went through unremarked. Same check, same endpoint, same modal.
+        try {
+            const hash = await computeFileHash(file);
+            const dupCheck = await api.attachments.checkDuplicate(hash);
+
+            if (dupCheck.isDuplicate) {
+                const accepted = await new Promise<boolean>(resolve => {
+                    setDuplicateWarning({
+                        isOpen: true,
+                        requestNumber: dupCheck.requestNumber || 'Desconhecido',
+                        uploadedBy: dupCheck.uploadedBy,
+                        createdAtUtc: dupCheck.createdAtUtc,
+                        uploadCallback: () => { setDuplicateWarning(null); resolve(true); },
+                        cancelCallback: () => { setDuplicateWarning(null); resolve(false); }
+                    });
+                });
+
+                if (!accepted) return null;
+            }
+        } catch {
+            // The check is a safeguard, not a gate: if it cannot run, the user is not stopped from
+            // working. The backend still refuses the same file twice within one request.
+        }
 
         const placeholderId = `pending:${Date.now().toString(36)}:${file.name}`;
         pendingFilesRef.current.set(placeholderId, file);
@@ -2400,7 +2427,16 @@ export function RequestCreate() {
                                 <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
                                     <button
                                         type="button"
-                                        onClick={() => setDuplicateWarning(null)}
+                                        onClick={() => {
+                                            // The multi-document picker awaits an answer, so
+                                            // cancelling must resolve it — otherwise the promise
+                                            // never settles and the picker hangs forever.
+                                            if (duplicateWarning?.cancelCallback) {
+                                                duplicateWarning.cancelCallback();
+                                            } else {
+                                                setDuplicateWarning(null);
+                                            }
+                                        }}
                                         style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}
                                     >
                                         Cancelar Envio
