@@ -186,6 +186,19 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     const [submitBlockers, setSubmitBlockers] = useState<string[] | null>(null);
 
     /**
+     * Stable by construction. An inline arrow here is a new function every render, and the
+     * collection used to fold that identity into its load effect — one render became one fetch,
+     * and one fetch became one render.
+     */
+    const handleSourceDocumentsSummary = useCallback(
+        (summary: PaymentSourceDocumentsSummaryDto | null) => {
+            setSourceDocumentsSummary(summary);
+            // The submit guards live in the hook and must stop asking for the header-level
+            // classification the moment the documents own it.
+            setUsesMultiSourceDocuments(summary?.usesMultiDocumentModel === true);
+        }, [setUsesMultiSourceDocuments]);
+
+    /**
      * §16 — submission preflight for a multi-document PAYMENT.
      *
      * <p>Two things must be true before an approver sees this request: nothing is still being typed,
@@ -515,12 +528,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
                         canCreateSupplier={canCreateSupplier}
-                        onSummaryChange={summary => {
-                            setSourceDocumentsSummary(summary);
-                            // The submit guards live in the hook and must stop asking for the
-                            // header-level classification the moment the documents own it.
-                            setUsesMultiSourceDocuments(summary?.usesMultiDocumentModel === true);
-                        }}
+                        onSummaryChange={handleSourceDocumentsSummary}
                         onEditingStateChange={setDocumentEditingState}
                     />
                 )}

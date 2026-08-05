@@ -2436,6 +2436,22 @@ public class RequestsController : BaseController
             request.DiscountAmount = dto.DiscountAmount; changedFields.Add("Desconto Global"); changed = true;
         }
 
+        // --- The request type is immutable after creation ---
+        // It selects the whole workflow: which validations run, how items are grouped, what
+        // documents may hang beneath it and who approves. A PAYMENT already carrying source
+        // documents cannot coherently become a QUOTATION, so the change is refused for everyone —
+        // System Administrator included. Set once, at creation.
+        if (dto.RequestTypeId != 0 && request.RequestTypeId != dto.RequestTypeId)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "O tipo do pedido é definido na criação e não pode ser alterado. " +
+                         "Cancele este pedido e crie um novo se precisar de outro tipo.",
+                Status = 400
+            });
+        }
+
         // --- Restricted Fields in Quotation Stage ---
         if (isQuotationStage)
         {
@@ -2459,7 +2475,7 @@ public class RequestsController : BaseController
         else
         {
             // Normal Draft/Adjustment rules
-            if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
+            // RequestTypeId is deliberately absent here — refused above, never written.
             if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
             
             // Phase B: changing the department no longer nominates an AreaApprover —

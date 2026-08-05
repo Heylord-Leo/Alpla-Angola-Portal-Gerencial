@@ -103,6 +103,8 @@ export function PaymentSourceDocumentCollection({
     const [supplierCreate, setSupplierCreate] =
         useState<{ documentId: string; name: string; taxId: string } | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
+    /** A refresh with data already on screen. Distinct from the first load, which has none. */
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [pendingRemoval, setPendingRemoval] = useState<PaymentSourceDocumentDto | null>(null);
     const [pendingReplace, setPendingReplace] = useState<PaymentSourceDocumentDto | null>(null);
@@ -116,6 +118,24 @@ export function PaymentSourceDocumentCollection({
     const effectiveReadOnly = readOnly || summary?.canEditDocuments === false;
 
     // ── Load ────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The parent's callbacks, held in refs.
+     *
+     * <p>They must not take part in the identity of anything the load effect depends on. A parent
+     * that passes an inline arrow — which is the natural thing to write — produces a new function
+     * every render; if that identity reaches `reload`, the effect re-arms, fetches, sets state,
+     * re-renders, and fetches again. That is not a hypothetical: it is exactly how this screen
+     * ended up issuing dozens of concurrent GETs to `/source-documents`.</p>
+     *
+     * <p>Refs let the newest callback be used without ever being a dependency.</p>
+     */
+    const onSummaryChangeRef = useRef(onSummaryChange);
+    onSummaryChangeRef.current = onSummaryChange;
+
+    /** Only the newest load for the current request may write. */
+    const loadTokenRef = useRef(0);
+    const abortRef = useRef<AbortController | null>(null);
 
     const applySummary = useCallback((next: PaymentSourceDocumentsSummaryDto) => {
         setSummary(next);
@@ -144,20 +164,57 @@ export function PaymentSourceDocumentCollection({
             return merged;
         });
 
-        onSummaryChange?.(next);
-    }, [onSummaryChange]);
+        onSummaryChangeRef.current?.(next);
+        // Depends on nothing: every value it touches is a setter or a ref, all stable for the life
+        // of the component. That is what keeps `reload` stable too.
+    }, []);
 
+    /**
+     * Fetches the summary for the current request.
+     *
+     * <p>Depends only on <c>requestId</c> — a scalar. Rendering, resizing, opening a modal or
+     * editing a header field cannot change it, so none of them can cause a fetch.</p>
+     *
+     * <p>Existing data is kept on screen while a refresh is in flight. Clearing it first is what
+     * made "nenhum documento" flash between responses; a refresh that has not answered yet is not
+     * evidence that the documents are gone.</p>
+     */
     const reload = useCallback(async () => {
+        const token = ++loadTokenRef.current;
+
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        setIsRefreshing(true);
+
         try {
             const next = await api.requests.getSourceDocuments(requestId);
+
+            // A response for a request we have moved on from, or one superseded by a newer load,
+            // must not overwrite what is on screen.
+            if (token !== loadTokenRef.current) return;
+
             applySummary(next);
             setLoadError(null);
         } catch {
+            if (token !== loadTokenRef.current) return;
             setLoadError('Não foi possível carregar os documentos do pedido. Recarregue a página.');
+        } finally {
+            if (token === loadTokenRef.current) setIsRefreshing(false);
         }
     }, [requestId, applySummary]);
 
-    useEffect(() => { void reload(); }, [reload]);
+    useEffect(() => {
+        void reload();
+        return () => {
+            // Nothing in flight may write after we leave this request.
+            loadTokenRef.current++;
+            abortRef.current?.abort();
+        };
+        // Deliberately keyed to the request, not to `reload`: see the note on the refs above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestId]);
 
     // ── Per-document helpers ────────────────────────────────────────────────────────────
 

@@ -192,7 +192,11 @@ export function RequestGeneralDataSection({
                                 value={formData.requestTypeId}
                                 onChange={handleChange}
                                 className={getInputClassName('RequestTypeId')}
-                                disabled={!canEditHeader || isQuotationPartiallyEditable || status !== 'DRAFT'}
+                                // A request's type is decided when it is raised and never after:
+                                // it selects the entire workflow, the validation rules, the
+                                // grouping and the documents already attached beneath it. The
+                                // backend refuses a change regardless of what this control allows.
+                                disabled
                             >
                                 <option value={1}>COTAÇÃO (COM)</option>
                                 <option value={2}>PAGAMENTO (PAG)</option>
