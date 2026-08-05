@@ -11,9 +11,8 @@ import {
     useFocusOnce
 } from './PaymentDocumentExtractionState';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
-import { SupplierQuickCreateModal } from '../suppliers/SupplierQuickCreateModal';
-import { SupplierAdditionalInfo } from '../suppliers/SupplierAdditionalInfoPanel';
-import { SUPPLIER_CREATE_NOT_ALLOWED, supplierExtractionToInfo } from '../../lib/supplierQuickCreate';
+import { PaymentSupplierCreateModal, SupplierPrefill } from './PaymentSupplierCreateModal';
+import { SUPPLIER_CREATE_NOT_ALLOWED } from '../../lib/supplierQuickCreate';
 import { currencyConflictMessage } from '../../lib/paymentSourceDocuments';
 import { ClassificationConflictState, EMPTY_CONFLICT } from '../../lib/documentClassificationDecision';
 import { PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
@@ -104,8 +103,8 @@ export function PaymentDocumentComposer({
      * user opened it from — creating a supplier while composing Documento 2 must not touch
      * Documento 1.</p>
      */
-    const [supplierCreate, setSupplierCreate] = useState<
-        { tempId: string; name: string; taxId: string; extraction?: Partial<SupplierAdditionalInfo> } | null>(null);
+    const [supplierCreate, setSupplierCreate] =
+        useState<{ tempId: string; prefill: SupplierPrefill } | null>(null);
     const isAddingRef = useRef(false);
 
     const active = documents.find(d => d.tempId === activeTempId) ?? null;
@@ -384,8 +383,18 @@ export function PaymentDocumentComposer({
                     showDuplicate={false}
                     onCreateSupplier={canCreateSupplier && !disabled
                         ? (name, taxId) => setSupplierCreate({
-                            tempId: active.tempId, name, taxId,
-                            extraction: supplierExtractionToInfo(active.supplierExtraction)
+                            tempId: active.tempId,
+                            prefill: {
+                                name, taxId,
+                                address: active.supplierExtraction?.address,
+                                paymentTerms: active.supplierExtraction?.paymentTerms,
+                                contactName: active.supplierExtraction?.contactName,
+                                email: active.supplierExtraction?.email,
+                                phone: active.supplierExtraction?.phone,
+                                bankIban: active.supplierExtraction?.bankIban,
+                                bankAccountNumber: active.supplierExtraction?.bankAccountNumber,
+                                bankSwift: active.supplierExtraction?.bankSwift
+                            }
                           })
                         : null}
                     supplierCreateDisabledReason={canCreateSupplier ? null : SUPPLIER_CREATE_NOT_ALLOWED}
@@ -578,12 +587,10 @@ export function PaymentDocumentComposer({
             {/* The SAME quick-create Quotation Management uses, in its PAYMENT_OCR mode: the
                 supplier lands in the one authoritative supplier source, immediately searchable
                 everywhere. Nothing here is payment-specific except which document gets the id. */}
-            <SupplierQuickCreateModal
+            <PaymentSupplierCreateModal
                 isOpen={!!supplierCreate}
                 onClose={() => setSupplierCreate(null)}
-                initialName={supplierCreate?.name ?? ''}
-                initialTaxId={supplierCreate?.taxId ?? ''}
-                extraction={supplierCreate?.extraction}
+                prefill={supplierCreate?.prefill ?? {}}
                 onCreated={supplier => {
                     const target = supplierCreate?.tempId;
                     if (!target) return;

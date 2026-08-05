@@ -1,4 +1,4 @@
-import { isFiscalDocument, normalizeDocumentType } from './sourceDocumentType';
+import { SOURCE_DOCUMENT_TYPES, isFiscalDocument, normalizeDocumentType } from './sourceDocumentType';
 
 /** What document extraction proposed, with the evidence behind it. Never applied automatically. */
 export interface OcrDocumentClassification {
@@ -41,6 +41,42 @@ export interface ConflictEvaluation {
 }
 
 /**
+ * Whether the extraction actually committed to a type.
+ *
+ * <p><c>OTHER</c> and <c>UNCLASSIFIED</c> are not opinions — they are the extraction saying it could
+ * not place the document in any specific category. Naming a concrete type after that is the user
+ * <b>supplying</b> the missing classification, not contradicting one, and treating it as a conflict
+ * would demand a written justification for answering a question the system asked.</p>
+ */
+export function isAuthoritativeSuggestion(suggestion: string | null | undefined): boolean {
+    const key = normalizeDocumentType(suggestion);
+    return !!key
+        && key !== SOURCE_DOCUMENT_TYPES.OTHER
+        && key !== SOURCE_DOCUMENT_TYPES.UNCLASSIFIED;
+}
+
+/**
+ * The user named a type the extraction looked for and could not determine.
+ *
+ * <p>Not a conflict, but still worth showing and recording: a reading did happen, and it must remain
+ * visible that the type attached to this document is not the one it produced.</p>
+ *
+ * <p>Deliberately requires a suggestion to <b>exist</b>. A document nothing was read from is ordinary
+ * data entry — mirroring the backend, which records nothing in that case rather than burying the
+ * decisions that matter under thousands that do not.</p>
+ */
+export function isUserResolvedIndeterminate(
+    selected: string | null | undefined,
+    ocr?: OcrDocumentClassification | null
+): boolean {
+    const choice = normalizeDocumentType(selected);
+    if (!choice || choice === SOURCE_DOCUMENT_TYPES.UNCLASSIFIED) return false;
+
+    const suggestion = normalizeDocumentType(ocr?.suggestedType);
+    return suggestion !== null && !isAuthoritativeSuggestion(suggestion);
+}
+
+/**
  * Evaluates a user selection against the extraction's opinion.
  *
  * <p>The rule that matters: choosing a NON-FISCAL type for a document the evidence reads as FISCAL
@@ -60,6 +96,12 @@ export function evaluateClassificationConflict(
     const choice = normalizeDocumentType(selected);
 
     if (!suggestion || !choice || suggestion === choice) {
+        return { hasConflict: false, isHighRisk: false };
+    }
+
+    // OTHER / UNCLASSIFIED are the extraction declining to classify. There is no opinion to
+    // contradict, so naming a type is an answer, not an override.
+    if (!isAuthoritativeSuggestion(suggestion)) {
         return { hasConflict: false, isHighRisk: false };
     }
 

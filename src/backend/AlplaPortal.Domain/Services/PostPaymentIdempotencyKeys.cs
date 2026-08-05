@@ -145,6 +145,31 @@ public static class PostPaymentIdempotencyKeys
                selectedType.Trim().ToUpperInvariant();
     }
 
+    /// <summary>
+    /// DOCUMENT_CLASSIFICATION_SET — DC_SET:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}
+    ///
+    /// <para>The user named a type the extraction could not determine (it read OTHER, UNCLASSIFIED,
+    /// or nothing at all). A decision worth recording, but <b>not</b> an override: nothing was
+    /// contradicted, so no acknowledgement and no written justification are owed.</para>
+    ///
+    /// <para>A distinct prefix from <c>DC_OVERRIDE</c> on purpose. The two events mean different
+    /// things and are counted differently when someone asks how often people disagreed with the
+    /// reading; sharing a key would also let one silently deduplicate the other away.</para>
+    /// </summary>
+    public static string DocumentClassificationSet(
+        string context, Guid scopeId, Guid? attachmentId, string selectedType)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+            throw new ArgumentException("Context is required.", nameof(context));
+        if (string.IsNullOrWhiteSpace(selectedType))
+            throw new ArgumentException("Selected document type is required.", nameof(selectedType));
+
+        var attachment = attachmentId.HasValue ? Format(attachmentId.Value) : "NONE";
+
+        return $"DC_SET:{context.Trim().ToUpperInvariant()}:{Format(scopeId)}:{attachment}:" +
+               selectedType.Trim().ToUpperInvariant();
+    }
+
     // ── PAYMENT source documents (Release 3) ──
 
     /// <summary>

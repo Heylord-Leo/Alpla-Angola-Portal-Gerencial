@@ -28,7 +28,7 @@ import { AddPaymentDocumentChoice } from './AddPaymentDocumentChoice';
 import { InfoModal } from '../ui/InfoModal';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
-import { SupplierQuickCreateModal } from '../suppliers/SupplierQuickCreateModal';
+import { PaymentSupplierCreateModal } from './PaymentSupplierCreateModal';
 import { SUPPLIER_CREATE_NOT_ALLOWED } from '../../lib/supplierQuickCreate';
 import { formatCurrencyAO } from '../../lib/utils';
 
@@ -503,11 +503,10 @@ export function PaymentSourceDocumentCollection({
             )}
 
             {/* The same shared quick-create as the creation screen and Quotation Management. */}
-            <SupplierQuickCreateModal
+            <PaymentSupplierCreateModal
                 isOpen={!!supplierCreate}
                 onClose={() => setSupplierCreate(null)}
-                initialName={supplierCreate?.name ?? ''}
-                initialTaxId={supplierCreate?.taxId ?? ''}
+                prefill={{ name: supplierCreate?.name, taxId: supplierCreate?.taxId }}
                 onCreated={supplier => {
                     const target = supplierCreate?.documentId;
                     if (!target) return;

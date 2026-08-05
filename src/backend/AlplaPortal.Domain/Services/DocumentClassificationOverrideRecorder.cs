@@ -25,11 +25,34 @@ public sealed record DocumentClassificationOverrideRequest
     public string? Justification { get; init; }
 }
 
+/// <summary>What kind of decision the user made, which is not always an override.</summary>
+public enum DocumentClassificationDecisionKind
+{
+    /// <summary>Nothing to record: the user agreed with the reading, or chose nothing.</summary>
+    None = 0,
+
+    /// <summary>
+    /// The user contradicted a specific suggestion. Requires acknowledgement, and a written reason
+    /// when the contradiction is high-risk.
+    /// </summary>
+    Override = 1,
+
+    /// <summary>
+    /// The user named a type the extraction could not determine — it read OTHER, UNCLASSIFIED, or
+    /// nothing. Recorded for provenance, but <b>no acknowledgement and no justification are owed</b>:
+    /// there was no opinion to contradict, only a gap to fill.
+    /// </summary>
+    UserClassifiedIndeterminate = 2
+}
+
 /// <summary>The recorder's verdict: either a complete, storable decision or the reason it is not.</summary>
 public sealed record DocumentClassificationOverrideResult
 {
     /// <summary>False when there is nothing to record — not an error, simply no override happened.</summary>
     public bool ShouldRecord { get; init; }
+
+    /// <summary>Which kind of decision this is. Callers must not infer it from the other fields.</summary>
+    public DocumentClassificationDecisionKind Kind { get; init; } = DocumentClassificationDecisionKind.None;
 
     /// <summary>Set when the caller asked to record an override that is not admissible.</summary>
     public string? RejectionReason { get; init; }
@@ -79,7 +102,9 @@ public static class DocumentClassificationOverrideRecorder
         var selected = RequestConstants.SourceDocumentTypes.Normalize(request.SelectedType);
         var suggested = RequestConstants.SourceDocumentTypes.Normalize(request.SuggestedType);
 
-        // Nothing chosen, or nothing proposed to contradict: not an override.
+        // Agreed with the reading, chose nothing, or classified a document nothing was suggested
+        // for. The last is ordinary data entry: recording it would bury the handful of decisions
+        // that matter under thousands that do not.
         if (selected == null || suggested == null || selected == suggested)
             return new DocumentClassificationOverrideResult { ShouldRecord = false };
 
@@ -103,6 +128,31 @@ public static class DocumentClassificationOverrideRecorder
 
         var context = request.Context.Trim().ToUpperInvariant();
         var justification = request.Justification?.Trim();
+
+        // ── The extraction looked, and could not decide ──
+        // OTHER and UNCLASSIFIED mean "could not place this document in a category". Naming a type
+        // then SUPPLIES the classification rather than overriding one, so demanding an
+        // acknowledgement and a 20-character written reason would be asking the user to justify
+        // answering a question the system itself asked. Still recorded — unlike the no-suggestion
+        // case above — because a reading did happen and it must remain visible that the type
+        // attached to this document was not the one it produced.
+        if (!IsAuthoritative(suggested))
+        {
+            return new DocumentClassificationOverrideResult
+            {
+                ShouldRecord = true,
+                Kind = DocumentClassificationDecisionKind.UserClassifiedIndeterminate,
+                IdempotencyKey = PostPaymentIdempotencyKeys.DocumentClassificationSet(
+                    context, request.ScopeId, request.AttachmentId, selected),
+                HistoryComment = BuildIndeterminateComment(selected),
+                NormalizedContext = context,
+                NormalizedSelectedType = selected,
+                NormalizedSuggestedType = suggested,
+                NormalizedSuggestionSource =
+                    RequestConstants.DocumentClassificationSources.Normalize(request.SuggestionSource),
+                TrimmedJustification = null
+            };
+        }
 
         if (!request.Acknowledged)
         {
@@ -131,6 +181,7 @@ public static class DocumentClassificationOverrideRecorder
         return new DocumentClassificationOverrideResult
         {
             ShouldRecord = true,
+            Kind = DocumentClassificationDecisionKind.Override,
             IdempotencyKey = PostPaymentIdempotencyKeys.DocumentClassificationOverride(
                 context, request.ScopeId, request.AttachmentId, selected),
             HistoryComment = BuildComment(suggested, selected, justification),
@@ -157,12 +208,36 @@ public static class DocumentClassificationOverrideRecorder
 
         if (suggested == null || selected == null || suggested == selected) return false;
 
+        // Filling a gap the extraction left is never a contradiction, so it never owes a reason.
+        if (!IsAuthoritative(suggested)) return false;
+
         var understatesFiscalReality =
             RequestConstants.SourceDocumentTypes.IsFiscal(suggested) &&
             !RequestConstants.SourceDocumentTypes.IsFiscal(selected);
 
         return understatesFiscalReality || (confidence ?? 0m) >= HighConfidenceThreshold;
     }
+
+    /// <summary>
+    /// Whether the extraction actually committed to a type.
+    ///
+    /// <para><c>OTHER</c> and <c>UNCLASSIFIED</c> are the extraction declining to classify, and a
+    /// null suggestion is the same statement made by omission. None of them is an opinion that can
+    /// be contradicted.</para>
+    /// </summary>
+    public static bool IsAuthoritative(string? suggestedType)
+    {
+        var suggested = RequestConstants.SourceDocumentTypes.Normalize(suggestedType);
+
+        return suggested != null
+            && suggested != RequestConstants.SourceDocumentTypes.Other
+            && suggested != RequestConstants.SourceDocumentTypes.Unclassified;
+    }
+
+    private static string BuildIndeterminateComment(string selected)
+        => $"Classificação do documento definida como " +
+           $"\"{RequestConstants.SourceDocumentTypes.DisplayName(selected)}\" pelo utilizador. " +
+           "A leitura automática não identificou um tipo específico.";
 
     private static string BuildComment(string suggested, string selected, string? justification)
     {

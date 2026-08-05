@@ -16,7 +16,8 @@ import {
     ClassificationConflictState,
     EMPTY_CONFLICT,
     OcrDocumentClassification,
-    evaluateClassificationConflict
+    evaluateClassificationConflict,
+    isUserResolvedIndeterminate
 } from '../../lib/documentClassificationDecision';
 
 // Re-exported so existing importers keep working while the logic lives in the shared lib.
@@ -77,6 +78,8 @@ export function SourceDocumentTypeField({
     const selected = normalizeDocumentType(value);
     const suggestion = normalizeDocumentType(ocr?.suggestedType);
     const evaluation = evaluateClassificationConflict(value, ocr);
+    // The user named a type the reading could not determine (OTHER / UNCLASSIFIED / nothing).
+    const userResolvedIndeterminate = isUserResolvedIndeterminate(value, ocr);
     const confidencePct = ocr?.confidence != null ? Math.round(ocr.confidence * 100) : null;
 
     /** The choice awaiting confirmation. While set, the select shows it but `value` is unchanged. */
@@ -143,6 +146,30 @@ export function SourceDocumentTypeField({
                         : `O documento parece ser: ${documentTypeLabel(suggestion)}`}
                 >
                     <OcrClassificationModalBody ocr={ocr!} />
+                </FieldMessageIcon>
+            )}
+
+            {/* The reading found no specific type and the user supplied one. Neutral, not a
+                warning: nothing was contradicted, and a red icon here would accuse the user of
+                overriding a decision the system never made. */}
+            {userResolvedIndeterminate && (
+                <FieldMessageIcon
+                    severity="success"
+                    tooltip="A classificação foi definida por si; o OCR não identificou um tipo específico."
+                    ariaLabel="Ver como esta classificação foi definida"
+                    title="Classificação definida pelo utilizador"
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                            A leitura automática não identificou um tipo específico. A classificação
+                            <strong> {documentTypeLabel(selected)}</strong> foi definida por si.
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                            Não é uma divergência e não exige justificativa — a escolha fica registada no
+                            histórico do pedido, com a indicação de que não foi lida do documento.
+                        </p>
+                        {ocr && <OcrClassificationModalBody ocr={ocr} />}
+                    </div>
                 </FieldMessageIcon>
             )}
 

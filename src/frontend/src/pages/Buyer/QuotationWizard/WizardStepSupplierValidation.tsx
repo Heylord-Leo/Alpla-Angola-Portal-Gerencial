@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { OcrDraft } from '../../../types';
-import { Building2, AlertTriangle, AlertCircle, PlusCircle, CheckCircle2 } from 'lucide-react';
+import { Building2, AlertTriangle, AlertCircle, PlusCircle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Save } from 'lucide-react';
 import { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
 import { QuickSupplierModal } from '../../../components/Buyer/QuickSupplierModal';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
-import { SupplierAdditionalInfoPanel, SupplierAdditionalInfo } from '../../../components/suppliers/SupplierAdditionalInfoPanel';
+import { api } from '../../../lib/api';
 
 interface WizardStepSupplierValidationProps {
     draft: OcrDraft | null;
@@ -16,7 +16,9 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
     
     // Optional Supplier Enrichment State
     const [isOptionalPanelExpanded, setIsOptionalPanelExpanded] = useState(false);
-    const [optionalData, setOptionalData] = useState<SupplierAdditionalInfo>({
+    const [isSavingOptionalData, setIsSavingOptionalData] = useState(false);
+    const [isOptionalDataSaved, setIsOptionalDataSaved] = useState(false);
+    const [optionalData, setOptionalData] = useState({
         Name: '',
         TaxId: '',
         PrimaveraCode: '',
@@ -47,6 +49,21 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
             });
         }
     }, [draft?.supplierNameSnapshot, draft?.supplierTaxId, draft?.supplierPrimaveraCode, draft?.supplierAddress, draft?.supplierContactName, draft?.supplierEmail, draft?.supplierPhone, draft?.supplierBankIban, draft?.supplierBankAccountNumber, draft?.supplierBankSwift, draft?.supplierPaymentTerms]);
+
+    const handleSaveOptionalData = async () => {
+        if (!draft?.supplierId) return;
+        setIsSavingOptionalData(true);
+        try {
+            await api.lookups.updateSupplierFicha(draft.supplierId, optionalData);
+            setIsOptionalDataSaved(true);
+            setIsOptionalPanelExpanded(false);
+        } catch (error) {
+            console.error('Failed to update supplier ficha:', error);
+            // Optionally could add a toast error here
+        } finally {
+            setIsSavingOptionalData(false);
+        }
+    };
 
     if (!draft) return null;
 
@@ -90,14 +107,72 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
                                             Este fornecedor foi criado como rascunho e precisa ser completado/validado em Contratos → Fichas de Fornecedor antes da emissão da P.O.
                                         </p>
                                         
-                                        {/* Optional enrichment — now the shared component, so the
-                                            payment editor offers exactly these fields, labels and
-                                            persistence rather than a second, divergent copy. */}
-                                        <SupplierAdditionalInfoPanel
-                                            supplierId={draft.supplierId!}
-                                            initial={optionalData}
-                                            defaultExpanded={isOptionalPanelExpanded}
-                                        />
+                                        {/* Optional Enrichment Panel */}
+                                        <div style={{ marginTop: '16px', border: '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: '#fff', overflow: 'hidden' }}>
+                                            <button 
+                                                onClick={() => setIsOptionalPanelExpanded(!isOptionalPanelExpanded)}
+                                                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', backgroundColor: '#f8fafc' }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Informações adicionais do fornecedor</span>
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>Opcional</span>
+                                                    {isOptionalDataSaved && <CheckCircle2 size={14} color="var(--color-status-success-text, #15803d)" />}
+                                                </div>
+                                                {isOptionalPanelExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                            </button>
+                                            
+                                            <div style={{ display: isOptionalPanelExpanded ? 'block' : 'none', padding: '16px', borderTop: '1px solid var(--color-border)' }}>
+                                                <p style={{ margin: '0 0 12px 0', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                                                    Pode completar estas informações agora para acelerar a validação posterior do fornecedor. Estes campos são opcionais e também podem ser preenchidos depois em Contratos → Fichas de Fornecedor.
+                                                </p>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Morada</label>
+                                                            <input type="text" value={optionalData.Address} onChange={e => setOptionalData({...optionalData, Address: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Condições de Pagamento</label>
+                                                            <input type="text" value={optionalData.PaymentTerms} onChange={e => setOptionalData({...optionalData, PaymentTerms: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Nome Contato</label>
+                                                            <input type="text" value={optionalData.ContactName1} onChange={e => setOptionalData({...optionalData, ContactName1: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Email</label>
+                                                            <input type="email" value={optionalData.ContactEmail1} onChange={e => setOptionalData({...optionalData, ContactEmail1: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Telemóvel</label>
+                                                            <input type="text" value={optionalData.ContactPhone1} onChange={e => setOptionalData({...optionalData, ContactPhone1: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>IBAN</label>
+                                                            <input type="text" value={optionalData.BankIban} onChange={e => setOptionalData({...optionalData, BankIban: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>Conta</label>
+                                                            <input type="text" value={optionalData.BankAccountNumber} onChange={e => setOptionalData({...optionalData, BankAccountNumber: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '4px' }}>SWIFT</label>
+                                                            <input type="text" value={optionalData.BankSwift} onChange={e => setOptionalData({...optionalData, BankSwift: e.target.value})} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '0.875rem' }} />
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                                        <button 
+                                                            onClick={handleSaveOptionalData}
+                                                            disabled={isSavingOptionalData}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.875rem', fontWeight: 500, cursor: isSavingOptionalData ? 'not-allowed' : 'pointer', opacity: isSavingOptionalData ? 0.7 : 1 }}
+                                                        >
+                                                            {isSavingOptionalData ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                                            Salvar Informações Adicionais
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                                 

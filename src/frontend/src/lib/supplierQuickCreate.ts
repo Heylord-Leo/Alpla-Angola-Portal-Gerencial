@@ -1,29 +1,4 @@
 import { ROLES } from '../constants/roles';
-import { SupplierAdditionalInfo } from '../components/suppliers/SupplierAdditionalInfoPanel';
-import { SupplierExtractionSnapshot } from './paymentRequestCreation';
-
-/**
- * Maps what the extraction read about a supplier onto the shared registration form.
- *
- * <p>Only fields the document actually carried are returned; an absent one is simply omitted so the
- * form shows it empty. Nothing is inferred, and the user reviews every value before saving.</p>
- */
-export function supplierExtractionToInfo(
-    snapshot: SupplierExtractionSnapshot | null | undefined
-): Partial<SupplierAdditionalInfo> {
-    if (!snapshot) return {};
-
-    const out: Partial<SupplierAdditionalInfo> = {};
-    if (snapshot.address) out.Address = snapshot.address;
-    if (snapshot.contactName) out.ContactName1 = snapshot.contactName;
-    if (snapshot.email) out.ContactEmail1 = snapshot.email;
-    if (snapshot.phone) out.ContactPhone1 = snapshot.phone;
-    if (snapshot.bankIban) out.BankIban = snapshot.bankIban;
-    if (snapshot.bankAccountNumber) out.BankAccountNumber = snapshot.bankAccountNumber;
-    if (snapshot.bankSwift) out.BankSwift = snapshot.bankSwift;
-    if (snapshot.paymentTerms) out.PaymentTerms = snapshot.paymentTerms;
-    return out;
-}
 
 /**
  * Who may create a supplier from inside a Payment flow.
