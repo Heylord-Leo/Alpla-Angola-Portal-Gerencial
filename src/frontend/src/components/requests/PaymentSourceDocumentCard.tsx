@@ -359,17 +359,10 @@ export function PaymentSourceDocumentCard({
                                         </FieldMessageIcon>
                                     ) : null}
 
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const input = window.document.querySelector<HTMLElement>(
-                                                `[data-document-id="${document.id}"] [data-document-supplier] input`);
-                                            input?.focus();
-                                        }}
-                                        style={{ ...linkButton, textDecoration: 'underline' }}
-                                    >
-                                        Selecionar outro fornecedor
-                                    </button>
+                                    {/* No "selecionar outro fornecedor" action: the field directly
+                                        above is already the search, and a link that only moves the
+                                        caret into it is a second answer to a question the user has
+                                        not asked. */}
                                 </div>
                             )}
                         </div>

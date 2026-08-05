@@ -28,7 +28,7 @@ import { AddPaymentDocumentChoice } from './AddPaymentDocumentChoice';
 import { InfoModal } from '../ui/InfoModal';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
-import { QuickSupplierModal } from '../Buyer/QuickSupplierModal';
+import { SupplierQuickCreateModal } from '../suppliers/SupplierQuickCreateModal';
 import { SUPPLIER_CREATE_NOT_ALLOWED } from '../../lib/supplierQuickCreate';
 import { formatCurrencyAO } from '../../lib/utils';
 
@@ -503,17 +503,13 @@ export function PaymentSourceDocumentCollection({
             )}
 
             {/* The same shared quick-create as the creation screen and Quotation Management. */}
-            <QuickSupplierModal
+            <SupplierQuickCreateModal
                 isOpen={!!supplierCreate}
                 onClose={() => setSupplierCreate(null)}
-                mode="PAYMENT_OCR"
                 initialName={supplierCreate?.name ?? ''}
                 initialTaxId={supplierCreate?.taxId ?? ''}
-                extractedName={supplierCreate?.name ?? ''}
-                extractedTaxId={supplierCreate?.taxId ?? ''}
-                onSuccess={supplier => {
+                onCreated={supplier => {
                     const target = supplierCreate?.documentId;
-                    setSupplierCreate(null);
                     if (!target) return;
 
                     // Applied to the document that asked, and marked dirty: the supplier exists in

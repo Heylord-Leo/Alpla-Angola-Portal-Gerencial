@@ -186,6 +186,11 @@ export function QuickSupplierModal({ isOpen, onClose, onSuccess, initialName = '
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        // The modal is portalled to document.body, but a React portal still propagates events
+        // through the REACT tree — so a caller that renders this modal inside its own <form> would
+        // otherwise receive this submit and run its own validation. Saving a supplier must never
+        // submit the request the user happens to be composing.
+        e.stopPropagation();
         setIsSaving(true);
         setFeedback({ type: 'error', message: null }); // transient feedback only — do NOT clear `duplicate`
         setFieldErrors({});

@@ -45,6 +45,18 @@ export const PHASE_LABEL: Record<CreationPhase, string> = {
  */
 export type PaymentDocumentEntryMode = 'PENDING_OCR' | 'REVIEW' | 'MANUAL';
 
+/** Supplier details read off the document, used only to pre-fill supplier registration. */
+export interface SupplierExtractionSnapshot {
+    address: string | null;
+    contactName: string | null;
+    email: string | null;
+    phone: string | null;
+    bankIban: string | null;
+    bankAccountNumber: string | null;
+    bankSwift: string | null;
+    paymentTerms: string | null;
+}
+
 export interface TemporaryPaymentDocument {
     tempId: string;
 
@@ -92,6 +104,15 @@ export interface TemporaryPaymentDocument {
     supplierId: number | null;
     supplierNameSnapshot: string | null;
     supplierTaxIdSnapshot: string | null;
+    /**
+     * Supplier details the extraction read off the document — address, contact, bank, payment terms.
+     *
+     * <p>Transient and never persisted with the document: these describe the <b>supplier</b>, not
+     * this invoice, and their home is the supplier's own record. They are kept only so that
+     * registering an unknown supplier can pre-fill what the document already told us instead of
+     * asking the user to retype it. Not part of {@link toCreatePayload}.</p>
+     */
+    supplierExtraction: SupplierExtractionSnapshot | null;
     plantId: number | null;
 
     sourceDocumentType: string | null;
@@ -197,6 +218,7 @@ export function createTemporaryDocument(
         supplierId: null,
         supplierNameSnapshot: null,
         supplierTaxIdSnapshot: null,
+        supplierExtraction: null,
         plantId: null,
         sourceDocumentType: null,
         documentNumber: null,
@@ -482,6 +504,8 @@ export interface ExtractedDocumentFields {
     classification: OcrDocumentClassification | null;
     /** The document's own lines. Empty when the reading produced none. */
     items: TemporaryPaymentItem[];
+    /** Supplier details for pre-filling registration. Null when nothing was read. */
+    supplierExtraction: SupplierExtractionSnapshot | null;
 }
 
 /**
@@ -541,7 +565,19 @@ export function fromOcrDraft(
         taxAmount: tax != null && tax > 0 ? tax : null,
         grossAmount: gross,
         classification: (draft.documentClassification as OcrDocumentClassification | null) ?? null,
-        items
+        items,
+        // Only what the document actually carried — an absent field stays null and the registration
+        // form shows it empty rather than inventing a value.
+        supplierExtraction: {
+            address: draft.supplierAddress?.trim() || null,
+            contactName: draft.supplierContactName?.trim() || null,
+            email: draft.supplierEmail?.trim() || null,
+            phone: draft.supplierPhone?.trim() || null,
+            bankIban: draft.supplierBankIban?.trim() || null,
+            bankAccountNumber: draft.supplierBankAccountNumber?.trim() || null,
+            bankSwift: draft.supplierBankSwift?.trim() || null,
+            paymentTerms: draft.supplierPaymentTerms?.trim() || null
+        }
     };
 }
 
@@ -582,6 +618,7 @@ export function extractDocumentFields(
     return {
         supplierId: null,
         items: [],
+        supplierExtraction: null,
         supplierName: text(h.supplierName),
         supplierTaxId: text(h.supplierTaxId),
         documentNumber: text(h.documentNumber),
@@ -661,6 +698,7 @@ export function mergeExtraction(
             supplierId: document.supplierId ?? extracted.supplierId ?? supplier?.id ?? null,
             supplierNameSnapshot: document.supplierNameSnapshot ?? supplier?.name ?? extracted.supplierName,
             supplierTaxIdSnapshot: document.supplierTaxIdSnapshot ?? extracted.supplierTaxId,
+            supplierExtraction: document.supplierExtraction ?? extracted.supplierExtraction,
             documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),
             documentDate: take(document.documentDate, extracted.documentDate, 'documentDate', 'Data do documento'),
             dueDate: document.dueDate ?? extracted.dueDate,
