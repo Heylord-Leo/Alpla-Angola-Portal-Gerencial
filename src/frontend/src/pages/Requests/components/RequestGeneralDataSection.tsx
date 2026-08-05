@@ -22,6 +22,7 @@ import {
     OcrDocumentClassification
 } from '../../../lib/documentClassificationDecision';
 import { LookupDto } from '../../../types';
+import { PlantMismatch } from '../../../lib/paymentSourceDocuments';
 
 export interface RequestGeneralDataSectionProps {
     // Form state & handlers
@@ -67,6 +68,14 @@ export interface RequestGeneralDataSectionProps {
      * unanswered copy. They are removed from this screen instead.</p>
      */
     isMultiDocumentPayment?: boolean;
+    /**
+     * Active documents whose plant differs from the request's routing plant.
+     *
+     * <p>Disclosure only. The two plants answer different questions and are allowed to differ; this
+     * exists so the split is visible here rather than discovered later, when the groups come out
+     * addressed to a plant the request header never mentioned.</p>
+     */
+    plantMismatches?: PlantMismatch[];
 
     /** The reading this request's classification was judged against, restored from the saved data. */
     documentClassification?: OcrDocumentClassification | null;
@@ -85,6 +94,7 @@ export function RequestGeneralDataSection({
     formData, setFormData, handleChange, clearFieldError,
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
     isMultiDocumentPayment = false,
+    plantMismatches = [],
     needLevels, departments, companies, plants,
     documentClassification, classificationConflict, setClassificationConflict,
     canEditHeader, canEditSupplier, isQuotationPartiallyEditable, isQuotationStage, hasSavedQuotations,
@@ -395,7 +405,42 @@ export function RequestGeneralDataSection({
                         </label>
 
                         <label className={labelClassName}>
-                            Planta <span style={{ color: 'red' }}>*</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                Planta <span style={{ color: 'red' }}>*</span>
+                                {plantMismatches.length > 0 && (
+                                    <FieldMessageIcon
+                                        severity="info"
+                                        tooltip="A planta do pedido difere da planta de um ou mais documentos."
+                                        ariaLabel="Ver a diferença entre a planta do pedido e as plantas dos documentos"
+                                        title="Plantas diferentes entre o pedido e os documentos"
+                                        maxWidth={560}
+                                    >
+                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                            A planta de encaminhamento do pedido é diferente da planta de um
+                                            ou mais documentos. O fluxo de aprovação seguirá a planta do
+                                            pedido, enquanto o agrupamento e as obrigações seguirão as
+                                            plantas indicadas nos documentos.
+                                        </p>
+                                        <p style={{ margin: '10px 0 6px', fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                            Documentos com planta diferente:
+                                        </p>
+                                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.8125rem', lineHeight: 1.6, color: 'var(--color-text-main)' }}>
+                                            {plantMismatches.map(m => (
+                                                <li key={m.sequenceNumber}>
+                                                    Documento {m.sequenceNumber}
+                                                    {m.documentNumber ? ` — ${m.documentNumber}` : ''}
+                                                    {m.plantName ? ` — ${m.plantName}` : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                                            Não é um erro e não impede guardar nem submeter. Alterar a planta
+                                            do pedido não altera a planta dos documentos nem dos seus itens —
+                                            essas são corrigidas em cada documento.
+                                        </p>
+                                    </FieldMessageIcon>
+                                )}
+                            </span>
                             <select 
                                 name="plantId" 
                                 value={formData.plantId} 

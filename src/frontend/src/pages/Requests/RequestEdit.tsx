@@ -40,6 +40,7 @@ import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySumm
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
+import { plantMismatches } from '../../lib/paymentSourceDocuments';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -147,17 +148,6 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         setUsesMultiSourceDocuments
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
-    /**
-     * This request's documents are the authority, not its header.
-     *
-     * <p>From the persisted discriminator, never a row count or a date: a new multi-document draft
-     * has zero documents until its first is saved and must still be treated as one.</p>
-     */
-    const isMultiDocumentPayment =
-        featureFlags.paymentMultiDocumentEnabled &&
-        requestTypeCode === 'PAYMENT' &&
-        sourceDocumentsSummary?.usesMultiDocumentModel === true;
-
     const isDrawerMode = !!onDrawerClose;
     const { user } = useAuth();
 
@@ -174,6 +164,21 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     const [sourceDocumentsSummary, setSourceDocumentsSummary] =
         useState<PaymentSourceDocumentsSummaryDto | null>(null);
     const [sourceDocsOpen, setSourceDocsOpen] = useState(true);
+
+    /**
+     * This request's documents are the authority, not its header.
+     *
+     * <p>From the persisted discriminator, never a row count or a date: a new multi-document draft
+     * has zero documents until its first is saved and must still be treated as one.</p>
+     *
+     * <p>Declared AFTER the state it reads. `// @ts-nocheck` at the top of this file means the
+     * compiler will not catch a use-before-declaration here, and a `const` read during render before
+     * its `useState` has run is a temporal-dead-zone crash, not a warning.</p>
+     */
+    const isMultiDocumentPayment =
+        featureFlags.paymentMultiDocumentEnabled &&
+        requestTypeCode === 'PAYMENT' &&
+        sourceDocumentsSummary?.usesMultiDocumentModel === true;
     const [documentEditingState, setDocumentEditingState] =
         useState<{ openSequence: number | null; unsavedSequences: number[] }>(
             { openSequence: null, unsavedSequences: [] });
@@ -450,6 +455,12 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             }}>
                 <RequestGeneralDataSection
                     isMultiDocumentPayment={isMultiDocumentPayment}
+                    plantMismatches={isMultiDocumentPayment
+                        ? plantMismatches(
+                            formData.plantId ? Number(formData.plantId) : null,
+                            sourceDocumentsSummary?.documents ?? [],
+                            id => plants.find(p => p.id === id)?.name ?? null)
+                        : []}
                     formData={formData}
                     setFormData={setFormData}
                     handleChange={handleChange}

@@ -255,3 +255,45 @@ export function parseStoredClassification(
         isFallback: document.classificationSuggestionSource === 'FALLBACK'
     };
 }
+
+// ── Routing plant vs document plants ────────────────────────────────────────────────────────
+
+export interface PlantMismatch {
+    sequenceNumber: number;
+    documentNumber: string | null;
+    plantId: number | null;
+    plantName: string | null;
+}
+
+/**
+ * Active documents whose plant differs from the request's routing plant.
+ *
+ * <p>The two plants answer different questions and are <b>allowed</b> to differ:
+ * <c>Request.PlantId</c> decides who approves the request and what the requester is authorized to
+ * raise; <c>PaymentSourceDocument.PlantId</c> decides how the payment is grouped and which
+ * obligations follow it. A request routed through Viana 1 that pays an invoice issued to Viana 2 is
+ * ordinary, not an error.</p>
+ *
+ * <p>So this is disclosure, never a rule: it exists so nobody has to discover the split later, when
+ * the groups come out addressed to a plant the request header never mentioned. Voided documents are
+ * excluded — a document that was withdrawn explains nothing about where the payment will land.</p>
+ */
+export function plantMismatches(
+    requestPlantId: number | null | undefined,
+    documents: PaymentSourceDocumentDto[],
+    plantName?: (plantId: number) => string | null
+): PlantMismatch[] {
+    // With no routing plant there is nothing to compare against, and the field's own required-field
+    // validation is the honest thing to show instead.
+    if (requestPlantId == null) return [];
+
+    return documents
+        .filter(d => !d.isVoided && d.plantId != null && d.plantId !== requestPlantId)
+        .map(d => ({
+            sequenceNumber: d.sequenceNumber,
+            documentNumber: d.documentNumber ?? null,
+            plantId: d.plantId ?? null,
+            plantName: d.plantName ?? (d.plantId != null ? plantName?.(d.plantId) ?? null : null)
+        }))
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+}

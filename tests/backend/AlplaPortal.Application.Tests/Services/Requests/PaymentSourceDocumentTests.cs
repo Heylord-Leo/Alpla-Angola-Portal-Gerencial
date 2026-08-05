@@ -101,6 +101,22 @@ public class PaymentSourceDocumentValidatorTests
         Assert.Contains(result.Problems, p => p.Message == "Indique o fornecedor.");
     }
 
+    /// <summary>
+    /// The request's routing plant and a document's plant answer different questions and are allowed
+    /// to differ: one decides who approves, the other decides how the payment is grouped. The
+    /// difference is disclosed in the UI, never enforced here.
+    /// </summary>
+    [Fact]
+    public void Documents_on_different_plants_do_not_block_submission()
+    {
+        var result = Validate(
+            Doc(label: "Documento 1", plant: 10),
+            Doc(label: "Documento 2", plant: 20));
+
+        Assert.True(result.CanSubmit);
+        Assert.Empty(result.Problems);
+    }
+
     // ── Due date ──
 
     /// <summary>
