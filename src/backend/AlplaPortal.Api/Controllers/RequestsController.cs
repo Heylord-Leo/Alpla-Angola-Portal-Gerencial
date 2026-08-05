@@ -2758,8 +2758,18 @@ public class RequestsController : BaseController
 
         // Mandatory Document Validation for Submission
         // QUOTATION: Proforma NOT mandatory on initial submission
-        // PAYMENT: Proforma IS mandatory
-        if (request.RequestType.Code == "PAYMENT" && !await HasAttachmentAsync(id, RequestAttachment.TYPE_PROFORMA))
+        // PAYMENT: Proforma IS mandatory — in the LEGACY single-document model only.
+        //
+        // Under the multi-document model the commercial document is a PaymentSourceDocument: it
+        // carries its own attachment (typed PAYMENT_SOURCE_DOCUMENT), its own classification,
+        // supplier, dates, items and totals, and is validated per document just above. Demanding a
+        // second attachment in the legacy PROFORMA slot would ask the user to upload the same
+        // invoice twice — and, because the slot is never filled by that flow, would refuse every
+        // multi-document request outright.
+        //
+        // Keyed to the persisted discriminator, not a date or a row count.
+        if (request.RequestType.Code == "PAYMENT" && !request.UsesMultiSourceDocuments &&
+            !await HasAttachmentAsync(id, RequestAttachment.TYPE_PROFORMA))
         {
             errors.Add("É necessário anexar a Proforma antes de submeter o pedido.");
         }

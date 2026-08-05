@@ -1037,8 +1037,11 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             }
         }
 
-        // 1.1 Mandatory Proforma check (Only for PAYMENT types)
-        if (requestTypeCode === 'PAYMENT' && !hasAttachment('PROFORMA')) {
+        // 1.1 Mandatory Proforma check — LEGACY single-document PAYMENT only.
+        // Under the multi-document model the commercial document IS the PaymentSourceDocument, whose
+        // attachment is typed PAYMENT_SOURCE_DOCUMENT. The legacy slot is never filled by that flow,
+        // so this guard would refuse every multi-document request and ask for the same invoice twice.
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments && !hasAttachment('PROFORMA')) {
             setFeedback({
                 type: 'error',
                 message: 'É necessário anexar a Proforma antes de submeter o pedido.'

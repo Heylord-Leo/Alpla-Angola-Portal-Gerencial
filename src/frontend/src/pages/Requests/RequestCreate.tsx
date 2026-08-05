@@ -122,6 +122,25 @@ export function RequestCreate() {
     // upload against. The map is also what stops the same file being uploaded twice on a retry.
     const pendingFilesRef = useRef<Map<string, File>>(new Map());
     const uploadedIdsRef = useRef<Map<string, string>>(new Map());
+
+    /**
+     * Content hash of every file already in this composition, by placeholder id.
+     *
+     * <p>Compared by BYTES, not by name: a renamed copy of the same invoice is the same invoice, and
+     * two genuinely different documents may well share a filename like "factura.pdf".</p>
+     */
+    const fileHashesRef = useRef<Map<string, string>>(new Map());
+    /** The live documents, for a picker that must not close over a stale array. */
+    const tempDocumentsRef = useRef<TemporaryPaymentDocument[]>([]);
+    tempDocumentsRef.current = tempDocuments;
+
+    /** The same file, already in this request. A hard block: no override, no justification. */
+    const [sameRequestDuplicate, setSameRequestDuplicate] = useState<{
+        fileName: string;
+        sequence: number;
+        documentNumber: string | null;
+        supplierName: string | null;
+    } | null>(null);
     const sourceFileInputRef = useRef<HTMLInputElement>(null);
     const sourceFileResolverRef = useRef<((f: File | null) => void) | null>(null);
 
@@ -137,12 +156,39 @@ export function RequestCreate() {
 
         if (!file) return null;
 
-        // ── The same invoice must not be paid twice ──
-        // The single-document flow has always checked this by content hash before reading the file;
-        // the multi-document path added its own picker and simply never called it, so a file already
-        // used by another request went through unremarked. Same check, same endpoint, same modal.
+        // ── Everything below happens BEFORE the file is read ──
+        // The duplicate used to surface during persistence: the user had already waited for OCR,
+        // corrected every extracted field and confirmed the document before being told the file was
+        // already Documento 1. Checking here costs one hash and saves all of that work.
+        let hash: string | null = null;
+
         try {
-            const hash = await computeFileHash(file);
+            hash = await computeFileHash(file);
+
+            // ── Same request: a hard block ──
+            // Not a warning. There is no reading of this file that would make paying the same
+            // invoice twice within one request correct, so there is nothing to acknowledge.
+            // Only hashes still owned by a live document count. A placeholder whose document was
+            // removed, or whose attachment was replaced, no longer matches anything — so the map
+            // self-heals and a legitimately re-added file is never falsely blocked.
+            const ownerPlaceholder = [...fileHashesRef.current.entries()]
+                .filter(([placeholder]) =>
+                    tempDocumentsRef.current.some(d => d.attachmentId === placeholder))
+                .find(([, h]) => h === hash)?.[0];
+
+            if (ownerPlaceholder) {
+                const owner = tempDocumentsRef.current.find(d => d.attachmentId === ownerPlaceholder);
+                setSameRequestDuplicate({
+                    fileName: file.name,
+                    sequence: owner?.localSequence ?? 1,
+                    documentNumber: owner?.documentNumber ?? null,
+                    supplierName: owner?.supplierNameSnapshot ?? null
+                });
+                // No OCR, no temporary document, no upload — and no empty card left behind.
+                return null;
+            }
+
+            // ── Another request: the existing warning, with its acknowledgement and countdown ──
             const dupCheck = await api.attachments.checkDuplicate(hash);
 
             if (dupCheck.isDuplicate) {
@@ -160,12 +206,14 @@ export function RequestCreate() {
                 if (!accepted) return null;
             }
         } catch {
-            // The check is a safeguard, not a gate: if it cannot run, the user is not stopped from
-            // working. The backend still refuses the same file twice within one request.
+            // The cross-request check is a safeguard, not a gate: if the endpoint cannot answer, the
+            // user is not stopped from working. The same-request block above needs no server, and
+            // the backend refuses both cases again at persistence regardless.
         }
 
         const placeholderId = `pending:${Date.now().toString(36)}:${file.name}`;
         pendingFilesRef.current.set(placeholderId, file);
+        if (hash) fileHashesRef.current.set(placeholderId, hash);
         return { id: placeholderId, fileName: file.name, file };
     }, []);
 
@@ -2459,6 +2507,45 @@ export function RequestCreate() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* The same file, already in this request. Nothing to weigh up, so nothing to confirm. */}
+            {sameRequestDuplicate && (
+                <ConfirmationDialog
+                    title="Ficheiro já incluído neste pedido"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                Este ficheiro já está associado ao{' '}
+                                <strong>Documento {sameRequestDuplicate.sequence}</strong> deste
+                                pedido e não pode ser adicionado novamente.
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Ficheiro: <strong>{sameRequestDuplicate.fileName}</strong>
+                                {sameRequestDuplicate.documentNumber
+                                    ? <> · Nº <strong>{sameRequestDuplicate.documentNumber}</strong></>
+                                    : null}
+                                {sameRequestDuplicate.supplierName
+                                    ? <> · <strong>{sameRequestDuplicate.supplierName}</strong></>
+                                    : null}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Se este é realmente outro documento, verifique se não anexou o ficheiro
+                                errado.
+                            </span>
+                        </div>
+                    }
+                    confirmText={`Ver Documento ${sameRequestDuplicate.sequence}`}
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => {
+                        const target = tempDocumentsRef.current
+                            .find(d => d.localSequence === sameRequestDuplicate.sequence);
+                        setSameRequestDuplicate(null);
+                        if (target) setActiveDocumentId(target.tempId);
+                    }}
+                    onCancel={() => setSameRequestDuplicate(null)}
+                />
+            )}
 
             {/* Reconciliation Modal */}
             <CatalogItemReconciliationModal
