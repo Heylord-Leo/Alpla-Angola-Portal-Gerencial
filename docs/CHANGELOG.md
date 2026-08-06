@@ -4,7 +4,71 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.223.0
+v2.224.0
+
+## [v2.224.0] - 2026-08-06
+
+### Added — Post-Payment Completion — Release 3: multiple source documents per PAYMENT request
+
+**The feature remains disabled in every committed configuration**
+(`PostPaymentCompletion.Enabled = false`). The Operation Invoice workflow is **modelled but not
+implemented** — no controller, no service, no UI.
+
+- **A PAYMENT request may now carry several source documents.** Each `PaymentSourceDocument` has its
+  own attachment, supplier, plant, document number and series, classification, dates, currency,
+  amounts and items. Previously a payment request had exactly one commercial document, which forced
+  a separate request per invoice even when one payment covered several.
+- **Per-document OCR and classification.** Each document is read independently through
+  `POST /requests/direct-ocr`, which needs no RequestId — so a document can be read before anything
+  is persisted. Reading Documento 2 cannot disturb Documento 1's reading, suggestion or conflict
+  answer: every piece of that state is keyed by the document's own id, never by array position.
+- **Progressive composition.** The screen asks how to start a document — import with OCR or enter
+  manually — then shows one editor at a time: review, *Confirmar e adicionar documento*, collapse to
+  a summary card, add the next. While a file is being read the document area is a blocking loading
+  view, so an empty form never appears before the values arrive. Confirmation is refused until every
+  document rule is satisfied, so an incomplete document can no longer reach persistence and fail
+  there.
+- **Supplier registration from the document.** An OCR supplier the Portal does not know is presented
+  as unregistered rather than invalid, and can be created without leaving the screen — name, NIF and
+  the optional Ficha fields (morada, condições de pagamento, contacto, email, telemóvel, IBAN, conta,
+  SWIFT) in one view and one Save, pre-filled from the reading. The supplier is created as a DRAFT in
+  the single authoritative supplier table and is immediately available everywhere.
+- **Items belong to a document.** `RequestLineItem.PaymentSourceDocumentId` names the owner, and the
+  item grid lives inside that document's editor. The sum of a document's items must agree with its
+  stated total within the standard tolerance.
+- **Grouping by Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.** Plant and type
+  join the key because obligations differ by both: one supplier billing two plants is two
+  obligations, and a proforma and an invoice carry different post-payment duties.
+- **RequestEdit becomes a review screen for these requests.** Documents render as compact read-only
+  cards with their attachments in a *Documentos de origem* subsection; items are read-only and name
+  their document; totals appear once, from the documents. All document and item changes happen behind
+  one explicit *Editar documentos do pedido* action. Only title, description, request due date,
+  department, company and plant remain editable; Request Type is now immutable in the UI and refused
+  by the API.
+- **Duplicate protection.** The same file cannot be added twice to one request — detected by content
+  hash **before** OCR runs, in both the creation and edit flows, through a preflight that never
+  exposes hashes as ordinary summary data. A renamed or re-scanned copy of a document already on the
+  request is caught by supplier + number + series. A file used by another request raises the existing
+  warning with its acknowledgement. The persistence-time checks remain authoritative.
+- **The request drawer is horizontally resizable** — draggable left edge, keyboard support, a
+  remembered width clamped to the viewport. All draft and later-stage actions remain exactly where
+  permissions and status already placed them.
+- **Submission compatibility.** `Request.SupplierId` and `Request.SourceDocumentType` are compatibility
+  echoes on a multi-document request and no longer gate submission, and the legacy PROFORMA attachment
+  slot is not required — the commercial document *is* the source document. Legacy PAYMENT requests
+  (zero source documents), flag-off behaviour and Quotation Management keep their existing rules,
+  selected by the persisted `UsesMultiSourceDocuments` discriminator rather than a date or a row count.
+
+### Fixed
+
+- Document extraction in the multi-document flow sent `sourceContext=PAYMENT`, which is an OCR module
+  allowlist key rather than a hint. `PAYMENT` is not a configured module, so extraction was refused
+  before any provider was called — HTTP 200 with `success: false`, zero pages, zero tokens and every
+  field null. It now runs under `REQUESTS`, and the client checks `success` instead of trusting the
+  status code.
+- The source-document summary was re-fetched on every render because an inline callback re-armed the
+  load effect, producing dozens of concurrent requests and a document message that flashed several
+  times a second.
 
 ## [v2.223.0] - 2026-08-03
 

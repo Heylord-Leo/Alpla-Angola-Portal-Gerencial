@@ -2,7 +2,32 @@
 
 ## Current Version
 
-v2.223.0
+v2.224.0
+
+## [v2.224.0] - 2026-08-06
+
+### Added — Post-Payment Completion — Release 3: multiple source documents per PAYMENT request
+
+- **Feature remains disabled** in every committed configuration.
+- A PAYMENT request may carry several `PaymentSourceDocument` rows, each with its own attachment,
+  supplier, plant, classification, dates, amounts and items.
+- Per-document OCR and classification, keyed by document identity — reading one document cannot
+  disturb another's reading or conflict answer.
+- Progressive composition: import or type one document, review it, confirm it, add the next. A
+  blocking loading view while the file is read; confirmation refused until every document rule holds.
+- Supplier registration from the document, one view and one Save, creating a DRAFT supplier in the
+  single authoritative supplier table.
+- Items belong to a document (`RequestLineItem.PaymentSourceDocumentId`); grouping key extended to
+  Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
+- RequestEdit becomes a read-only review for these requests, with one explicit entry to the document
+  composer; Request Type is immutable in UI and API.
+- Duplicate protection by content hash **before** OCR, plus supplier + number + series for renamed
+  copies; cross-request warning retained.
+- Resizable request drawer with a remembered, clamped width.
+- `Request.SupplierId` / `Request.SourceDocumentType` are compatibility echoes and no longer gate
+  submission; the legacy PROFORMA slot is not required for multi-document requests.
+- **Operation Invoice workflow is modelled but NOT implemented** (no controller, service or UI).
+- Legacy PAYMENT, flag-off behaviour and Quotation Management unchanged.
 
 ## [v2.223.0] - 2026-08-03
 

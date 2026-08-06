@@ -373,16 +373,6 @@ export function summariseFailures(documents: TemporaryPaymentDocument[]) {
 
 // ── Totals, for the creation screen ─────────────────────────────────────────────────────────
 
-export function temporaryTotals(documents: TemporaryPaymentDocument[]) {
-    return {
-        count: documents.length,
-        net: documents.reduce((s, d) => s + (d.netAmount ?? 0), 0),
-        tax: documents.reduce((s, d) => s + (d.taxAmount ?? 0), 0),
-        gross: documents.reduce((s, d) => s + (d.grossAmount ?? 0), 0),
-        currency: documents.find(d => !!d.currency)?.currency ?? null
-    };
-}
-
 /** The currency the request has committed to, so later documents default to it. */
 export function temporaryEstablishedCurrency(documents: TemporaryPaymentDocument[]): string | null {
     return documents.find(d => !!d.currency)?.currency ?? null;

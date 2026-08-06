@@ -17,28 +17,6 @@ import {
  * must not depend on which component happens to ask.</p>
  */
 
-// ── Request-level state ─────────────────────────────────────────────────────────────────────
-
-export type CompositionState =
-    /** No document exists yet: the screen offers only "importar" or "inserir manualmente". */
-    | 'EMPTY'
-    /** The user is choosing how to add the next document. */
-    | 'CHOOSING'
-    /** One document is open in the editor. */
-    | 'EDITING'
-    /** Every document is confirmed and collapsed. */
-    | 'CONFIRMED';
-
-export function compositionState(
-    documents: TemporaryPaymentDocument[],
-    activeTempId: string | null,
-    chooserOpen: boolean
-): CompositionState {
-    if (activeTempId && documents.some(d => d.tempId === activeTempId)) return 'EDITING';
-    if (chooserOpen) return 'CHOOSING';
-    return documents.length === 0 ? 'EMPTY' : 'CONFIRMED';
-}
-
 // ── Per-document state ──────────────────────────────────────────────────────────────────────
 
 export type DocumentLifecycle =
@@ -253,53 +231,6 @@ export function confirmedTotals(documents: TemporaryPaymentDocument[]): Composit
 
 export function confirmedDocuments(documents: TemporaryPaymentDocument[]): TemporaryPaymentDocument[] {
     return documents.filter(d => d.confirmed);
-}
-
-// ── Submission ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Why the request cannot be generated yet.
- *
- * <p>The rule of §16: nothing may be left in an ambiguous editing state. A document open in the
- * editor is a decision the user has not finished making, and submitting it silently would send an
- * approver a request whose contents were still being typed.</p>
- */
-export function submissionBlockers(
-    documents: TemporaryPaymentDocument[],
-    activeTempId: string | null
-): string[] {
-    const problems: string[] = [];
-
-    if (documents.length === 0) {
-        problems.push('Adicione pelo menos um documento de origem.');
-        return problems;
-    }
-
-    const active = documents.find(d => d.tempId === activeTempId);
-    if (active) {
-        problems.push(
-            `Documento ${active.localSequence} ainda está em revisão. ` +
-            'Confirme o documento antes de gerar o pedido.');
-    }
-
-    for (const d of documents) {
-        if (d.tempId === activeTempId) continue;
-
-        const blockers = confirmationBlockers(d, false);
-        if (blockers.length > 0) {
-            problems.push(`Documento ${d.localSequence}: ${blockers[0]}`);
-        }
-    }
-
-    const currencies = Array.from(new Set(
-        documents.map(d => d.currency?.trim().toUpperCase()).filter((c): c is string => !!c)));
-
-    if (currencies.length > 1) {
-        problems.push(
-            `Todos os documentos devem usar a mesma moeda. Encontradas: ${currencies.join(', ')}.`);
-    }
-
-    return problems;
 }
 
 /**
