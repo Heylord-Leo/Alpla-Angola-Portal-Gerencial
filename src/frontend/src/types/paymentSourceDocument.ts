@@ -177,3 +177,28 @@ export interface PaymentDocumentOcrState {
     /** Persistent, not a toast — a failed read must stay on screen until it is dealt with. */
     error: string | null;
 }
+
+
+/**
+ * The answer to "may this file be attached?", asked before uploading or reading it.
+ *
+ * <p><c>SAME_REQUEST</c> is always <c>BLOCK</c>: there is no reading of a file already on this
+ * request that would make paying the same invoice twice correct, so there is nothing to acknowledge.
+ * <c>OTHER_REQUEST</c> is <c>WARN</c> — legitimate cases exist and the user decides.</p>
+ */
+export interface SourceDocumentDuplicateResult {
+    isDuplicate: boolean;
+    duplicateScope: 'NONE' | 'SAME_REQUEST' | 'OTHER_REQUEST';
+    outcome: 'NONE' | 'BLOCK' | 'WARN';
+
+    conflictingDocumentId?: string | null;
+    conflictingSequenceNumber?: number | null;
+    conflictingDocumentNumber?: string | null;
+    supplierName?: string | null;
+
+    /** Present only when the user may see the other request. */
+    requestNumber?: string | null;
+    requestId?: string | null;
+    uploadedBy?: string | null;
+    createdAtUtc?: string | null;
+}

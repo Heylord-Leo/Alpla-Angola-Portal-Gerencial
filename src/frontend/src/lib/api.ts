@@ -7,6 +7,7 @@ import {
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
+import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
 import { logger, FrontendComponentKey } from './logger';
 import { buildInfo } from '../buildInfo';
 import { versionSignal } from './versionSignal';
@@ -837,6 +838,23 @@ export const api = {
          * makes the server refuse the extraction before any provider is called. Omitting it skips
          * the allowlist entirely.</p>
          */
+        /**
+         * Asks whether a file may be attached to a request's source documents, before uploading or
+         * reading it. The hash is computed in the browser; the file itself never leaves it.
+         */
+        checkSourceDocumentDuplicate: async (
+            requestId: string,
+            payload: { contentHash: string; candidateFileName?: string; replacingDocumentId?: string | null }
+        ): Promise<SourceDocumentDuplicateResult> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/check-duplicate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade do documento.');
+            return response.json();
+        },
         directOcrExtract: async (file: File, sourceContext?: string): Promise<OcrExtractionEnvelope> => {
             const formData = new FormData();
             formData.append('file', file);

@@ -3,6 +3,8 @@ import { api } from '../../../lib/api';
 import { PaymentSourceDocumentCollection } from '../../../components/requests/PaymentSourceDocumentCollection';
 import { PaymentSourceDocumentsSummaryDto } from '../../../types/paymentSourceDocument';
 import { CollapsibleSection } from '../../../components/ui/CollapsibleSection';
+import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
+import { computeFileHash, formatDateTime } from '../../../lib/utils';
 
 interface Props {
     requestId: string;
@@ -62,6 +64,27 @@ export function PaymentSourceDocumentsSection({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const resolverRef = useRef<((id: string | null) => void) | null>(null);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    /** Guards against a rapid second selection starting a second preflight, upload or reading. */
+    const isCheckingRef = useRef(false);
+    const replacingDocumentIdRef = useRef<string | null>(null);
+
+    /** The same file is already on this request. A hard block — no override, no justification. */
+    const [sameRequestDuplicate, setSameRequestDuplicate] = useState<{
+        fileName: string;
+        sequence: number;
+        documentNumber: string | null;
+        supplierName: string | null;
+        documentId: string | null;
+    } | null>(null);
+
+    /** The same file belongs to another request. Warned, per the existing policy. */
+    const [crossRequestDuplicate, setCrossRequestDuplicate] = useState<{
+        fileName: string;
+        requestNumber: string | null;
+        uploadedBy: string | null;
+        createdAtUtc: string | null;
+        onDecision: (accepted: boolean) => void;
+    } | null>(null);
 
     const isPayment = requestTypeCode === 'PAYMENT';
     const readOnly = !EDITABLE_STATUSES.includes(statusCode ?? '');
@@ -80,8 +103,10 @@ export function PaymentSourceDocumentsSection({
      * Opens the file picker and resolves with the new attachment id. Promise-shaped so the
      * collection can await it inline instead of threading callbacks through three components.
      */
-    const requestAttachment = useCallback((): Promise<string | null> => {
+    const requestAttachment = useCallback((purpose?: 'NEW' | 'REPLACE', documentId?: string): Promise<string | null> => {
         setUploadError(null);
+        // Remembered for the preflight: a document being replaced cannot conflict with itself.
+        replacingDocumentIdRef.current = purpose === 'REPLACE' ? documentId ?? null : null;
         return new Promise<string | null>(resolve => {
             resolverRef.current = resolve;
             fileInputRef.current?.click();
@@ -96,7 +121,58 @@ export function PaymentSourceDocumentsSection({
 
         if (!file) { resolve?.(null); return; }
 
+        // A rapid second selection must not start a second preflight, a second upload or a second
+        // reading of the same document.
+        if (isCheckingRef.current) { resolve?.(null); return; }
+        isCheckingRef.current = true;
+
+        const replacingDocumentId = replacingDocumentIdRef.current;
+        replacingDocumentIdRef.current = null;
+
         try {
+            // ── Preflight, before the file is uploaded or read ──
+            // Without it the answer arrives from the create endpoint as a 409, i.e. after OCR, after
+            // the user corrected every extracted field and confirmed the document.
+            try {
+                const hash = await computeFileHash(file);
+                const verdict = await api.requests.checkSourceDocumentDuplicate(requestId, {
+                    contentHash: hash,
+                    candidateFileName: file.name,
+                    replacingDocumentId
+                });
+
+                if (verdict.outcome === 'BLOCK') {
+                    // Nothing is uploaded, nothing is read and nothing existing is disturbed —
+                    // resolving null leaves a replacement's current attachment exactly as it was.
+                    setSameRequestDuplicate({
+                        fileName: file.name,
+                        sequence: verdict.conflictingSequenceNumber ?? 0,
+                        documentNumber: verdict.conflictingDocumentNumber ?? null,
+                        supplierName: verdict.supplierName ?? null,
+                        documentId: verdict.conflictingDocumentId ?? null
+                    });
+                    resolve?.(null);
+                    return;
+                }
+
+                if (verdict.outcome === 'WARN') {
+                    const accepted = await new Promise<boolean>(done => {
+                        setCrossRequestDuplicate({
+                            fileName: file.name,
+                            requestNumber: verdict.requestNumber ?? null,
+                            uploadedBy: verdict.uploadedBy ?? null,
+                            createdAtUtc: verdict.createdAtUtc ?? null,
+                            onDecision: done
+                        });
+                    });
+                    setCrossRequestDuplicate(null);
+                    if (!accepted) { resolve?.(null); return; }
+                }
+            } catch {
+                // The preflight is a courtesy. If it cannot answer, the user is not stopped — the
+                // create endpoint still refuses a duplicate with a 409.
+            }
+
             const uploaded = await api.attachments.upload(requestId, [file], 'PAYMENT_SOURCE_DOCUMENT');
             const attachmentId = Array.isArray(uploaded)
                 ? uploaded[0]?.id ?? uploaded[0]?.attachmentId
@@ -112,6 +188,8 @@ export function PaymentSourceDocumentsSection({
         } catch (err: any) {
             setUploadError(err?.message ?? 'Não foi possível carregar o ficheiro.');
             resolve?.(null);
+        } finally {
+            isCheckingRef.current = false;
         }
     };
 
@@ -181,6 +259,86 @@ export function PaymentSourceDocumentsSection({
                 onSummaryChange={onSummaryChange}
                 onRequestAttachment={requestAttachment}
             />
+
+            {/* The same file, already on this request. Nothing to weigh up, so nothing to confirm. */}
+            {sameRequestDuplicate && (
+                <ConfirmationDialog
+                    title="Ficheiro já incluído neste pedido"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                Este ficheiro já está associado ao{' '}
+                                <strong>Documento {sameRequestDuplicate.sequence}</strong> deste
+                                pedido e não pode ser adicionado novamente.
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Ficheiro: <strong>{sameRequestDuplicate.fileName}</strong>
+                                {sameRequestDuplicate.documentNumber
+                                    ? <> · Nº <strong>{sameRequestDuplicate.documentNumber}</strong></>
+                                    : null}
+                                {sameRequestDuplicate.supplierName
+                                    ? <> · <strong>{sameRequestDuplicate.supplierName}</strong></>
+                                    : null}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Se este é realmente outro documento, verifique se não anexou o ficheiro
+                                errado.
+                            </span>
+                        </div>
+                    }
+                    confirmText={`Ver Documento ${sameRequestDuplicate.sequence}`}
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => {
+                        const id = sameRequestDuplicate.documentId;
+                        setSameRequestDuplicate(null);
+                        if (!id) return;
+                        requestAnimationFrame(() => {
+                            const card = document.querySelector<HTMLElement>(`[data-document-id="${id}"]`)
+                                ?? document.querySelector<HTMLElement>(`[data-document-sequence="${sameRequestDuplicate.sequence}"]`);
+                            card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        });
+                    }}
+                    onCancel={() => setSameRequestDuplicate(null)}
+                />
+            )}
+
+            {/* The same file, on ANOTHER request. Allowed deliberately — the existing policy. */}
+            {crossRequestDuplicate && (
+                <ConfirmationDialog
+                    title="Este ficheiro já foi utilizado noutro pedido"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                O ficheiro <strong>{crossRequestDuplicate.fileName}</strong> já está
+                                associado a outro pedido
+                                {crossRequestDuplicate.requestNumber
+                                    ? <> (<strong>{crossRequestDuplicate.requestNumber}</strong>)</>
+                                    : null}.
+                            </span>
+                            {(crossRequestDuplicate.uploadedBy || crossRequestDuplicate.createdAtUtc) && (
+                                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                    {crossRequestDuplicate.uploadedBy
+                                        ? <>Carregado por <strong>{crossRequestDuplicate.uploadedBy}</strong></>
+                                        : null}
+                                    {crossRequestDuplicate.createdAtUtc
+                                        ? <> em {formatDateTime(crossRequestDuplicate.createdAtUtc)}</>
+                                        : null}
+                                </span>
+                            )}
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Continue apenas se tiver a certeza de que este documento deve ser pago
+                                também neste pedido.
+                            </span>
+                        </div>
+                    }
+                    confirmText="Estou ciente, prosseguir"
+                    cancelText="Cancelar"
+                    variant="warning"
+                    onConfirm={() => crossRequestDuplicate.onDecision(true)}
+                    onCancel={() => crossRequestDuplicate.onDecision(false)}
+                />
+            )}
         </CollapsibleSection>
     );
 }

@@ -43,7 +43,7 @@ interface Props {
     /** Bubbles `canSubmit` so the parent can disable final submission. */
     onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
     /** Opens the existing attachment picker; resolves with the new attachment id, or null. */
-    onRequestAttachment?: (purpose: 'NEW' | 'REPLACE') => Promise<string | null>;
+    onRequestAttachment?: (purpose: 'NEW' | 'REPLACE', documentId?: string) => Promise<string | null>;
     /** Renders the items belonging to one document. */
     renderItems?: (document: PaymentSourceDocumentDto) => React.ReactNode;
     /**
@@ -341,7 +341,8 @@ export function PaymentSourceDocumentCollection({
         setPendingReplace(null);
         if (!target) return;
 
-        const attachmentId = await onRequestAttachment?.('REPLACE');
+        // Named so the preflight can exclude it: a document cannot duplicate itself.
+        const attachmentId = await onRequestAttachment?.('REPLACE', target.id);
         if (!attachmentId) return;
 
         patchUi(target.id, { isSaving: true, saveError: null });

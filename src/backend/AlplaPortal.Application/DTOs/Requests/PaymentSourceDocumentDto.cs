@@ -186,3 +186,44 @@ public class VoidPaymentSourceDocumentDto
     public string? Reason { get; set; }
     public byte[]? RowVersion { get; set; }
 }
+
+/// <summary>
+/// Asks whether a file may be attached, before the browser spends the user's time reading it.
+///
+/// <para>The hash is computed client-side and sent for checking, so the file itself never has to be
+/// uploaded to find out that it is already here. Hashes are deliberately NOT exposed on the ordinary
+/// summary — a client that can enumerate them can fingerprint documents it was never shown.</para>
+/// </summary>
+public class CheckSourceDocumentDuplicateDto
+{
+    public string? ContentHash { get; set; }
+    public string? CandidateFileName { get; set; }
+
+    /// <summary>Set when replacing an attachment: that document cannot conflict with itself.</summary>
+    public Guid? ReplacingDocumentId { get; set; }
+}
+
+public class SourceDocumentDuplicateResultDto
+{
+    public bool IsDuplicate { get; set; }
+
+    /// <summary>NONE, SAME_REQUEST or OTHER_REQUEST.</summary>
+    public string DuplicateScope { get; set; } = "NONE";
+
+    /// <summary>NONE, BLOCK or WARN.</summary>
+    public string Outcome { get; set; } = "NONE";
+
+    // Identifying detail for the SAME_REQUEST case, where the user is entitled to see it: it is
+    // their own request, already on their screen.
+    public Guid? ConflictingDocumentId { get; set; }
+    public int? ConflictingSequenceNumber { get; set; }
+    public string? ConflictingDocumentNumber { get; set; }
+    public string? SupplierName { get; set; }
+
+    // OTHER_REQUEST detail, populated only when the user may see that request. A duplicate is
+    // confirmed either way; what is withheld is whose it is.
+    public string? RequestNumber { get; set; }
+    public Guid? RequestId { get; set; }
+    public string? UploadedBy { get; set; }
+    public DateTime? CreatedAtUtc { get; set; }
+}

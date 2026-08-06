@@ -45,6 +45,97 @@ public class PaymentSourceDocumentsController : BaseController
         return Ok(await BuildSummaryAsync(request));
     }
 
+    // ── Duplicate preflight ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Whether a file may be attached, asked BEFORE it is uploaded or read.
+    ///
+    /// <para>Without this the answer arrives from <c>Create</c>, i.e. after the user has waited for
+    /// OCR, corrected every extracted field and confirmed the document. The rule is identical — the
+    /// same <see cref="PaymentSourceDocumentDuplicatePolicy"/> decides both here and inside the
+    /// persistence transaction — so this is purely a matter of asking earlier.</para>
+    ///
+    /// <para>Not authoritative, and not meant to be: two clients can both pass this and only one can
+    /// win the insert. The 409 at persistence remains the enforcement.</para>
+    /// </summary>
+    [HttpPost("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate(
+        Guid requestId, [FromBody] CheckSourceDocumentDuplicateDto dto)
+    {
+        var request = await LoadRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+        if (request.RequestType?.Code != RequestConstants.Types.Payment)
+            return Ok(new SourceDocumentDuplicateResultDto());
+
+        var hash = dto.ContentHash?.Trim();
+        if (string.IsNullOrWhiteSpace(hash)) return Ok(new SourceDocumentDuplicateResultDto());
+
+        // ── This request ──
+        var siblings = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == requestId)
+            .Join(_context.RequestAttachments, d => d.AttachmentId, a => a.Id, (d, a) => new { d, a })
+            .Select(x => new DuplicateCandidateDocument
+            {
+                Id = x.d.Id,
+                AttachmentId = x.d.AttachmentId,
+                SequenceNumber = x.d.SequenceNumber,
+                DocumentNumber = x.d.DocumentNumber,
+                SupplierName = x.d.SupplierNameSnapshot,
+                FileHash = x.a.FileHash,
+                IsVoided = x.d.IsVoided
+            })
+            .ToListAsync();
+
+        // ── Any other request ──
+        // Resolved here rather than inside the policy because the answer depends on what this user
+        // is allowed to see, which is not a domain rule.
+        var elsewhere = await _context.RequestAttachments
+            .Include(a => a.Request)
+            .Include(a => a.UploadedByUser)
+            .Where(a => a.FileHash == hash && !a.IsDeleted && a.RequestId != requestId)
+            .FirstOrDefaultAsync();
+
+        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
+            hash, siblings, dto.ReplacingDocumentId, existsOnAnotherRequest: elsewhere != null);
+
+        var result = new SourceDocumentDuplicateResultDto
+        {
+            IsDuplicate = decision.IsDuplicate,
+            DuplicateScope = decision.Scope switch
+            {
+                DuplicateScope.SameRequest => "SAME_REQUEST",
+                DuplicateScope.OtherRequest => "OTHER_REQUEST",
+                _ => "NONE"
+            },
+            Outcome = decision.Outcome switch
+            {
+                DuplicateOutcome.Block => "BLOCK",
+                DuplicateOutcome.Warn => "WARN",
+                _ => "NONE"
+            },
+            ConflictingDocumentId = decision.ConflictingDocumentId,
+            ConflictingSequenceNumber = decision.ConflictingSequenceNumber,
+            ConflictingDocumentNumber = decision.ConflictingDocumentNumber,
+            SupplierName = decision.SupplierName
+        };
+
+        // The other request's identity is disclosed only to someone who could open it anyway. The
+        // duplicate itself is still reported — withholding that would let a file be silently reused.
+        if (decision.Scope == DuplicateScope.OtherRequest && elsewhere != null)
+        {
+            var scoped = await GetScopedRequestsQuery();
+            if (await scoped.AnyAsync(r => r.Id == elsewhere.RequestId))
+            {
+                result.RequestId = elsewhere.RequestId;
+                result.RequestNumber = elsewhere.Request?.RequestNumber;
+                result.UploadedBy = elsewhere.UploadedByUser?.FullName;
+                result.CreatedAtUtc = elsewhere.UploadedAtUtc;
+            }
+        }
+
+        return Ok(result);
+    }
+
     // ── Create ──────────────────────────────────────────────────────────────────────────────
 
     [HttpPost]
