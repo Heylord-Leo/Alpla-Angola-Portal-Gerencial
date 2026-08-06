@@ -48,7 +48,10 @@ jobs:
   apply-migrations:
     name: Apply TEST Migrations (${{ inputs.version }})
     runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
-    timeout-minutes: 15
+    # 45, not 15. The whole job must fit: checkout, SDK check, tool restore, restore/build,
+    # database backup, migration application and verification. The previous 15 cancelled the run
+    # mid-SDK-download, before a single database step was reached.
+    timeout-minutes: 45
     environment: test
 
     steps:
@@ -57,11 +60,71 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- Setup .NET 8 SDK ---
-      - name: Setup .NET 8 SDK
+      # --- Use the .NET 8 SDK already on the runner, if there is one ---
+      #
+      # This job used to run actions/setup-dotnet unconditionally with the open patch channel
+      # '8.0.x', which resolves the latest 8.0 SDK and DOWNLOADS it. On this runner's link
+      # (~132 KiB/s, the same one that made a 121 MB artifact time out) a ~200 MB SDK cannot
+      # finish inside the job, so the run was cancelled ~14 minutes into install-dotnet.ps1
+      # having reached no database step at all.
+      #
+      # Every backend project targets net8.0 and there is no global.json, so any 8.0.x SDK
+      # present on the machine builds this solution correctly. If one is installed we use it and
+      # download nothing; the network stops being on the critical path.
+      #
+      # Deliberately NOT falling back to the .NET 10 runtime the log reports as present: a
+      # runtime cannot build, and rolling a net8.0 migration build forward to a different SDK
+      # band is exactly the kind of silent substitution that makes a failure hard to explain.
+      - name: Detect installed .NET 8 SDK
+        id: dotnet_probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          $dotnetPath = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+          if (-not $dotnetPath) {
+            Write-Host "dotnet is not on the runner service PATH."
+            "has_sdk8=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+
+          Write-Host "dotnet: $dotnetPath"
+          $sdks = @(dotnet --list-sdks 2>&1)
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+
+          $sdk8 = $sdks | Where-Object { $_ -match '^8\.0\.' } | Select-Object -First 1
+          if ($sdk8) {
+            Write-Host "OK - using the installed .NET 8 SDK: $sdk8"
+            "has_sdk8=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            Write-Host "No 8.0.x SDK found; setup-dotnet will install one."
+            "has_sdk8=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      # Fallback only. Runs when the runner genuinely has no .NET 8 SDK, and now has the full
+      # 45-minute job budget to complete the download instead of 15.
+      - name: Setup .NET 8 SDK (only if missing)
+        if: steps.dotnet_probe.outputs.has_sdk8 != 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      # Whatever path got us here, the build must not proceed on the wrong band.
+      - name: Verify .NET 8 SDK is usable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdks = @(dotnet --list-sdks 2>&1)
+          if (-not ($sdks | Where-Object { $_ -match '^8\.0\.' })) {
+            Write-Host "::error::No .NET 8 SDK is available to the runner service account."
+            Write-Host "::error::Every backend project targets net8.0. Install the .NET 8 SDK on"
+            Write-Host "::error::AOVIA1VMS011 and confirm it is on the runner service PATH."
+            $sdks | ForEach-Object { Write-Host "  $_" }
+            throw "Required .NET 8 SDK is not installed on the TEST runner."
+          }
+          Write-Host "OK - .NET 8 SDK confirmed:"
+          $sdks | Where-Object { $_ -match '^8\.0\.' } | ForEach-Object { Write-Host "  $_" }
 
       # --- Restore the repo-pinned LOCAL dotnet-ef tool (.config/dotnet-tools.json -> 8.0.11) ---
       # Deterministic: uses the manifest version regardless of any global tool on the runner.
@@ -117,6 +180,7 @@ jobs:
 
       # --- Apply Migrations ---
       - name: Apply pending migrations
+        id: apply_migrations
         shell: pwsh
         run: |
           $backupDir = "${{ vars.BACKUP_PATH }}"
@@ -134,21 +198,36 @@ jobs:
             -ExpectedDatabase "Portal-Gerencial-Test"
 
       # --- Summary ---
+      # Reports what actually happened. The previous version printed "If migrations were applied
+      # successfully -> Run Deploy to TEST" unconditionally under if: always(), so a run cancelled
+      # during SDK setup — having touched no database at all — still ended by recommending a
+      # deployment. A summary that cannot say "this failed" is worse than no summary.
       - name: Migration summary
         if: always()
         shell: pwsh
+        env:
+          JOB_STATUS: ${{ job.status }}
+          MIGRATIONS_OUTCOME: ${{ steps.apply_migrations.outcome }}
         run: |
+          $applied = $env:MIGRATIONS_OUTCOME -eq 'success'
+
           Write-Host "============================================="
           Write-Host "  TEST Migration Summary"
           Write-Host "============================================="
-          Write-Host "Version:      ${{ inputs.version }}"
-          Write-Host "Database:     Portal-Gerencial-Test"
-          Write-Host "Server:       AOVIA1VMS011"
+          Write-Host "Version:            ${{ inputs.version }}"
+          Write-Host "Database:           Portal-Gerencial-Test"
+          Write-Host "Server:             AOVIA1VMS011"
+          Write-Host "Job status:         $($env:JOB_STATUS)"
+          Write-Host "Migration step:     $(if ($env:MIGRATIONS_OUTCOME) { $env:MIGRATIONS_OUTCOME } else { 'not reached' })"
           Write-Host "============================================="
           Write-Host ""
-          Write-Host "If migrations were applied successfully:"
-          Write-Host "  -> Run 'Deploy to TEST' workflow with version ${{ inputs.version }}"
-          Write-Host ""
-          Write-Host "If no migrations were pending:"
-          Write-Host "  -> Proceed directly to 'Deploy to TEST'"
+
+          if ($applied) {
+            Write-Host "RESULT: SUCCESS - migrations applied and verified."
+            Write-Host "  -> Next: run 'Deploy to TEST' with version ${{ inputs.version }}"
+          } else {
+            Write-Host "RESULT: FAILED / CANCELLED - the database was NOT migrated."
+            Write-Host "  -> Do NOT run 'Deploy to TEST'."
+            Write-Host "  -> Inspect the failed step above and re-run this workflow once fixed."
+          }
           Write-Host "============================================="
