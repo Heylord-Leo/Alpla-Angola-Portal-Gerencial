@@ -4,7 +4,52 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.224.0
+v2.224.1
+
+## [v2.224.1] - 2026-08-07
+
+### Fixed — Catalogue reconciliation restored for multi-document PAYMENT
+
+TEST validation of v2.224.0 found that the catalogue reconciliation stage had disappeared from the
+new multi-document PAYMENT flow. It is restored, using the existing reconciliation components,
+endpoints and business rules.
+
+- **The guardrail was never removed — it was pointed at an empty array.** `RequestCreate` chose the
+  items to reconcile with `requestTypeId === 2 && paymentDraft ? paymentDraft.items : requesterItems`.
+  Under the multi-document model `paymentDraft` is null, because the legacy single-document editor
+  no longer renders, so the expression fell through to `requesterItems` — which a PAYMENT request
+  leaves empty. Every check downstream then correctly reported nothing to reconcile.
+- **`Gerar Pedido` now reconciles the items of every confirmed source document**, in one session,
+  before the request is created: automatic matching first, then the existing
+  *Itens sem correspondência no catálogo* warning, *Revisar Itens*, and the existing
+  *Reconciliação de Itens do Catálogo* modal with `Vincular` and `Criar Novo` unchanged, including
+  `Pendente de Validação`.
+- **Automatic matching now also covers hand-typed lines.** Items read by OCR were matched during
+  extraction; items typed by hand had never been matched at all, and would have been reported as
+  unknown even when the catalogue contained them.
+- **Each unresolved row names its source document** — `Documento 2 — FT-002` — because one modal now
+  shows lines belonging to different invoices. The column appears only for multi-document PAYMENT;
+  every other caller renders the table exactly as before.
+- **One answer settles equivalent lines across documents.** Two invoices in one request both billing
+  `TRANSPORTE LOCAL` no longer walk the user through registering the same catalogue item twice.
+  Equivalence uses the existing matching rule, not description equality. Only the catalogue
+  reference is shared: both `RequestLineItem` rows stay separate, each with its own
+  `PaymentSourceDocumentId`, quantity, price and totals.
+- **Nothing is created until every line has an answer.** Reconciliation runs before the request
+  exists, so cancelling it leaves the user on the composition screen with every document, OCR
+  reading and correction intact, and pressing `Gerar Pedido` again duplicates nothing.
+- **Saved drafts are covered too.** Submitting an editable multi-document PAYMENT draft that gained a
+  document, a line or an unlinked description runs the same reconciliation first. Lines already
+  linked are not asked about again. Legacy PAYMENT and QUOTATION editing are unchanged.
+- **New `PUT /requests/{id}/line-items/{itemId}/catalog-link`** records a catalogue link on a saved
+  line and nothing else. The ordinary item update replaces the whole line and recomputes its total,
+  which must never happen as a side effect of naming a catalogue item; this endpoint also cannot
+  reach `PaymentSourceDocumentId`, so document ownership is preserved by construction. Idempotent —
+  re-sending the same link changes nothing and writes no history.
+- **`CatalogItemReconciliationPolicy`** (new, pure, 24 tests) now holds the normalization and
+  equivalence rule that previously lived privately inside `CatalogItemsController`. The controller
+  delegates to it; behaviour is unchanged. The Portal catalogue remains the single catalogue, no
+  Primavera item is created, and no parallel multi-document catalogue model was introduced.
 
 ## [v2.224.0] - 2026-08-06
 

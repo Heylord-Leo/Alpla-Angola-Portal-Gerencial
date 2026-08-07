@@ -96,6 +96,27 @@ the gitignored `appsettings.Development.json`.
 | 26 | Quotation Management unchanged | PASS |
 | 27 | Buyer P.O. workflow unchanged | PASS |
 | 28 | 1600×900 and dark mode | PASS |
+| 29 | Catalogue reconciliation across source documents (v2.224.1) | **pending TEST validation** |
+
+### Post-release TEST finding — corrected in v2.224.1
+
+TEST validation of v2.224.0 found that **catalogue reconciliation was missing from the
+multi-document PAYMENT flow**. The stage existed before Release 3 and was not deliberately removed:
+`RequestCreate` chose which items to reconcile with
+
+```ts
+Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items : requesterItems
+```
+
+and under the multi-document model `paymentDraft` is null, because the legacy single-document editor
+no longer renders. The expression fell through to `requesterItems`, which a PAYMENT request leaves
+empty, so the guardrail ran correctly against nothing.
+
+Restored in **v2.224.1**, reusing the existing `CatalogItemReconciliationModal`,
+`ReconciliationWarningDialog`, `useCatalogItemReconciliation`, `batch-match` and
+`reconciliation-create`. Scenario 29 below covers it; the flat item list is assembled across all
+confirmed documents and every answer is written back by `tempId`, so a line's
+`PaymentSourceDocumentId`, quantity, price, discount, IVA and totals are untouched.
 
 ### Known remaining limitation — non-blocking
 

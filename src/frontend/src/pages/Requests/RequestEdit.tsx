@@ -26,6 +26,8 @@ import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModa
 import { RegisterPoModal } from '../../components/RegisterPoModal';
 import { CorrectPoModal } from '../../components/CorrectPoModal';
 import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
+import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
+import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
@@ -137,6 +139,13 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         handleSubmit,
         handleRequestAction,
         handleSubmitRequest,
+        showCatalogReconciliationWarning,
+        setShowCatalogReconciliationWarning,
+        catalogReconciliation,
+        catalogUnresolved,
+        catalogDocumentLabels,
+        catalogEquivalentIndexesOf,
+        applyCatalogResolutions,
         handleSaveItem,
         handleDeleteItem,
         handleDeleteRequest,
@@ -841,6 +850,28 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     );
                 })()
             )}
+
+            {/* Catalogue reconciliation — multi-document PAYMENT drafts.
+                Same warning and same modal the creation flow uses; the only difference is that the
+                answers are written straight to lines that already exist. */}
+            <ReconciliationWarningDialog
+                isOpen={showCatalogReconciliationWarning}
+                unresolvedCount={catalogUnresolved.length}
+                onReviewItems={() => {
+                    setShowCatalogReconciliationWarning(false);
+                    catalogReconciliation.openModal();
+                }}
+                onCancel={() => setShowCatalogReconciliationWarning(false)}
+            />
+
+            <CatalogItemReconciliationModal
+                isOpen={catalogReconciliation.isModalOpen}
+                onClose={catalogReconciliation.closeModal}
+                classifiedItems={catalogReconciliation.classifiedItems}
+                documentLabels={catalogDocumentLabels}
+                equivalentIndexesOf={catalogEquivalentIndexesOf}
+                onResolveAll={(resolutions) => { void applyCatalogResolutions(resolutions); }}
+            />
 
             {/* Reconciliation Modal */}
             <ReconciliationModal

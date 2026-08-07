@@ -30,7 +30,16 @@ function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentC
     }
 }
 import { useFeatureFlags } from '../../../hooks/useFeatureFlags';
-import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
+import { useCatalogItemReconciliation } from '../../../hooks/useCatalogItemReconciliation';
+import {
+    DocumentScopedItem,
+    documentLabelsByIndex,
+    equivalentUnresolvedIndexes,
+    flattenPersistedLineItems,
+    propagateEquivalentResolutions,
+    unresolvedItems
+} from '../../../lib/multiDocumentCatalogReconciliation';
+import { CurrencyDto, ItemResolution, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
 
 export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClose?: () => void } = {}) {
     const navigate = useNavigate();
@@ -946,6 +955,79 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         }
     };
 
+    // ── Catalogue reconciliation for a SAVED multi-document PAYMENT draft ──
+    //
+    // A draft can gain a document, a line or an edited description after it was created, and none of
+    // those went past the catalogue on the way in. The request already existing is not a reason to
+    // skip the check — it is only a reason to run it here rather than before creation.
+    //
+    // Scoped to multi-document PAYMENT on purpose. Legacy PAYMENT and QUOTATION editing never ran
+    // catalogue reconciliation at submission and are left exactly as they are.
+    const [showCatalogReconciliationWarning, setShowCatalogReconciliationWarning] = useState(false);
+
+    const catalogScopedItems: DocumentScopedItem[] = useMemo(
+        () => (requestTypeCode === 'PAYMENT' && usesMultiSourceDocuments)
+            ? flattenPersistedLineItems(lineItems as any)
+            : [],
+        [requestTypeCode, usesMultiSourceDocuments, lineItems]);
+
+    const catalogReconciliation = useCatalogItemReconciliation(catalogScopedItems);
+
+    /**
+     * Unresolved lines according to the SERVER's copy, not the modal's memory.
+     *
+     * <p>Resolutions are held by array index, and the index of a line changes when a document is
+     * removed. Deciding the gate from what was actually saved means a stale answer can never wave a
+     * genuinely unmatched item through.</p>
+     */
+    const catalogUnresolved = useMemo(
+        () => unresolvedItems(catalogScopedItems), [catalogScopedItems]);
+
+    // Undefined, not an empty object, when this request is not multi-document PAYMENT — the modal
+    // treats "labels supplied" as the switch for its Documento column, and `{}` is truthy.
+    const catalogDocumentLabels = useMemo(
+        () => catalogScopedItems.length > 0 ? documentLabelsByIndex(catalogScopedItems) : undefined,
+        [catalogScopedItems]);
+
+    const catalogEquivalentIndexesOf = useCallback(
+        (index: number) => equivalentUnresolvedIndexes(catalogScopedItems, index),
+        [catalogScopedItems]);
+
+    /**
+     * Records the answers, one focused call per line.
+     *
+     * <p>Uses the catalogue-link endpoint rather than the ordinary item update: only
+     * <c>ItemCatalogId</c> changes, so the line keeps its source document, quantity, unit, price,
+     * discount, IVA and total. Re-running it with the same answers changes nothing and writes no
+     * history, so pressing Submeter twice cannot duplicate anything.</p>
+     */
+    const applyCatalogResolutions = useCallback(async (resolutions: ItemResolution[]) => {
+        if (!id) return;
+
+        // One answer settles every equivalent line, so the same unknown item appearing on two
+        // invoices does not become two pending catalogue entries.
+        const effective = propagateEquivalentResolutions(catalogScopedItems, resolutions);
+        catalogReconciliation.resolveAll(effective);
+
+        try {
+            for (const resolution of effective) {
+                const target = catalogScopedItems[resolution.itemIndex];
+                if (!target || !resolution.linkedCatalogId) continue;
+
+                await api.requests.setLineItemCatalogLink(
+                    id, target.itemTempId, resolution.linkedCatalogId);
+            }
+
+            const data = await api.requests.get(id);
+            setLineItems(data.lineItems || []);
+        } catch (err: any) {
+            setFeedback({
+                type: 'error',
+                message: err?.message || 'Falha ao vincular os itens ao catálogo.'
+            });
+        }
+    }, [id, catalogScopedItems, catalogReconciliation]);
+
     const handleSubmitRequest = async () => {
         if (!id && !isCopyMode) return;
 
@@ -1062,6 +1144,14 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setIsAttachmentsHighlighted(true);
                 setTimeout(() => setIsAttachmentsHighlighted(false), 5000);
             }, 100);
+            return;
+        }
+
+        // 1.2 Catalogue reconciliation — multi-document PAYMENT only.
+        // Runs after the request and document rules, before anything is saved or submitted. Lines
+        // already linked to a catalogue item are not asked about again.
+        if (requestTypeCode === 'PAYMENT' && usesMultiSourceDocuments && catalogUnresolved.length > 0) {
+            setShowCatalogReconciliationWarning(true);
             return;
         }
 
@@ -1228,6 +1318,14 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         handleSubmit,
         handleRequestAction,
         handleSubmitRequest,
+        // Catalogue reconciliation, multi-document PAYMENT drafts only.
+        showCatalogReconciliationWarning,
+        setShowCatalogReconciliationWarning,
+        catalogReconciliation,
+        catalogUnresolved,
+        catalogDocumentLabels,
+        catalogEquivalentIndexesOf,
+        applyCatalogResolutions,
         handleSaveItem,
         handleDeleteItem,
         executeDeleteItem,

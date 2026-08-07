@@ -5555,6 +5555,109 @@ public class RequestsController : BaseController
         return NoContent();
     }
 
+    /// <summary>
+    /// Sets ONLY the catalogue linkage of a line item. Used by catalogue reconciliation.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>Deliberately not <c>PUT .../line-items/{id}</c>. That endpoint replaces the whole line
+    /// and recomputes <c>TotalAmount</c> from quantity, price, discount and IVA — so using it to
+    /// record "this line is catalogue item X" would put every financial figure on the line at the
+    /// mercy of a round trip, on a document whose stated total the user has already reconciled to
+    /// the cent. Catalogue identity and the money owed are separate concerns; only one of them is
+    /// being decided here.</para>
+    ///
+    /// <para>On a multi-document PAYMENT request this also protects
+    /// <c>PaymentSourceDocumentId</c>: the line keeps the document it belongs to, because nothing
+    /// in this handler can reach it.</para>
+    ///
+    /// <para>Idempotent. Re-sending the same linkage changes nothing and writes no history, so a
+    /// user who presses Submeter twice does not get two audit entries for one decision.</para>
+    /// </remarks>
+    [HttpPut("{requestId}/line-items/{itemId}/catalog-link")]
+    public async Task<IActionResult> UpdateLineItemCatalogLink(
+        Guid requestId, Guid itemId, [FromBody] UpdateLineItemCatalogLinkDto dto)
+    {
+        var actorId = CurrentUserId;
+        var user = await _context.Users.FindAsync(actorId);
+        if (user == null) return Unauthorized();
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // The same editable window as any other item change. Reconciliation is not a privileged
+        // side channel into a request that has moved past editing.
+        if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" &&
+            request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Regra de Negócio Violada",
+                Detail = "Operação bloqueada: este pedido não está em rascunho nem em fase de reajuste/cotação, por isso não é possível alterar itens.",
+                Status = 409
+            });
+        }
+
+        if (request.Status!.Code != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Acesso Proibido",
+                Detail = "Apenas o criador do pedido pode editar itens do pedido nesta fase.",
+                Status = 403
+            });
+        }
+
+        var item = request.LineItems.FirstOrDefault(l => l.Id == itemId && !l.IsDeleted);
+        if (item == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado no pedido.", Status = 404 });
+
+        // The catalogue is the same single catalogue used everywhere in the Portal. An inactive or
+        // unknown id is refused rather than stored, so a line can never point at nothing.
+        if (dto.ItemCatalogId.HasValue)
+        {
+            var catalogItem = await _context.ItemCatalogItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ic => ic.Id == dto.ItemCatalogId.Value && ic.IsActive);
+
+            if (catalogItem == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Erro de Validação",
+                    Detail = "O item de catálogo indicado não existe ou está inativo.",
+                    Status = 400
+                });
+            }
+        }
+
+        if (item.ItemCatalogId == dto.ItemCatalogId) return NoContent();
+
+        item.ItemCatalogId = dto.ItemCatalogId;
+        item.UpdatedAtUtc = DateTime.UtcNow;
+        item.UpdatedByUserId = actorId;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "ITEM_CATALOG_LINKED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Item #{item.LineNumber} (\"{item.Description}\") reconciliado com o catálogo por {user.FullName}.",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpDelete("{requestId}/line-items/{itemId}")]
     public async Task<IActionResult> DeleteLineItem(Guid requestId, Guid itemId)
     {

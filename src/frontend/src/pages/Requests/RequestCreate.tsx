@@ -31,6 +31,17 @@ import {
     confirmedTotals,
     invalidConfirmedDocuments
 } from '../../lib/paymentDocumentComposition';
+import {
+    DocumentScopedItem,
+    applyAutoMatches,
+    applyResolutionsToDocuments,
+    descriptionsNeedingMatch,
+    documentLabelsByIndex,
+    equivalentUnresolvedIndexes,
+    flattenConfirmedDocumentItems,
+    propagateEquivalentResolutions,
+    unresolvedItems
+} from '../../lib/multiDocumentCatalogReconciliation';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -340,10 +351,99 @@ export function RequestCreate() {
 
     // Reconciliation Engine — unified for both payment and requester items
     const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
-    const activeItems: ReconcilableItem[] = Number(formData.requestTypeId) === 2 && paymentDraft
-        ? paymentDraft.items as any[]
-        : requesterItems as any[];
+
+    /**
+     * Whether this request is being composed as a collection of source documents.
+     *
+     * <p>Declared here, next to the reconciliation wiring, because it is what decides <b>where the
+     * items are</b>. Under the multi-document model <c>paymentDraft</c> is null — the legacy editor
+     * never renders — so the old expression below fell through to <c>requesterItems</c>, which a
+     * PAYMENT request leaves empty. That is precisely how catalogue reconciliation disappeared: the
+     * guardrail was still there, looking at an empty array.</p>
+     */
+    const isMultiDocumentComposition =
+        featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
+
+    /** Every line of every confirmed document, each carrying the document it belongs to. */
+    const multiDocumentItems: DocumentScopedItem[] = React.useMemo(
+        () => isMultiDocumentComposition ? flattenConfirmedDocumentItems(tempDocuments) : [],
+        [isMultiDocumentComposition, tempDocuments]);
+
+    const activeItems: ReconcilableItem[] = isMultiDocumentComposition
+        ? multiDocumentItems
+        : Number(formData.requestTypeId) === 2 && paymentDraft
+            ? paymentDraft.items as any[]
+            : requesterItems as any[];
     const reconciliation = useCatalogItemReconciliation(activeItems);
+
+    /** Index → "Documento 2 — FT-002", so a row in the modal says which invoice it came from. */
+    const multiDocumentLabels = React.useMemo(
+        () => documentLabelsByIndex(multiDocumentItems), [multiDocumentItems]);
+
+    /**
+     * Catalogue reconciliation across every confirmed source document, before the request exists.
+     *
+     * <p>The same two steps the single-document flow has always taken — match what the catalogue
+     * already knows, then stop and ask about what it does not — applied to the lines of all the
+     * documents at once, so the user answers for the whole request in one sitting rather than being
+     * interrupted per invoice.</p>
+     *
+     * <p>Automatic matching runs here rather than during composition because a line typed by hand
+     * never passed through the matcher the OCR lines did. Skipping it would show "sem
+     * correspondência" for items the Portal has known for years, which is the fastest way to teach
+     * people to click straight past the warning.</p>
+     *
+     * <p>Returns the documents it worked on: the caller must persist <b>these</b>, not the ones it
+     * came in with, or the catalogue links just established would be dropped on the way to the
+     * server.</p>
+     */
+    const reconcileDocumentCatalog = useCallback(async (
+        documents: TemporaryPaymentDocument[]
+    ): Promise<{ proceed: boolean; documents: TemporaryPaymentDocument[] }> => {
+        let working = documents;
+
+        const flat = flattenConfirmedDocumentItems(working);
+        const pending = descriptionsNeedingMatch(flat);
+
+        if (pending.length > 0) {
+            try {
+                const raw = await api.catalogItems.batchMatch(pending.map(p => p.description));
+
+                const matches: Record<number, { id: number; code: string } | null> = {};
+                pending.forEach((p, position) => {
+                    const match = raw[position];
+                    matches[p.index] = match ? { id: match.id, code: match.code } : null;
+                });
+
+                const matched = applyAutoMatches(flat, matches);
+
+                working = applyResolutionsToDocuments(working, matched, matched.flatMap(
+                    (item, index) => item.itemCatalogId && !flat[index].itemCatalogId
+                        ? [{
+                            itemIndex: index,
+                            status: 'MATCHED' as const,
+                            linkedCatalogId: item.itemCatalogId,
+                            linkedCatalogCode: item.itemCatalogCode ?? null
+                        }]
+                        : []));
+
+                setTempDocuments(working);
+            } catch {
+                // The matcher being unavailable must not create items or wave lines through: every
+                // line simply stays unmatched and the user is asked about it explicitly.
+            }
+        }
+
+        const unresolved = unresolvedItems(flattenConfirmedDocumentItems(working));
+
+        if (unresolved.length > 0) {
+            setShowReconciliationWarning(true);
+            return { proceed: false, documents: working };
+        }
+
+        setShowReconciliationWarning(false);
+        return { proceed: true, documents: working };
+    }, []);
 
     const initialFormDataRef = useRef(formData);
 
@@ -992,13 +1092,15 @@ export function RequestCreate() {
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
 
-        // Reconciliation guardrail: check for unresolved catalog items before submission
-        if (reconciliation.hasUnresolved && !showReconciliationWarning) {
+        // Reconciliation guardrail: check for unresolved catalog items before submission.
+        // Multi-document PAYMENT is handled further down, once the open document has been settled
+        // and the confirmed set is known — its items live in the documents, not in this array.
+        if (!isMultiDocumentComposition && reconciliation.hasUnresolved && !showReconciliationWarning) {
             setShowReconciliationWarning(true);
             setLoading(false);
             return;
         }
-        setShowReconciliationWarning(false);
+        if (!isMultiDocumentComposition) setShowReconciliationWarning(false);
 
         // ── §15: the document still open must never disappear quietly ──
         // A document the user was in the middle of typing is work they can see on screen; saving
@@ -1053,6 +1155,22 @@ export function RequestCreate() {
                 setActiveDocumentId(first.document.tempId);
                 setLoading(false);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
+
+        // ── Catalogue reconciliation, BEFORE the request is created ──
+        // The stage this restores. Documents are complete and validated; now the items they carry
+        // are checked against the Portal catalogue exactly as every request's items were before
+        // Release 3. Nothing is created until every line has an answer, so a cancelled
+        // reconciliation leaves the user on this screen with all their documents, readings and
+        // corrections intact rather than owning half a request.
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2) {
+            const catalogue = await reconcileDocumentCatalog(documentsForSave);
+            documentsForSave = catalogue.documents;
+
+            if (!catalogue.proceed) {
+                setLoading(false);
                 return;
             }
         }
@@ -2552,7 +2670,24 @@ export function RequestCreate() {
                 isOpen={reconciliation.isModalOpen}
                 onClose={reconciliation.closeModal}
                 classifiedItems={reconciliation.classifiedItems}
+                documentLabels={isMultiDocumentComposition ? multiDocumentLabels : undefined}
+                equivalentIndexesOf={isMultiDocumentComposition
+                    ? (index: number) => equivalentUnresolvedIndexes(multiDocumentItems, index)
+                    : undefined}
                 onResolveAll={(resolutions: ItemResolution[]) => {
+                    // ── Multi-document: the answer belongs to a line of a specific document ──
+                    if (isMultiDocumentComposition) {
+                        // One answer settles every equivalent line. Two invoices both billing
+                        // "TRANSPORTE LOCAL" must not walk the user through registering the same
+                        // catalogue item twice; only the catalogue reference is shared, and the two
+                        // financial lines stay separate.
+                        const effective = propagateEquivalentResolutions(multiDocumentItems, resolutions);
+                        reconciliation.resolveAll(effective);
+                        setTempDocuments(prev =>
+                            applyResolutionsToDocuments(prev, multiDocumentItems, effective));
+                        return;
+                    }
+
                     reconciliation.resolveAll(resolutions);
                     // Apply resolutions back to source items
                     resolutions.forEach(r => {

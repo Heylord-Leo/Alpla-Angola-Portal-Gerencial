@@ -541,6 +541,27 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao adicionar item solicitado a partir da proforma.');
             return response.json();
         },
+        /**
+         * Records ONLY the catalogue linkage of a persisted line, for reconciliation.
+         *
+         * <p>Deliberately not `updateLineItem`: that endpoint replaces the whole line and
+         * recomputes its total, so using it to say "this line is catalogue item X" would put the
+         * quantity, price, discount, IVA and total of an already-reconciled document at the mercy
+         * of a round trip. It also cannot touch `paymentSourceDocumentId`, so a line keeps the
+         * source document it belongs to.</p>
+         */
+        setLineItemCatalogLink: async (
+            requestId: string, itemId: string, itemCatalogId: number | null
+        ): Promise<void> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${itemId}/catalog-link`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ itemCatalogId }),
+                });
+            if (!response.ok) return handleApiError(response, 'Falha ao vincular o item ao catálogo.');
+        },
+
         updateLineItem: async (requestId: string, itemId: string, data: any): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${itemId}`, {
                 method: 'PUT',

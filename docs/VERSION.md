@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.224.0
+v2.224.1
+
+## [v2.224.1] - 2026-08-07
+
+### Fixed — Catalogue reconciliation restored for multi-document PAYMENT
+
+- `RequestCreate` selected reconcilable items via `paymentDraft`, which is null under the
+  multi-document model, so the guardrail inspected an empty array and never fired.
+- `Gerar Pedido` now matches and reconciles the items of all confirmed source documents in one
+  session, before the request is created, reusing the existing warning, modal, `Vincular`,
+  `Criar Novo` and `Pendente de Validação` behaviour.
+- Automatic catalogue matching extended to hand-typed lines, which had never been matched.
+- Unresolved rows name their source document; the column is multi-document PAYMENT only.
+- One answer settles equivalent lines across documents, using the existing matching rule — no
+  duplicate catalogue entries; request lines stay separate and keep `PaymentSourceDocumentId`.
+- Cancelling loses no work; nothing is created until every line is resolved.
+- Saved multi-document drafts reconcile on Submit; already-linked lines are not re-asked.
+- New `PUT /requests/{id}/line-items/{itemId}/catalog-link` changes only the catalogue link.
+- `CatalogItemReconciliationPolicy` extracted as a pure, tested rule; controller delegates to it.
+- Legacy PAYMENT, QUOTATION and Buyer quotation management unchanged.
 
 ## [v2.224.0] - 2026-08-06
 
