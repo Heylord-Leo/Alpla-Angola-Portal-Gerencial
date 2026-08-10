@@ -210,4 +210,37 @@ public class DocumentObligationResolverTests
         Assert.True(o.CanInitiatePayment);
         Assert.False(o.RequiresOperationInvoice);
     }
+
+    // ── Context invariance (Release 4 Phase 1 contract) ──
+
+    [Theory]
+    [InlineData("ESTIMATE")]
+    [InlineData("PROFORMA")]
+    [InlineData("ADVANCE_INVOICE")]
+    [InlineData("INVOICE")]
+    [InlineData("INVOICE_RECEIPT")]
+    [InlineData("OTHER")]
+    [InlineData("UNCLASSIFIED")]
+    [InlineData("FINAL_INVOICE")]
+    [InlineData(null)]
+    public void What_a_document_owes_never_depends_on_where_it_is_presented(string? type)
+    {
+        // The context decides whether a document may PROCEED (blocking, Finance review) — never
+        // what it OWES. OperationInvoiceObligationProjector relies on this: it recomputes the
+        // obligation without carrying the group's origin context, so a projector asking in one
+        // context and a stamping path asking in another can never manufacture false StatusDrift.
+        var payment = Payment(type!);
+        var quotation = Quotation(type!);
+        var evidence = Evidence(type!);
+
+        foreach (var o in new[] { quotation, evidence })
+        {
+            Assert.Equal(payment.RequiresOperationInvoice, o.RequiresOperationInvoice);
+            Assert.Equal(payment.RequiresSeparateFiscalReceipt, o.RequiresSeparateFiscalReceipt);
+            Assert.Equal(payment.RequiresAdvanceRegularization, o.RequiresAdvanceRegularization);
+            Assert.Equal(payment.RequiresOperationalReceipt, o.RequiresOperationalReceipt);
+            Assert.Equal(payment.IsFiscal, o.IsFiscal);
+            Assert.Equal(payment.OperationInvoiceStatus, o.OperationInvoiceStatus);
+        }
+    }
 }

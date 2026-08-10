@@ -7369,6 +7369,176 @@ public class RequestsController : BaseController
         }
     }
 
+    /// <summary>
+    /// Release 4 Phase 1b: the operation-invoice obligations of a request, derived on read.
+    ///
+    /// <para>Strictly read-only and diagnostic. The status is RECOMPUTED from authoritative inputs
+    /// (document identity via <see cref="DocumentObligationResolver"/>, allocations via
+    /// <see cref="OperationInvoiceAggregateDeriver"/>) and returned beside the cached
+    /// <c>OperationInvoiceStatus</c> column; a disagreement is reported as <c>statusDrift</c> and
+    /// logged, never repaired here — the transactional re-stamp belongs to the write path that
+    /// changes the classification (Phase 1c).</para>
+    /// </summary>
+    [HttpGet("{id:guid}/operation-invoice-obligations")]
+    public async Task<ActionResult<OperationInvoiceObligationsDto>> GetOperationInvoiceObligations(Guid id)
+    {
+        // Gated-endpoint contract since Release 1: while the feature is disabled, no new endpoint
+        // is reachable. The same 404 as an unknown request — the route does not exist yet.
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return NotFound("Pedido não encontrado.");
+
+        // Same visibility scope as every other request read: plant/department scoped, admin sees
+        // all. Knowing an id must never be enough to read another department's finances.
+        var request = await (await GetScopedRequestsQuery()).FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == id)
+            .OrderBy(g => g.CreatedAtUtc).ThenBy(g => g.Id)
+            .Select(g => new
+            {
+                g.Id,
+                g.SupplierId,
+                g.SupplierNameSnapshot,
+                g.CurrencyCode,
+                g.PaymentConditionCode,
+                g.PlantId,
+                g.SourceDocumentType,
+                g.ExpectedOperationInvoiceTotal,
+                g.ExpectedOperationInvoiceCurrency,
+                g.OperationInvoiceStatus,
+                g.PurchaseOrderNumber
+            })
+            .ToListAsync();
+
+        var groupIds = groups.Select(g => g.Id).ToList();
+
+        // Traceability comes from the group's own line items — never from the request header,
+        // the supplier or the document type. Line order keeps the derived id order deterministic.
+        var lines = await _context.RequestLineItems.AsNoTracking()
+            .Where(li => li.RequestId == id && !li.IsDeleted &&
+                         li.RequestPoGroupId != null && groupIds.Contains(li.RequestPoGroupId.Value))
+            .OrderBy(li => li.LineNumber).ThenBy(li => li.Id)
+            .Select(li => new { li.Id, li.RequestPoGroupId, li.PaymentSourceDocumentId })
+            .ToListAsync();
+
+        // Exactly the inputs the aggregate deriver consumes: the invoice's status and the stored
+        // allocated gross. Superseded invoices are excluded — their replacement carries the live
+        // allocation. No coverage arithmetic happens here.
+        var allocations = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => groupIds.Contains(a.RequestPoGroupId))
+            .Join(_context.OperationInvoices.Where(i => i.SupersededByOperationInvoiceId == null),
+                  a => a.OperationInvoiceId, i => i.Id,
+                  (a, i) => new { a.RequestPoGroupId, i.Status, a.AllocatedGrossAmount })
+            .ToListAsync();
+
+        var activeShortCloses = await _context.OperationInvoiceShortCloses.AsNoTracking()
+            .Where(c => groupIds.Contains(c.RequestPoGroupId) &&
+                        RequestConstants.ShortCloseStatuses.Active.Contains(c.Status))
+            .Select(c => new { c.RequestPoGroupId, c.Status })
+            .ToListAsync();
+
+        var snapshots = groups.Select(g => new OperationInvoiceObligationGroupSnapshot
+        {
+            GroupId = g.Id,
+            SupplierId = g.SupplierId,
+            SupplierNameSnapshot = g.SupplierNameSnapshot,
+            CurrencyCode = g.CurrencyCode,
+            PaymentConditionCode = g.PaymentConditionCode,
+            PlantId = g.PlantId,
+            SourceDocumentType = g.SourceDocumentType,
+            ExpectedTotal = g.ExpectedOperationInvoiceTotal,
+            ExpectedCurrency = g.ExpectedOperationInvoiceCurrency,
+            PersistedStatus = g.OperationInvoiceStatus,
+            PurchaseOrderNumber = g.PurchaseOrderNumber,
+            Allocations = allocations
+                .Where(a => a.RequestPoGroupId == g.Id)
+                .Select(a => new AllocationCoverage(a.Status, a.AllocatedGrossAmount))
+                .ToList(),
+            ActiveShortCloseStatus = activeShortCloses
+                .FirstOrDefault(c => c.RequestPoGroupId == g.Id)?.Status,
+            SourceDocumentIds = lines
+                .Where(l => l.RequestPoGroupId == g.Id && l.PaymentSourceDocumentId.HasValue)
+                .Select(l => l.PaymentSourceDocumentId!.Value)
+                .Distinct()
+                .ToList(),
+            LineItemIds = lines
+                .Where(l => l.RequestPoGroupId == g.Id)
+                .Select(l => l.Id)
+                .ToList()
+        }).ToList();
+
+        var projection = OperationInvoiceObligationProjector.Project(snapshots);
+
+        foreach (var drifted in projection.Obligations.Where(o => o.StatusDrift))
+        {
+            _logger.LogWarning(
+                "Operation-invoice status drift on request {RequestId}, group {GroupId}: persisted {PersistedStatus}, derived {DerivedStatus}.",
+                id, drifted.GroupId, drifted.PersistedStatus, drifted.DerivedStatus);
+        }
+
+        var groupById = groups.ToDictionary(g => g.Id);
+
+        return Ok(new OperationInvoiceObligationsDto
+        {
+            RequestId = id,
+            Obligations = projection.Obligations.Select(o =>
+            {
+                var g = groupById[o.GroupId];
+                return new OperationInvoiceObligationDto
+                {
+                    GroupId = o.GroupId,
+                    SupplierId = g.SupplierId,
+                    SupplierName = g.SupplierNameSnapshot,
+                    Currency = g.CurrencyCode,
+                    PaymentConditionCode = g.PaymentConditionCode,
+                    PlantId = g.PlantId,
+                    SourceDocumentType = o.SourceDocumentType,
+                    RequiresOperationInvoice = o.RequiresOperationInvoice,
+                    ExpectedAmount = o.ExpectedAmount,
+                    ExpectedCurrency = o.ExpectedCurrency,
+                    ValidatedCoveredAmount = o.ValidatedCoveredAmount,
+                    PendingCoveredAmount = o.PendingCoveredAmount,
+                    RemainingAmount = o.RemainingAmount,
+                    AppliedTolerance = o.AppliedTolerance,
+                    DerivedStatus = o.DerivedStatus,
+                    PersistedStatus = o.PersistedStatus,
+                    StatusDrift = o.StatusDrift,
+                    ClosedShort = o.ClosedShort,
+                    PurchaseOrderNumber = o.PurchaseOrderNumber,
+                    PaymentSourceDocumentIds = o.SourceDocumentIds.ToList(),
+                    LineItemCount = o.LineItemCount,
+                    ReasonCode = o.ReasonCode,
+                    Explanation = o.Explanation
+                };
+            }).ToList(),
+            Rollup = new OperationInvoiceObligationRollupDto
+            {
+                TotalGroups = projection.Rollup.TotalGroups,
+                RequiringOperationInvoiceCount = projection.Rollup.RequiringOperationInvoiceCount,
+                PendingActionCount = projection.Rollup.PendingActionCount,
+                SatisfiedCount = projection.Rollup.SatisfiedCount,
+                NotRequiredCount = projection.Rollup.NotRequiredCount,
+                UnclassifiedCount = projection.Rollup.UnclassifiedCount,
+                DriftCount = projection.Rollup.DriftCount,
+                HasStatusDrift = projection.Rollup.HasStatusDrift,
+                GroupsWithUnknownExpectedTotal = projection.Rollup.CurrencyTotals
+                    .Sum(c => c.GroupsWithUnknownExpectedTotal),
+                CurrencyTotals = projection.Rollup.CurrencyTotals
+                    .Select(c => new OperationInvoiceObligationCurrencyTotalsDto
+                    {
+                        CurrencyCode = c.CurrencyCode,
+                        ExpectedTotal = c.ExpectedTotal,
+                        ValidatedTotal = c.ValidatedTotal,
+                        PendingValidationTotal = c.PendingValidationTotal,
+                        RemainingTotal = c.RemainingTotal,
+                        GroupsWithUnknownExpectedTotal = c.GroupsWithUnknownExpectedTotal
+                    })
+                    .ToList()
+            }
+        });
+    }
+
     [HttpPost("{id}/operational/finalize")]
     public async Task<IActionResult> FinalizeRequest(Guid id, [FromBody] ApprovalActionDto dto)
     {
