@@ -6,7 +6,7 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.224.1
 
-## [v2.224.1] - 2026-08-07
+## [v2.224.1] - 2026-08-10
 
 ### Fixed — Catalogue reconciliation restored for multi-document PAYMENT
 
@@ -50,6 +50,54 @@ endpoints and business rules.
   equivalence rule that previously lived privately inside `CatalogItemsController`. The controller
   delegates to it; behaviour is unchanged. The Portal catalogue remains the single catalogue, no
   Primavera item is created, and no parallel multi-document catalogue model was introduced.
+
+### Fixed — an ALPLA company can no longer be the payable supplier of a PAYMENT request
+
+Development validation found a source document whose OCR reading offered
+`ALPLA ANGOLA PLASTICOS LDA.` as the supplier. The reading was not wrong — ALPLA was the issuer and
+FIX4U the customer — but a document ALPLA issued to an external customer is a sales-side document,
+evidence that somebody owes ALPLA rather than the reverse, and an ALPLA legal entity can never be
+the counterparty a payment request pays.
+
+- **The authoritative list is the existing `Companies` table**, whose `TaxId` column was documented
+  from the start as the field used "to exclude internal NIFs from supplier matching/creation". No
+  second internal-company list was introduced.
+- **New `InternalCompanyPolicy`** (pure, 45 tests) answers one question — may this entity be a
+  PAYMENT supplier — and is shared by OCR matching, quick creation, the supplier picker and backend
+  validation. Identification is by fiscal number first; the registered name and the Angolan trade
+  names (`ALPLA ANGOLA PLASTICOS`, `ALPLA ANGOLA SOPRO`) are a fallback, matched on whole words so
+  that the other ALPLA group companies in the supplier master — `ALPLA Hispaniola`, `IBEROALPLA`,
+  `BRASALPLA`, `ALPLA-Werke` — remain perfectly usable suppliers.
+- **The gap that produced the defect**: the internal check ran on the NIF alone. A document naming
+  the entity whose fiscal number was not read went straight through to "this supplier is not
+  registered — create it". The name is now checked too.
+- **Supplier rows that ARE internal entities no longer auto-select.** `ALPLA ANGOLA SOPRO, LDA` is in
+  the supplier master with `Origin = SYNCED_PRIMAVERA` and returns on every sync; matching by name
+  would have found it and selected it with a perfect score. Internal rows are excluded at the point
+  of use — never deleted — and are refused whether they arrive as a match or as a duplicate
+  candidate.
+- **OCR does not auto-select, accept, or offer to create.** The supplier field enters an explicit
+  error state naming the problem and pointing at the likely cause: the wrong file. The customer is
+  never silently promoted to supplier, and the document cannot be confirmed while the counterparty
+  is internal.
+- **The PAYMENT source-document supplier picker excludes internal entities** (`excludeInternal`,
+  opt-in). Every other supplier picker in the Portal is untouched — those entities are legitimately
+  referenced elsewhere.
+- **Quick creation is refused**, by NIF or by name, with the two cases distinguished: a document
+  billed *to* an ALPLA company carries ALPLA's NIF beside a genuine third party and the NIF is
+  simply dropped, whereas an ALPLA *name* is a hard stop with no "save anyway" path.
+- **Backend authority**: `PaymentSourceDocument` create and update refuse an internal supplier with
+  the typed code `PAYMENT_INTERNAL_COMPANY_AS_SUPPLIER`, and submission refuses it for both the
+  multi-document suppliers and the legacy header supplier. There is no role exemption and no
+  override — a System Administrator gets the same refusal, because this is financial-integrity
+  policy, not a permission.
+- **Stronger than `Supplier != Request.Company`**: AlplaPLASTICO paying AlplaSOPRO is refused in both
+  directions. Intercompany payments, if ever needed, deserve an explicit workflow rather than the
+  accidental reuse of the supplier field.
+- **Document classification is untouched** — an internal issuer is a counterparty problem, not a
+  document-type problem — and **no historical request or supplier row is modified**. An existing
+  editable document with an internal supplier states the problem on the document itself and blocks
+  submission until somebody corrects it deliberately.
 
 ## [v2.224.0] - 2026-08-06
 

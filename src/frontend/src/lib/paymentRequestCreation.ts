@@ -113,6 +113,20 @@ export interface TemporaryPaymentDocument {
      * asking the user to retype it. Not part of {@link toCreatePayload}.</p>
      */
     supplierExtraction: SupplierExtractionSnapshot | null;
+
+    /**
+     * Set when the counterparty read off this document is an ALPLA legal entity.
+     *
+     * <p>The reading is not wrong when this happens — ALPLA really is named on the document — but it
+     * is named as the <b>issuer</b>, and an ALPLA company can never be the entity a payment request
+     * owes money to. Held as evidence about the document rather than as a supplier choice, because
+     * there is no choice to record: the field stays empty and the document cannot be confirmed.</p>
+     *
+     * <p>Client-side only. It is never persisted, and never sent to the server — the server reaches
+     * the same conclusion itself, from the same authoritative company rows.</p>
+     */
+    supplierInternalCompany: { id: number; name: string } | null;
+
     plantId: number | null;
 
     sourceDocumentType: string | null;
@@ -219,6 +233,7 @@ export function createTemporaryDocument(
         supplierNameSnapshot: null,
         supplierTaxIdSnapshot: null,
         supplierExtraction: null,
+        supplierInternalCompany: null,
         plantId: null,
         sourceDocumentType: null,
         documentNumber: null,
@@ -434,6 +449,8 @@ export function asCardDocument(
         requiresOperationInvoice: false,
         requiresAdvanceRegularization: false,
         requiresFinanceClassificationReview: false,
+        supplierIsInternalCompany: !!document.supplierInternalCompany,
+        supplierInternalCompanyName: document.supplierInternalCompany?.name ?? null,
         isVoided: false,
         voidReason: null,
         items: document.items.map((i, idx) => ({
@@ -466,7 +483,13 @@ export function localValidation(document: TemporaryPaymentDocument): string[] {
     const problems: string[] = [];
 
     if (!document.attachmentId) problems.push('Anexe o documento.');
-    if (!document.supplierId) problems.push('Indique o fornecedor.');
+    if (document.supplierInternalCompany) {
+        problems.push(
+            'A empresa identificada como emitente pertence à ALPLA e não pode ser utilizada como ' +
+            'fornecedor em um pedido de pagamento. Verifique se o documento selecionado é o correto.');
+    } else if (!document.supplierId) {
+        problems.push('Indique o fornecedor.');
+    }
     if (!document.plantId) problems.push('Indique a planta.');
     if (!document.documentNumber?.trim()) problems.push('Indique o número do documento.');
     if (!document.documentDate) problems.push('Indique a data do documento.');
@@ -497,6 +520,8 @@ export interface ExtractedDocumentFields {
     items: TemporaryPaymentItem[];
     /** Supplier details for pre-filling registration. Null when nothing was read. */
     supplierExtraction: SupplierExtractionSnapshot | null;
+    /** The ALPLA legal entity the reading resolved to, as decided by the SERVER's match. */
+    internalCompany: { id: number; name: string } | null;
 }
 
 /**
@@ -557,6 +582,16 @@ export function fromOcrDraft(
         grossAmount: gross,
         classification: (draft.documentClassification as OcrDocumentClassification | null) ?? null,
         items,
+        // The authoritative supplier match already answered this: `MatchAsync` resolves the
+        // extracted name/NIF against the Companies table before it looks at suppliers at all. The
+        // client only reads the verdict — it does not carry its own copy of who ALPLA is.
+        internalCompany: draft.supplierMatch?.status === 'InternalCompanyTaxId' &&
+                         draft.supplierMatch?.internalCompany
+            ? {
+                id: draft.supplierMatch.internalCompany.id,
+                name: draft.supplierMatch.internalCompany.name
+            }
+            : null,
         // Only what the document actually carried — an absent field stays null and the registration
         // form shows it empty rather than inventing a value.
         supplierExtraction: {
@@ -610,6 +645,9 @@ export function extractDocumentFields(
         supplierId: null,
         items: [],
         supplierExtraction: null,
+        // This path never consulted the supplier matcher, so it has nothing to report. The server
+        // still refuses an internal supplier at persistence and at submission.
+        internalCompany: null,
         supplierName: text(h.supplierName),
         supplierTaxId: text(h.supplierTaxId),
         documentNumber: text(h.documentNumber),
@@ -690,6 +728,9 @@ export function mergeExtraction(
             supplierNameSnapshot: document.supplierNameSnapshot ?? supplier?.name ?? extracted.supplierName,
             supplierTaxIdSnapshot: document.supplierTaxIdSnapshot ?? extracted.supplierTaxId,
             supplierExtraction: document.supplierExtraction ?? extracted.supplierExtraction,
+            // Always replaces: it describes the FILE that was just read, not anything the user
+            // typed, and a stale verdict from a previous file must not survive a re-read.
+            supplierInternalCompany: extracted.internalCompany,
             documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),
             documentDate: take(document.documentDate, extracted.documentDate, 'documentDate', 'Data do documento'),
             dueDate: document.dueDate ?? extracted.dueDate,

@@ -43,7 +43,17 @@ export interface PaymentSourceDocumentCardProps {
     saveError: string | null;
     isSaving: boolean;
 
-    onFieldChange: (patch: Partial<PaymentSourceDocumentDto>) => void;
+    /**
+     * A patch of the document being edited.
+     *
+     * <p>Widened by one composition-only key: `supplierInternalCompany` is how the creation flow
+     * records (and clears) the "this counterparty is ALPLA" verdict on its temporary document. It is
+     * client state, never persisted — the persisted side reports the same fact through
+     * `supplierIsInternalCompany` on the DTO.</p>
+     */
+    onFieldChange: (patch: Partial<PaymentSourceDocumentDto> & {
+        supplierInternalCompany?: { id: number; name: string } | null;
+    }) => void;
     onConflictChange: (next: ClassificationConflictState) => void;
     onReplaceAttachment: () => void;
     onRemove: () => void;
@@ -130,7 +140,18 @@ export function PaymentSourceDocumentCard({
     const isEditor = variant === 'editor';
     const open = isEditor || isExpanded;
     /** A name was read (or typed) but does not correspond to a registered supplier. */
-    const supplierUnresolved = !document.supplierId && !!document.supplierNameSnapshot;
+    /**
+     * The counterparty read off this document is an ALPLA legal entity.
+     *
+     * <p>Kept apart from `supplierUnresolved` on purpose. "Not registered yet" is answered by
+     * registering the supplier; this is answered by checking whether the right file was attached.
+     * Offering "Criar fornecedor" here would invite the user to create a second Supplier row for
+     * ALPLA itself — exactly what must not happen.</p>
+     */
+    const supplierIsInternal = !!document.supplierIsInternalCompany;
+
+    const supplierUnresolved =
+        !supplierIsInternal && !document.supplierId && !!document.supplierNameSnapshot;
     const bodyId = `psd-body-${document.id}`;
     const accent = SEVERITY_COLOR[statusOverride?.severity ?? status.severity];
 
@@ -316,15 +337,48 @@ export function PaymentSourceDocumentCard({
                                 initialName={document.supplierNameSnapshot || ''}
                                 isUnresolved={supplierUnresolved}
                                 // Amber while it is merely unregistered; red only once the user has
-                                // tried to move on without resolving it.
+                                // tried to move on without resolving it. An internal entity is red
+                                // immediately — it is not a pending step, it is a wrong answer.
                                 hasWarning={supplierUnresolved && !showValidationErrors}
-                                hasError={supplierUnresolved && showValidationErrors}
+                                hasError={supplierIsInternal || (supplierUnresolved && showValidationErrors)}
                                 disabled={readOnly}
+                                // Payable-supplier context: ALPLA legal entities are not offered.
+                                excludeInternal
                                 onChange={(id, name) => onFieldChange({
                                     supplierId: id,
-                                    supplierNameSnapshot: name || null
+                                    supplierNameSnapshot: name || null,
+                                    // Choosing a real supplier answers the question the warning was
+                                    // asking, so the warning goes with it.
+                                    supplierInternalCompany: null
                                 })}
                             />
+
+                            {supplierIsInternal && (
+                                <div
+                                    role="alert"
+                                    style={{
+                                        marginTop: '8px', padding: '10px 12px', borderRadius: '6px',
+                                        border: '1px solid #fca5a5', backgroundColor: 'rgba(185,28,28,0.06)',
+                                        color: '#b91c1c', fontSize: '0.78rem', lineHeight: 1.55,
+                                        display: 'flex', gap: '8px', alignItems: 'flex-start'
+                                    }}
+                                >
+                                    <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
+                                    <span>
+                                        <strong>
+                                            A empresa identificada como emitente pertence à ALPLA e não
+                                            pode ser utilizada como fornecedor em um pedido de pagamento.
+                                        </strong>{' '}
+                                        Verifique se o documento selecionado é o correto.
+                                        <span style={{ display: 'block', marginTop: '6px', fontWeight: 500 }}>
+                                            Este documento parece ter sido emitido por uma empresa ALPLA
+                                            para um cliente externo. Um documento emitido pela ALPLA não
+                                            origina um pagamento — se este for o ficheiro certo, o
+                                            fornecedor a pagar é outra entidade.
+                                        </span>
+                                    </span>
+                                </div>
+                            )}
 
                             {supplierUnresolved && !readOnly && (
                                 <div style={{

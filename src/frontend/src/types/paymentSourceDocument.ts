@@ -61,6 +61,15 @@ export interface PaymentSourceDocumentDto {
     items: PaymentSourceDocumentItemDto[];
 
     /** Why this document is not yet submittable. Empty when it is. */
+    /**
+     * The supplier on this document is an internal ALPLA legal entity.
+     *
+     * <p>Only possible on a document saved before the rule existed — persistence refuses it now.
+     * The document is shown with the problem stated; nothing is rewritten behind the user.</p>
+     */
+    supplierIsInternalCompany?: boolean;
+    supplierInternalCompanyName?: string | null;
+
     validationMessages: string[];
     isValid: boolean;
 

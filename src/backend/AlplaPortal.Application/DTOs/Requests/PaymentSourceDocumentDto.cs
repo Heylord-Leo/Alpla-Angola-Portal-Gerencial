@@ -71,6 +71,19 @@ public class PaymentSourceDocumentDto
     /// <summary>Items belonging to this document.</summary>
     public List<PaymentSourceDocumentItemDto> Items { get; set; } = new();
 
+    /// <summary>
+    /// The supplier on this document is an internal ALPLA legal entity, which can never be the
+    /// payable counterparty of a payment request.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// Only ever true for a document saved before the rule existed — persistence refuses it now.
+    /// Surfaced so the screen can state the problem plainly instead of leaving the user to guess
+    /// why the request will not submit. Historical rows are shown, never rewritten.
+    /// </remarks>
+    public bool SupplierIsInternalCompany { get; set; }
+    public string? SupplierInternalCompanyName { get; set; }
+
     /// <summary>Why this document is not yet submittable. Empty when it is.</summary>
     public List<string> ValidationMessages { get; set; } = new();
     public bool IsValid => ValidationMessages.Count == 0;

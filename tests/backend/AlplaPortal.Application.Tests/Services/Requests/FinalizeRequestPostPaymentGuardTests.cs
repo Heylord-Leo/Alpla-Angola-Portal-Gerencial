@@ -73,6 +73,7 @@ public class FinalizeRequestPostPaymentGuardTests
             new Mock<IRequestLineItemSubmissionValidator>().Object,
             new Mock<IQuotationItemEligibilityService>().Object,
             new Mock<IBatchExtraItemDecisionService>().Object,
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
             Options.Create(options));
 
         var claims = new List<Claim>

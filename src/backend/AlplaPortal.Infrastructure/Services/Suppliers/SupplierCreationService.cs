@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -172,47 +173,101 @@ public class SupplierCreationService : ISupplierCreationService
     }
 
     /// <summary>
-    /// If the NIF belongs to an internal ALPLA company (Company.TaxId), returns a blocking result —
-    /// such a NIF must never be matched or created as a supplier. Company.TaxId is stored normalized,
-    /// so the comparison is against the normalized input.
+    /// If this counterparty is an internal ALPLA legal entity, returns a blocking result — it must
+    /// never be matched or created as a supplier.
     /// </summary>
-    private async Task<SupplierCreationResult?> CheckInternalCompanyAsync(string? taxId)
+    ///
+    /// <remarks>
+    /// <para>Checks the NIF <b>and the name</b>, through the shared
+    /// <see cref="InternalCompanyPolicy"/>. It used to check the NIF alone, which was enough only
+    /// while every document carried a readable one. The reported defect is exactly the other case: a
+    /// document naming <c>ALPLA ANGOLA PLASTICOS LDA.</c> whose fiscal number the reading did not
+    /// produce sailed straight through to "this supplier is not registered — create it".</para>
+    ///
+    /// <para>The name check is a fallback, not a substitute: the NIF is tried first and wins.</para>
+    /// </remarks>
+    private async Task<SupplierCreationResult?> CheckInternalCompanyAsync(string? taxId, string? name = null)
     {
-        var normNif = NormalizeNif(taxId);
-        if (normNif.Length == 0) return null;
-        var company = await _context.Companies.AsNoTracking()
-            .Where(c => c.TaxId == normNif)
-            .Select(c => new { c.Id, c.Name, c.TaxId })
-            .FirstOrDefaultAsync();
+        var companies = await _context.Companies.AsNoTracking()
+            .Select(c => new InternalCompanyRef(c.Id, c.Name, c.Code, c.TaxId))
+            .ToListAsync();
+
+        var byTaxId = InternalCompanyPolicy.MatchByTaxId(taxId, companies);
+        var company = byTaxId ?? InternalCompanyPolicy.MatchByAlias(name, companies);
         if (company == null) return null;
+
+        var matchedByName = byTaxId == null;
+
         return new SupplierCreationResult
         {
             Status = SupplierCreationStatus.InternalCompanyTaxId,
             Code = "INTERNAL_COMPANY_TAX_ID",
-            Message = "Este NIF pertence a uma empresa interna e não pode ser cadastrado como fornecedor por este fluxo.",
+            // A NIF-only match is the document's billed company appearing beside a real supplier —
+            // recoverable. A name match means the counterparty itself is ALPLA — it is not.
+            Message = matchedByName
+                ? InternalCompanyPolicy.CreationMessage
+                : "Este NIF pertence a uma empresa interna e não pode ser cadastrado como fornecedor por este fluxo.",
             InternalCompanyId = company.Id,
             InternalCompanyName = company.Name,
-            InternalCompanyTaxId = company.TaxId
+            InternalCompanyTaxId = company.TaxId,
+            InternalCompanyMatchedByName = matchedByName
         };
+    }
+
+    /// <summary>
+    /// Whether an existing supplier row is itself an internal ALPLA entity.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// They do exist, and legitimately: <c>ALPLA ANGOLA SOPRO, LDA</c> is in the supplier master with
+    /// <c>Origin = SYNCED_PRIMAVERA</c> and would come back on the next sync if it were deleted. So a
+    /// name-only reading of an internal entity must not be allowed to auto-select that row either —
+    /// which is precisely what matching by name would otherwise do, with a perfect score.
+    /// </remarks>
+    private async Task<SupplierCreationResult?> CheckMatchedSupplierIsInternalAsync(
+        SupplierCreationResult classification)
+    {
+        // Both shapes matter. A Conflict names the row in `Supplier`; a DuplicateSuspected offers it
+        // in `Candidates` instead — and a candidate the user is invited to accept is just as much an
+        // offer as an automatic selection.
+        var offered = new[] { classification.Supplier }
+            .Concat(classification.Candidates)
+            .Where(s => s != null)
+            .ToList();
+
+        foreach (var supplier in offered)
+        {
+            var internalCompany = await CheckInternalCompanyAsync(supplier!.TaxId, supplier.Name);
+            if (internalCompany != null) return internalCompany;
+        }
+
+        return null;
     }
 
     public async Task<SupplierCreationResult> MatchAsync(string? name, string? taxId)
     {
-        var internalCompany = await CheckInternalCompanyAsync(taxId);
+        var internalCompany = await CheckInternalCompanyAsync(taxId, name);
         if (internalCompany != null) return internalCompany;
 
         var suppliers = await LoadSuppliersAsync();
         // confirm=false so callers see a duplicate as suspected; Created here means "no blocking match".
-        return Classify(name, taxId, confirmDespiteDuplicate: false, suppliers);
+        var classification = Classify(name, taxId, confirmDespiteDuplicate: false, suppliers);
+
+        // The reading was of a third party, but the row it landed on is an internal entity. Returning
+        // the Conflict unchanged is what makes the caller auto-select it, so the internal answer must
+        // replace it — a supplier row does not stop being ALPLA because the search found it.
+        var matchedInternal = await CheckMatchedSupplierIsInternalAsync(classification);
+        return matchedInternal ?? classification;
     }
 
     // ─────────────────────────── Creation ───────────────────────────
 
     public async Task<SupplierCreationResult> CreateAsync(SupplierCreationInput input, Guid actorId)
     {
-        // Backend-authoritative protection: never create a supplier with an internal company NIF,
-        // even if the frontend fails to block it.
-        var internalCompany = await CheckInternalCompanyAsync(input.TaxId);
+        // Backend-authoritative protection: never create a supplier that IS an internal ALPLA
+        // entity, even if the frontend fails to block it — by NIF, or by the name when the document
+        // named the entity but its fiscal number was never read.
+        var internalCompany = await CheckInternalCompanyAsync(input.TaxId, input.Name);
         if (internalCompany != null) return internalCompany;
 
         var suppliers = await LoadSuppliersAsync();

@@ -4,7 +4,7 @@
 
 v2.224.1
 
-## [v2.224.1] - 2026-08-07
+## [v2.224.1] - 2026-08-10
 
 ### Fixed — Catalogue reconciliation restored for multi-document PAYMENT
 
@@ -22,6 +22,22 @@ v2.224.1
 - New `PUT /requests/{id}/line-items/{itemId}/catalog-link` changes only the catalogue link.
 - `CatalogItemReconciliationPolicy` extracted as a pure, tested rule; controller delegates to it.
 - Legacy PAYMENT, QUOTATION and Buyer quotation management unchanged.
+
+### Fixed — an ALPLA company can no longer be the payable supplier of a PAYMENT request
+
+- OCR offered `ALPLA ANGOLA PLASTICOS LDA.` (the document's issuer) as the supplier. An ALPLA legal
+  entity can never be the counterparty a payment request pays.
+- New shared `InternalCompanyPolicy`, keyed on the existing `Companies` table — NIF first, registered
+  name and Angolan trade names as fallback. Other ALPLA group companies remain usable suppliers.
+- Root cause: the internal check ran on the NIF alone, so a document naming the entity without a
+  readable fiscal number passed straight through.
+- Internal supplier rows (e.g. the Primavera-synced `ALPLA ANGOLA SOPRO, LDA`) no longer auto-select
+  and are excluded from the PAYMENT supplier picker — excluded at point of use, never deleted.
+- Quick creation refused by NIF or name; the NIF-only case still lets a genuine supplier through.
+- Backend authority at source-document create/update and at submission, typed
+  `PAYMENT_INTERNAL_COMPANY_AS_SUPPLIER`, with no administrator bypass.
+- Rejects AlplaPLASTICO ↔ AlplaSOPRO in both directions, not merely `Supplier != Request.Company`.
+- Document classification unchanged; no historical row rewritten.
 
 ## [v2.224.0] - 2026-08-06
 

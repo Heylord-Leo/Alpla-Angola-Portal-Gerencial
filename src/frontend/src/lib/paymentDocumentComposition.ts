@@ -100,7 +100,18 @@ export function confirmationBlockers(
     const problems: string[] = [];
 
     if (!document.attachmentId) problems.push('Anexe o ficheiro do documento.');
-    if (!document.supplierId) problems.push('Indique o fornecedor.');
+
+    // An ALPLA legal entity read off the document as its issuer. Reported before the ordinary
+    // "indique o fornecedor", because "this field is empty" is not what is wrong here — the
+    // document itself is very likely the wrong one, and telling the user to pick a supplier would
+    // send them looking for a value that must not exist.
+    if (document.supplierInternalCompany) {
+        problems.push(
+            'A empresa identificada como emitente pertence à ALPLA e não pode ser utilizada como ' +
+            'fornecedor em um pedido de pagamento. Verifique se o documento selecionado é o correto.');
+    } else if (!document.supplierId) {
+        problems.push('Indique o fornecedor.');
+    }
     if (!document.plantId) problems.push('Indique a planta.');
     if (!document.documentNumber?.trim()) problems.push('Indique o número do documento.');
     if (!document.documentDate) problems.push('Indique a data do documento.');
@@ -159,6 +170,7 @@ export function canConfirmDocument(
  */
 export function blockerField(message: string): string | null {
     if (message.startsWith('Anexe')) return 'attachment';
+    if (message.includes('pertence à ALPLA')) return 'supplierId';
     if (message.includes('fornecedor')) return 'supplierId';
     if (message.includes('planta')) return 'plantId';
     if (message.includes('número do documento')) return 'documentNumber';

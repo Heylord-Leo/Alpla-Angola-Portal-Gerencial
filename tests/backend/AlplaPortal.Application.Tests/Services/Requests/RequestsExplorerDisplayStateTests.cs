@@ -60,6 +60,7 @@ public class RequestsExplorerDisplayStateTests
             Mock.Of<IRequestLineItemSubmissionValidator>(),
             Mock.Of<IQuotationItemEligibilityService>(),
             Mock.Of<IBatchExtraItemDecisionService>(),
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
             Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var claims = new List<Claim>

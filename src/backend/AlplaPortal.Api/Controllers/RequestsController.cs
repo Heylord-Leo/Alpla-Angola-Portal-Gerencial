@@ -51,6 +51,8 @@ public class RequestsController : BaseController
     private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
     private readonly PostPaymentCompletionOptions _postPaymentOptions;
 
+    private readonly IInternalCompanyGuard _internalCompanies;
+
     public RequestsController(
         ApplicationDbContext context,
         IDocumentExtractionService extractionService,
@@ -66,8 +68,10 @@ public class RequestsController : BaseController
         IRequestLineItemSubmissionValidator lineItemValidator,
         IQuotationItemEligibilityService quotationEligibility,
         IBatchExtraItemDecisionService extraItemDecisionService,
+        IInternalCompanyGuard internalCompanies,
         IOptions<PostPaymentCompletionOptions> postPaymentOptions) : base(context)
     {
+        _internalCompanies = internalCompanies;
         _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
         _extractionService = extractionService;
         _adminLog = adminLog;
@@ -8361,9 +8365,69 @@ public class RequestsController : BaseController
     /// rows is validated against the request header exactly as before — nothing is backfilled, so a
     /// request created before this release must still be submittable.</para>
     /// </summary>
+    /// <summary>
+    /// Refuses a PAYMENT request whose payable supplier is an internal ALPLA legal entity.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>Covers both shapes: the header supplier of a legacy request, and the supplier of every
+    /// active source document. A document ALPLA issued to an external customer is a sales-side
+    /// document — evidence that somebody owes ALPLA, not that ALPLA owes anybody — so it can never
+    /// originate a payment.</para>
+    ///
+    /// <para><b>Not a permission check.</b> There is no role exemption and no override: a System
+    /// Administrator submitting the request gets the same refusal, because the problem is with the
+    /// counterparty, not with who is asking.</para>
+    ///
+    /// <para>Applies to the ordinary PAYMENT flow only. QUOTATION is untouched — the entities remain
+    /// perfectly referenceable everywhere else in the Portal.</para>
+    /// </remarks>
+    private async Task<List<string>> ValidatePaymentSupplierIsNotInternalAsync(Request request)
+    {
+        var errors = new List<string>();
+
+        if (request.RequestType?.Code != RequestConstants.Types.Payment) return errors;
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .OrderBy(d => d.SequenceNumber)
+            .Select(d => new { d.SequenceNumber, d.SupplierId })
+            .ToListAsync();
+
+        if (documents.Count == 0)
+        {
+            var headerInternal = await _internalCompanies.ResolveSupplierAsync(request.SupplierId);
+            if (headerInternal != null)
+            {
+                errors.Add($"O fornecedor indicado é {headerInternal.Name}, uma empresa do grupo ALPLA, " +
+                           "e não pode ser o fornecedor de um pedido de pagamento. " +
+                           "Verifique se o documento selecionado é o correto.");
+            }
+
+            return errors;
+        }
+
+        foreach (var document in documents)
+        {
+            var internalCompany = await _internalCompanies.ResolveSupplierAsync(document.SupplierId);
+            if (internalCompany == null) continue;
+
+            errors.Add($"Documento {document.SequenceNumber}: o fornecedor indicado é {internalCompany.Name}, " +
+                       "uma empresa do grupo ALPLA, e não pode ser utilizado como fornecedor de um " +
+                       "pedido de pagamento. Verifique se o documento selecionado é o correto.");
+        }
+
+        return errors;
+    }
+
     private async Task<List<string>> ValidatePaymentSourceDocumentsForSubmissionAsync(Request request)
     {
         var errors = new List<string>();
+
+        // Counterparty integrity first: a request payable to ALPLA itself is wrong regardless of how
+        // complete its documents are, and saying so before the field-level complaints keeps the real
+        // problem at the top of the list.
+        errors.AddRange(await ValidatePaymentSupplierIsNotInternalAsync(request));
 
         var documents = await _context.PaymentSourceDocuments
             .Where(d => d.RequestId == request.Id && !d.IsVoided)

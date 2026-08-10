@@ -1,5 +1,6 @@
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.AspNetCore.Authorization;
@@ -17,13 +18,15 @@ public class LookupsController : ControllerBase
     private readonly ILogger<LookupsController> _logger;
     private readonly DepartmentManagerService _departmentManagers;
     private readonly ISupplierCreationService _supplierCreation;
+    private readonly IInternalCompanyGuard _internalCompanies;
 
-    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers, ISupplierCreationService supplierCreation)
+    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers, ISupplierCreationService supplierCreation, IInternalCompanyGuard internalCompanies)
     {
         _context = context;
         _logger = logger;
         _departmentManagers = departmentManagers;
         _supplierCreation = supplierCreation;
+        _internalCompanies = internalCompanies;
     }
 
     [HttpGet("units")]
@@ -821,8 +824,23 @@ public class LookupsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Supplier autocomplete.
+    /// </summary>
+    ///
+    /// <param name="excludeInternal">
+    /// Opt-in, used by payable-supplier contexts (the PAYMENT source-document supplier field).
+    /// Internal ALPLA legal entities are then removed from the results, because they can never be
+    /// the entity a payment request owes money to.
+    ///
+    /// <para>Off by default and deliberately so: these entities are legitimately referenced
+    /// elsewhere in the Portal — the supplier master itself lists them, and
+    /// <c>ALPLA ANGOLA SOPRO, LDA</c> arrives from the Primavera sync — so this narrows one picker
+    /// rather than hiding rows globally.</para>
+    /// </param>
     [HttpGet("suppliers/search")]
-    public async Task<IActionResult> SearchSuppliers([FromQuery] string? q, [FromQuery] int take = 20)
+    public async Task<IActionResult> SearchSuppliers(
+        [FromQuery] string? q, [FromQuery] int take = 20, [FromQuery] bool excludeInternal = false)
     {
         var queryable = _context.Suppliers.Where(s => s.IsActive);
 
@@ -842,13 +860,25 @@ public class LookupsController : ControllerBase
             take = 5;
         }
 
+        // Over-fetch before filtering so removing an internal row does not silently shrink the
+        // dropdown below what the user asked for.
+        var fetch = excludeInternal ? Math.Min(take * 2 + 5, 200) : take;
+
         var results = await queryable
             .OrderBy(s => s.Name)
-            .Take(take)
+            .Take(fetch)
             .Select(s => new { s.Id, s.PortalCode, s.PrimaveraCode, s.Name, s.TaxId, s.RegistrationStatus })
             .ToListAsync();
 
-        return Ok(results);
+        if (excludeInternal)
+        {
+            var companies = await _internalCompanies.GetInternalCompaniesAsync();
+            results = results
+                .Where(s => InternalCompanyPolicy.Resolve(s.Name, s.TaxId, companies) == null)
+                .ToList();
+        }
+
+        return Ok(results.Take(take));
     }
 
     [HttpGet("suppliers/check-uniqueness")]
@@ -917,7 +947,8 @@ public class LookupsController : ControllerBase
         supplier = SupplierBody(r.Supplier),
         candidates = r.Candidates.Select(SupplierBody).ToList(),
         internalCompany = r.InternalCompanyId == null ? null
-            : new { id = r.InternalCompanyId, name = r.InternalCompanyName, taxId = r.InternalCompanyTaxId }
+            : new { id = r.InternalCompanyId, name = r.InternalCompanyName, taxId = r.InternalCompanyTaxId },
+        internalCompanyMatchedByName = r.InternalCompanyMatchedByName
     };
 
     /// <summary>

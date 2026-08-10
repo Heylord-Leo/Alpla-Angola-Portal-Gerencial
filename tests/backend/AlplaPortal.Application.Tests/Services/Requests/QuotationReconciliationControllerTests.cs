@@ -73,6 +73,7 @@ public class QuotationReconciliationControllerTests
             new Mock<IRequestStatusSyncService>().Object, new Mock<IApprovalRoutingService>().Object,
             new Mock<ILineItemFactory>().Object, new Mock<IRequestLineItemSubmissionValidator>().Object,
             new Mock<IQuotationItemEligibilityService>().Object, new Mock<IBatchExtraItemDecisionService>().Object,
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
             Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var identity = new ClaimsIdentity(new[]

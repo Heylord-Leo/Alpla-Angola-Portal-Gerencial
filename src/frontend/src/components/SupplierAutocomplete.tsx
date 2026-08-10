@@ -14,6 +14,13 @@ interface SupplierAutocompleteProps {
     isUnresolved?: boolean;
     className?: string;
     name?: string;
+    /**
+     * Payable-supplier context: internal ALPLA legal entities are removed from the results.
+     *
+     * <p>Opt-in, so this narrows the PAYMENT source-document picker without hiding those entities
+     * from the Supplier master, Contracts or anywhere else that legitimately references them.</p>
+     */
+    excludeInternal?: boolean;
 }
 
 // Column widths for the tabular layout — must match exactly in header and rows
@@ -29,7 +36,8 @@ export function SupplierAutocomplete({
     hasWarning = false,
     isUnresolved = false,
     className,
-    name = 'SupplierId'
+    name = 'SupplierId',
+    excludeInternal = false
 }: SupplierAutocompleteProps) {
     
     // We mock a SupplierSearchDto for the initial value if we only have name/code
@@ -40,7 +48,7 @@ export function SupplierAutocomplete({
     } : null;
 
     const handleSearch = async (term: string) => {
-        return await api.lookups.searchSuppliers(term);
+        return await api.lookups.searchSuppliers(term, excludeInternal);
     };
 
     const handleChange = (item: SupplierSearchDto | null) => {

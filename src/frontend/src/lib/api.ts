@@ -1565,8 +1565,17 @@ export const api = {
                 pageSize: json.pageSize || 15
             };
         },
-        searchSuppliers: async (term: string): Promise<any[]> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?q=${encodeURIComponent(term)}`);
+        /**
+         * Supplier autocomplete.
+         *
+         * <p>`excludeInternal` is used by payable-supplier pickers (the PAYMENT source-document
+         * supplier field). Internal ALPLA legal entities are then dropped from the results — they
+         * can never be the counterparty a payment request owes. Off everywhere else, because those
+         * entities are legitimately referenced elsewhere in the Portal.</p>
+         */
+        searchSuppliers: async (term: string, excludeInternal = false): Promise<any[]> => {
+            const query = `q=${encodeURIComponent(term)}` + (excludeInternal ? '&excludeInternal=true' : '');
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?${query}`);
             if (!response.ok) return handleApiError(response, 'Falha ao pesquisar fornecedores.');
             return response.json();
         },

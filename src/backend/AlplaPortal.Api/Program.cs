@@ -133,6 +133,7 @@ builder.Services.AddScoped<ILineItemFactory, LineItemFactory>();
 builder.Services.AddScoped<IRequestLineItemSubmissionValidator, RequestLineItemSubmissionValidator>();
 
 // Phase 3 — shared supplier matching + DRAFT creation (general admin + contextual payment-OCR endpoints)
+builder.Services.AddScoped<IInternalCompanyGuard, InternalCompanyGuard>();
 builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 
 // Post-Payment Completion Workflow — Release 1 foundation.

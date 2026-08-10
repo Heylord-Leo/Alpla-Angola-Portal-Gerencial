@@ -68,6 +68,8 @@ export function PaymentSupplierCreateModal({ isOpen, onClose, onCreated, prefill
     const [fichaWarning, setFichaWarning] = useState<string | null>(null);
     const [duplicate, setDuplicate] = useState<DuplicateState | null>(null);
     const [internalNif, setInternalNif] = useState<{ name?: string; taxId?: string } | null>(null);
+    /** The counterparty itself is an ALPLA legal entity — creation is refused outright. */
+    const [internalEntity, setInternalEntity] = useState<{ name?: string; taxId?: string } | null>(null);
 
     const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -131,9 +133,22 @@ export function PaymentSupplierCreateModal({ isOpen, onClose, onCreated, prefill
                 internalCompanyTaxIdExtracted: internalNif?.taxId || undefined
             });
 
-            // ── The extracted NIF belongs to an internal ALPLA company ──
-            // Drop it and let the user proceed by name. The internal NIF is never re-sent.
             if (res && (res.status === 'InternalCompanyTaxId' || res.code === 'INTERNAL_COMPANY_TAX_ID')) {
+                // ── The ENTITY is ALPLA ── (recognised by name)
+                // There is nothing to continue with. Dropping the NIF and inviting the user to save
+                // by name would loop them through a refusal that can never succeed, so this is a
+                // hard stop that names the real problem: the document is probably the wrong one.
+                if (res.internalCompanyMatchedByName) {
+                    setInternalEntity(res.internalCompany ?? { name: name.trim() });
+                    setInternalNif(null);
+                    setDuplicate(null);
+                    setIsSaving(false);
+                    return;
+                }
+
+                // ── Only the NIF is internal ──
+                // A document billed TO an ALPLA company carries ALPLA's NIF beside a perfectly real
+                // third-party supplier. Drop it and proceed by name; it is never re-sent.
                 setInternalNif(res.internalCompany ?? { taxId: taxId.trim() });
                 setTaxId('');
                 setDuplicate(null);
@@ -302,6 +317,29 @@ export function PaymentSupplierCreateModal({ isOpen, onClose, onCreated, prefill
                     </div>
                 )}
 
+                {internalEntity && (
+                    <div role="alert" style={{
+                        display: 'flex', gap: '8px', marginBottom: '14px', padding: '12px',
+                        borderRadius: '6px', border: '1px solid #fca5a5',
+                        backgroundColor: 'rgba(185,28,28,0.06)', color: '#b91c1c',
+                        fontSize: '0.78rem', lineHeight: 1.55
+                    }}>
+                        <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span>
+                            <strong>
+                                Esta entidade pertence à ALPLA e não pode ser criada/utilizada como
+                                fornecedor para pedidos de pagamento.
+                            </strong>
+                            <span style={{ display: 'block', marginTop: '6px', fontWeight: 500 }}>
+                                {internalEntity.name ? `${internalEntity.name} é ` : 'É '}
+                                uma empresa do grupo. Verifique se o documento selecionado é o
+                                correto — um documento emitido pela ALPLA para um cliente externo não
+                                origina um pedido de pagamento.
+                            </span>
+                        </span>
+                    </div>
+                )}
+
                 {internalNif && (
                     <div style={{
                         display: 'flex', gap: '8px', marginBottom: '14px', padding: '10px 12px',
@@ -370,7 +408,14 @@ export function PaymentSupplierCreateModal({ isOpen, onClose, onCreated, prefill
                             type="text"
                             value={name}
                             disabled={isSaving}
-                            onChange={e => { setName(e.target.value); setDuplicate(null); }}
+                            // Correcting the name is the only way out of the internal-entity stop,
+                            // so the refusal clears with it rather than sticking to a name that is
+                            // no longer on screen.
+                            onChange={e => {
+                                setName(e.target.value);
+                                setDuplicate(null);
+                                setInternalEntity(null);
+                            }}
                             style={input}
                         />
                     </div>
@@ -444,7 +489,9 @@ export function PaymentSupplierCreateModal({ isOpen, onClose, onCreated, prefill
                     <button
                         type="button"
                         onClick={() => void save(false)}
-                        disabled={isSaving || !name.trim() || (duplicate?.hard ?? false)}
+                        // An ALPLA legal entity is refused for good: there is no confirmation that
+                        // makes it creatable, so Guardar stays disabled rather than inviting a retry.
+                        disabled={isSaving || !name.trim() || (duplicate?.hard ?? false) || !!internalEntity}
                         style={{
                             ...primaryBtn, flex: 1,
                             opacity: (isSaving || !name.trim() || duplicate?.hard) ? 0.6 : 1,

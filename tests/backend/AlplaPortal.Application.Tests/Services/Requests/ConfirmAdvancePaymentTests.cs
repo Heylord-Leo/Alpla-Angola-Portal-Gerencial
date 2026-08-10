@@ -63,6 +63,7 @@ public class ConfirmAdvancePaymentTests
             new Mock<IQuotationItemEligibilityService>().Object,
             new Mock<IBatchExtraItemDecisionService>().Object,
             // Post-Payment Completion defaults to disabled — existing behaviour must be unchanged.
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
             Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var claims = new List<Claim>

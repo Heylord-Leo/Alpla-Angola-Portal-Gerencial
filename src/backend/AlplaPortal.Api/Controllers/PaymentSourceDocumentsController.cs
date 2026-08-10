@@ -1,4 +1,5 @@
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
@@ -25,12 +26,45 @@ namespace AlplaPortal.Api.Controllers;
 public class PaymentSourceDocumentsController : BaseController
 {
     private readonly ILogger<PaymentSourceDocumentsController> _logger;
+    private readonly IInternalCompanyGuard _internalCompanies;
 
     public PaymentSourceDocumentsController(
         ApplicationDbContext context,
-        ILogger<PaymentSourceDocumentsController> logger) : base(context)
+        ILogger<PaymentSourceDocumentsController> logger,
+        IInternalCompanyGuard internalCompanies) : base(context)
     {
         _logger = logger;
+        _internalCompanies = internalCompanies;
+    }
+
+    // ── Counterparty integrity ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Refuses a document whose supplier is an internal ALPLA legal entity.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>The backend half of the rule. The composer already refuses to confirm such a document,
+    /// but a supplier that cannot be paid must not become persisted state just because the request
+    /// arrived by some other route — and the picker filter, being a filter, is advice.</para>
+    ///
+    /// <para>Typed so callers can branch on it rather than on message text.</para>
+    /// </remarks>
+    private async Task<ProblemDetails?> GuardSupplierNotInternalAsync(int? supplierId)
+    {
+        var internalCompany = await _internalCompanies.ResolveSupplierAsync(supplierId);
+        if (internalCompany == null) return null;
+
+        var problem = new ProblemDetails
+        {
+            Title = "Fornecedor inválido para pagamento",
+            Detail = InternalCompanyPolicy.SupplierMessage,
+            Status = 400
+        };
+        problem.Extensions["code"] = InternalCompanyPolicy.ViolationCode;
+        problem.Extensions["internalCompanyId"] = internalCompany.Id;
+        problem.Extensions["internalCompanyName"] = internalCompany.Name;
+        return problem;
     }
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
@@ -203,6 +237,9 @@ public class PaymentSourceDocumentsController : BaseController
             });
         }
 
+        var supplierProblem = await GuardSupplierNotInternalAsync(dto.SupplierId);
+        if (supplierProblem != null) return BadRequest(supplierProblem);
+
         var document = new PaymentSourceDocument
         {
             Id = Guid.NewGuid(),
@@ -271,6 +308,9 @@ public class PaymentSourceDocumentsController : BaseController
 
         var concurrency = ApplyConcurrencyToken(document, dto.RowVersion);
         if (concurrency != null) return concurrency;
+
+        var updateSupplierProblem = await GuardSupplierNotInternalAsync(dto.SupplierId);
+        if (updateSupplierProblem != null) return BadRequest(updateSupplierProblem);
 
         // Replacing the attachment makes this a different document. The previous OCR reading and
         // any override decision belonged to the FILE that was replaced, so they must not silently
@@ -744,6 +784,19 @@ public class PaymentSourceDocumentsController : BaseController
                 .Where(p => p.DocumentId == dto.Id)
                 .Select(p => p.Message)
                 .ToList();
+
+            // A document saved before this rule existed can still name an ALPLA entity. Historical
+            // rows are never rewritten — the problem is SHOWN, on the document that has it, and
+            // submission refuses until somebody corrects it deliberately.
+            var internalCompany = await _internalCompanies.ResolveSupplierAsync(dto.SupplierId);
+            if (internalCompany != null)
+            {
+                dto.SupplierIsInternalCompany = true;
+                dto.SupplierInternalCompanyName = internalCompany.Name;
+                // IsValid is derived from this list, so inserting the message is what makes the
+                // document invalid — there is no separate flag to keep in step.
+                dto.ValidationMessages.Insert(0, InternalCompanyPolicy.SupplierMessage);
+            }
         }
 
         var editable = PaymentSourceDocumentPolicy.IsEditable(request.Status?.Code);
