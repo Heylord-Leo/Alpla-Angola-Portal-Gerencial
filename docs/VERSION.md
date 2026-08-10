@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.224.1
+v2.224.2
+
+## [v2.224.2] - 2026-08-10
+
+### Fixed — invoice OCR now binds each fiscal number to the party it belongs to
+
+- Supplier and customer identified as parties before any field is read; the `Encomenda` inversion is
+  preserved.
+- `supplierTaxId` comes only from the supplier/issuer block. The label on a fiscal number never
+  determines its owner; a customer-side `NIF` / `Nº Contribuinte` must not populate it, nor may a
+  positional heuristic.
+- `billedCompanyTaxId` captures the customer's fiscal number separately — the schema previously had
+  one slot for a two-party document. Optional, so existing payloads map unchanged.
+- An ambiguous supplier fiscal number is left null rather than borrowed from the customer.
+- Invoice prompt version `v2.1-hardened` → `v2.2-party-roles`.
+- `InternalCompanyPolicy` unchanged, retained as defensive enforcement — extraction is a model
+  judgement and is never guaranteed correct.
 
 ## [v2.224.1] - 2026-08-10
 

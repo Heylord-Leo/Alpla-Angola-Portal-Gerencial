@@ -4,7 +4,36 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.224.1
+v2.224.2
+
+## [v2.224.2] - 2026-08-10
+
+### Fixed — invoice OCR now binds each fiscal number to the party it belongs to
+
+A source document issued by an external supplier to an ALPLA company was read with the **customer's**
+fiscal number bound to the supplier, which then drove supplier matching and creation.
+
+- **Supplier and customer are now identified as parties before any field is read.** The supplier is
+  the issuer/vendor to be paid; the customer is the billed-to entity. The Purchase Order
+  (`Encomenda`) inversion, where ALPLA is the issuer and the supplier is the addressed party, is
+  preserved.
+- **`supplierTaxId` is taken only from the supplier block.** A fiscal number's label — `NIF`,
+  `Nº Contribuinte`, `NIPC`, `VAT`, `Tax ID`, `CNPJ` — never determines its owner; the block printing
+  it does. A number belonging to the customer, buyer, recipient, billed-to entity,
+  `Exmo.(s) Senhor(es)` or `Cliente` must not populate `supplierTaxId`, and neither may a positional
+  heuristic such as "the first fiscal number on the page".
+- **`billedCompanyTaxId` captures the customer's fiscal number separately.** The extraction schema
+  previously offered a single fiscal-number slot for a document that carries two, so one had to be
+  discarded with no rule for which. Optional throughout, so payloads without it are unaffected.
+- **An ambiguous supplier fiscal number is now left null** rather than borrowed from the other party.
+  A missing supplier NIF is completed by the user in seconds; a wrong one silently matches or creates
+  the wrong supplier.
+- Invoice prompt version `v2.1-hardened` → `v2.2-party-roles`, so a stored extraction remains
+  traceable to the instructions that produced it.
+- **`InternalCompanyPolicy` is unchanged and remains in force** as defensive enforcement — for a
+  manually selected internal supplier, for a direct API call, and for readings that are still wrong.
+  Extraction is a model judgement and no prompt makes it certain, so the backend rule stays
+  authoritative.
 
 ## [v2.224.1] - 2026-08-10
 
