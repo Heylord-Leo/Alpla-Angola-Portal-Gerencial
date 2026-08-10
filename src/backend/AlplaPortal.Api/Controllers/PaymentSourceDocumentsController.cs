@@ -350,12 +350,21 @@ public class PaymentSourceDocumentsController : BaseController
                 document.Id, previousAttachmentId, replacement.Id);
         }
 
+        var previousType = RequestConstants.SourceDocumentTypes.Normalize(document.SourceDocumentType);
+
         ApplyFields(document, dto);
         document.UpdatedAtUtc = DateTime.UtcNow;
         document.UpdatedByUserId = CurrentUserId;
 
         var overrideProblem = await StageClassificationOverrideAsync(document, request!);
         if (overrideProblem != null) return BadRequest(overrideProblem);
+
+        // Release 4 Phase 1c: if this document's lines already sit in PO groups, a classification
+        // change must re-derive those groups' obligations IN THIS SAME transaction — or be refused.
+        // Returning here persists nothing: document change and group re-stamp are atomic by
+        // construction (one SaveAsync at the end).
+        var restampProblem = await RestampGroupsForReclassificationAsync(request!, document, previousType);
+        if (restampProblem != null) return Conflict(restampProblem);
 
         await SyncHeaderCompatibilityAsync(request!);
 
@@ -390,6 +399,23 @@ public class PaymentSourceDocumentsController : BaseController
 
         var concurrency = ApplyConcurrencyToken(document, dto?.RowVersion);
         if (concurrency != null) return concurrency;
+
+        // Release 4 Phase 1c: a document whose lines already landed in PO groups is part of an
+        // approved financial grouping. Removing it would change group membership and totals after
+        // approval — a reconciliation decision, never a self-service delete.
+        if (document.LineItems.Any(i => !i.IsDeleted && i.RequestPoGroupId != null))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Documento vinculado a grupos de pagamento",
+                Detail = "Este documento de origem já alimenta grupos de pagamento aprovados. " +
+                         "A sua remoção alteraria a composição financeira dos grupos e requer " +
+                         "reconciliação pelo Financeiro.",
+                Status = 409
+            };
+            problem.Extensions["code"] = PoGroupReclassificationBlockReasons.DocumentContributesToGroups;
+            return Conflict(problem);
+        }
 
         // A request that was never submitted has nothing downstream: the document may go entirely.
         // Once it has been submitted, its classification decision was audited, so it is VOIDED —
@@ -698,6 +724,118 @@ public class PaymentSourceDocumentsController : BaseController
             IdempotencyKey = decision.IdempotencyKey,
             CreatedAtUtc = DateTime.UtcNow
         });
+
+        return null;
+    }
+
+    /// <summary>
+    /// Release 4 Phase 1c: the transactional half of the classification → obligation contract.
+    ///
+    /// <para>When the edited document's active lines already belong to PO groups, each affected
+    /// group is judged by <see cref="PoGroupReclassificationPlanner"/> over the CURRENT types of
+    /// every document feeding it. An agreeing group is re-stamped (identity + derived obligation
+    /// fields; the captured <c>ExpectedOperationInvoiceTotal</c> is a financial snapshot and is
+    /// never recalculated or cleared); a disagreeing or already-active group refuses the whole
+    /// update with a typed 409. Affected groups come from line ownership
+    /// (<c>RequestLineItem.PaymentSourceDocumentId</c> → <c>RequestPoGroupId</c>) — never from the
+    /// request header, the supplier or the old type.</para>
+    ///
+    /// <para>Runs before the single <c>SaveAsync</c>, so document change, group re-stamp and audit
+    /// row commit together or not at all. No background repair, no lazy repair from reads.</para>
+    /// </summary>
+    private async Task<ProblemDetails?> RestampGroupsForReclassificationAsync(
+        Request request, PaymentSourceDocument document, string? previousType)
+    {
+        var newType = RequestConstants.SourceDocumentTypes.Normalize(document.SourceDocumentType);
+        if (string.Equals(previousType, newType, StringComparison.OrdinalIgnoreCase)) return null;
+
+        var affectedGroupIds = await _context.RequestLineItems
+            .Where(li => li.PaymentSourceDocumentId == document.Id &&
+                         !li.IsDeleted && li.RequestPoGroupId != null)
+            .Select(li => li.RequestPoGroupId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+        if (affectedGroupIds.Count == 0) return null;   // DRAFT path: no groups exist yet.
+
+        var groups = await _context.RequestPoGroups
+            .Where(g => affectedGroupIds.Contains(g.Id))
+            .ToListAsync();
+
+        // Current type of every active document feeding each affected group. The edited document's
+        // NEW type is substituted explicitly rather than trusted to tracker identity resolution.
+        var contributions = await _context.RequestLineItems
+            .Where(li => li.RequestPoGroupId != null &&
+                         affectedGroupIds.Contains(li.RequestPoGroupId.Value) &&
+                         !li.IsDeleted && li.PaymentSourceDocumentId != null)
+            .Join(_context.PaymentSourceDocuments.Where(d => !d.IsVoided),
+                  li => li.PaymentSourceDocumentId, d => d.Id,
+                  (li, d) => new { GroupId = li.RequestPoGroupId!.Value, d.Id, d.SourceDocumentType })
+            .Distinct()
+            .ToListAsync();
+
+        var groupsWithAllocations = await _context.OperationInvoiceAllocations
+            .Where(a => affectedGroupIds.Contains(a.RequestPoGroupId))
+            .Select(a => a.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+
+        var inputs = groups.Select(g => new PoGroupReclassificationInput
+        {
+            GroupId = g.Id,
+            CurrentSourceDocumentType = g.SourceDocumentType,
+            ContributingDocumentTypes = contributions
+                .Where(c => c.GroupId == g.Id)
+                .Select(c => c.Id == document.Id ? newType : c.SourceDocumentType)
+                .ToList(),
+            HasPostPaymentActivity =
+                groupsWithAllocations.Contains(g.Id) ||
+                g.FiscalReceiptAttachmentId != null ||
+                g.OperationalReceiptCompletedAtUtc != null
+        }).ToList();
+
+        var decisions = PoGroupReclassificationPlanner.Plan(inputs);
+
+        var blocked = decisions.FirstOrDefault(d => d.Action == PoGroupReclassificationAction.Blocked);
+        if (blocked != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Reclassificação bloqueada",
+                Detail = $"Documento {document.SequenceNumber}: {blocked.BlockReason}",
+                Status = 409
+            };
+            problem.Extensions["code"] = blocked.BlockReasonCode;
+            return problem;
+        }
+
+        foreach (var decision in decisions.Where(d => d.Action == PoGroupReclassificationAction.Restamp))
+        {
+            var group = groups.First(g => g.Id == decision.GroupId);
+            var obligations = decision.Obligations!;
+
+            group.SourceDocumentType = decision.NewSourceDocumentType;
+            group.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
+            group.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
+            group.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
+            group.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
+            group.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
+            // ExpectedOperationInvoiceTotal/Currency untouched: a captured snapshot, never
+            // recalculated by a classification correction and never cleared by NOT_REQUIRED.
+            group.UpdatedAtUtc = DateTime.UtcNow;
+            group.UpdatedByUserId = CurrentUserId;
+
+            // One history row telling both facts. No idempotency key: a repeated correction is a
+            // new event, and the comment carries the from/to that makes each row self-explaining.
+            await RecordHistoryAsync(
+                request, "GRUPO_OBRIGACAO_REDERIVADA",
+                $"Documento de origem {document.SequenceNumber} reclassificado de " +
+                $"{RequestConstants.SourceDocumentTypes.DisplayName(previousType)} para " +
+                $"{RequestConstants.SourceDocumentTypes.DisplayName(newType)}. " +
+                $"Obrigações do grupo '{group.SupplierNameSnapshot}' rederivadas: fatura final " +
+                (obligations.RequiresOperationInvoice ? "exigida." : "não exigida."),
+                idempotencyKey: null);
+        }
 
         return null;
     }
