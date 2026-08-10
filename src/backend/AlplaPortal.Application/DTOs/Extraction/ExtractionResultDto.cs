@@ -5,6 +5,19 @@ public class ExtractionHeaderDto
     public string? SupplierName { get; set; }
     public string? SupplierTaxId { get; set; }
     public string? BilledCompanyName { get; set; }
+
+    /// <summary>
+    /// The CUSTOMER's fiscal number — the one printed in the billed-to block.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// Exists so the model has somewhere to put it. A supplier invoice carries two fiscal numbers,
+    /// and while the schema offered only <see cref="SupplierTaxId"/> the model had to discard one of
+    /// them — with nothing telling it which. That is how an ALPLA 'Nº Contribuinte' ended up bound to
+    /// the supplier. Giving the customer's number its own home is what makes the supplier's field
+    /// unambiguous.
+    /// </remarks>
+    public string? BilledCompanyTaxId { get; set; }
     public string? DocumentNumber { get; set; }
     public string? DocumentDate { get; set; }
     public string? Currency { get; set; }

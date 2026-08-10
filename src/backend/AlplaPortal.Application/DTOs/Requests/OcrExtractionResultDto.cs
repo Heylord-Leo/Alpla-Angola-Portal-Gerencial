@@ -31,6 +31,9 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("billedCompany")]
     public OcrValueDto<string>? BilledCompany { get; set; }
 
+    /// <summary>The customer's fiscal number, kept distinct from the supplier's.</summary>
+    public OcrValueDto<string>? BilledCompanyTaxId { get; set; }
+
     [JsonPropertyName("documentNumber")]
     public OcrValueDto<string>? DocumentNumber { get; set; }
 

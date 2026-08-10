@@ -52,7 +52,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
     private const string DefaultApiBaseUrl = "https://api.openai.com/v1/chat/completions";
 
     // G3: Prompt version constants — logged in extraction metadata for traceability
-    private const string InvoicePromptVersion = "v2.1-hardened";
+    private const string InvoicePromptVersion = "v2.2-party-roles";
     private const string ContractPromptVersion = "v2.1-hardened";
 
     public OpenAiDocumentExtractionProvider(
@@ -748,7 +748,53 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
 
 You are a financial OCR expert. Extract data from this invoice, proforma, or purchase order (Encomenda).
 CRITICAL PRECISION RULES:
-- SUPPLIER IDENTIFICATION: If the document is a Purchase Order (e.g. 'Encomenda'), the issuing company (like 'ALPLA') is usually at the top, and the ACTUAL SUPPLIER is usually listed under 'Exmo.(s) Sr.(s)' or 'Srs.' or 'Fornecedor'. DO NOT confuse the billed company with the supplier.
+- PARTY IDENTIFICATION — DO THIS FIRST, BEFORE READING ANY FIELD:
+  Every commercial document has TWO parties. Identify BOTH blocks before extracting anything:
+    * SUPPLIER  = the issuer / vendor / the entity that is owed money and will be paid.
+    * CUSTOMER  = the billed / recipient / 'billed-to' entity, i.e. who must pay.
+
+  On an ordinary invoice, factura, factura-recibo, proforma or estimate, the SUPPLIER is the issuer
+  (normally the letterhead at the top, alongside its own bank details), and the CUSTOMER is the
+  entity addressed under 'Exmo.(s) Senhor(es)', 'Exmo.(s) Sr.(s)', 'Cliente', 'Adquirente',
+  'Destinatário', 'Facturar a' or 'Billed to'.
+
+  INVERSION — Purchase Orders only: if the document is a Purchase Order ('Encomenda'), the roles are
+  reversed. The issuing company at the top is the CUSTOMER, and the ACTUAL SUPPLIER is the party
+  listed under 'Exmo.(s) Sr.(s)', 'Srs.' or 'Fornecedor'.
+
+- FISCAL NUMBERS MUST FOLLOW THEIR OWN PARTY — THIS IS THE MOST COMMON AND MOST DAMAGING ERROR:
+  A document usually shows TWO fiscal numbers, one per party. They may be labelled differently
+  ('NIF', 'Nº Contribuinte', 'Contribuinte n.º', 'NIPC', 'VAT', 'Tax ID', 'CNPJ').
+  THE LABEL DOES NOT DETERMINE THE OWNER — THE BLOCK IT SITS IN DOES.
+
+    * supplierTaxId      = the fiscal number printed INSIDE the SUPPLIER block. Nothing else.
+    * billedCompanyTaxId = the fiscal number printed INSIDE the CUSTOMER block. Nothing else.
+
+  NEVER put a fiscal number belonging to the customer, buyer, recipient, billed-to entity,
+  'Exmo.(s) Senhor(es)' or 'Cliente' into supplierTaxId. NEVER pick 'the first fiscal number on the
+  page', 'the last one', or 'the one nearest the top'. Bind each number to the party whose block
+  contains it.
+
+  Worked example — an invoice issued BY 'FIX4U - Comercio e Industria, Lda' (NIF: 5417528641) TO
+  'ALPLA ANGOLA PLASTICOS LDA.' (Nº Contribuinte: 5417567485):
+      supplierName        = 'FIX4U - Comercio e Industria, Lda'
+      supplierTaxId       = '5417528641'      <- from the SUPPLIER block
+      billedCompanyName   = 'ALPLA ANGOLA PLASTICOS LDA.'
+      billedCompanyTaxId  = '5417567485'      <- from the CUSTOMER block
+  Reporting 5417567485 as supplierTaxId would be WRONG, even though it is a valid fiscal number that
+  appears on the document.
+
+- ALPLA IS THE READER OF THIS DOCUMENT, NOT ITS SUPPLIER:
+  'AlplaPLASTICO', 'AlplaSOPRO', 'ALPLA ANGOLA PLASTICOS' and 'ALPLA ANGOLA SOPRO' are the companies
+  running this system. On an invoice/factura/proforma they are the CUSTOMER — put them in
+  billedCompanyName / billedCompanyTaxId, never in supplierName / supplierTaxId. The single exception
+  is a Purchase Order, where ALPLA is the issuer and the supplier is the addressed party.
+
+- AMBIGUITY — PREFER NULL OVER A CONFIDENT GUESS:
+  If you cannot tell which block a fiscal number belongs to, or the supplier block shows no fiscal
+  number at all, set supplierTaxId = null. Do NOT borrow a number from the other party to fill the
+  field. A missing supplier NIF is something the user can complete in seconds; a wrong one silently
+  matches or creates the wrong supplier and corrupts the payment.
 - QUANTITY (Menge/Qtd.): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
 - UNIT PRICE (Einzelpreis/Stückpreis/Pr. Unitário): Capture the full numerical value. IGNORE ALL THOUSAND SEPARATORS (spaces, dots, commas). Convert to a pure JSON number using a period for decimals (e.g. '15 358,00' or '15.358,00' MUST become 15358.00). Ensure NO leading digits are lost before spaces.
 - TOTAL AMOUNTS (Valor/Net/Gross/Grand Total): Follow the exact same formatting rules as UNIT PRICE. Ensure ALL spaces and thousand separators are removed (e.g. '36 552,96' MUST become 36552.96).
@@ -824,7 +870,6 @@ CRITICAL PRECISION RULES:
 Output ONLY JSON with this structure:
 {
   ""header"": {
-    ""supplierName"": ""string"",
     ""documentClassification"": {
       ""type"": ""ESTIMATE | PROFORMA | ADVANCE_INVOICE | INVOICE | INVOICE_RECEIPT | OTHER | null"",
       ""confidence"": number (0.0-1.0),
@@ -834,8 +879,10 @@ Output ONLY JSON with this structure:
       ""fiscalMarkers"": [""fiscal certification wording found""],
       ""nonFiscalMarkers"": [""'sem valor fiscal' and similar""]
     },
-    ""supplierTaxId"": ""string"",
-    ""billedCompanyName"": ""Name of company being billed. Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
+    ""supplierName"": ""Name of the SUPPLIER party (issuer/vendor to be paid), or null"",
+    ""supplierTaxId"": ""Fiscal number printed inside the SUPPLIER block only (NIF/Nº Contribuinte/VAT/Tax ID). null if the supplier block shows none or you cannot tell which party a number belongs to. NEVER the customer's."",
+    ""billedCompanyName"": ""Name of company being billed (the CUSTOMER). Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
+    ""billedCompanyTaxId"": ""Fiscal number printed inside the CUSTOMER block only, or null. This is where an ALPLA 'Nº Contribuinte' belongs on a supplier invoice."",
     ""documentNumber"": ""string"",
     ""documentDate"": ""ISO date"",
     ""dueDate"": ""ISO date"",
@@ -895,6 +942,7 @@ Output ONLY JSON with this structure:
                     SupplierName = header.TryGetProperty("supplierName", out var sn) ? sn.GetString() : null,
                     SupplierTaxId = header.TryGetProperty("supplierTaxId", out var stid) ? stid.GetString() : null,
                     BilledCompanyName = header.TryGetProperty("billedCompanyName", out var bcn) ? bcn.GetString() : null,
+                    BilledCompanyTaxId = header.TryGetProperty("billedCompanyTaxId", out var bct) ? bct.GetString() : null,
                     DocumentNumber = header.TryGetProperty("documentNumber", out var dn) ? dn.GetString() : null,
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
                     Currency = header.TryGetProperty("currency", out var cur) ? cur.GetString() : null,
