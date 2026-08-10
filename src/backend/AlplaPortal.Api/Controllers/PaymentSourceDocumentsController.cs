@@ -350,7 +350,8 @@ public class PaymentSourceDocumentsController : BaseController
                 document.Id, previousAttachmentId, replacement.Id);
         }
 
-        var previousType = RequestConstants.SourceDocumentTypes.Normalize(document.SourceDocumentType);
+        var previous = (document.SupplierId, document.Currency, document.PlantId,
+                        document.SourceDocumentType);
 
         ApplyFields(document, dto);
         document.UpdatedAtUtc = DateTime.UtcNow;
@@ -359,12 +360,13 @@ public class PaymentSourceDocumentsController : BaseController
         var overrideProblem = await StageClassificationOverrideAsync(document, request!);
         if (overrideProblem != null) return BadRequest(overrideProblem);
 
-        // Release 4 Phase 1c: if this document's lines already sit in PO groups, a classification
-        // change must re-derive those groups' obligations IN THIS SAME transaction — or be refused.
-        // Returning here persists nothing: document change and group re-stamp are atomic by
-        // construction (one SaveAsync at the end).
-        var restampProblem = await RestampGroupsForReclassificationAsync(request!, document, previousType);
-        if (restampProblem != null) return Conflict(restampProblem);
+        // Release 4 Phase 1c/1d: if this document's lines already sit in PO groups, an edit that
+        // touches any grouping-key dimension (supplier, currency, plant, document type) must
+        // re-derive those groups IN THIS SAME transaction — or be refused. Returning here persists
+        // nothing: document change, group re-stamp and audit are atomic by construction (one
+        // SaveAsync at the end).
+        var integrityProblem = await GuardGroupingKeyIntegrityAsync(request!, document, previous);
+        if (integrityProblem != null) return Conflict(integrityProblem);
 
         await SyncHeaderCompatibilityAsync(request!);
 
@@ -729,25 +731,38 @@ public class PaymentSourceDocumentsController : BaseController
     }
 
     /// <summary>
-    /// Release 4 Phase 1c: the transactional half of the classification → obligation contract.
+    /// Release 4 Phase 1c/1d: the transactional half of the grouping-key integrity contract.
     ///
     /// <para>When the edited document's active lines already belong to PO groups, each affected
-    /// group is judged by <see cref="PoGroupReclassificationPlanner"/> over the CURRENT types of
-    /// every document feeding it. An agreeing group is re-stamped (identity + derived obligation
-    /// fields; the captured <c>ExpectedOperationInvoiceTotal</c> is a financial snapshot and is
-    /// never recalculated or cleared); a disagreeing or already-active group refuses the whole
-    /// update with a typed 409. Affected groups come from line ownership
+    /// group is judged by <see cref="PoGroupReclassificationPlanner"/> over the resulting
+    /// <see cref="PaymentGroupingKey"/> of every document feeding it — the same canonical key the
+    /// group builder deduplicates by, so no second comparison algorithm exists. An agreeing group
+    /// is re-stamped (identity + derived obligation fields; the captured
+    /// <c>ExpectedOperationInvoiceTotal</c> is a financial snapshot and is never recalculated or
+    /// cleared); a disagreeing group, or one whose financial evidence forbids the change, refuses
+    /// the whole update with a typed 409. Affected groups come from line ownership
     /// (<c>RequestLineItem.PaymentSourceDocumentId</c> → <c>RequestPoGroupId</c>) — never from the
-    /// request header, the supplier or the old type.</para>
+    /// request header, the supplier or the old values.</para>
+    ///
+    /// <para>The payment condition travels as the GROUP's own value: documents do not carry one,
+    /// and the Buyer legitimately refines it per group at P.O. registration — so it can never
+    /// diverge through a document edit and is never treated as one.</para>
     ///
     /// <para>Runs before the single <c>SaveAsync</c>, so document change, group re-stamp and audit
     /// row commit together or not at all. No background repair, no lazy repair from reads.</para>
     /// </summary>
-    private async Task<ProblemDetails?> RestampGroupsForReclassificationAsync(
-        Request request, PaymentSourceDocument document, string? previousType)
+    private async Task<ProblemDetails?> GuardGroupingKeyIntegrityAsync(
+        Request request, PaymentSourceDocument document,
+        (int? SupplierId, string? Currency, int? PlantId, string? SourceDocumentType) previous)
     {
-        var newType = RequestConstants.SourceDocumentTypes.Normalize(document.SourceDocumentType);
-        if (string.Equals(previousType, newType, StringComparison.OrdinalIgnoreCase)) return null;
+        // Key-relevant change detection through the SAME normalization the group builder uses.
+        // The condition component is irrelevant here (identical on both sides by construction).
+        var previousKey = PaymentGroupingKey.From(
+            previous.SupplierId, previous.Currency, null, previous.PlantId, previous.SourceDocumentType);
+        var newKey = PaymentGroupingKey.From(
+            document.SupplierId, document.Currency, null, document.PlantId, document.SourceDocumentType);
+
+        if (previousKey.Equals(newKey)) return null;
 
         var affectedGroupIds = await _context.RequestLineItems
             .Where(li => li.PaymentSourceDocumentId == document.Id &&
@@ -762,15 +777,20 @@ public class PaymentSourceDocumentsController : BaseController
             .Where(g => affectedGroupIds.Contains(g.Id))
             .ToListAsync();
 
-        // Current type of every active document feeding each affected group. The edited document's
-        // NEW type is substituted explicitly rather than trusted to tracker identity resolution.
+        // Current key dimensions of every active document feeding each affected group. The edited
+        // document's NEW values are substituted explicitly rather than trusted to tracker
+        // identity resolution.
         var contributions = await _context.RequestLineItems
             .Where(li => li.RequestPoGroupId != null &&
                          affectedGroupIds.Contains(li.RequestPoGroupId.Value) &&
                          !li.IsDeleted && li.PaymentSourceDocumentId != null)
             .Join(_context.PaymentSourceDocuments.Where(d => !d.IsVoided),
                   li => li.PaymentSourceDocumentId, d => d.Id,
-                  (li, d) => new { GroupId = li.RequestPoGroupId!.Value, d.Id, d.SourceDocumentType })
+                  (li, d) => new
+                  {
+                      GroupId = li.RequestPoGroupId!.Value,
+                      d.Id, d.SupplierId, d.Currency, d.PlantId, d.SourceDocumentType
+                  })
             .Distinct()
             .ToListAsync();
 
@@ -780,18 +800,64 @@ public class PaymentSourceDocumentsController : BaseController
             .Distinct()
             .ToListAsync();
 
+        var groupsWithActiveShortClose = await _context.OperationInvoiceShortCloses
+            .Where(c => affectedGroupIds.Contains(c.RequestPoGroupId) &&
+                        RequestConstants.ShortCloseStatuses.Active.Contains(c.Status))
+            .Select(c => c.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+
+        var groupsWithReconciliationSnapshots = await _context.OperationInvoiceReconciliations
+            .Where(r => affectedGroupIds.Contains(r.RequestPoGroupId))
+            .Select(r => r.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+
+        var groupsWithPoAttachments = await _context.RequestAttachments
+            .Where(a => a.RequestPoGroupId != null && affectedGroupIds.Contains(a.RequestPoGroupId.Value))
+            .Select(a => a.RequestPoGroupId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+        var groupsWithPayments = await _context.RequestPayments
+            .Where(p => p.RequestPoGroupId != null && affectedGroupIds.Contains(p.RequestPoGroupId.Value))
+            .Select(p => p.RequestPoGroupId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+        var groupsWithReconciliations = await _context.RequestReconciliations
+            .Where(r => r.RequestPoGroupId != null && affectedGroupIds.Contains(r.RequestPoGroupId.Value))
+            .Select(r => r.RequestPoGroupId!.Value)
+            .Distinct()
+            .ToListAsync();
+
         var inputs = groups.Select(g => new PoGroupReclassificationInput
         {
             GroupId = g.Id,
-            CurrentSourceDocumentType = g.SourceDocumentType,
-            ContributingDocumentTypes = contributions
+            CurrentGroupKey = PaymentGroupingKey.From(
+                g.SupplierId, g.CurrencyCode, g.PaymentConditionCode, g.PlantId, g.SourceDocumentType),
+            ContributingKeys = contributions
                 .Where(c => c.GroupId == g.Id)
-                .Select(c => c.Id == document.Id ? newType : c.SourceDocumentType)
+                .Select(c => c.Id == document.Id
+                    ? PaymentGroupingKey.From(
+                        document.SupplierId, document.Currency, g.PaymentConditionCode,
+                        document.PlantId, document.SourceDocumentType)
+                    : PaymentGroupingKey.From(
+                        c.SupplierId, c.Currency, g.PaymentConditionCode,
+                        c.PlantId, c.SourceDocumentType))
                 .ToList(),
-            HasPostPaymentActivity =
+            HasOperationInvoiceActivity =
                 groupsWithAllocations.Contains(g.Id) ||
+                groupsWithActiveShortClose.Contains(g.Id) ||
+                groupsWithReconciliationSnapshots.Contains(g.Id) ||
                 g.FiscalReceiptAttachmentId != null ||
-                g.OperationalReceiptCompletedAtUtc != null
+                g.OperationalReceiptCompletedAtUtc != null,
+            HasCommercialEvidence =
+                !string.IsNullOrWhiteSpace(g.PurchaseOrderNumber) ||
+                groupsWithPoAttachments.Contains(g.Id) ||
+                groupsWithPayments.Contains(g.Id) ||
+                groupsWithReconciliations.Contains(g.Id),
+            HasCapturedExpectedTotal = g.ExpectedOperationInvoiceTotal != null
         }).ToList();
 
         var decisions = PoGroupReclassificationPlanner.Plan(inputs);
@@ -801,7 +867,7 @@ public class PaymentSourceDocumentsController : BaseController
         {
             var problem = new ProblemDetails
             {
-                Title = "Reclassificação bloqueada",
+                Title = "Alteração bloqueada",
                 Detail = $"Documento {document.SequenceNumber}: {blocked.BlockReason}",
                 Status = 409
             };
@@ -809,30 +875,65 @@ public class PaymentSourceDocumentsController : BaseController
             return problem;
         }
 
+        // Supplier/currency rows for a full-key re-stamp, resolved once.
+        var newSupplier = document.SupplierId.HasValue
+            ? await _context.Suppliers.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == document.SupplierId.Value)
+            : null;
+
         foreach (var decision in decisions.Where(d => d.Action == PoGroupReclassificationAction.Restamp))
         {
             var group = groups.First(g => g.Id == decision.GroupId);
+            var key = decision.NewKey!.Value;
             var obligations = decision.Obligations!;
 
-            group.SourceDocumentType = decision.NewSourceDocumentType;
+            if (group.SupplierId != key.SupplierId)
+            {
+                group.SupplierId = key.SupplierId;
+                group.SupplierNameSnapshot =
+                    newSupplier?.Name ?? document.SupplierNameSnapshot ?? group.SupplierNameSnapshot;
+                group.SupplierNifSnapshot = newSupplier?.TaxId ?? document.SupplierTaxIdSnapshot;
+            }
+
+            if (!string.Equals(group.CurrencyCode, key.CurrencyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                group.CurrencyCode = key.CurrencyCode ?? group.CurrencyCode;
+                group.CurrencyId = key.CurrencyCode == null
+                    ? group.CurrencyId
+                    : (await _context.Currencies.AsNoTracking()
+                        .FirstOrDefaultAsync(c => c.Code == key.CurrencyCode))?.Id;
+            }
+
+            group.PlantId = key.PlantId;
+            group.SourceDocumentType = key.SourceDocumentType;
             group.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
             group.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
             group.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
             group.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
             group.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
             // ExpectedOperationInvoiceTotal/Currency untouched: a captured snapshot, never
-            // recalculated by a classification correction and never cleared by NOT_REQUIRED.
+            // recalculated by an identity correction and never cleared by NOT_REQUIRED. A currency
+            // change with a captured total was already blocked above, so no falsification is
+            // possible here. Nothing is opportunistically captured either — capture happens only
+            // at group creation.
             group.UpdatedAtUtc = DateTime.UtcNow;
             group.UpdatedByUserId = CurrentUserId;
 
             // One history row telling both facts. No idempotency key: a repeated correction is a
-            // new event, and the comment carries the from/to that makes each row self-explaining.
+            // new event, and the comment carries what changed, making each row self-explaining.
+            var typeTransition = decision.ChangedDimensions.Contains(
+                PoGroupReclassificationPlanner.DimensionNames.SourceDocumentType)
+                ? $" Tipo de documento: " +
+                  $"{RequestConstants.SourceDocumentTypes.DisplayName(previous.SourceDocumentType)} → " +
+                  $"{RequestConstants.SourceDocumentTypes.DisplayName(document.SourceDocumentType)}."
+                : string.Empty;
+
             await RecordHistoryAsync(
                 request, "GRUPO_OBRIGACAO_REDERIVADA",
-                $"Documento de origem {document.SequenceNumber} reclassificado de " +
-                $"{RequestConstants.SourceDocumentTypes.DisplayName(previousType)} para " +
-                $"{RequestConstants.SourceDocumentTypes.DisplayName(newType)}. " +
-                $"Obrigações do grupo '{group.SupplierNameSnapshot}' rederivadas: fatura final " +
+                $"Documento de origem {document.SequenceNumber} alterado " +
+                $"({string.Join(", ", decision.ChangedDimensions)})." + typeTransition +
+                $" Identidade e obrigações do grupo '{group.SupplierNameSnapshot}' rederivadas: " +
+                $"fatura final " +
                 (obligations.RequiresOperationInvoice ? "exigida." : "não exigida."),
                 idempotencyKey: null);
         }

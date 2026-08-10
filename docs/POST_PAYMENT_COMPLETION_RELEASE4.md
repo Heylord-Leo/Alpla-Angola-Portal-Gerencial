@@ -72,8 +72,42 @@ Equally refused: reclassifying a document whose group has started its post-payme
 
 `SourceDocumentType`, `OperationInvoiceStatus`, `RequiresOperationInvoice`,
 `RequiresSeparateFiscalReceipt`, `RequiresAdvanceRegularization`,
-`RequiresFinanceClassificationReview` — and nothing else. One audit row
-(`GRUPO_OBRIGACAO_REDERIVADA`) explains the document transition and the group consequence.
+`RequiresFinanceClassificationReview` — and, on a permitted commercial re-stamp (Phase 1d),
+the identity columns `SupplierId` + supplier snapshots, `CurrencyCode`/`CurrencyId`, `PlantId`.
+Nothing else. One audit row (`GRUPO_OBRIGACAO_REDERIVADA`) explains the document transition and
+the group consequence.
+
+## Phase 1d — Grouping-key integrity (full key)
+
+Phase 1c protected `SourceDocumentType`; Phase 1d generalizes the same planner to the complete
+key **Supplier + Currency + PaymentCondition + Plant + SourceDocumentType**, compared through
+`PaymentGroupingKey` — the group builder's own canonical normalization, never a second algorithm.
+
+Field ownership (PAYMENT): supplier, currency, plant and type are **document-owned**
+(`PaymentSourceDocument`), reach groups through line ownership, and are editable only through
+the source-document Update endpoint. The **payment condition is not document-owned**: the
+request-level value feeds the key at build time (currently never written → null), and the Buyer
+legitimately refines the GROUP's own value at P.O. registration — so a document edit can never
+diverge it, and the Buyer flow is not guarded. `Request.PlantId` remains routing-only and plays
+no part in the key.
+
+Rules, in order, per affected group (identified by line ownership only):
+
+1. contributors that would **disagree** on the key → `409 GROUPING_KEY_INVALIDATED`
+   (any dimension; the message names which);
+2. contributors still agreeing with the group's stamp → no action;
+3. a change to a **commercial dimension** (supplier/currency/condition/plant) is blocked by any
+   financial evidence — registered P.O. number, P.O. attachments, payments, reconciliations,
+   operation-invoice activity, or a captured `ExpectedOperationInvoiceTotal` when the currency
+   would change (the snapshot is denominated in it) → `409 GROUP_FINANCIAL_EVIDENCE_EXISTS`;
+4. a **type-only** change is blocked by operation-invoice activity alone
+   (`409 OPERATION_INVOICE_ACTIVITY_STARTED`) — a P.O. documents the commercial identity, not
+   the obligation the type derives (Phase 1c rule, preserved deliberately);
+5. otherwise the group is atomically re-stamped in the same transaction, snapshots refreshed,
+   expected total untouched, one audit row.
+
+Pre-group edits (DRAFT) keep today's behaviour untouched. The internal-ALPLA supplier rule runs
+first, under its own contract (400, its own code) — grouping-key integrity never absorbs it.
 
 ## ExpectedOperationInvoiceTotal — snapshot semantics
 
@@ -101,5 +135,5 @@ Carried from plan v7 §9, plus Release 4 findings:
 5. Cross-request supplier consolidation (the model is request-scoped by design).
 6. P.O. cardinality: confirm 1 group = 1 P.O. before Phase 3.
 7. Mixed-document regrouping: keep the block, or define a Finance-driven regroup flow.
-8. Supplier/plant/currency edits on a grouped document (the Phase 1c guard covers the document
-   type and void only) — same invalidation risk, needs the same treatment or a status restriction.
+8. ~~Supplier/plant/currency edits on a grouped document~~ — closed by Phase 1d: the full
+   grouping key is guarded by the same planner and transaction.

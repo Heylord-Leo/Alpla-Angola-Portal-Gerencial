@@ -103,6 +103,9 @@ public class PaymentSourceDocumentReclassificationTests
             AttachmentId = Guid.NewGuid(),
             SourceDocumentType = type,
             SupplierId = 10,
+            // The group was built FROM these documents, so the commercial dimensions agree —
+            // exactly what makes these scenarios type-only changes.
+            Currency = "AOA",
             SequenceNumber = sequence,
             CreatedAtUtc = DateTime.UtcNow.AddDays(-11),
             CreatedByUserId = seed.ActorId
@@ -271,7 +274,7 @@ public class PaymentSourceDocumentReclassificationTests
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         var problem = Assert.IsType<ProblemDetails>(conflict.Value);
-        Assert.Equal(PoGroupReclassificationBlockReasons.MixedDocumentTypes, problem.Extensions["code"]);
+        Assert.Equal(PoGroupReclassificationBlockReasons.GroupingKeyInvalidated, problem.Extensions["code"]);
 
         // Atomicity: the refused change persisted NOTHING — not the document, not the group,
         // not a history row.
