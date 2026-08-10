@@ -24,6 +24,7 @@ public static class ExtractionMapper
                 BilledCompanyTaxId = new OcrValueDto<string> { Value = internalResult.Header?.BilledCompanyTaxId, Status = "recommended" },
                 DocumentNumber = new OcrValueDto<string> { Value = internalResult.Header?.DocumentNumber, Status = "recommended" },
                 Date = new OcrValueDto<string> { Value = internalResult.Header?.DocumentDate, Status = "recommended" },
+                DueDate = new OcrValueDto<string> { Value = internalResult.Header?.DueDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
                 TotalAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount ?? 0, Status = "recommended" },
                 DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },

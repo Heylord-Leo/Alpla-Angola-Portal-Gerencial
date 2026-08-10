@@ -52,7 +52,7 @@ public class OpenAiDocumentExtractionProvider : IDocumentExtractionProvider
     private const string DefaultApiBaseUrl = "https://api.openai.com/v1/chat/completions";
 
     // G3: Prompt version constants — logged in extraction metadata for traceability
-    private const string InvoicePromptVersion = "v2.2-party-roles";
+    private const string InvoicePromptVersion = "v2.3-iso-dates";
     private const string ContractPromptVersion = "v2.1-hardened";
 
     public OpenAiDocumentExtractionProvider(
@@ -795,6 +795,25 @@ CRITICAL PRECISION RULES:
   number at all, set supplierTaxId = null. Do NOT borrow a number from the other party to fill the
   field. A missing supplier NIF is something the user can complete in seconds; a wrong one silently
   matches or creates the wrong supplier and corrupts the payment.
+- DATES — RETURN THE SEMANTIC DATE, NEVER THE VISUAL FORMAT:
+  Every date field (documentDate, dueDate) MUST be returned strictly as YYYY-MM-DD.
+  Read what the date MEANS on the document, then re-encode it. Do not copy the printed characters.
+
+  These documents are Angolan/Portuguese. A numeric date written with slashes, dots or dashes is
+  DAY FIRST: dd/MM/yyyy. It is NOT the US month-first convention.
+    Printed '10/08/2026'  -> ""2026-08-10""   (10 August 2026, NOT 8 October)
+    Printed '27.07.2026'  -> ""2026-07-27""
+    Printed '27/07/2026'  -> ""2026-07-27""
+    Printed 'August 10, 2026' -> ""2026-08-10""
+    Printed '2026-08-10'  -> ""2026-08-10""   (already correct, return unchanged)
+
+  A day greater than 12 proves the day-first reading (27/07 can only be 27 July). Apply the SAME
+  day-first reading to dates where both numbers are 12 or less — 10/08/2026 is 10 August, because
+  the document's convention does not change just because the value happens to be ambiguous.
+
+  If a date is genuinely undecidable, or you cannot read it, return null. Never guess a US
+  month-first reading, and never return a localized string like '10/08/2026' in these fields.
+
 - QUANTITY (Menge/Qtd.): Capture EVERY digit. If it says '21', do not return '2'. Look closely at column alignment and digit spacing.
 - UNIT PRICE (Einzelpreis/Stückpreis/Pr. Unitário): Capture the full numerical value. IGNORE ALL THOUSAND SEPARATORS (spaces, dots, commas). Convert to a pure JSON number using a period for decimals (e.g. '15 358,00' or '15.358,00' MUST become 15358.00). Ensure NO leading digits are lost before spaces.
 - TOTAL AMOUNTS (Valor/Net/Gross/Grand Total): Follow the exact same formatting rules as UNIT PRICE. Ensure ALL spaces and thousand separators are removed (e.g. '36 552,96' MUST become 36552.96).
@@ -884,8 +903,8 @@ Output ONLY JSON with this structure:
     ""billedCompanyName"": ""Name of company being billed (the CUSTOMER). Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
     ""billedCompanyTaxId"": ""Fiscal number printed inside the CUSTOMER block only, or null. This is where an ALPLA 'Nº Contribuinte' belongs on a supplier invoice."",
     ""documentNumber"": ""string"",
-    ""documentDate"": ""ISO date"",
-    ""dueDate"": ""ISO date"",
+    ""documentDate"": ""Date of the document, strictly YYYY-MM-DD. Numeric dates on these documents are day-first (dd/MM/yyyy). null if unreadable or genuinely undecidable."",
+    ""dueDate"": ""Payment due date, strictly YYYY-MM-DD, same day-first rule. null if the document states none."",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
     ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),
@@ -945,6 +964,10 @@ Output ONLY JSON with this structure:
                     BilledCompanyTaxId = header.TryGetProperty("billedCompanyTaxId", out var bct) ? bct.GetString() : null,
                     DocumentNumber = header.TryGetProperty("documentNumber", out var dn) ? dn.GetString() : null,
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
+                    // The prompt asks for it and the envelope declares it, but nothing ever read it
+                    // here — so the due date arrived null on every document and the user retyped a
+                    // value the reading already had.
+                    DueDate = header.TryGetProperty("dueDate", out var dud) ? dud.GetString() : null,
                     Currency = header.TryGetProperty("currency", out var cur) ? cur.GetString() : null,
                     TotalAmount = header.TryGetProperty("totalAmount", out var ta) ? (ta.ValueKind == JsonValueKind.Number ? ta.GetDecimal() : 0) : null,
                     GrandTotal = header.TryGetProperty("grandTotal", out var gt) ? (gt.ValueKind == JsonValueKind.Number ? gt.GetDecimal() : 0) : null,

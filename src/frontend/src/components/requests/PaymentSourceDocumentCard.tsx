@@ -9,6 +9,7 @@ import { deriveCardStatus, describeDocument } from '../../lib/paymentSourceDocum
 import { SourceDocumentTypeField } from './SourceDocumentTypeField';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
 import { SupplierAutocomplete } from '../SupplierAutocomplete';
+import { DateInput } from '../DateInput';
 import { formatCurrencyAO } from '../../lib/utils';
 
 export interface PaymentSourceDocumentCardProps {
@@ -471,31 +472,30 @@ export function PaymentSourceDocumentCard({
                             inputStyle={inputStyle}
                         />
 
+                        {/* DateInput, not <input type="date">. A native date input renders its value
+                            and its placeholder according to the BROWSER's locale, so on an en-US
+                            profile the correctly stored 2026-08-10 was displayed as 08/10/2026 with
+                            an 'mm/dd/yyyy' placeholder — a date the user in Angola reads as 8
+                            October. The value was never wrong; only its presentation was. DateInput
+                            keeps the value ISO and displays dd/MM/yyyy regardless of locale. */}
                         {field('Data do documento', (
-                            <input
+                            <DateInput
                                 data-field="documentDate"
-                                type="date"
                                 value={(document.documentDate ?? '').substring(0, 10)}
                                 disabled={readOnly}
-                                onChange={e => onFieldChange({ documentDate: e.target.value || null })}
+                                onChange={value => onFieldChange({ documentDate: value || null })}
                                 style={inputStyle}
                             />
                         ))}
 
                         {field('Data de vencimento', (
-                            <input
+                            <DateInput
                                 data-field="dueDate"
-                                type="date"
                                 value={(document.dueDate ?? '').substring(0, 10)}
                                 disabled={readOnly}
-                                onChange={e => onFieldChange({ dueDate: e.target.value || null })}
-                                style={{
-                                    ...inputStyle,
-                                    // A mandatory field the user has not filled, once they have
-                                    // tried to move on. Before that it is simply empty.
-                                    borderColor: showValidationErrors && !document.dueDate
-                                        ? '#fca5a5' : 'var(--color-border)'
-                                }}
+                                onChange={value => onFieldChange({ dueDate: value || null })}
+                                hasError={showValidationErrors && !document.dueDate}
+                                style={inputStyle}
                             />
                         ))}
 

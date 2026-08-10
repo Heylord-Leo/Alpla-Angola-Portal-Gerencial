@@ -20,6 +20,17 @@ public class ExtractionHeaderDto
     public string? BilledCompanyTaxId { get; set; }
     public string? DocumentNumber { get; set; }
     public string? DocumentDate { get; set; }
+
+    /// <summary>
+    /// Payment due date, as YYYY-MM-DD.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// The prompt has always asked for it and the response envelope has always declared it, but no
+    /// property existed to hold it — so it was parsed by nobody and arrived null on every document.
+    /// Every PAYMENT line requires a due date, so that silence cost the user a retype per document.
+    /// </remarks>
+    public string? DueDate { get; set; }
     public string? Currency { get; set; }
     public decimal? TotalAmount { get; set; }
     public decimal? GrandTotal { get; set; }
