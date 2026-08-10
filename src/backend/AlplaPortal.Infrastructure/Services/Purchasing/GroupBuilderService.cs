@@ -273,5 +273,16 @@ public class GroupBuilderService : IGroupBuilderService
         poGroup.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
         poGroup.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
         poGroup.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
+
+        // Release 4 Phase 1c: the commercial baseline the operation invoices must eventually
+        // cover, captured ONCE from the awarded group total — the same convention as PAYMENT
+        // group creation (BuildPaymentPoGroupsAsync), never a second one. Both callers set
+        // TotalAmount before invoking this method, so the value is known and stable here.
+        // A non-null expected total is a snapshot and is never recalculated on rebuild.
+        if (obligations.RequiresOperationInvoice && poGroup.ExpectedOperationInvoiceTotal == null)
+        {
+            poGroup.ExpectedOperationInvoiceTotal = poGroup.TotalAmount;
+            poGroup.ExpectedOperationInvoiceCurrency = poGroup.CurrencyCode;
+        }
     }
 }
