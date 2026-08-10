@@ -1,6 +1,6 @@
 # Post-Payment Completion — Release 4: Operation Invoice (Phase 1)
 
-> Status: **Phase 1 (a+b+c) implemented locally on `Portal-Gerencial-rev1`; not pushed, not deployed.**
+> Status: **Phase 1 (a+b+c+d) complete and approved — closed at v2.225.0 on `Portal-Gerencial-rev1`.**
 > OperationInvoice CRUD, allocation writes, UI and OCR do **not** exist yet — they are Phases 2+.
 
 ## Release numbering
@@ -102,7 +102,11 @@ Rules, in order, per affected group (identified by line ownership only):
    would change (the snapshot is denominated in it) → `409 GROUP_FINANCIAL_EVIDENCE_EXISTS`;
 4. a **type-only** change is blocked by operation-invoice activity alone
    (`409 OPERATION_INVOICE_ACTIVITY_STARTED`) — a P.O. documents the commercial identity, not
-   the obligation the type derives (Phase 1c rule, preserved deliberately);
+   the obligation the type derives. **This type-vs-commercial distinction is explicitly
+   approved** (Phase 1d closure): a type-only coherent re-stamp may proceed under a registered
+   P.O. when there is no operation-invoice / short-close / reconciliation / receipt activity and
+   grouping remains internally valid, while commercial-dimension changes stay blocked once any
+   downstream commercial evidence exists;
 5. otherwise the group is atomically re-stamped in the same transaction, snapshots refreshed,
    expected total untouched, one audit row.
 

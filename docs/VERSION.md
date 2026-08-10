@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.224.3
+v2.225.0
+
+## [v2.225.0] - 2026-08-10
+
+### Release 4 Phase 1 — Operation Invoice foundation
+
+- Obligation projection per PO group + request rollup + drift diagnostics, derived on read
+  (pure Domain, no persistence).
+- Read-only endpoint `GET /api/v1/requests/{id}/operation-invoice-obligations`, gated on
+  `PostPaymentCompletion.Enabled` (committed default stays false).
+- Transactional obligation re-stamping on classification corrections; full grouping-key integrity
+  guard (Supplier+Currency+PaymentCondition+Plant+SourceDocumentType) with typed refusals.
+- QUOTATION groups now capture `ExpectedOperationInvoiceTotal` at creation (PAYMENT convention).
+- `ExpectedOperationInvoiceTotal` remains a snapshot — never recalculated, cleared or backfilled.
+- No OperationInvoice CRUD/UI/OCR/allocations yet; Finance decisions for Phases 2/3 remain open.
+  See `docs/POST_PAYMENT_COMPLETION_RELEASE4.md`.
 
 ## [v2.224.3] - 2026-08-10
 

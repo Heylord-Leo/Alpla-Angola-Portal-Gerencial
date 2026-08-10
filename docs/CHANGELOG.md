@@ -4,7 +4,58 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.224.3
+v2.225.0
+
+## [v2.225.0] - 2026-08-10
+
+### Release 4 Phase 1 — Operation Invoice foundation (no CRUD yet)
+
+Answers, per PO group and per request, "does a final invoice remain owed, for how much, and what
+already arrived?" — derived on read from the existing obligation model. Feature-gated on
+`PostPaymentCompletion.Enabled` (committed default remains **false**).
+
+#### Added
+
+- **Operation-invoice obligation projection** per `RequestPoGroup`: required amount, validated and
+  pending coverage, remaining amount, derived status with reason code and pt-PT explanation
+  (`OperationInvoiceObligationProjector`, pure Domain).
+- **Request-level rollup**: counts per obligation state and per-currency totals — currencies are
+  never summed together; groups without a reliable currency report an explicit `UNKNOWN` bucket.
+- **Drift diagnostics**: the derived status is returned beside the cached
+  `OperationInvoiceStatus`; a disagreement is `statusDrift: true`, logged, never repaired on read.
+- **Read-only endpoint** `GET /api/v1/requests/{id}/operation-invoice-obligations` — request
+  visibility scope, 404 while the feature is disabled, no writes.
+- **Transactional obligation re-stamping**: a source-document classification change whose lines
+  already feed PO groups re-derives those groups' obligations in the same transaction, with one
+  audit row explaining both the document and the group transition.
+- **Grouping-key integrity protection** for the full key
+  (Supplier + Currency + PaymentCondition + Plant + SourceDocumentType) on grouped-document edits,
+  with typed refusals (`GROUPING_KEY_INVALIDATED`, `GROUP_FINANCIAL_EVIDENCE_EXISTS`,
+  `OPERATION_INVOICE_ACTIVITY_STARTED`, `SOURCE_DOCUMENT_IN_PO_GROUP`).
+- **QUOTATION expected-total capture**: new quotation-origin groups requiring an operation invoice
+  capture the awarded group total and currency once, under the same convention as PAYMENT groups.
+
+#### Changed
+
+- Classification corrections preserve the PO group's financial identity: an internally consistent
+  group is re-stamped; a change that would leave a mixed group, or that conflicts with downstream
+  financial/commercial evidence (registered P.O., payments, reconciliation, operation-invoice
+  activity), is refused — financial groups are never silently regrouped.
+- A type-only correction may proceed under a registered P.O. when no operation-invoice /
+  short-close / reconciliation / receipt activity exists and grouping stays internally valid;
+  commercial-dimension changes (Supplier, Currency, Plant, PaymentCondition) remain blocked once
+  downstream commercial evidence exists (approved distinction).
+- `ExpectedOperationInvoiceTotal` is a captured snapshot: never recalculated, never cleared by
+  these edits, never backfilled.
+- Voiding/removing a source document whose lines feed a PO group is refused.
+
+#### Known / deferred
+
+- No OperationInvoice CRUD, allocation writes, UI or OCR yet — Phases 2+.
+- Historical/pre-flag groups may legitimately report `EXPECTED_TOTAL_UNKNOWN` (amounts null,
+  never invented) and an `UNKNOWN` currency bucket.
+- Finance decisions gating Phases 2/3 remain open — see
+  `docs/POST_PAYMENT_COMPLETION_RELEASE4.md`.
 
 ## [v2.224.3] - 2026-08-10
 
