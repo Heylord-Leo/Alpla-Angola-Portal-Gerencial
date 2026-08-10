@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.224.2
+v2.224.3
+
+## [v2.224.3] - 2026-08-10
+
+### Fixed — invoice document dates no longer inverted by browser locale
+
+- `10/08/2026` displayed as `08/10/2026`. The stored value was correct ISO throughout; a raw
+  `<input type="date">` rendered it through the browser's en-US locale.
+- The payment source-document card now uses `DateInput` (ISO value, `dd/MM/yyyy` display,
+  locale- and timezone-independent).
+- The extraction schema demands strictly `YYYY-MM-DD` and a day-first reading, with worked examples;
+  an undecidable date returns null.
+- `dueDate` is no longer dropped between the prompt and the DTO.
+- Invoice prompt version `v2.2-party-roles` → `v2.3-iso-dates`.
+
+### Known limitation — line-item units
+
+`SV`, `KIT` and `H` display as `UN` because the unit catalogue holds only `UN`, `EA`, `KG`, `L`, `M`,
+`CX`. Configuration gap, not a code defect — units are editable in Master Data and are matched
+directly once added. Pending a business decision checked against Primavera article units.
 
 ## [v2.224.2] - 2026-08-10
 

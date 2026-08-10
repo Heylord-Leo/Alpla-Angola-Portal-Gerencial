@@ -4,7 +4,45 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.224.2
+v2.224.3
+
+## [v2.224.3] - 2026-08-10
+
+### Fixed — invoice document dates no longer inverted by browser locale
+
+A document printed `10/08/2026` — 10 August, in Angola — was displayed as `08/10/2026`.
+
+- **The stored value was never wrong.** The extraction already parses `dd/MM/yyyy` correctly and the
+  source document carries ISO throughout. What displayed `08/10/2026` was a raw
+  `<input type="date">`, which renders its value *and its placeholder* through the **browser's**
+  locale — on an en-US profile the correct `2026-08-10` appears as `08/10/2026` with an
+  `mm/dd/yyyy` placeholder.
+- **The payment source-document card now uses the existing `DateInput`**, which keeps its value ISO
+  and displays `dd/MM/yyyy` by string manipulation, so no locale and no timezone can reach it.
+- **The extraction schema now demands strictly `YYYY-MM-DD`** instead of the previous hint "ISO
+  date", states that these documents are day-first (`dd/MM/yyyy`) rather than US month-first, and
+  carries worked examples including the ambiguous case where both numbers are 12 or less. An
+  undecidable date returns null rather than a guess.
+- **`dueDate` is no longer silently dropped.** The prompt asked for it and the response envelope
+  declared it, but no property existed to receive it, so it arrived null on every document — a
+  retype per document, on a field every PAYMENT line requires.
+- Invoice prompt version `v2.2-party-roles` → `v2.3-iso-dates`.
+
+Extraction remains a model judgement; these are instructions and a locale-safe control, not a
+guarantee that every document is read correctly.
+
+### Known limitation — line-item units (no code change)
+
+Line items whose documents state `SV`, `KIT` or `H` are shown as `UN`. The Portal's unit catalogue
+contains only six units — `UN`, `EA`, `KG`, `L`, `M`, `CX` — so no service, kit or hour unit exists
+to map to, and the OCR unit resolver falls back to `UN` for anything it cannot match.
+
+This is a **configuration gap, not a code defect**: units are editable in
+**Definições → Dados Mestre → Unidades**, and a unit added there is matched directly by the resolver
+with no code change. Adding `SV`, `KIT`, `H` (and any of `M2`, `M3`) is a business decision that
+should be checked against the Primavera article units (`UnidadeBase` / `UnidadeCompra`) before being
+made. The silent `UN` fallback itself is reported separately and left unchanged pending that
+decision.
 
 ## [v2.224.2] - 2026-08-10
 
