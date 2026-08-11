@@ -1242,7 +1242,8 @@ public class ApprovalBatchController : BaseController
 
         foreach (var item in dto.Items)
         {
-            if (!request.LineItems.Any(li => li.Id == item.RequestLineItemId && !li.IsDeleted))
+            var lineItem = request.LineItems.FirstOrDefault(li => li.Id == item.RequestLineItemId && !li.IsDeleted);
+            if (lineItem == null)
             {
                 errors.Add($"Item {item.RequestLineItemId} não pertence a este pedido ou está removido.");
                 continue;
@@ -1260,11 +1261,30 @@ public class ApprovalBatchController : BaseController
                 continue;
             }
 
+            // A buyer-included EXTRA_ITEM line was GENERATED from its quotation line, so that
+            // line legitimately has no MappedRequestLineItemId and carries EXTRA_ITEM status —
+            // it re-enters a rework payload as its own single fixed candidate.
+            var isGeneratedExtraLine = lineItem.CreationOrigin == LineItemCreationOrigins.BuyerExtraItemIncluded;
+            if (isGeneratedExtraLine && item.Candidates.Count > 1)
+            {
+                errors.Add($"O item adicional '{lineItem.Description}' aceita apenas a própria linha da cotação como opção.");
+                continue;
+            }
+
             foreach (var candidate in item.Candidates)
             {
                 if (!quotationItemMap.TryGetValue(candidate.QuotationItemId, out var quotationItem))
                 {
                     errors.Add($"Item de cotação {candidate.QuotationItemId} não pertence a uma cotação deste pedido.");
+                    continue;
+                }
+
+                if (isGeneratedExtraLine)
+                {
+                    if (quotationItem.ReconciliationStatus != RequestConstants.ReconciliationStatuses.ExtraItem)
+                    {
+                        errors.Add($"O item adicional '{lineItem.Description}' só pode referenciar a linha EXTRA_ITEM que o originou.");
+                    }
                     continue;
                 }
 

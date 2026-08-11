@@ -867,6 +867,89 @@ public class CandidateBasedApprovalBatchTests
         Assert.Equal(7, batch.Items.Sum(bi => bi.Candidates.Count)); // 2+2+2+1
     }
 
+    [Fact]
+    public async Task Rework_payload_with_a_buyer_included_extra_line_is_accepted()
+    {
+        var s = await SeedAsync();
+
+        // An EXTRA_ITEM line on the Kwanza quotation (no mapping — generated lines never have one).
+        Guid extraQiId;
+        await using (var seed = new ApplicationDbContext(s.Options))
+        {
+            var extra = new QuotationItem
+            {
+                Id = Guid.NewGuid(),
+                QuotationId = s.KwanzaQuotationId,
+                LineNumber = 9,
+                Description = "Item adicional proposto pelo fornecedor",
+                ReconciliationStatus = "EXTRA_ITEM",
+                Quantity = 2,
+                UnitPrice = 10_000m,
+                LineTotal = 20_000m,
+                ReconciliationJustification = "Fornecedor propôs item complementar ao pedido."
+            };
+            seed.QuotationItems.Add(extra);
+            await seed.SaveChangesAsync();
+            extraQiId = extra.Id;
+        }
+
+        // Create with INCLUDE → generated line + single-candidate batch item for the extra.
+        Guid batchId;
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var dto = FullCandidateBatchDto(s);
+            dto.ExtraItemDecisions = new Dictionary<Guid, ExtraItemDecisionDto>
+            {
+                [extraQiId] = new ExtraItemDecisionDto { Decision = "INCLUDE" }
+            };
+            var result = await BuildController(ctx, s.Actor).CreateBatch(s.RequestId, dto);
+            var ok = Assert.IsType<OkObjectResult>(result);
+            batchId = Assert.IsType<ApprovalBatchDto>(ok.Value).Id;
+        }
+
+        // Return the batch to the Buyer, then resend the SAME composition — the generated extra
+        // line re-enters the payload as its own single fixed candidate (the rework-modal shape).
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            Assert.IsType<OkObjectResult>(await BuildController(ctx, s.Actor).BatchAreaRequestAdjustment(
+                s.RequestId, batchId, new BatchApprovalActionDto { Comment = "Rever opções antes de aprovar, por favor." }));
+        }
+
+        Guid generatedLineId;
+        await using (var read = new ApplicationDbContext(s.Options))
+        {
+            generatedLineId = await read.ApprovalBatchItems.AsNoTracking()
+                .Include(bi => bi.Candidates)
+                .Where(bi => bi.ApprovalBatchId == batchId && bi.Candidates.Any(c => c.QuotationItemId == extraQiId))
+                .Select(bi => bi.RequestLineItemId)
+                .SingleAsync();
+        }
+
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var update = new UpdateApprovalBatchDto { Items = FullCandidateBatchDto(s).Items };
+            update.Items.Add(new BatchItemDto
+            {
+                RequestLineItemId = generatedLineId,
+                Candidates = { new BatchCandidateInputDto { QuotationItemId = extraQiId } }
+            });
+            update.ExtraItemDecisions = new Dictionary<Guid, ExtraItemDecisionDto>
+            {
+                [extraQiId] = new ExtraItemDecisionDto { Decision = "INCLUDE" }
+            };
+            var result = await BuildController(ctx, s.Actor).UpdateBatch(s.RequestId, batchId, update);
+            Assert.IsType<OkObjectResult>(result);
+        }
+
+        await using var verify = new ApplicationDbContext(s.Options);
+        var extraItem = await verify.ApprovalBatchItems.AsNoTracking()
+            .Include(bi => bi.Candidates)
+            .SingleAsync(bi => bi.ApprovalBatchId == batchId && bi.RequestLineItemId == generatedLineId);
+        var only = Assert.Single(extraItem.Candidates);
+        Assert.Equal(extraQiId, only.QuotationItemId);
+        Assert.Null(extraItem.SelectedQuotationItemId);
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // Legacy batches (zero candidates, buyer-selected winner)
     // ══════════════════════════════════════════════════════════════════════
