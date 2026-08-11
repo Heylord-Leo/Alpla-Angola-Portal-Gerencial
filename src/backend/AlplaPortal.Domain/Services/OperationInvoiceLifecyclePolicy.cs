@@ -76,11 +76,16 @@ public static class OperationInvoiceLifecyclePolicy
     public static bool IsEditable(string? documentStatus) =>
         EditableStatuses.Any(s => string.Equals(s, documentStatus, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Finance validation acts only on a document sitting in its queue.</summary>
+    /// <summary>Finance validation acts only on a document sitting in its queue. UPLOADED is the
+    /// future OCR intake and must pass through PENDING_VALIDATION first — never skipped.</summary>
     public static bool CanValidate(string? documentStatus) =>
         string.Equals(documentStatus,
             RequestConstants.OperationInvoiceDocumentStatuses.PendingValidation,
             StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Rejection is the other Finance decision on the same queue — same gate, on
+    /// purpose: a decision (either way) exists only for a document awaiting one.</summary>
+    public static bool CanReject(string? documentStatus) => CanValidate(documentStatus);
 
     /// <summary>
     /// Void exists only before validation (approved rule #8): a VALIDATED invoice is immutable

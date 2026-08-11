@@ -127,6 +127,37 @@ first, under its own contract (400, its own code) — grouping-key integrity nev
 - Rollup amounts are summed **per currency only**; groups with no currency land in the `UNKNOWN`
   bucket. There is no fallback to request-level currency.
 
+## Phase 2 — OperationInvoice CRUD (2a–2e, implemented; not yet closed)
+
+The manual final-invoice document lifecycle, header-only, on
+`/api/v1/requests/{id}/operation-invoices`. **Allocation does not exist yet** — Phase 3.
+
+**Lifecycle** (`OperationInvoiceLifecyclePolicy`, pure): manual creation lands in
+`PENDING_VALIDATION` (`UPLOADED` is reserved for the future OCR intake and never skips the
+queue). Editing and voiding stop at validation. **The Finance validation boundary**: only
+Finance (SysAdmin per the administrative can-act convention, with no integrity bypass) decides
+`PENDING_VALIDATION → VALIDATED | REJECTED`, and validation re-runs every integrity gate against
+the persisted row — header completeness, net+tax tolerance, internal-ALPLA supplier, attachment
+validity, and BOTH global duplicate dimensions — so a duplicate that appeared after creation can
+never become a second effective invoice. **VALIDATED is immutable**: no edit, no void; correction
+is Finance-only replacement (old → `REPLACEMENT_REQUESTED` + reason + forward pointer; corrected
+invoice enters the queue like any other). **Rejection releases both duplicate identities**
+(fiscal identity and file hash — approved: a rejection may concern metadata, not the physical
+file, so the same file may return). **Validation without allocation creates no coverage**: a
+VALIDATED unallocated invoice changes nothing in Phase 1 — trust comes from validation, coverage
+only from Phase 3 allocation. `DueDate` is optional and never blocks. Duplicates are global for
+effective invoices on both dimensions; terminal statuses (`REJECTED`, `VOIDED`,
+`REPLACEMENT_REQUESTED`) release them; `DIVERGENCE_DETECTED` remains effective. Exact retries
+are idempotent (create-by-attachment, re-void, identical replace, re-validate, re-reject) —
+conflicting decisions never are.
+
+**Rejected-replacement lifecycle** (reviewed, intentional): A(validated) → replaced by B →
+B rejected ⇒ A stays `REPLACEMENT_REQUESTED` (a recorded Finance decision is never rewritten),
+B is terminal and cannot be replaced from. The recovery path is a **plain Create** — both A and
+B are non-effective, so the fiscal identity is free; the new invoice C starts unlinked to the
+dead chain. Known cosmetic gap, accepted: B carries no pointer to C, so the audit chain is
+A→B (rejected), C standalone.
+
 ## Known open questions for Phase 2/3 (Finance)
 
 Carried from plan v7 §9, plus Release 4 findings:

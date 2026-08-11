@@ -48,6 +48,8 @@ public class OperationInvoicesController : BaseController
     public const string DownstreamEvidenceCode = "OPERATION_INVOICE_EVIDENCE_EXISTS";
     public const string FileDuplicateErrorCode = "OPERATION_INVOICE_FILE_DUPLICATE";
     public const string AttachmentClaimedCode = "OPERATION_INVOICE_ATTACHMENT_CLAIMED";
+    public const string NotValidatableCode = "OPERATION_INVOICE_NOT_VALIDATABLE";
+    public const string NotRejectableCode = "OPERATION_INVOICE_NOT_REJECTABLE";
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
 
@@ -737,7 +739,291 @@ public class OperationInvoicesController : BaseController
         return Ok(await ProjectAsync(replacement));
     }
 
+    // ── Finance validation / rejection (Phase 2e) ───────────────────────────────────────────
+
+    /// <summary>
+    /// The Finance decision that makes an invoice trustworthy — NOT the act that makes it cover
+    /// anything: coverage arrives only with Phase 3 allocation. Every integrity boundary re-runs
+    /// against the PERSISTED row, because validation is the last gate before this document can
+    /// ever carry financial weight, and nothing valid at create time is trusted to still be valid.
+    /// </summary>
+    [HttpPost("{operationInvoiceId:guid}/validate")]
+    public async Task<IActionResult> Validate(
+        Guid requestId, Guid operationInvoiceId, [FromBody] ValidateOperationInvoiceDto dto)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var roleProblem = GuardFinanceRole();
+        if (roleProblem != null) return roleProblem;
+
+        var statusProblem = GuardMutableRequestStatus(request);
+        if (statusProblem != null) return statusProblem;
+
+        var invoice = await _context.OperationInvoices
+            .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
+        if (invoice == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        // Idempotent retry: validating what is already VALIDATED is the same decision arriving
+        // twice — the Phase 2d convention. A CONFLICTING decision (validating a REJECTED invoice)
+        // is never idempotent success; it falls through to the lifecycle gate below.
+        if (string.Equals(invoice.Status,
+                RequestConstants.OperationInvoiceDocumentStatuses.Validated,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(await ProjectAsync(invoice));
+        }
+
+        if (!OperationInvoiceLifecyclePolicy.CanValidate(invoice.Status))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fatura não pode ser validada",
+                Detail = "Só uma fatura a aguardar validação pode ser validada.",
+                Status = 409
+            };
+            problem.Extensions["code"] = NotValidatableCode;
+            return Conflict(problem);
+        }
+
+        var staleToken = ApplyConcurrencyToken(invoice, dto.RowVersion);
+        if (staleToken != null) return staleToken;
+
+        // ── Header integrity, re-read from the persisted row ──
+        var errors = new Dictionary<string, string[]>();
+        if (invoice.SupplierId is null or <= 0)
+            errors["SupplierId"] = new[] { "A fatura não tem fornecedor." };
+        if (string.IsNullOrWhiteSpace(invoice.DocumentNumber))
+            errors["DocumentNumber"] = new[] { "A fatura não tem número do documento." };
+        if (invoice.DocumentDate == null)
+            errors["DocumentDate"] = new[] { "A fatura não tem data do documento." };
+        if (string.IsNullOrWhiteSpace(invoice.Currency))
+            errors["Currency"] = new[] { "A fatura não tem moeda." };
+        if (invoice.GrossAmount is null or <= 0)
+            errors["GrossAmount"] = new[] { "A fatura não tem um total válido (maior que zero)." };
+
+        if (invoice.NetAmount.HasValue != invoice.TaxAmount.HasValue)
+        {
+            errors["NetAmount"] = new[]
+                { "A fatura tem valor líquido e imposto incompletos — indique ambos ou nenhum." };
+        }
+        else if (invoice.NetAmount.HasValue && invoice.GrossAmount is > 0 &&
+                 Math.Abs(invoice.GrossAmount.Value -
+                          (invoice.NetAmount.Value + invoice.TaxAmount!.Value)) >
+                 OperationInvoiceTolerance.For(invoice.GrossAmount.Value))
+        {
+            errors["GrossAmount"] = new[]
+            {
+                "O total da fatura não corresponde à soma do valor líquido com o imposto " +
+                "(fora da tolerância)."
+            };
+        }
+        // DueDate stays optional — an approved business decision; its absence never blocks.
+
+        if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
+
+        // ── Supplier integrity: the internal-ALPLA rule holds at the final boundary too ──
+        var (_, supplierProblem) = await GuardSupplierAsync(invoice.SupplierId!.Value);
+        if (supplierProblem != null) return supplierProblem;
+
+        // ── Attachment: still present, still this request's, still the right kind, still active ──
+        var attachment = await _context.RequestAttachments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == invoice.AttachmentId);
+        if (attachment == null || attachment.RequestId != requestId ||
+            !string.Equals(attachment.AttachmentTypeCode, RequestAttachment.TYPE_OPERATION_INVOICE,
+                StringComparison.OrdinalIgnoreCase) ||
+            attachment.IsDeleted || attachment.VoidedAtUtc != null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Anexo inválido",
+                Detail = "O ficheiro da fatura já não é válido. Substitua o anexo antes de validar.",
+                Status = 400
+            });
+        }
+
+        // ── The duplicate race (Phase 2e rule): another effective invoice may have claimed this
+        // identity or this file since creation. Validation must never mint a second effective
+        // invoice for either.
+        var duplicate = await FindEffectiveDuplicateAsync(
+            invoice.SupplierId!.Value, invoice.DocumentNumber, invoice.DocumentSeries,
+            excludeInvoiceId: invoice.Id);
+        if (duplicate != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fatura duplicada",
+                Detail = $"A fatura {duplicate.DocumentNumber} deste fornecedor já está registada " +
+                         "no Portal.",
+                Status = 409
+            };
+            problem.Extensions["code"] = DuplicateErrorCode;
+            problem.Extensions["existingOperationInvoiceId"] = duplicate.Id;
+            problem.Extensions["existingRequestId"] = duplicate.RequestId;
+            return Conflict(problem);
+        }
+
+        var fileDuplicate = await FindEffectiveFileDuplicateAsync(
+            attachment.FileHash, excludeInvoiceId: invoice.Id);
+        if (fileDuplicate != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Ficheiro já registado",
+                Detail = "Este ficheiro já corresponde a uma fatura final registada no Portal " +
+                         $"({fileDuplicate.DocumentNumber ?? "sem número"}).",
+                Status = 409
+            };
+            problem.Extensions["code"] = FileDuplicateErrorCode;
+            problem.Extensions["existingOperationInvoiceId"] = fileDuplicate.Id;
+            problem.Extensions["existingRequestId"] = fileDuplicate.RequestId;
+            return Conflict(problem);
+        }
+
+        // ── The decision. Nothing else moves: amounts, attachment, snapshots, chain, void
+        // fields all stay exactly as Finance saw them.
+        invoice.Status = RequestConstants.OperationInvoiceDocumentStatuses.Validated;
+        invoice.ValidatedAtUtc = DateTime.UtcNow;
+        invoice.ValidatedByUserId = CurrentUserId;
+        invoice.UpdatedAtUtc = DateTime.UtcNow;
+        invoice.UpdatedByUserId = CurrentUserId;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = CurrentUserId,
+            ActionTaken = "FATURA_OPERACAO_VALIDADA",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Fatura final {invoice.DocumentNumber} validada pelo Financeiro.",
+            IdempotencyKey = PostPaymentIdempotencyKeys.OperationInvoiceValidated(requestId, invoice.Id),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ConcurrencyConflict();
+        }
+
+        return Ok(await ProjectAsync(invoice));
+    }
+
+    /// <summary>
+    /// The other Finance decision: the uploaded document is not accepted. Terminal — the invoice
+    /// and its attachment stay readable forever, and both the fiscal identity and the file hash
+    /// are released (approved rule: rejection may concern metadata, not the physical file, so the
+    /// same file may legitimately return).
+    /// </summary>
+    [HttpPost("{operationInvoiceId:guid}/reject")]
+    public async Task<IActionResult> Reject(
+        Guid requestId, Guid operationInvoiceId, [FromBody] RejectOperationInvoiceDto dto)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var roleProblem = GuardFinanceRole();
+        if (roleProblem != null) return roleProblem;
+
+        var statusProblem = GuardMutableRequestStatus(request);
+        if (statusProblem != null) return statusProblem;
+
+        var invoice = await _context.OperationInvoices
+            .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
+        if (invoice == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        // Idempotent retry: rejecting what is already REJECTED returns the persisted decision —
+        // including its recorded reason, never a rewritten one. Rejecting a VALIDATED invoice is
+        // a CONFLICTING decision and falls through to the lifecycle gate.
+        if (string.Equals(invoice.Status,
+                RequestConstants.OperationInvoiceDocumentStatuses.Rejected,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(await ProjectAsync(invoice));
+        }
+
+        if (!OperationInvoiceLifecyclePolicy.CanReject(invoice.Status))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fatura não pode ser rejeitada",
+                Detail = "Só uma fatura a aguardar validação pode ser rejeitada. Uma fatura " +
+                         "validada corrige-se por substituição.",
+                Status = 409
+            };
+            problem.Extensions["code"] = NotRejectableCode;
+            return Conflict(problem);
+        }
+
+        var reason = Trimmed(dto.Reason);
+        if (reason == null)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["Reason"] = new[] { "Indique o motivo da rejeição." }
+            }));
+        }
+
+        var staleToken = ApplyConcurrencyToken(invoice, dto.RowVersion);
+        if (staleToken != null) return staleToken;
+
+        invoice.Status = RequestConstants.OperationInvoiceDocumentStatuses.Rejected;
+        invoice.RejectionReason = reason;
+        invoice.UpdatedAtUtc = DateTime.UtcNow;
+        invoice.UpdatedByUserId = CurrentUserId;
+        // Deliberately untouched: Validated* stamps (this was never validated), the attachment
+        // (never voided by a rejection), and the invoice row itself (readable forever).
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = CurrentUserId,
+            ActionTaken = "FATURA_OPERACAO_REJEITADA",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Fatura final {invoice.DocumentNumber} rejeitada pelo Financeiro. " +
+                      $"Motivo: {reason}",
+            IdempotencyKey = PostPaymentIdempotencyKeys.OperationInvoiceRejected(requestId, invoice.Id),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ConcurrencyConflict();
+        }
+
+        return Ok(await ProjectAsync(invoice));
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Validate/Reject are Finance decisions. SystemAdministrator follows the
+    /// administrative can-act convention; the Buyer never reaches these.</summary>
+    private IActionResult? GuardFinanceRole()
+    {
+        var roles = CurrentUserRoles;
+        if (roles.Contains(RoleConstants.Finance) ||
+            roles.Contains(RoleConstants.SystemAdministrator))
+        {
+            return null;
+        }
+
+        return StatusCode(403, new ProblemDetails
+        {
+            Title = "Sem permissão",
+            Detail = "Apenas o Financeiro pode validar ou rejeitar faturas finais.",
+            Status = 403
+        });
+    }
 
     /// <summary>Header-field validation shared by Create and Replace — one rulebook, one wording.</summary>
     private static Dictionary<string, string[]> ValidateNewInvoiceFields(SaveOperationInvoiceDto dto)

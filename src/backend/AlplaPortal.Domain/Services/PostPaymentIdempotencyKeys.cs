@@ -73,6 +73,20 @@ public static class PostPaymentIdempotencyKeys
     public static string OperationInvoiceReplaced(Guid originalInvoiceId, Guid newAttachmentId)
         => Build("OI_REP", originalInvoiceId, newAttachmentId);
 
+    /// <summary>
+    /// FATURA_OPERACAO_VALIDADA — OI_VAL:{RequestId}:{OperationInvoiceId}. Invoice-scoped: an
+    /// invoice validates at most once (VALIDATED is immutable), so a retry never duplicates the row.
+    /// </summary>
+    public static string OperationInvoiceValidated(Guid requestId, Guid operationInvoiceId)
+        => Build("OI_VAL", requestId, operationInvoiceId);
+
+    /// <summary>
+    /// FATURA_OPERACAO_REJEITADA — OI_REJ:{RequestId}:{OperationInvoiceId}. Invoice-scoped:
+    /// REJECTED is terminal, so an invoice is rejected at most once.
+    /// </summary>
+    public static string OperationInvoiceRejected(Guid requestId, Guid operationInvoiceId)
+        => Build("OI_REJ", requestId, operationInvoiceId);
+
     // ── Fiscal Receipt ──
 
     /// <summary>FISCAL_RECEIPT_UPLOADED — FR_UP:{GroupId}:{AttachmentId}</summary>

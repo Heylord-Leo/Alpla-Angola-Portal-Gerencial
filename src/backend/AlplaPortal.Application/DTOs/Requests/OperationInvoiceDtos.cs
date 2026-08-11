@@ -54,6 +54,23 @@ public class VoidOperationInvoiceDto
 }
 
 /// <summary>
+/// Finance validation of a pending invoice (Phase 2e). The transition needs nothing but the
+/// concurrency token — status and the validation stamps are server-controlled, always.
+/// </summary>
+public class ValidateOperationInvoiceDto
+{
+    public byte[]? RowVersion { get; set; }
+}
+
+/// <summary>Finance rejection of a pending invoice (Phase 2e). Terminal; reason mandatory.</summary>
+public class RejectOperationInvoiceDto
+{
+    public string? Reason { get; set; }
+
+    public byte[]? RowVersion { get; set; }
+}
+
+/// <summary>
 /// Replaces a VALIDATED invoice with a corrected one (Phase 2c) — the only path out of VALIDATED.
 /// The header fields describe the NEW invoice; <c>RowVersion</c> is the ORIGINAL invoice's
 /// concurrency token, because the original is what this operation mutates.
