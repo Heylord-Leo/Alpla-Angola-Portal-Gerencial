@@ -92,6 +92,15 @@ public static class ApprovalQueueProjection
                         ? i.SelectedCandidate.SupplierNameSnapshot
                         : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.SupplierNameSnapshot : null))
                     .FirstOrDefault(s => s != null),
+                // Candidate model: a mixed-winner batch must never be represented by its first
+                // winner's supplier — the distinct count drives "N fornecedores selecionados".
+                BatchSupplierCount = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.SupplierNameSnapshot
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.SupplierNameSnapshot : null))
+                    .Where(s => s != null)
+                    .Distinct()
+                    .Count(),
                 BatchCurrency = x.b.Items
                     .Select(i => i.SelectedCandidate != null
                         ? i.SelectedCandidate.Currency
@@ -183,7 +192,9 @@ public static class ApprovalQueueProjection
                 CompanyName = x.CompanyName,
                 PlantId = x.PlantId,
                 PlantName = x.PlantName,
-                SupplierDisplay = string.IsNullOrWhiteSpace(x.BatchSupplier) ? null : x.BatchSupplier,
+                SupplierDisplay = x.BatchSupplierCount > 1
+                    ? $"{x.BatchSupplierCount} fornecedores selecionados"
+                    : (string.IsNullOrWhiteSpace(x.BatchSupplier) ? null : x.BatchSupplier),
                 CostCenterCode = x.CostCenterCode,
                 CostCenterName = x.CostCenterName,
                 CurrencyCode = string.IsNullOrWhiteSpace(x.BatchCurrency) ? null : x.BatchCurrency,
@@ -322,6 +333,7 @@ public static class ApprovalQueueProjection
         public decimal? BatchItemSum { get; set; }
         public int BatchItemCount { get; set; }
         public string? BatchSupplier { get; set; }
+        public int BatchSupplierCount { get; set; }
         public string? BatchCurrency { get; set; }
     }
 

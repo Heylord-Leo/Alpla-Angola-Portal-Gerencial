@@ -3043,9 +3043,11 @@ public class RequestsController : BaseController
             var extractionBatchId = Guid.NewGuid();
             var units = await _context.Units.Where(u => u.IsActive).ToListAsync();
 
-            // Find the proforma attachment for this request (latest PROFORMA)
+            // Find the quotation document for this request (latest QUOTATION; legacy rows carry PROFORMA)
             var proformaAtt = await _context.RequestAttachments
-                .Where(a => a.RequestId == id && a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                .Where(a => a.RequestId == id
+                    && (a.AttachmentTypeCode == AttachmentConstants.Types.Quotation || a.AttachmentTypeCode == "PROFORMA")
+                    && !a.IsDeleted)
                 .OrderByDescending(a => a.UploadedAtUtc)
                 .FirstOrDefaultAsync();
 
@@ -4975,8 +4977,8 @@ public class RequestsController : BaseController
 
             if (currentStatusCode == "WAITING_QUOTATION")
             {
-                bool hasBuyerProcessing = request.SupplierId.HasValue || 
-                    request.Attachments.Any(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted) || 
+                bool hasBuyerProcessing = request.SupplierId.HasValue ||
+                    request.Attachments.Any(a => (a.AttachmentTypeCode == "PROFORMA" || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted) ||
                     request.LineItems.Any(li => !li.IsDeleted && (li.SupplierId.HasValue || !string.IsNullOrEmpty(li.SupplierName) || (li.LineItemStatus != null && li.LineItemStatus.Code != "WAITING_QUOTATION" && li.LineItemStatus.Code != "PENDING")));
 
                 if (hasBuyerProcessing)
@@ -7911,7 +7913,7 @@ public class RequestsController : BaseController
             bool anyCompleteQuotation = request.Quotations.Any(q => 
                 q.SupplierId > 0 && 
                 q.Items.Any() && 
-                (q.ProformaAttachmentId.HasValue || request.Attachments.Any(a => a.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA && !a.IsDeleted))
+                (q.ProformaAttachmentId.HasValue || request.Attachments.Any(a => (a.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA || a.AttachmentTypeCode == RequestAttachment.TYPE_QUOTATION) && !a.IsDeleted))
             );
 
             if (!anyCompleteQuotation)

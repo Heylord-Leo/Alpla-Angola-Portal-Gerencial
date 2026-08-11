@@ -125,6 +125,11 @@ public class AttachmentsController : BaseController
                 isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
+            case AttachmentConstants.Types.Quotation:
+                // Quotation/orçamento documents follow the same window as the quotation flow itself.
+                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
+                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded }.Contains(statusCode);
                 // QUOTATION group-first: allow PO upload when the target group is WAITING_PO/WAITING_PO_CORRECTION
@@ -368,6 +373,7 @@ public class AttachmentsController : BaseController
         // 3. Add Aggregated History Entry
         string typeLabel = typeCode;
         if (typeCode == AttachmentConstants.Types.Proforma) typeLabel = "Proforma";
+        else if (typeCode == AttachmentConstants.Types.Quotation) typeLabel = "Cotação";
         else if (typeCode == AttachmentConstants.Types.PurchaseOrder) typeLabel = "P.O";
         else if (typeCode == AttachmentConstants.Types.PaymentSchedule) typeLabel = "Cronograma de Pagamento";
         else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
@@ -490,6 +496,10 @@ public class AttachmentsController : BaseController
             case AttachmentConstants.Types.Proforma:
                 isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
                 detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                break;
+            case AttachmentConstants.Types.Quotation:
+                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
+                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isDeletable = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }.Contains(attachment.Request.Status!.Code);

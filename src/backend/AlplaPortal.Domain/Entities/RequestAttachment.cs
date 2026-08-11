@@ -19,6 +19,9 @@ public class RequestAttachment
     
     // Constants for Type Codes
     public const string TYPE_PROFORMA = "PROFORMA";
+    /// <summary>Supplier quotation/orçamento document (Buyer quotation flow). Distinct from the
+    /// payment-workflow Proforma; historical quotation documents stamped PROFORMA stay untouched.</summary>
+    public const string TYPE_QUOTATION = "QUOTATION";
     public const string TYPE_PO = "PO";
     public const string TYPE_PAYMENT_PROOF = "PAYMENT_PROOF";
     public const string TYPE_PAYMENT_SCHEDULE = "PAYMENT_SCHEDULE";

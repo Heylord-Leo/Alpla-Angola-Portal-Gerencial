@@ -296,7 +296,11 @@ export const WizardStepOverview: React.FC<WizardStepOverviewProps> = ({ request,
                                                 {att.fileName}
                                             </div>
                                             <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', marginTop: '2px' }}>
-                                                {att.attachmentTypeCode === 'PROFORMA' ? 'Proforma' :
+                                                {/* Legacy quotation documents were stamped PROFORMA — when the file is
+                                                    referenced by a saved quotation it reads as "Cotação" contextually. */}
+                                                {att.attachmentTypeCode === 'QUOTATION' ? 'Cotação' :
+                                                 att.attachmentTypeCode === 'PROFORMA'
+                                                    ? ((request.quotations || []).some(q => q.proformaAttachmentId === att.id) ? 'Cotação' : 'Proforma') :
                                                  att.attachmentTypeCode === 'GENERAL' ? 'Documento Geral' :
                                                  att.attachmentTypeCode || 'Anexo'}
                                                 {att.uploadedByName && ` • Por ${att.uploadedByName}`}

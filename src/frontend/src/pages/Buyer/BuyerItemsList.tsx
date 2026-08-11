@@ -713,7 +713,8 @@ export function BuyerItemsList() {
         if (!wizardActiveRequest) return;
         setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
         try {
-            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'PROFORMA');
+            // Quotation documents carry their own type — PROFORMA belongs to the payment workflow.
+            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'QUOTATION');
             const attachmentId = uploadData[0].id;
             setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
             const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);

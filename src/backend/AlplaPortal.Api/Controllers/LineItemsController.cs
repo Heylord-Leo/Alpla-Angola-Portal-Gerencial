@@ -215,7 +215,7 @@ public class LineItemsController : BaseController
             {
                 r.Id,
                 ProformaAttachments = r.Attachments
-                    .Where(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                    .Where(a => (a.AttachmentTypeCode == "PROFORMA" || a.AttachmentTypeCode == "QUOTATION") && !a.IsDeleted)
                     .OrderByDescending(a => a.UploadedAtUtc)
                     .Select(a => new ProformaAttachmentDto { Id = a.Id, FileName = a.FileName })
                     .ToList(),

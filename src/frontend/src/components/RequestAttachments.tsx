@@ -47,6 +47,7 @@ interface RequestAttachmentsProps {
 
 const TYPE_LABELS: Record<string, string> = {
     'PROFORMA': 'Proforma',
+    'QUOTATION': 'Cotação',
     'PO': 'P.O',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
     'PAYMENT_PROOF': 'Comprovante de Pagamento',
@@ -80,6 +81,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
         switch (typeCode) {
             case 'PROFORMA':
+            case 'QUOTATION':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
             case 'SUPPORTING':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
@@ -101,6 +103,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
         switch (typeCode) {
             case 'PROFORMA':
+            case 'QUOTATION':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
             case 'PO':
                 return ['APPROVED'].includes(status);

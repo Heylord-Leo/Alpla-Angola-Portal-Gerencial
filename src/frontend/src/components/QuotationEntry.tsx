@@ -124,7 +124,8 @@ export function QuotationEntry({
     const _processUpload = async (file: File) => {
         setIsProcessing(true);
         try {
-            const uploadRes = await api.attachments.upload(requestId, [file], 'PROFORMA');
+            // Quotation documents carry their own type — PROFORMA belongs to the payment workflow.
+            const uploadRes = await api.attachments.upload(requestId, [file], 'QUOTATION');
             const fileId = Array.isArray(uploadRes) ? uploadRes[0]?.id : uploadRes.id;
 
             const result = await api.requests.ocrExtract(requestId, fileId);

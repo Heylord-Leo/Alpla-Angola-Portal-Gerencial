@@ -15,6 +15,11 @@ interface DecisionQuotationCardProps {
     lotIncludedItemIds?: Set<string>;
     /** Audit reason (IGNORED justification) per quotation-item id — shown on not-included rows. */
     lotIgnoredReasonById?: Map<string, string | null | undefined>;
+    /** Candidate model: this quotation's AWARDED value in the current lot, summed from the FROZEN
+     *  winning candidate snapshots (never live line totals, never Quotation.TotalAmount).
+     *  Null = candidate batch with no winner from this quotation decided yet. Undefined = legacy
+     *  batch (no snapshots) — the footer then falls back to the included live line totals. */
+    lotAwardedTotal?: number | null;
 }
 
 const MAX_VISIBLE_ITEMS = 5;
@@ -28,13 +33,23 @@ export function DecisionQuotationCard({
     isExpanded,
     onToggleExpand,
     lotIncludedItemIds,
-    lotIgnoredReasonById
+    lotIgnoredReasonById,
+    lotAwardedTotal
 }: DecisionQuotationCardProps) {
     const items = q.items || [];
     const hasItems = items.length > 0;
     const lotAware = !!lotIncludedItemIds;
     const includedItems = lotAware ? items.filter(it => lotIncludedItemIds!.has(it.id)) : items;
     const notIncludedItems = lotAware ? items.filter(it => !lotIncludedItemIds!.has(it.id)) : [];
+
+    // Lot footer value: frozen winning-candidate snapshot total when provided (candidate model —
+    // a number, possibly a genuine 0 for a quotation whose options all lost); null = the Area
+    // decision is still pending; undefined = legacy batch, valued from the included winners'
+    // line totals. NEVER the whole-document Quotation.TotalAmount — that number is the complete
+    // quotation, not what this lot awards.
+    const lotConsideredTotal: number | null = lotAwardedTotal !== undefined
+        ? lotAwardedTotal
+        : (includedItems.length > 0 ? includedItems.reduce((sum, it) => sum + (it.lineTotal || 0), 0) : null);
     const visibleItems = isExpanded ? items.slice(0, MAX_VISIBLE_ITEMS) : [];
     const hiddenCount = items.length - MAX_VISIBLE_ITEMS;
     const showScrollArea = isExpanded && items.length > MAX_VISIBLE_ITEMS;
@@ -177,9 +192,9 @@ export function DecisionQuotationCard({
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                    <div style={{ 
-                        fontSize: '1.5rem', 
-                        fontWeight: 950, 
+                    <div style={{
+                        fontSize: '1.5rem',
+                        fontWeight: 950,
                         color: 'var(--color-text-main)',
                         letterSpacing: '-0.03em',
                         fontVariantNumeric: 'tabular-nums'
@@ -189,7 +204,7 @@ export function DecisionQuotationCard({
                     </div>
                     <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         {lotAware
-                            ? `${includedItems.length} no lote${notIncludedItems.length > 0 ? ` · ${notIncludedItems.length} fora` : ''}`
+                            ? `Total da cotação · ${includedItems.length} no lote${notIncludedItems.length > 0 ? ` · ${notIncludedItems.length} fora` : ''}`
                             : `${q.itemCount} itens cotados`}
                     </div>
                 </div>
@@ -332,15 +347,21 @@ export function DecisionQuotationCard({
                             }}>
                                 {lotAware ? 'Total considerado neste lote' : 'Total da cotação'}
                             </span>
-                            <span style={{
-                                fontSize: '1rem',
-                                fontWeight: 950,
-                                color: 'var(--color-text-main)',
-                                fontVariantNumeric: 'tabular-nums',
-                                letterSpacing: '-0.02em'
-                            }}>
-                                {formatCurrencyAO(q.totalAmount)} <span style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 800 }}>{q.currency}</span>
-                            </span>
+                            {lotAware && lotConsideredTotal === null ? (
+                                <span style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>
+                                    A definir pelo Aprovador de Área
+                                </span>
+                            ) : (
+                                <span style={{
+                                    fontSize: '1rem',
+                                    fontWeight: 950,
+                                    color: 'var(--color-text-main)',
+                                    fontVariantNumeric: 'tabular-nums',
+                                    letterSpacing: '-0.02em'
+                                }}>
+                                    {formatCurrencyAO(lotAware ? (lotConsideredTotal as number) : q.totalAmount)} <span style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 800 }}>{q.currency}</span>
+                                </span>
+                            )}
                         </div>
                     )}
                 </div>
