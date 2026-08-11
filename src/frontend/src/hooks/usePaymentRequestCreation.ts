@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import {
     CreationPhase,
     TemporaryPaymentDocument,
@@ -17,6 +17,15 @@ export interface CreationRunResult {
     requestId: string | null;
     /** True only when every persistable document reached the server. */
     allDocumentsPersisted: boolean;
+
+    /**
+     * Why request creation failed, carried ON THE RESULT because the caller acts on it in the
+     * same tick — hook state set during the run is not visible to the closure that invoked it,
+     * which is exactly how the backend's explanation was being replaced by a generic toast.
+     */
+    error?: string | null;
+    /** Backend field-validation dictionary (ValidationProblemDetails.errors), when one came back. */
+    fieldErrors?: Record<string, string[]> | null;
 }
 
 /**
@@ -89,8 +98,17 @@ export function usePaymentRequestCreation() {
                     requestIdRef.current = created.id;
                 } catch (e: any) {
                     setPhase('PARTIAL_FAILURE');
-                    setError(e?.message ?? 'Não foi possível criar o pedido.');
-                    return { ok: false, requestId: null, allDocumentsPersisted: false };
+                    const message = e?.message ?? 'Não foi possível criar o pedido.';
+                    setError(message);
+                    return {
+                        ok: false,
+                        requestId: null,
+                        allDocumentsPersisted: false,
+                        error: message,
+                        // Field-level detail (e.g. "O título é obrigatório.") must reach the form,
+                        // not die inside a generic toast. The backend already said what is wrong.
+                        fieldErrors: e instanceof ApiError && e.fieldErrors ? e.fieldErrors : null
+                    };
                 }
             }
 

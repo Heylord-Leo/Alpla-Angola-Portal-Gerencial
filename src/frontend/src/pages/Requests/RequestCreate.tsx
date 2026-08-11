@@ -1004,6 +1004,11 @@ export function RequestCreate() {
         e.preventDefault();
 
         const newErrors: Record<string, string[]> = {};
+        // Title/Description carry the HTML `required` attribute, but creation is triggered
+        // programmatically (no native form submission), so the browser never enforces it —
+        // they must be validated here like every other mandatory field.
+        if (!formData.title?.trim()) newErrors['Title'] = ['O título é obrigatório.'];
+        if (!formData.description?.trim()) newErrors['Description'] = ['A descrição é obrigatória.'];
         if (!formData.requestTypeId) newErrors['RequestTypeId'] = ['O Tipo de Pedido é obrigatório.'];
         if (!formData.needLevelId) newErrors['NeedLevelId'] = ['O grau de necessidade é obrigatório.'];
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
@@ -1070,7 +1075,29 @@ export function RequestCreate() {
 
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
-            setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
+            // The toast NAMES the offending fields; the precise reason sits inline next to each
+            // one. A generic "fill the required fields" on a page this long tells the user nothing.
+            const fieldLabels: Record<string, string> = {
+                Title: 'Título',
+                Description: 'Descrição',
+                RequestTypeId: 'Tipo de Pedido',
+                NeedLevelId: 'Grau de Necessidade',
+                DepartmentId: 'Departamento',
+                CompanyId: 'Empresa',
+                PlantId: 'Planta',
+                NeedByDateUtc: Number(formData.requestTypeId) === 2 ? 'Data de Vencimento' : 'Necessário Até',
+                sourceDocumentType: 'Tipo de documento anexado',
+                LineItems: 'Itens'
+            };
+            const named = Object.keys(newErrors)
+                .map(k => fieldLabels[k])
+                .filter((label): label is string => !!label);
+            setFeedback({
+                type: 'error',
+                message: named.length > 0
+                    ? `Não foi possível criar o pedido. Verifique os campos assinalados: ${named.join(', ')}.`
+                    : 'Preencha todos os campos obrigatórios antes de continuar.'
+            });
             scrollToFirstError(newErrors);
             // Items section: pulse for ~5s then leave a discreet error border; focus the first fixable field.
             if (newErrors['LineItems']) {
@@ -1306,7 +1333,22 @@ export function RequestCreate() {
                     materialiseAttachments);
 
                 if (!run.requestId) {
-                    setFeedback({ type: 'error', message: creation.error ?? 'Não foi possível criar o pedido.' });
+                    // The result carries the reason directly — `creation.error` is this render's
+                    // stale state and always read null here, which is how every failure used to
+                    // collapse into the generic toast. The document draft is untouched on purpose.
+                    if (run.fieldErrors) {
+                        setFieldErrors(run.fieldErrors);
+                        setFeedback({
+                            type: 'error',
+                            message: 'Não foi possível criar o pedido. Corrija os campos assinalados.'
+                        });
+                        scrollToFirstError(run.fieldErrors);
+                    } else {
+                        setFeedback({
+                            type: 'error',
+                            message: run.error ?? creation.error ?? 'Não foi possível criar o pedido.'
+                        });
+                    }
                     setLoading(false);
                     return;
                 }
