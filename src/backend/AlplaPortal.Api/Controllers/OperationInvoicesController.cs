@@ -46,6 +46,8 @@ public class OperationInvoicesController : BaseController
     public const string NotReplaceableCode = "OPERATION_INVOICE_NOT_REPLACEABLE";
     public const string ConcurrencyCode = "OPERATION_INVOICE_CONCURRENCY";
     public const string DownstreamEvidenceCode = "OPERATION_INVOICE_EVIDENCE_EXISTS";
+    public const string FileDuplicateErrorCode = "OPERATION_INVOICE_FILE_DUPLICATE";
+    public const string AttachmentClaimedCode = "OPERATION_INVOICE_ATTACHMENT_CLAIMED";
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
 
@@ -100,19 +102,11 @@ public class OperationInvoicesController : BaseController
 
         var result = new OperationInvoiceDuplicateResultDto();
 
-        // 1. The identical file, already claimed by an effective invoice anywhere in the Portal.
-        var hash = dto.ContentHash?.Trim();
-        if (!string.IsNullOrWhiteSpace(hash))
-        {
-            var sameFile = await _context.OperationInvoices
-                .AsNoTracking()
-                .Join(_context.RequestAttachments.Where(a => a.FileHash == hash),
-                      i => i.AttachmentId, a => a.Id, (i, a) => i)
-                .ToListAsync();
-
-            result.SameFile = await ToCandidateAsync(sameFile
-                .FirstOrDefault(i => OperationInvoiceLifecyclePolicy.IsEffectiveForDuplicateCheck(i.Status)));
-        }
+        // 1. The identical file, already claimed by an effective invoice anywhere in the Portal —
+        // the same helper Create/Update/Replace enforce with, so the preflight can never drift
+        // from the authoritative answer.
+        result.SameFile = await ToCandidateAsync(
+            await FindEffectiveFileDuplicateAsync(dto.ContentHash?.Trim()));
 
         // 2. The same fiscal identity: supplier + number + series, globally.
         if (dto.SupplierId.HasValue && !string.IsNullOrWhiteSpace(dto.DocumentNumber))
@@ -170,6 +164,14 @@ public class OperationInvoicesController : BaseController
         // ── Field validation → the standard errors dictionary the frontend already renders ──
         var errors = ValidateNewInvoiceFields(dto);
         if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
+
+        // ── Idempotent retry (the source-document Create precedent): one attachment is one
+        // invoice, so the same attachment offered again IS the same create — a network retry the
+        // user never saw must get the existing row back, not an inexplicable conflict.
+        var existingForAttachment = await _context.OperationInvoices.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.AttachmentId == dto.AttachmentId!.Value);
+        if (existingForAttachment != null && existingForAttachment.RequestId == requestId)
+            return Ok(await ProjectAsync(existingForAttachment));
 
         // ── Supplier integrity: the same rule, the same guard, no bypass ──
         var (supplier, supplierProblem) = await GuardSupplierAsync(dto.SupplierId!.Value);
@@ -244,7 +246,16 @@ public class OperationInvoicesController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsAttachmentUniqueViolation(ex))
+        {
+            // Two concurrent creates passed the claim check; the unique index kept the truth.
+            _context.ChangeTracker.Clear();
+            return AttachmentClaimedConflict();
+        }
 
         _logger.LogInformation(
             "Operation invoice {OperationInvoiceId} registered on request {RequestId} in status {Status}.",
@@ -344,7 +355,8 @@ public class OperationInvoicesController : BaseController
 
         if (attachmentReplaced)
         {
-            var attachmentProblem = await GuardAttachmentAsync(requestId, dto.AttachmentId!.Value);
+            var attachmentProblem = await GuardAttachmentAsync(
+                requestId, dto.AttachmentId!.Value, excludeInvoiceId: invoice.Id);
             if (attachmentProblem != null) return attachmentProblem;
         }
 
@@ -427,6 +439,11 @@ public class OperationInvoicesController : BaseController
         {
             return ConcurrencyConflict();
         }
+        catch (DbUpdateException ex) when (IsAttachmentUniqueViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return AttachmentClaimedConflict();
+        }
 
         return Ok(await ProjectAsync(invoice));
     }
@@ -453,6 +470,13 @@ public class OperationInvoicesController : BaseController
         var invoice = await _context.OperationInvoices
             .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
         if (invoice == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        // Idempotent retry: voiding what is already VOIDED is the same void arriving twice.
+        if (string.Equals(invoice.Status, RequestConstants.OperationInvoiceDocumentStatuses.Voided,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(await ProjectAsync(invoice));
+        }
 
         if (!OperationInvoiceLifecyclePolicy.CanVoid(invoice.Status))
         {
@@ -552,6 +576,23 @@ public class OperationInvoicesController : BaseController
             .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
         if (original == null) return NotFound(Problem404("Fatura final não encontrada."));
 
+        // Idempotent retry: the same replacement arriving twice (same original, same new file)
+        // gets the existing correction back instead of "não pode ser substituída".
+        if (string.Equals(original.Status,
+                RequestConstants.OperationInvoiceDocumentStatuses.ReplacementRequested,
+                StringComparison.OrdinalIgnoreCase) &&
+            original.SupersededByOperationInvoiceId != null &&
+            dto.AttachmentId.HasValue)
+        {
+            var existingReplacement = await _context.OperationInvoices.AsNoTracking()
+                .FirstOrDefaultAsync(i => i.Id == original.SupersededByOperationInvoiceId.Value);
+            if (existingReplacement != null &&
+                existingReplacement.AttachmentId == dto.AttachmentId.Value)
+            {
+                return Ok(await ProjectAsync(existingReplacement));
+            }
+        }
+
         if (!OperationInvoiceLifecyclePolicy.CanReplace(original.Status))
         {
             var problem = new ProblemDetails
@@ -603,8 +644,10 @@ public class OperationInvoicesController : BaseController
         if (supplierProblem != null) return supplierProblem;
 
         // A NEW file is mandatory: the original keeps its attachment forever, and the
-        // claimed-check below refuses any attempt to reuse it.
-        var attachmentProblem = await GuardAttachmentAsync(requestId, dto.AttachmentId!.Value);
+        // claimed-check refuses any attempt to reuse it. The file-hash exclusion covers only the
+        // original — re-uploading its identical content with a corrected header is legitimate.
+        var attachmentProblem = await GuardAttachmentAsync(
+            requestId, dto.AttachmentId!.Value, excludeInvoiceId: original.Id);
         if (attachmentProblem != null) return attachmentProblem;
 
         // The original stops being effective IN THIS TRANSACTION, so its identity is excluded —
@@ -680,6 +723,11 @@ public class OperationInvoicesController : BaseController
         catch (DbUpdateConcurrencyException)
         {
             return ConcurrencyConflict();
+        }
+        catch (DbUpdateException ex) when (IsAttachmentUniqueViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return AttachmentClaimedConflict();
         }
 
         _logger.LogInformation(
@@ -802,10 +850,19 @@ public class OperationInvoicesController : BaseController
 
     /// <summary>
     /// Attachment gate shared by Create, Update-with-replacement and Replace: exists, belongs to
-    /// this request, TYPE_OPERATION_INVOICE, not deleted/voided, and unclaimed (the unique index
-    /// stays the structural backstop; this turns it into an answer the user can act on).
+    /// this request, TYPE_OPERATION_INVOICE, not deleted/voided, unclaimed (the unique index
+    /// stays the structural backstop; this turns it into an answer the user can act on), and —
+    /// Phase 2d — its FILE CONTENT is not already an effective operation invoice anywhere in the
+    /// Portal: two RequestAttachment rows holding the same physical file are the same fiscal
+    /// document, and the same fiscal file must not be recognized as a new debt twice.
+    ///
+    /// <para><paramref name="excludeInvoiceId"/> applies to the FILE-HASH check only (Update: an
+    /// invoice may re-receive its own content; Replace: the original stops being effective in the
+    /// same transaction). The CLAIM check never excludes anyone — a replacement must never reuse
+    /// the original's attachment row.</para>
     /// </summary>
-    private async Task<IActionResult?> GuardAttachmentAsync(Guid requestId, Guid attachmentId)
+    private async Task<IActionResult?> GuardAttachmentAsync(
+        Guid requestId, Guid attachmentId, Guid? excludeInvoiceId = null)
     {
         var attachment = await _context.RequestAttachments.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == attachmentId);
@@ -842,18 +899,68 @@ public class OperationInvoicesController : BaseController
         }
 
         var claimed = await _context.OperationInvoices.AnyAsync(i => i.AttachmentId == attachmentId);
-        if (claimed)
+        if (claimed) return AttachmentClaimedConflict();
+
+        var fileDuplicate = await FindEffectiveFileDuplicateAsync(attachment.FileHash, excludeInvoiceId);
+        if (fileDuplicate != null)
         {
-            return Conflict(new ProblemDetails
+            var problem = new ProblemDetails
             {
-                Title = "Anexo já utilizado",
-                Detail = "Este ficheiro já está registado como uma fatura final.",
+                Title = "Ficheiro já registado",
+                Detail = "Este ficheiro já corresponde a uma fatura final registada no Portal " +
+                         $"({fileDuplicate.DocumentNumber ?? "sem número"}).",
                 Status = 409
-            });
+            };
+            problem.Extensions["code"] = FileDuplicateErrorCode;
+            problem.Extensions["existingOperationInvoiceId"] = fileDuplicate.Id;
+            problem.Extensions["existingRequestId"] = fileDuplicate.RequestId;
+            return Conflict(problem);
         }
 
         return null;
     }
+
+    /// <summary>
+    /// The same physical file (by hash), already claimed by an EFFECTIVE invoice anywhere in the
+    /// Portal — the approved global scope, same as the business identity. Terminal invoices
+    /// release their file exactly as they release their fiscal identity.
+    /// </summary>
+    private async Task<OperationInvoice?> FindEffectiveFileDuplicateAsync(
+        string? fileHash, Guid? excludeInvoiceId = null)
+    {
+        if (string.IsNullOrWhiteSpace(fileHash)) return null;
+
+        var candidates = await _context.OperationInvoices.AsNoTracking()
+            .Join(_context.RequestAttachments.Where(a => a.FileHash == fileHash),
+                  i => i.AttachmentId, a => a.Id, (i, a) => i)
+            .ToListAsync();
+
+        return candidates.FirstOrDefault(i =>
+            i.Id != excludeInvoiceId &&
+            OperationInvoiceLifecyclePolicy.IsEffectiveForDuplicateCheck(i.Status));
+    }
+
+    private IActionResult AttachmentClaimedConflict()
+    {
+        var problem = new ProblemDetails
+        {
+            Title = "Anexo já utilizado",
+            Detail = "Este ficheiro já está registado como uma fatura final.",
+            Status = 409
+        };
+        problem.Extensions["code"] = AttachmentClaimedCode;
+        return Conflict(problem);
+    }
+
+    /// <summary>
+    /// The database race the application checks cannot close: two concurrent creates passing the
+    /// claim check and hitting UX_OperationInvoice_AttachmentId. Mapped to the SAME typed
+    /// conflict; anything else stays what it is — an unrelated DB failure must never be dressed
+    /// up as a duplicate.
+    /// </summary>
+    public static bool IsAttachmentUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException?.Message.Contains(
+            "UX_OperationInvoice_AttachmentId", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>
     /// Concurrency token: an explicit staleness precheck against the loaded row (deterministic on

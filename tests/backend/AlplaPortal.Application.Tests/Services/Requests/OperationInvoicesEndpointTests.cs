@@ -438,19 +438,30 @@ public class OperationInvoicesEndpointTests
     }
 
     [Fact]
-    public async Task A_claimed_attachment_is_refused_with_a_clean_conflict()
+    public async Task Repeating_a_create_with_the_same_attachment_returns_the_existing_invoice()
     {
+        // Phase 2d, the source-document Create precedent: one attachment is one invoice, so the
+        // same attachment offered again IS the same create — a network retry gets the existing
+        // row back, never an inexplicable conflict and never a twin.
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx);
         var attachment = AddInvoiceAttachment(ctx, seed);
         await ctx.SaveChangesAsync();
 
         var controller = BuildController(ctx, seed.ActorId);
-        Assert.IsType<OkObjectResult>(await controller.Create(seed.RequestId, ValidDto(attachment.Id)));
+        var first = Created(await controller.Create(seed.RequestId, ValidDto(attachment.Id)));
 
-        var dto = ValidDto(attachment.Id);
-        dto.DocumentNumber = "FT 8/2026";   // different identity, same file
-        Assert.IsType<ConflictObjectResult>(await controller.Create(seed.RequestId, dto));
+        var retry = ValidDto(attachment.Id);
+        retry.DocumentNumber = "FT 8/2026";   // even a drifted body maps to the same invoice
+        var second = Created(await controller.Create(seed.RequestId, retry));
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal("FT 7/2026", second.DocumentNumber);   // the persisted truth, not the retry body
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(1, await ctx.OperationInvoices.CountAsync());
+        Assert.Equal(1, await ctx.RequestStatusHistories
+            .CountAsync(h => h.ActionTaken == "FATURA_OPERACAO_REGISTADA"));
     }
 
     [Fact]

@@ -442,8 +442,10 @@ public class OperationInvoiceUpdateVoidTests
 
     [Theory]
     [InlineData(Doc.Validated)]
-    [InlineData(Doc.Voided)]
     [InlineData(Doc.Rejected)]
+    [InlineData(Doc.ReplacementRequested)]
+    // An already-VOIDED invoice is NOT here: re-voiding it is an idempotent retry (Phase 2d)
+    // and returns the voided row — covered in OperationInvoiceDuplicateHardeningTests.
     public async Task Validated_and_terminal_invoices_cannot_be_voided(string status)
     {
         using var ctx = NewContext();

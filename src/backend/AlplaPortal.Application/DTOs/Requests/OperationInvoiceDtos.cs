@@ -132,6 +132,10 @@ public class CheckOperationInvoiceDuplicateDto
 /// <summary>What the preflight found. Null members mean "nothing of that kind".</summary>
 public class OperationInvoiceDuplicateResultDto
 {
+    /// <summary>True when either dimension found an effective duplicate — the one flag a client
+    /// needs to branch on; the members below say which kind and name the existing invoice.</summary>
+    public bool HasDuplicate => SameFile != null || SameBusinessDocument != null;
+
     /// <summary>The identical file is already registered as an effective operation invoice.</summary>
     public OperationInvoiceDuplicateCandidateDto? SameFile { get; set; }
 
