@@ -88,8 +88,12 @@ public class BudgetPreviewController : BaseController
             var batchRliIds = batch.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
             previewLineItems = previewLineItems.Where(li => batchRliIds.Contains(li.Id)).ToList();
 
-            // Override ItemAwards from batch items
-            dto.ItemAwards = batch.Items.ToDictionary(bi => bi.RequestLineItemId, bi => bi.SelectedQuotationItemId);
+            // Override ItemAwards from batch items. Candidate model: before the Area decision the
+            // winner is null — such items simply contribute no award to the preview (the wizard
+            // recomputes after selection).
+            dto.ItemAwards = batch.Items
+                .Where(bi => bi.SelectedQuotationItemId.HasValue)
+                .ToDictionary(bi => bi.RequestLineItemId, bi => bi.SelectedQuotationItemId!.Value);
 
             // Compute consumed adjustment: sum approved amounts from other approved batches of the same request
             var otherApprovedBatches = await _context.ApprovalBatches
@@ -103,7 +107,8 @@ public class BudgetPreviewController : BaseController
             {
                 var approvedBatchItemQiIds = otherApprovedBatches
                     .SelectMany(b => b.Items)
-                    .Select(bi => bi.SelectedQuotationItemId)
+                    .Where(bi => bi.SelectedQuotationItemId.HasValue)
+                    .Select(bi => bi.SelectedQuotationItemId!.Value)
                     .Distinct()
                     .ToList();
 

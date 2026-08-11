@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -137,12 +138,28 @@ public class GroupBuilderService : IGroupBuilderService
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Per-item winner projection for batch group building. Candidate model: every
+    /// commercial value comes from the WINNING ApprovalBatchItemCandidate's frozen snapshot; the
+    /// live Quotation is carried only for document-identity classification. Legacy items (no
+    /// candidate rows) project from the live quotation item as before.</summary>
+    private sealed record BatchWinnerProjection(
+        RequestLineItem LineItem,
+        int? SupplierId,
+        string SupplierName,
+        string? SupplierNif,
+        string CurrencyCode,
+        decimal LineTotal,
+        Quotation Quotation);
+
     /// <inheritdoc />
     public async Task BuildGroupsForBatchAsync(Guid batchId, CancellationToken cancellationToken = default)
     {
         var batch = await _context.ApprovalBatches
             .Include(b => b.Items)
                 .ThenInclude(bi => bi.RequestLineItem)
+            .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
 
         if (batch == null)
@@ -154,27 +171,57 @@ public class GroupBuilderService : IGroupBuilderService
         if (request == null)
             return;
 
-        // Fetch the corresponding quotation items for all batch items
-        var quotationItemIds = batch.Items.Select(bi => bi.SelectedQuotationItemId).Distinct().ToList();
+        // Fetch the winning quotation items' quotations. Only WINNERS reach this point — losing
+        // candidates never contribute a group, a total, or an obligation. Items with no winner
+        // yet (pre-decision) are skipped defensively; area approval guarantees none remain.
+        var winnerQuotationItemIds = batch.Items
+            .Where(bi => bi.SelectedQuotationItemId.HasValue)
+            .Select(bi => bi.SelectedQuotationItemId!.Value)
+            .Distinct()
+            .ToList();
         var quotationItems = await _context.Set<QuotationItem>()
             .Include(qi => qi.Quotation)
                 .ThenInclude(q => q.Supplier)
-            .Where(qi => quotationItemIds.Contains(qi.Id))
+            .Where(qi => winnerQuotationItemIds.Contains(qi.Id))
             .ToDictionaryAsync(qi => qi.Id, cancellationToken);
 
-        // Group the batch items by Supplier, Currency, and Request's PaymentConditionCode (V1 legacy)
-        var groupedItems = batch.Items
-            .Select(bi => new
-            {
-                BatchItem = bi,
-                LineItem = bi.RequestLineItem,
-                QuotationItem = quotationItems.ContainsKey(bi.SelectedQuotationItemId) ? quotationItems[bi.SelectedQuotationItemId] : null
-            })
-            .Where(x => x.QuotationItem != null)
+        var projections = new List<BatchWinnerProjection>();
+        foreach (var bi in batch.Items)
+        {
+            if (!bi.SelectedQuotationItemId.HasValue || bi.RequestLineItem == null)
+                continue;
+            if (!quotationItems.TryGetValue(bi.SelectedQuotationItemId.Value, out var liveItem))
+                continue;
+
+            var winnerCandidate = bi.SelectedCandidateId.HasValue
+                ? bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId.Value)
+                : null;
+
+            projections.Add(winnerCandidate != null
+                ? new BatchWinnerProjection(
+                    bi.RequestLineItem,
+                    winnerCandidate.SupplierId,
+                    winnerCandidate.SupplierNameSnapshot,
+                    winnerCandidate.SupplierNifSnapshot,
+                    winnerCandidate.Currency,
+                    winnerCandidate.LineTotal,
+                    liveItem.Quotation)
+                : new BatchWinnerProjection(
+                    bi.RequestLineItem,
+                    liveItem.Quotation.SupplierId,
+                    liveItem.Quotation.Supplier?.Name ?? liveItem.Quotation.SupplierNameSnapshot,
+                    liveItem.Quotation.Supplier?.TaxId,
+                    liveItem.Quotation.Currency,
+                    liveItem.LineTotal,
+                    liveItem.Quotation));
+        }
+
+        // Group the winners by Supplier, Currency, and Request's PaymentConditionCode (V1 legacy)
+        var groupedItems = projections
             .GroupBy(x => new
             {
-                SupplierId = x.QuotationItem!.Quotation.SupplierId,
-                CurrencyCode = x.QuotationItem!.Quotation.Currency,
+                x.SupplierId,
+                CurrencyCode = x.CurrencyCode,
                 PaymentConditionCode = request.PaymentConditionCode // V1 legacy approach — same as BuildGroupsForRequestAsync
             })
             .ToList();
@@ -182,8 +229,7 @@ public class GroupBuilderService : IGroupBuilderService
         // For each group, create a new PO group scoped to this batch
         foreach (var group in groupedItems)
         {
-            var quotation = group.First().QuotationItem!.Quotation;
-            var supplier = quotation.Supplier;
+            var first = group.First();
 
             // Get currency ID if possible
             var currencyObj = await _context.Currencies.FirstOrDefaultAsync(c => c.Code == group.Key.CurrencyCode, cancellationToken);
@@ -193,14 +239,16 @@ public class GroupBuilderService : IGroupBuilderService
                 RequestId = batch.RequestId,
                 ApprovalBatchId = batchId,
                 SupplierId = group.Key.SupplierId,
-                SupplierNameSnapshot = supplier?.Name ?? quotation.SupplierNameSnapshot,
-                SupplierNifSnapshot = supplier?.TaxId,
+                SupplierNameSnapshot = first.SupplierName,
+                SupplierNifSnapshot = first.SupplierNif,
                 CurrencyId = currencyObj?.Id,
                 CurrencyCode = group.Key.CurrencyCode,
                 PaymentConditionCode = group.Key.PaymentConditionCode,
                 AdvancePaymentPercent = request.AdvancePaymentPercent,
                 Status = RequestConstants.PoGroupStatuses.Pending,
-                TotalAmount = group.Sum(x => x.QuotationItem!.LineTotal),
+                // Financial truth = the frozen submitted values (candidate snapshots); a live
+                // quotation edit after submission can never change the awarded total.
+                TotalAmount = group.Sum(x => x.LineTotal),
                 CreatedAtUtc = DateTime.UtcNow,
                 CreatedByUserId = request.CreatedByUserId // System action
             };
@@ -208,7 +256,7 @@ public class GroupBuilderService : IGroupBuilderService
             _context.RequestPoGroups.Add(poGroup);
 
             // Post-Payment Completion (Release 2) — see ApplyBillingClassification.
-            ApplyDocumentClassification(poGroup, group.Select(x => x.QuotationItem!.Quotation));
+            ApplyDocumentClassification(poGroup, group.Select(x => x.Quotation));
 
             // Assign the LineItems to this group
             foreach (var item in group)

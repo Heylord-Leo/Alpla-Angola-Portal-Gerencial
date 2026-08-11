@@ -77,10 +77,26 @@ public static class ApprovalQueueProjection
                 BatchNumber = x.b.BatchNumber,
                 BatchStatus = x.b.Status,
                 BatchSnapshot = x.b.ApprovedTotalAmount,
-                BatchItemSum = (decimal?)x.b.Items.Sum(i => i.SelectedQuotationItem.LineTotal),
+                // Candidate model: before the Area winner decision there IS no batch amount —
+                // null (rendered "a definir"), never a partial/zero sum. Decided items are valued
+                // from the winning candidate's FROZEN snapshot; legacy buyer-selected items keep
+                // the live quotation item value they always had.
+                BatchItemSum = x.b.Items.Any(i => i.SelectedQuotationItemId == null)
+                    ? (decimal?)null
+                    : x.b.Items.Sum(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.LineTotal
+                        : i.SelectedQuotationItem!.LineTotal),
                 BatchItemCount = x.b.Items.Count,
-                BatchSupplier = x.b.Items.Select(i => i.SelectedQuotationItem.Quotation.SupplierNameSnapshot).FirstOrDefault(),
-                BatchCurrency = x.b.Items.Select(i => i.SelectedQuotationItem.Quotation.Currency).FirstOrDefault(),
+                BatchSupplier = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.SupplierNameSnapshot
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.SupplierNameSnapshot : null))
+                    .FirstOrDefault(s => s != null),
+                BatchCurrency = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.Currency
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.Currency : null))
+                    .FirstOrDefault(c => c != null),
             })
             .ToListAsync();
 

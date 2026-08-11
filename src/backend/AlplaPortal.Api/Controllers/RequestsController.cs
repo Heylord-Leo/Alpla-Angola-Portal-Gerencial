@@ -1320,7 +1320,39 @@ public class RequestsController : BaseController
                     {
                         Id = bi.Id,
                         RequestLineItemId = bi.RequestLineItemId,
-                        SelectedQuotationItemId = bi.SelectedQuotationItemId
+                        SelectedQuotationItemId = bi.SelectedQuotationItemId,
+                        SelectedCandidateId = bi.SelectedCandidateId,
+                        WinnerSelectedByUserId = bi.WinnerSelectedByUserId,
+                        WinnerSelectedAtUtc = bi.WinnerSelectedAtUtc,
+                        WinnerSelectionJustification = bi.WinnerSelectionJustification,
+                        IsLegacyBuyerSelectedWinner = !bi.Candidates.Any() && bi.SelectedQuotationItemId != null,
+                        Candidates = bi.Candidates.Select(c => new ApprovalBatchItemCandidateDto
+                        {
+                            Id = c.Id,
+                            QuotationItemId = c.QuotationItemId,
+                            QuotationId = c.QuotationId,
+                            SupplierId = c.SupplierId,
+                            SupplierName = c.SupplierNameSnapshot,
+                            SupplierNif = c.SupplierNifSnapshot,
+                            Description = c.QuotedDescription,
+                            Quantity = c.QuotedQuantity,
+                            UnitText = c.UnitTextSnapshot,
+                            UnitPrice = c.UnitPrice,
+                            DiscountAmount = c.DiscountAmount,
+                            IvaRatePercent = c.IvaRatePercent,
+                            IvaAmount = c.IvaAmount,
+                            GrossSubtotal = c.GrossSubtotal,
+                            LineTotal = c.LineTotal,
+                            Currency = c.Currency,
+                            QuotationDocumentNumber = c.QuotationDocumentNumber,
+                            QuotationDocumentDate = c.QuotationDocumentDate,
+                            HasReconciliationWarnings = c.HasReconciliationWarnings,
+                            ReconciliationStatus = c.ReconciliationStatusSnapshot,
+                            ReconciliationJustification = c.ReconciliationJustificationSnapshot,
+                            LineAdjustmentJustification = c.LineAdjustmentJustificationSnapshot,
+                            BuyerNote = c.BuyerNote,
+                            IsWinner = bi.SelectedCandidateId != null && c.Id == bi.SelectedCandidateId
+                        }).ToList()
                     }).ToList()
                 }).OrderByDescending(b => b.CreatedAtUtc).ToList()
             })
@@ -1390,13 +1422,20 @@ public class RequestsController : BaseController
 
             // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED
             // lines, unresolved legacy extras) — read-only, computed from the quotation(s) that
-            // contributed a winner to that specific batch. See IBatchExtraItemDecisionService.
+            // contributed a CANDIDATE (or, for legacy batches, a winner) to that specific batch.
+            // See IBatchExtraItemDecisionService.
             foreach (var batchDto in request.ApprovalBatches)
             {
-                var winningQuotationItemIds = batchDto.Items.Select(i => i.SelectedQuotationItemId).ToList();
-                if (winningQuotationItemIds.Count == 0) continue;
+                var contributingQuotationItemIds = batchDto.Items
+                    .SelectMany(i => i.Candidates.Select(c => c.QuotationItemId))
+                    .Concat(batchDto.Items
+                        .Where(i => i.SelectedQuotationItemId.HasValue)
+                        .Select(i => i.SelectedQuotationItemId!.Value))
+                    .Distinct()
+                    .ToList();
+                if (contributingQuotationItemIds.Count == 0) continue;
 
-                var informational = await _extraItemDecisionService.GetInformationalLinesAsync(batchDto.Id, winningQuotationItemIds);
+                var informational = await _extraItemDecisionService.GetInformationalLinesAsync(batchDto.Id, contributingQuotationItemIds);
                 batchDto.ExcludedExtraItems = informational.ExcludedExtraItems;
                 batchDto.IgnoredLines = informational.IgnoredLines;
                 batchDto.UnresolvedLegacyLines = informational.UnresolvedLegacyLines;
@@ -4329,12 +4368,19 @@ public class RequestsController : BaseController
         ApplyQuotationClassificationEvidence(quotation, dto);
         quotation.Currency = dto.Currency.ToUpper();
 
-        // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints)
+        // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints).
+        // A line is protected when it is a batch winner OR a submitted candidate — a frozen
+        // candidate snapshot must keep its traceability row.
         var existingItemIds = quotation.Items.Select(i => i.Id).ToList();
-        var referencedItemIds = await _context.Set<ApprovalBatchItem>()
-            .Where(abi => existingItemIds.Contains(abi.SelectedQuotationItemId))
-            .Select(abi => abi.SelectedQuotationItemId)
+        var referencedWinnerIds = await _context.Set<ApprovalBatchItem>()
+            .Where(abi => abi.SelectedQuotationItemId != null && existingItemIds.Contains(abi.SelectedQuotationItemId.Value))
+            .Select(abi => abi.SelectedQuotationItemId!.Value)
             .ToListAsync();
+        var referencedCandidateIds = await _context.ApprovalBatchItemCandidates
+            .Where(c => existingItemIds.Contains(c.QuotationItemId))
+            .Select(c => c.QuotationItemId)
+            .ToListAsync();
+        var referencedItemIds = referencedWinnerIds.Concat(referencedCandidateIds).Distinct().ToList();
 
         var existingItemsList = quotation.Items.ToList();
         var itemsToRemove = new List<QuotationItem>();
@@ -4659,10 +4705,13 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
-        // Check if any quotation item is used in an approval batch
+        // Check if any quotation item is used in an approval batch (as a winner or as a
+        // submitted candidate — both anchor frozen approval evidence)
         var quotationItemIds = quotation.Items.Select(i => i.Id).ToList();
         var isReferencedByBatch = await _context.Set<ApprovalBatchItem>()
-            .AnyAsync(abi => quotationItemIds.Contains(abi.SelectedQuotationItemId));
+            .AnyAsync(abi => abi.SelectedQuotationItemId != null && quotationItemIds.Contains(abi.SelectedQuotationItemId.Value))
+            || await _context.ApprovalBatchItemCandidates
+                .AnyAsync(c => quotationItemIds.Contains(c.QuotationItemId));
 
         if (isReferencedByBatch)
         {
