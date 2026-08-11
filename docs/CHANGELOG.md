@@ -4,7 +4,100 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.226.2
+v2.227.0
+
+## [v2.227.0] - 2026-08-11
+
+### Candidate-based quotation approval — the Area Approver selects the commercial winner
+
+New responsibility model for QUOTATION approval batches: the **Buyer submits multiple quotation
+candidates per requested item**, the **Area Approver selects the commercial winner** of each
+item, and the **Final Approver reviews the Area-selected outcome read-only**. Full workflow
+reference: `docs/modules/candidate-approval-workflow.md`.
+
+#### Added
+
+- Multiple quotation candidates per requested item in an ApprovalBatch (checkbox submission in
+  the Buyer modal "Enviar Cotações para Aprovação"; at least one candidate per included item, no
+  arbitrary maximum; partial batches preserved via per-item "Incluir no lote").
+- `ApprovalBatchItemCandidate` — frozen commercial snapshots (supplier + NIF, description,
+  quantity/unit, unit price, discount, IVA, gross, line total, currency, document number/date,
+  reconciliation context) captured server-side at submission; approvals, previews, audit and
+  group building read the snapshot, never the live quotation.
+- Optional, informational **BuyerNote** per candidate ("Observação do Comprador") — never a
+  preference or winner signal.
+- Area wizard step **"Seleção do Vencedor"**: radio comparison cards per frozen candidate,
+  explicit selection required even for single-option items ("Única opção enviada"),
+  all-or-return enforcement, MENOR VALOR / tie / quantity-divergence / substitute badges.
+- **Mandatory justification** ("Justificativa para escolha acima do menor valor") when the
+  selected candidate exceeds the cheapest same-currency option beyond the FinancialIntegrity
+  tolerance — same meaningful-text rule as the backend; optional justification persisted for
+  cheapest/tied picks.
+- Live **tentative selected-combination totals** per currency in the Area wizard ("Total parcial
+  das seleções" → "Total da combinação selecionada" — never labelled as an approved total).
+- **Candidate-based budget preview**: the Area wizard previews the tentative selection
+  (identity-only payload; server valued from frozen snapshots; partial selections allowed;
+  nothing persists).
+- **Final Approver read-only outcome review**: winner card "Vencedor selecionado pelo Aprovador
+  de Área" with decision metadata (name + date) and the stored justification; losing candidates
+  behind "Ver outras opções (N)" — expandable, read-only, no mutation control anywhere.
+- Winner decision metadata and audit stamps: `SelectedCandidateId`, `WinnerSelectedByUserId/AtUtc`,
+  `WinnerSelectionJustification` on ApprovalBatchItem; history events `BATCH_CANDIDATES_SUBMITTED`
+  (per-item Buyer submission) and `QUOTATION_ITEM_AWARDED` now records the AREA decision with
+  supplier, frozen total and justification.
+- Legacy batch compatibility: historical batches (zero candidate rows, buyer-selected winner)
+  read, approve and rework exactly as before, flagged `IsLegacyBuyerSelectedWinner` and labelled
+  "Modelo anterior — vencedor definido pelo Comprador".
+- Migration `20260811143822_AddCandidateBasedApprovalModel` (candidate table, nullable winner
+  pointer, decision stamps, indexes — **no data backfill, no synthetic historical candidates**).
+
+#### Changed
+
+- The Buyer no longer selects a winner for new QUOTATION approval batches — the create/update
+  contract structurally has no winner field (`Items[{requestLineItemId, candidates[]}]`).
+- The Area Approver is the authoritative winner selector; the decision is stamped atomically
+  with line pointers, audit, PENDING group creation and the batch status advance.
+- `ApprovalBatchItem.SelectedQuotationItemId` is **nullable** before the Area decision and is
+  written by area approval (kept as the downstream-compatibility pointer).
+- Group creation consumes **only Area-selected winners**; losing candidates never create groups,
+  totals or obligation expected values.
+- Batch PO-group commercial values (supplier, NIF, currency, totals) come from the **frozen
+  candidate snapshots** — a live quotation edit after submission can never change an awarded total.
+- Pre-decision batch amounts display **"A definir pelo Aprovador de Área"** (Approval Center
+  cards and the Area drawer header) — never 0, a partial sum, or the request estimate.
+- The Final Approver cannot change a winner (backend ignores any smuggled selection); changing
+  the outcome requires returning the batch ("Solicitar Reajuste"), whose dialog now states that
+  the winner selection must be redone.
+- Buyer rework edits the **candidate set** (add/remove options, BuyerNotes, keep/drop items) —
+  never winners; a returned batch re-enters area approval with no pre-decided winner, and
+  editing a legacy batch through the new contract explicitly converts it to the candidate model.
+- Buyer-included EXTRA_ITEM lines are single-candidate batch items that the Area stage also
+  explicitly confirms.
+- Cancelled-batch reuse (Option C) and quotation edit/delete guards now cover candidate
+  references, not only winners.
+
+#### Compatibility
+
+- Historical legacy batches keep their buyer-selected winner semantics end to end.
+- The legacy non-batch area-approval path remains untouched, for historical requests only.
+- The candidate-based ApprovalBatch is the canonical flow for all new QUOTATION approvals.
+
+#### Deferred
+
+- Release 4 Phase 3 (operation-invoice allocation) — not started, gated on Finance decisions.
+- No OperationInvoice changes in this release.
+- No automatic cheapest-winner selection (badges are informational only).
+- No FX aggregation — totals are always per currency.
+- Eventual retirement of the legacy non-batch approval path remains a future cleanup decision.
+
+#### Deployment
+
+- TEST order: 1) apply migration `20260811143822_AddCandidateBasedApprovalModel`; 2) deploy
+  backend + frontend **together** (the Buyer/Area contracts of v2.227.0 are not compatible with
+  older frontends). Manual validation checklists:
+  `docs/modules/candidate-approval-buyer-checklist.md` (A–J),
+  `docs/modules/candidate-approval-area-checklist.md` (A–N),
+  `docs/modules/candidate-approval-final-checklist.md` (A–L).
 
 ## [v2.226.2] - 2026-08-11
 

@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.226.2
+v2.227.0
+
+## [v2.227.0] - 2026-08-11
+
+### Candidate-based quotation approval (Buyer submits options, Area selects the winner)
+
+- New responsibility model for QUOTATION batches: Buyer submits multiple frozen-snapshot
+  candidates per item (`ApprovalBatchItemCandidate`, optional BuyerNote); the Area Approver
+  selects exactly one winner per item (all-or-return, mandatory justification above the lowest
+  same-currency value, tentative totals + candidate-based budget preview); the Final Approver
+  reviews the outcome read-only with expandable losing candidates and can only return the batch.
+- Groups consume only Area-selected winners and are valued from the frozen snapshots;
+  pre-decision amounts display "A definir pelo Aprovador de Área"; legacy batches keep their
+  buyer-selected semantics. Migration `AddCandidateBasedApprovalModel` (no backfill).
+- Workflow reference: `docs/modules/candidate-approval-workflow.md`.
 
 ## [v2.226.2] - 2026-08-11
 
