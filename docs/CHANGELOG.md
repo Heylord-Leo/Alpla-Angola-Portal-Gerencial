@@ -4,7 +4,37 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.226.1
+v2.226.2
+
+## [v2.226.2] - 2026-08-11
+
+### Fixed — quotation wizard item totals no longer lose their IVA on reconciliation auto-mapping
+
+On the same final-review screen, "Total Final Considerado" appeared twice with two different
+values (1,404,060 vs 1,508,220): entering the reconciliation step auto-mapped lines by
+description and, in doing so, silently recalculated their totals **without IVA** — the IVA
+selector still showed 14% while the line total fell back to net.
+
+- **Root cause:** the wizard state updaters recompute item totals on every field change and
+  accepted the IVA-rate table as an optional parameter defaulting to `[]` — any caller that
+  forgot it recalculated at 0% IVA. The auto-suggest mapping call forgot it.
+- **IVA-rate context is now mandatory** for every total-recomputing updater — forgetting the
+  argument is a compile error, not a silently wrong total. The compiler audit surfaced and fixed
+  23 further omitting call sites, including the global-discount input (a second latent financial
+  path) and the supplier-validation step.
+- **The final-review financial summary now uses the authoritative reconciliation total**
+  (`finalConsideredTotal`) whenever the backend preview is current, so the screen can never show
+  two different totals; the draft-sum fallback remains only for manual/no-preview quotations and
+  for the stale state, where the existing stale banner and save block already apply.
+- **Backend unchanged and pinned by regression tests**: persisted quotation values are computed
+  exclusively from components (quantity, unit price, discount, IVA rate) — the save-item DTO
+  carries no client total at all (pinned by reflection), and an integration test saves the exact
+  reproduction document with a deliberately wrong client header total and verifies the server
+  persists 253,080 / 660,060 / 266,760 / 328,320 and 1,508,220. The same test re-pins the
+  v2.226.1 summary-IVA credit inside the real save gate (residual 0, no justification demanded).
+
+No persisted quotation financial semantics changed; no OperationInvoice/Phase 3 code touched;
+no migration. Line-level quantity reconciliation rules unchanged.
 
 ## [v2.226.1] - 2026-08-11
 

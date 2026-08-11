@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.226.1
+v2.226.2
+
+## [v2.226.2] - 2026-08-11
+
+### Fixed — wizard item totals losing IVA on auto-mapping (two conflicting Step 5 totals)
+
+- IVA-rate context is now a required parameter for every wizard updater that recomputes item
+  totals (the `[]` default silently recalculated at 0% IVA); the auto-suggest mapping call and
+  23 further omitting call sites fixed, including the global-discount input.
+- Final-review RESUMO now shows the authoritative reconciliation `finalConsideredTotal` when the
+  preview is current — one financial truth per screen; stale behaviour unchanged.
+- Backend persistence pinned by tests: values computed from components only; the save DTO cannot
+  even carry a client total. No migration; no persisted-semantics change.
 
 ## [v2.226.1] - 2026-08-11
 
