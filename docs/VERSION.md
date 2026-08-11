@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.227.0
+v2.227.1
+
+## [v2.227.1] - 2026-08-11
+
+### Fixed — candidate-based approval read models/UI + quotation attachment classification
+
+- Lot footers valued from frozen winning-candidate snapshots (never Quotation.TotalAmount);
+  quotation-level MELHOR PREÇO suppressed for candidate batches; Approval Center shows
+  "N fornecedores selecionados" for mixed-winner batches.
+- New `QUOTATION` attachment type for Buyer quotation uploads (label "Cotação"); PROFORMA stays
+  payment-only; historical rows untouched with contextual display.
+- Step 2 allocation selects always show bound Plant/CC (render-only fallback + visible lookup
+  warning); "Orçamento OK" replaced by allocation-completeness semantics (budget verdict = Step 4).
+- Read/UI corrections only — no migration, no workflow or persisted-data change.
 
 ## [v2.227.0] - 2026-08-11
 

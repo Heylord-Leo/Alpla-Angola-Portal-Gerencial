@@ -4,7 +4,44 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.227.0
+v2.227.1
+
+## [v2.227.1] - 2026-08-11
+
+### Fixed — candidate-based approval read models/UI and quotation attachment classification
+
+Corrections surfaced by the live TEST validation of v2.227.0 (REQ-11/08/2026-183). No workflow,
+lifecycle, winner/group-construction, or persisted-data change; no migration.
+
+- **"Total considerado neste lote" now shows the AWARDED value.** The Final/Area quotation card
+  footer summed nothing — it displayed the whole `Quotation.TotalAmount` (1.508.220/1.497.732)
+  under a lot-scoped label. It is now computed exclusively from the frozen winning candidate
+  snapshots grouped by quotation (519.840 Kwanza / 938.220 Luanda in the reference scenario);
+  legacy batches use their included winners' line totals; before the Area decision the footer
+  reads "A definir pelo Aprovador de Área". The header amount remains the full document total,
+  now explicitly captioned "Total da cotação".
+- **Quotation-level "MELHOR PREÇO" suppressed in candidate-based approval.** Comparing entire
+  quotation documents is decision-irrelevant once winners are per item; the badge and its green
+  highlight no longer render for candidate batches (item-level "MENOR VALOR" unchanged; legacy
+  whole-quotation views keep their semantics).
+- **Approval Center multi-supplier batches.** The queue card no longer shows the first winner's
+  supplier for a mixed outcome: one distinct winning supplier shows its name; several show
+  "N fornecedores selecionados" (read-model projection only).
+- **Quotation documents are no longer stamped PROFORMA.** New attachment type `QUOTATION`
+  (label "Cotação") used by the Buyer quotation upload flow; genuine payment-workflow Proformas
+  keep `PROFORMA` untouched. Quotation-flow readers (OCR document binding, cancel guard,
+  completion checks, buyer document lists) accept both codes. Historical rows are NOT
+  reclassified — files referenced by a saved quotation display contextually as "Cotação".
+  Application-level type code only; no schema constraint involved.
+- **Bound financial allocations can no longer render as an empty "Selecione...".** When a bound
+  Plant/Cost Center id is missing from the company-scoped lookup lists (failed fetch or a value
+  outside the request-company scope), the selects inject a render-only, non-selectable fallback
+  option with an auditable label and a visible warning banner replaces the console-only error.
+  Values are never discarded.
+- **Step 2 indicator reports allocation completeness, not budget.** "✓ Orçamento OK" (which a
+  NO_BUDGET line could incorrectly reach) is replaced by "Alocação completa"/"Alocação
+  incompleta"; the budget verdict — including "Sem Orçamento Configurado" and the exception
+  justification — remains exclusively in Step 4.
 
 ## [v2.227.0] - 2026-08-11
 
