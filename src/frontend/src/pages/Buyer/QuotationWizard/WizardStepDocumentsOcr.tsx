@@ -203,11 +203,11 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                 <SupplierAutocomplete
                                     initialName={draft.supplierNameSnapshot}
                                     onChange={(id: number | null, name: string, portalCode?: string, primaveraCode?: string, registrationStatus?: string) => {
-                                        updateDraftHeader('supplierId', id);
-                                        updateDraftHeader('supplierNameSnapshot', name);
-                                        updateDraftHeader('supplierPortalCode', portalCode);
-                                        updateDraftHeader('supplierPrimaveraCode', primaveraCode);
-                                        updateDraftHeader('supplierRegistrationStatus', registrationStatus);
+                                        updateDraftHeader('supplierId', id, ivaRates);
+                                        updateDraftHeader('supplierNameSnapshot', name, ivaRates);
+                                        updateDraftHeader('supplierPortalCode', portalCode, ivaRates);
+                                        updateDraftHeader('supplierPrimaveraCode', primaveraCode, ivaRates);
+                                        updateDraftHeader('supplierRegistrationStatus', registrationStatus, ivaRates);
                                     }}
                                     hasWarning={!draft.supplierId && !!draft.supplierNameSnapshot}
                                 />
@@ -253,7 +253,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                 <input
                                     type="text"
                                     value={draft.documentNumber || ''}
-                                    onChange={e => updateDraftHeader('documentNumber', e.target.value)}
+                                    onChange={e => updateDraftHeader('documentNumber', e.target.value, ivaRates)}
                                     style={{ ...(!draft.documentNumber ? inputError : inputBase), paddingLeft: '34px' }}
                                     placeholder="Ex: 2024/001"
                                 />
@@ -273,7 +273,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             <SourceDocumentTypeField
                                 context="QUOTATION_MANAGEMENT"
                                 value={draft.documentType ?? ''}
-                                onChange={val => updateDraftHeader('documentType', val)}
+                                onChange={val => updateDraftHeader('documentType', val, ivaRates)}
                                 ocr={draft.documentClassification ?? null}
                                 conflict={wizardState.classificationConflict}
                                 onConflictChange={wizardState.setClassificationConflict}
@@ -291,7 +291,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                 <input
                                     type="date"
                                     value={draft.documentDate || ''}
-                                    onChange={e => updateDraftHeader('documentDate', e.target.value)}
+                                    onChange={e => updateDraftHeader('documentDate', e.target.value, ivaRates)}
                                     style={{ ...(!draft.documentDate ? inputError : inputBase), paddingLeft: '34px' }}
                                 />
                             </div>
@@ -305,7 +305,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                 <input
                                     type="date"
                                     value={draft.dueDate || ''}
-                                    onChange={e => updateDraftHeader('dueDate', e.target.value)}
+                                    onChange={e => updateDraftHeader('dueDate', e.target.value, ivaRates)}
                                     style={{ ...(!draft.dueDate ? inputError : inputBase), paddingLeft: '34px' }}
                                 />
                             </div>
@@ -321,7 +321,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             <label style={labelStyle}>Moeda</label>
                             <select
                                 value={draft.currency || ''}
-                                onChange={e => updateDraftHeader('currency', e.target.value)}
+                                onChange={e => updateDraftHeader('currency', e.target.value, ivaRates)}
                                 style={!draft.currency ? inputError : inputBase}
                             >
                                 <option value="">Selecione...</option>
@@ -494,7 +494,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                             <label style={labelStyle}>Desconto Comercial Global</label>
                             <FormattedNumberInput
                                 value={draft.discountAmount}
-                                onChange={val => updateDraftHeader('discountAmount', val)}
+                                onChange={val => updateDraftHeader('discountAmount', val, ivaRates)}
                                 style={{ ...inputBase, textAlign: 'right' }}
                                 currencyCode={draft.currency}
                             />

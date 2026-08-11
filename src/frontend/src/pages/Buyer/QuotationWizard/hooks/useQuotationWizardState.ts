@@ -38,11 +38,15 @@ export interface UseQuotationWizardStateReturn {
 
     goToStep: (step: QuotationWizardStep) => void;
     setDraft: React.Dispatch<React.SetStateAction<OcrDraft | null>>;
-    updateDraftHeader: (field: keyof OcrDraft, value: any, ivaRates?: any[]) => void;
-    updateDraftItem: (itemIndex: number, field: keyof OcrDraftItem, value: any, ivaRates?: any[]) => void;
-    updateDraftItemFields: (itemIndex: number, fields: Partial<OcrDraftItem>, ivaRates?: any[]) => void;
+    // ivaRates is REQUIRED on every updater that recomputes financial totals (v2.226.2): the old
+    // `ivaRates = []` default silently recalculated line totals at 0% IVA whenever a caller
+    // forgot the argument — a non-financial metadata update could strip a line's tax while its
+    // IVA selector still displayed the rate. Forgetting is now a compile error, not a net total.
+    updateDraftHeader: (field: keyof OcrDraft, value: any, ivaRates: any[]) => void;
+    updateDraftItem: (itemIndex: number, field: keyof OcrDraftItem, value: any, ivaRates: any[]) => void;
+    updateDraftItemFields: (itemIndex: number, fields: Partial<OcrDraftItem>, ivaRates: any[]) => void;
     addDraftItem: () => void;
-    removeDraftItem: (index: number, ivaRates?: any[]) => void;
+    removeDraftItem: (index: number, ivaRates: any[]) => void;
     toggleNotQuotedPlaceholder: (requestItem: any) => void;
     setIsFinalReviewConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
 
@@ -121,7 +125,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         setCurrentStep(step);
     };
 
-    const updateDraftHeader = (field: keyof OcrDraft, value: any, ivaRates: any[] = []) => {
+    const updateDraftHeader = (field: keyof OcrDraft, value: any, ivaRates: any[]) => {
         setDraft(prev => {
             if (!prev) return prev;
             const next = { ...prev, [field]: value };
@@ -131,7 +135,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         });
     };
 
-    const updateDraftItem = (itemIndex: number, field: keyof OcrDraftItem, value: any, ivaRates: any[] = []) => {
+    const updateDraftItem = (itemIndex: number, field: keyof OcrDraftItem, value: any, ivaRates: any[]) => {
         setDraft(prev => {
             if (!prev) return prev;
             const items = [...prev.items];
@@ -187,7 +191,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
     };
 
     
-    const updateDraftItemFields = (itemIndex: number, fields: Partial<OcrDraftItem>, ivaRates: any[] = []) => {
+    const updateDraftItemFields = (itemIndex: number, fields: Partial<OcrDraftItem>, ivaRates: any[]) => {
         setDraft(prev => {
             if (!prev) return prev;
             const items = [...prev.items];
@@ -231,7 +235,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         });
     };
 
-    const removeDraftItem = (index: number, ivaRates: any[] = []) => {
+    const removeDraftItem = (index: number, ivaRates: any[]) => {
         setDraft(prev => {
             if (!prev) return prev;
             const items = prev.items.filter((_, i) => i !== index).map((it, i) => ({ ...it, lineNumber: i + 1 }));

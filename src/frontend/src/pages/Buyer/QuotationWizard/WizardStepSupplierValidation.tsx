@@ -9,9 +9,11 @@ import { api } from '../../../lib/api';
 interface WizardStepSupplierValidationProps {
     draft: OcrDraft | null;
     wizardState: UseQuotationWizardStateReturn;
+    /** Mandatory financial context for every draft updater (v2.226.2) — see useQuotationWizardState. */
+    ivaRates: any[];
 }
 
-export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidationProps> = ({ draft, wizardState }) => {
+export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidationProps> = ({ draft, wizardState, ivaRates }) => {
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     
     // Optional Supplier Enrichment State
@@ -205,7 +207,7 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
                                 )}
                             </div>
                             <button
-                                onClick={() => wizardState.updateDraftHeader('supplierId', null)}
+                                onClick={() => wizardState.updateDraftHeader('supplierId', null, ivaRates)}
                                 style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' }}
                             >
                                 Alterar Fornecedor
@@ -226,11 +228,11 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
                                     <SupplierAutocomplete
                                         initialName={draft.supplierNameSnapshot}
                                         onChange={(id, name, portalCode, primaveraCode, registrationStatus) => {
-                                            wizardState.updateDraftHeader('supplierId', id);
-                                            wizardState.updateDraftHeader('supplierNameSnapshot', name);
-                                            wizardState.updateDraftHeader('supplierPortalCode', portalCode);
-                                            wizardState.updateDraftHeader('supplierPrimaveraCode', primaveraCode);
-                                            wizardState.updateDraftHeader('supplierRegistrationStatus', registrationStatus);
+                                            wizardState.updateDraftHeader('supplierId', id, ivaRates);
+                                            wizardState.updateDraftHeader('supplierNameSnapshot', name, ivaRates);
+                                            wizardState.updateDraftHeader('supplierPortalCode', portalCode, ivaRates);
+                                            wizardState.updateDraftHeader('supplierPrimaveraCode', primaveraCode, ivaRates);
+                                            wizardState.updateDraftHeader('supplierRegistrationStatus', registrationStatus, ivaRates);
                                         }}
                                     />
                                 </div>
@@ -256,11 +258,11 @@ export const WizardStepSupplierValidation: React.FC<WizardStepSupplierValidation
                 initialName={draft.supplierNameSnapshot}
                 initialTaxId={draft.supplierTaxId || ''}
                 onSuccess={(supplier: { id: number; name: string; portalCode?: string }) => {
-                    wizardState.updateDraftHeader('supplierId', supplier.id);
-                    wizardState.updateDraftHeader('supplierNameSnapshot', supplier.name);
-                    wizardState.updateDraftHeader('supplierPortalCode', supplier.portalCode);
-                    wizardState.updateDraftHeader('supplierPrimaveraCode', undefined);
-                    wizardState.updateDraftHeader('supplierRegistrationStatus', 'DRAFT');
+                    wizardState.updateDraftHeader('supplierId', supplier.id, ivaRates);
+                    wizardState.updateDraftHeader('supplierNameSnapshot', supplier.name, ivaRates);
+                    wizardState.updateDraftHeader('supplierPortalCode', supplier.portalCode, ivaRates);
+                    wizardState.updateDraftHeader('supplierPrimaveraCode', undefined, ivaRates);
+                    wizardState.updateDraftHeader('supplierRegistrationStatus', 'DRAFT', ivaRates);
                     
                     // Auto-expand optional section after creation
                     setIsOptionalPanelExpanded(true);

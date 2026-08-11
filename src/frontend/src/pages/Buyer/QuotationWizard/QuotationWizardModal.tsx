@@ -448,7 +448,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                             <WizardStepReconciliation draft={draft} request={request} wizardState={wizardState} ivaRates={ivaRates} units={units} onRequestLineItemUpserted={onRequestLineItemUpserted} />
                         )}
                         {currentStep === 'SUPPLIER_VALIDATION' && (
-                            <WizardStepSupplierValidation draft={draft} wizardState={wizardState} />
+                            <WizardStepSupplierValidation draft={draft} wizardState={wizardState} ivaRates={ivaRates} />
                         )}
                         {currentStep === 'FINAL_REVIEW' && (
                             <WizardStepFinalReview

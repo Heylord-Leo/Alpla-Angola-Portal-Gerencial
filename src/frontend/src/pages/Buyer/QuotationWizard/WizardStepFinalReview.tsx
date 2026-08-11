@@ -63,6 +63,19 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
         }
     });
 
+    // ── Single source of truth (v2.226.2) ──
+    // When the AUTHORITATIVE backend reconciliation preview exists and is CURRENT, the RESUMO
+    // shows ITS final considered total — the exact number Save will validate against — so this
+    // screen can never present two different "Total Final Considerado" values at once. The
+    // Σ item.totalPrice fallback remains only for the genuinely manual/non-OCR path (no preview)
+    // and for the stale state, where the existing stale banner + save block already tell the
+    // user the numbers are pending recalculation — equality is never faked.
+    const hasAuthoritativeTotal =
+        !!reconciliation && !reconciliationLoading && !reconciliationError && !reconciliationStale;
+    const finalConsideredDisplay = hasAuthoritativeTotal
+        ? reconciliation!.finalConsideredTotal
+        : totalExcludingIgnored;
+
     const displayCurrency = draft.currency || 'AOA';
     const formatter = new Intl.NumberFormat('pt-AO', { style: 'currency', currency: displayCurrency });
 
@@ -136,9 +149,12 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         <div style={{ height: '1px', backgroundColor: '#bfdbfe', margin: '4px 0' }}></div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', color: '#1e3a8a' }}>
                             <span style={{ fontWeight: 700 }}>Total Final Considerado:</span>
-                            <span style={{ fontWeight: 700, fontSize: '1.25rem' }}>{formatter.format(totalExcludingIgnored)}</span>
+                            <span style={{ fontWeight: 700, fontSize: '1.25rem' }}>{formatter.format(finalConsideredDisplay)}</span>
                         </div>
-                        <p style={{ fontSize: '0.75rem', color: '#3b82f6', margin: '4px 0 0 0' }}>* Excluindo valores de itens marcados como ignorados e não cotados.</p>
+                        <p style={{ fontSize: '0.75rem', color: '#3b82f6', margin: '4px 0 0 0' }}>
+                            * Excluindo valores de itens marcados como ignorados e não cotados.
+                            {hasAuthoritativeTotal && ' Valor autoritativo do resumo de reconciliação.'}
+                        </p>
                     </div>
                 </div>
             </div>
