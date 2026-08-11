@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.225.0
+v2.225.1
+
+## [v2.225.1] - 2026-08-11
+
+### Fixed — classification override lost while composing a new PAYMENT document
+
+- The conflict confirmation (acknowledgement + justification) was erased client-side by the
+  type commit that followed it — a stale-array lost update in `PaymentDocumentComposer`. All
+  composer mutations now build on the latest document array, so both land together.
+- Backend was already authoritative and correct; its contract is now pinned by endpoint tests,
+  including atomicity with the Phase 1c/1d grouping-key guard.
+- Persisted-document editing was unaffected.
 
 ## [v2.225.0] - 2026-08-10
 

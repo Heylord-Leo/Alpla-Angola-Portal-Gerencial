@@ -4,7 +4,35 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.225.0
+v2.225.1
+
+## [v2.225.1] - 2026-08-11
+
+### Fixed — classification override no longer lost while composing a new PAYMENT document
+
+Confirming "a classificação selecionada contradiz o documento" during request creation appeared to
+succeed, but the card kept showing "Confirme a classificação" and saving failed with "É necessário
+confirmar explicitamente a divergência".
+
+- **The backend was right both times.** The acknowledgement and justification travel inside the
+  document create/update DTO and are validated and audited by the server; the failing request
+  really did arrive with `classificationConflictAcknowledged: false`.
+- **The composer was losing the acknowledgement client-side.** Confirming the modal stores the
+  decision and then commits the type — two updates in one event. Both computed the next document
+  array from the array of the render they were created in, so the second update silently rebuilt
+  the state without the first: the type applied, the acknowledgement reverted. All composer
+  mutations now build on the latest array (`PaymentDocumentComposer`), so the decision and the
+  type commit together. The same defect also affected the reverse path (choosing a
+  non-conflicting type failed to clear a previous acknowledgement) — healed by the same change.
+- **The persisted-document editor was never affected**: it keeps the conflict decision in a
+  separate functional-update store.
+- **Backend contract pinned with endpoint tests**: a complete override on Create is accepted and
+  audited atomically with the document; missing confirmation or a short justification rejects with
+  nothing persisted; agreeing with the reading records no override; the Phase 1c/1d grouping-key
+  guard still executes in the same transaction as an override, and a blocked grouping change never
+  persists the override audit alone.
+
+No backend behaviour changed; no OperationInvoice Phase 1 logic touched.
 
 ## [v2.225.0] - 2026-08-10
 
