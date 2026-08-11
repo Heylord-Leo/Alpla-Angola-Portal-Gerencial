@@ -1,7 +1,12 @@
 # Post-Payment Completion — Release 4: Operation Invoice (Phase 1)
 
-> Status: **Phase 1 (a+b+c+d) complete and approved — closed at v2.225.0 on `Portal-Gerencial-rev1`.**
-> OperationInvoice CRUD, allocation writes, UI and OCR do **not** exist yet — they are Phases 2+.
+> Status: **Phase 1 closed at v2.225.0. Phase 2 (a–e) complete and approved — closed at
+> v2.226.0 on `Portal-Gerencial-rev1`.** The OperationInvoice document lifecycle exists
+> (API-only); **allocation writes, UI and OCR do not** — they are Phases 3+.
+>
+> **TEST deployment order for v2.226.0 (not automatic):** 1) apply migrations on TEST
+> (`20260811090848_AddOperationInvoicePhase2Fields` has NOT been applied there yet);
+> 2) deploy TEST. Never the reverse.
 
 ## Release numbering
 
@@ -127,10 +132,25 @@ first, under its own contract (400, its own code) — grouping-key integrity nev
 - Rollup amounts are summed **per currency only**; groups with no currency land in the `UNKNOWN`
   bucket. There is no fallback to request-level currency.
 
-## Phase 2 — OperationInvoice CRUD (2a–2e, implemented; not yet closed)
+## Phase 2 — OperationInvoice CRUD (2a–2e, closed at v2.226.0)
 
 The manual final-invoice document lifecycle, header-only, on
-`/api/v1/requests/{id}/operation-invoices`. **Allocation does not exist yet** — Phase 3.
+`/api/v1/requests/{id}/operation-invoices`. **Allocation does not exist yet** — Phase 3 owns
+allocation and reconciliation exclusively.
+
+```
+create (Finance/Buyer) ──► PENDING_VALIDATION ──► VALIDATED ──► REPLACEMENT_REQUESTED
+                                │        │            (immutable;      (terminal; forward
+                                │        │             Finance-only     pointer to the
+                                │        │             replacement)     correction)
+                                │        └──────────► REJECTED  (terminal; identity+file released)
+                                └───────────────────► VOIDED    (terminal; identity+file released)
+```
+
+Permissions: **Finance** creates/updates/voids and is the only role that validates, rejects and
+replaces. **Buyer** creates/updates/voids editable invoices (no uploader-only ownership).
+**Requester/Receiving** are read-only. **SystemAdministrator** follows the administrative can-act
+convention with no financial-integrity bypass. `DueDate` is optional throughout.
 
 **Lifecycle** (`OperationInvoiceLifecyclePolicy`, pure): manual creation lands in
 `PENDING_VALIDATION` (`UPLOADED` is reserved for the future OCR intake and never skips the

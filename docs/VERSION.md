@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.225.2
+v2.226.0
+
+## [v2.226.0] - 2026-08-11
+
+### Release 4 Phase 2 — Operation Invoice document lifecycle
+
+- Complete manual lifecycle for final/fiscal invoices on
+  `/api/v1/requests/{id}/operation-invoices`: Create/Read, Update, pre-validation Void,
+  Finance-only Validate/Reject, Finance-only replacement of validated invoices.
+- Global duplicate protection on both dimensions (fiscal identity and file hash), advisory
+  preflight, idempotent exact retries, RowVersion concurrency, full audit events.
+- One small migration (`AddOperationInvoicePhase2Fields`: DueDate, Notes, Updated*/Voided*).
+- VALIDATED is immutable; REJECTED/VOIDED release duplicate ownership; registration allowed
+  after PAID; WAITING_PO_CORRECTION stays mutation-blocked.
+- No allocation/UI/OCR yet; a validated unallocated invoice produces no Phase 1 coverage.
+- TEST deployment order: apply migrations first, then deploy.
 
 ## [v2.225.2] - 2026-08-11
 

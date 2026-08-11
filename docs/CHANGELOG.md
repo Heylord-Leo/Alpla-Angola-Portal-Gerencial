@@ -4,7 +4,67 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.225.2
+v2.226.0
+
+## [v2.226.0] - 2026-08-11
+
+### Release 4 Phase 2 — Operation Invoice document lifecycle (no allocation yet)
+
+The complete manual lifecycle for final/fiscal invoices ("Faturas Finais") received after a
+PAYMENT request progresses: registered, corrected, voided, replaced, and decided by Finance.
+API-only (`/api/v1/requests/{id}/operation-invoices`); UI, OCR and allocation are later phases.
+
+#### Added
+
+- Operation Invoice manual **Create / Read** (list + detail; unallocated invoices are visible
+  here because the Phase 1 obligations projection intentionally does not surface them).
+- Pure **lifecycle policy** (`OperationInvoiceLifecyclePolicy`): post-approval mutation window,
+  editable statuses, decision/void/replace eligibility, duplicate effectiveness.
+- **Finance validation and rejection** (`…/validate`, `…/reject`) — validation re-runs every
+  integrity gate against the persisted row as the final boundary before financial weight.
+- **Update** (partial merge re-running every create gate) and **pre-validation Void**
+  (reason mandatory; terminal; readable forever).
+- **Replacement/supersession** of validated invoices — one transaction, walkable chain, new
+  attachment mandatory, downstream-evidence guard for Phase 3.
+- **Global fiscal duplicate protection** (supplier + normalized number + series, effective
+  invoices only) and **global FileHash duplicate protection** (the same physical file cannot
+  become a new debt anywhere in the Portal).
+- **Duplicate preflight** (`…/check-duplicate`): advisory, four-quadrant answer
+  (file / identity / both / neither) through the same helpers enforcement uses.
+- **Idempotent exact retries** for Create (by attachment), Void, Replace, Validate and Reject —
+  one history row each; conflicting decisions remain typed conflicts.
+- **RowVersion concurrency protection** on every mutation, plus a DB-race fallback mapping only
+  the attachment unique index.
+- **Audit/history events** with invoice-scoped idempotency keys (registada / alterada / anulada /
+  substituída / validada / rejeitada).
+- Optional **DueDate** and **Notes**; **Updated/Void audit fields** (one small migration:
+  `AddOperationInvoicePhase2Fields`).
+
+#### Changed
+
+- **VALIDATED invoices are immutable** — corrections require Finance replacement; direct edit and
+  void are refused.
+- **REJECTED and VOIDED invoices release** fiscal-identity and file-hash duplicate ownership
+  (a rejection may concern metadata, not the physical file — the same file may return).
+- Operation Invoice supplier validation **reuses the internal-ALPLA protection** — no bypass,
+  including for administrators, re-checked at validation.
+- **Validation/rejection are Finance-only**; Buyer may Create/Update/Void editable invoices;
+  Requester and Receiving remain read-only.
+- **WAITING_PO_CORRECTION remains mutation-blocked** for operation invoices (read stays open).
+- Final invoices **may be registered after PAID** — late fiscal regularization of
+  PROFORMA/advance cases is a core scenario.
+
+#### Deferred (later phases — not in this release)
+
+- No OperationInvoice allocations, line allocation, or coverage/reconciliation writes (Phase 3).
+- No OperationInvoice UI (Phase 4) or OCR (Phase 5).
+- **Validation alone does not change Phase 1 obligation coverage** — a validated unallocated
+  invoice covers nothing until allocated.
+- Rejected-replacement recovery creates a new standalone correction rather than extending the
+  supersession chain (documented, intentional).
+
+> TEST deployment note: this release carries the first Release 4 migration. Order is strictly
+> **1) apply migrations on TEST, 2) deploy TEST** — neither is automatic.
 
 ## [v2.225.2] - 2026-08-11
 
