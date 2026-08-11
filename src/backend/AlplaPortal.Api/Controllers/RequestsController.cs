@@ -3709,6 +3709,7 @@ public class RequestsController : BaseController
         GlobalDiscountImpact = r.GlobalDiscountImpact,
         ManualAdditionsImpact = r.ManualAdditionsImpact,
         ExplainedLineAdjustments = r.ExplainedLineAdjustments,
+        DocumentSummaryIvaCredit = r.DocumentSummaryIvaCredit,
         ResidualVariance = r.ResidualVariance,
         ToleranceApplied = r.ToleranceApplied,
         ResidualExceedsTolerance = r.ResidualExceedsTolerance,

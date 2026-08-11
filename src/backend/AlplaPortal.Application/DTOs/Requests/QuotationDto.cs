@@ -136,6 +136,10 @@ public class QuotationReconciliationDto
     public decimal FinalConsideredTotal { get; set; }
     public decimal ManualAdditionsTotal { get; set; }
 
+    /// <summary>Summary-level document IVA recognized by reconciliation inference (v2.226.1) —
+    /// an automatically recognized component, never a buyer-entered justification.</summary>
+    public decimal DocumentSummaryIvaCredit { get; set; }
+
     public decimal IgnoredImpact { get; set; }
     public decimal QuantityImpact { get; set; }
     public decimal UnitPriceImpact { get; set; }
@@ -145,7 +149,8 @@ public class QuotationReconciliationDto
     public decimal ManualAdditionsImpact { get; set; }
     public decimal ExplainedLineAdjustments { get; set; }
 
-    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal).</summary>
+    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments −
+    /// FinalConsideredTotal − DocumentSummaryIvaCredit).</summary>
     public decimal ResidualVariance { get; set; }
     public decimal ToleranceApplied { get; set; }
     public bool ResidualExceedsTolerance { get; set; }
