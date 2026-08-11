@@ -288,12 +288,16 @@ export const api = {
             budgetJustification?: string,
             reassignments?: any[],
             itemAllocations?: Record<string, any[]>,
-            extraItemDecisions?: Record<string, any>
+            extraItemDecisions?: Record<string, any>,
+            /** Candidate model: the Area winner decision per ApprovalBatchItem — identity +
+             * optional justification only. Required for candidate-based batches; omitted for
+             * legacy buyer-selected batches. The backend is authoritative. */
+            selections?: { approvalBatchItemId: string, selectedCandidateId: string, winnerSelectionJustification?: string }[]
         ): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions }),
+                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions, selections }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o lote.');
             return response.json();
@@ -607,7 +611,17 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        getBudgetPreview: async (id: string, payload: { itemAwards: Record<string, string>, itemAssignments: Record<string, { plantId: number | null, costCenterId: number | null }>, itemAllocations?: Record<string, any[]>, extraItemDecisions?: Record<string, any> }): Promise<any> => {
+        getBudgetPreview: async (id: string, payload: {
+            itemAwards: Record<string, string>,
+            itemAssignments: Record<string, { plantId: number | null, costCenterId: number | null }>,
+            itemAllocations?: Record<string, any[]>,
+            extraItemDecisions?: Record<string, any>,
+            /** Scopes the preview to one ApprovalBatch. */
+            batchId?: string,
+            /** Candidate model: tentative Area winner selections (identity only — the backend
+             * values them from the frozen candidate snapshots; read-only, nothing persists). */
+            selections?: { approvalBatchItemId: string, selectedCandidateId: string }[]
+        }): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/budget-preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

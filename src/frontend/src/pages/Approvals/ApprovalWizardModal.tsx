@@ -10,6 +10,7 @@ import { WizardStepBatchReview } from './WizardStepBatchReview';
 import { WizardStepReview } from './WizardStepReview';
 import { WizardStepBudget, AllocationReassignmentDto } from './WizardStepBudget';
 import { useWizardValidation } from './hooks/useWizardValidation';
+import { buildSelectionsPayload } from './candidateSelection';
 
 interface ApprovalWizardModalProps {
     isOpen: boolean;
@@ -19,14 +20,17 @@ interface ApprovalWizardModalProps {
     plants: { id: number, name: string }[];
     costCenters: { id: number, code: string, name: string, plantId?: number }[];
     onSubmitAction: (
-        action: ApprovalActionType, 
-        awards: Record<string, string>, 
-        assignments: Record<string, ItemAssignment>, 
-        comment: string, 
+        action: ApprovalActionType,
+        awards: Record<string, string>,
+        assignments: Record<string, ItemAssignment>,
+        comment: string,
         budgetJustification?: string,
         reassignments?: AllocationReassignmentDto[],
         allocations?: Record<string, ItemAllocation[]>,
-        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>
+        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>,
+        /** Candidate model (Area batch approval): the winner decision per ApprovalBatchItem —
+         * identity + optional justification only, never commercial values. */
+        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[]
     ) => Promise<boolean>;
     isSubmitting: boolean;
     onDownloadAttachment?: (attachmentId: string, fileName: string) => void;
@@ -64,6 +68,12 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
     const [reassignments, setReassignments] = useState<AllocationReassignmentDto[]>([]);
     const [budgetPreview, setBudgetPreview] = useState<any>(null);
 
+    // ── Candidate model (Area winner selection) — LOCAL wizard state only; nothing persists
+    // before the approval submit. Keyed by ApprovalBatchItemId. ──
+    const [batchSelections, setBatchSelections] = useState<Record<string, string>>({});
+    const [selectionJustifications, setSelectionJustifications] = useState<Record<string, string>>({});
+    const [showSelectionValidation, setShowSelectionValidation] = useState(false);
+
     const handlePreviewLoaded = useCallback((preview: any) => {
         setBudgetPreview(preview);
     }, []);
@@ -78,6 +88,9 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
     const isPayment = request?.requestTypeCode === 'PAYMENT';
     const isSingleQuotation = !isPayment && quotations.length === 1;
     const isBatchReviewMode = Boolean(activeBatch);
+    // Candidate model: at least one batch item carries buyer-submitted candidate options —
+    // the review step becomes the Area winner-selection step.
+    const isCandidateBatch = Boolean(activeBatch?.items?.some((bi: any) => (bi.candidates?.length ?? 0) > 0));
 
     const dynamicSteps = useMemo(() => {
         const steps = [
@@ -87,7 +100,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
 
         if (!isPayment) {
             if (isBatchReviewMode) {
-                steps.push({ key: 'SINGLE_QUOTE_REVIEW' as WizardStepKey, title: 'Cotação Selecionada', icon: Scale });
+                steps.push({ key: 'SINGLE_QUOTE_REVIEW' as WizardStepKey, title: isCandidateBatch ? 'Seleção do Vencedor' : 'Cotação Selecionada', icon: Scale });
             } else if (isSingleQuotation) {
                 steps.push({ key: 'SINGLE_QUOTE_REVIEW' as WizardStepKey, title: 'Cotação Única', icon: Scale });
             } else {
@@ -99,7 +112,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         steps.push({ key: 'REVIEW' as WizardStepKey, title: 'Revisão Final', icon: ClipboardCheck });
 
         return steps;
-    }, [isPayment, isSingleQuotation, isBatchReviewMode]);
+    }, [isPayment, isSingleQuotation, isBatchReviewMode, isCandidateBatch]);
 
     const totalSteps = dynamicSteps.length;
     const currentStepConfig = dynamicSteps[currentStep - 1] || dynamicSteps[0];
@@ -168,6 +181,11 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             setHasInteracted(false);
             setStepValidationError(null);
             setReassignments([]);
+            // Candidate model: a (re)opened wizard NEVER restores a previous Area selection —
+            // a returned batch must be decided again from scratch (history keeps the old decision).
+            setBatchSelections({});
+            setSelectionJustifications({});
+            setShowSelectionValidation(false);
         }
     }, [isOpen, request]);
 
@@ -218,7 +236,9 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         approvedExtraItems,
         isBatchReviewMode,
         quotations,
-        activeBatch
+        activeBatch,
+        batchSelections,
+        selectionJustifications
     );
 
     // Lock background document scroll while the approval wizard is open
@@ -271,6 +291,19 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             return;
         }
         if (currentKey === 'SINGLE_QUOTE_REVIEW' && !isStep3Valid()) {
+            if (isCandidateBatch) {
+                // All-or-return: highlight undecided items inline, count them in the banner.
+                setShowSelectionValidation(true);
+                const batchItems: any[] = activeBatch?.items || [];
+                const pendingCount = batchItems.filter((bi: any) =>
+                    (bi.candidates?.length ?? 0) > 0 &&
+                    (!batchSelections[bi.id] || !bi.candidates.some((c: any) => c.id === batchSelections[bi.id]))
+                ).length;
+                setStepValidationError(pendingCount > 0
+                    ? `Selecione exatamente uma opção vencedora para cada item do lote. Decisões pendentes: ${pendingCount}. Se algum item não puder ser decidido, use "Solicitar Reajuste".`
+                    : 'Existe uma escolha acima do menor valor sem justificativa válida (mín. 20 caracteres significativos).');
+                return;
+            }
             setStepValidationError('Não foi possível associar automaticamente todos os itens da cotação aos itens do pedido. Revise o mapeamento antes de continuar.');
             return;
         }
@@ -302,6 +335,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
         if (action === 'APPROVE') {
             const hasInvalidAward = !isPayment && !isStep3Valid();
             if (!isStep2Valid() || hasInvalidAward || !isStep4Valid()) {
+                if (isCandidateBatch && hasInvalidAward) setShowSelectionValidation(true);
                 setStepValidationError('Não é possível aprovar. Existem pendências nas etapas anteriores.');
                 return;
             }
@@ -312,14 +346,34 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             return;
         }
 
-        setStepValidationError(null);        try {
-            const success = await onSubmitAction(action, itemAwards, itemAssignments, comment, budgetJustification, reassignments, itemAllocations, extraItemDecisions);
+        setStepValidationError(null);
+        try {
+            // Candidate model: the Area winner decision travels ONLY as identity + optional
+            // justification — the backend re-validates and resolves the frozen snapshots.
+            const selections = (action === 'APPROVE' && isCandidateBatch)
+                ? buildSelectionsPayload(activeBatch?.items || [], batchSelections, selectionJustifications)
+                : undefined;
+            const success = await onSubmitAction(action, itemAwards, itemAssignments, comment, budgetJustification, reassignments, itemAllocations, extraItemDecisions, selections);
             if (success) {
                 // Modal closes automatically on success via the parent
             }
         } catch (err) {
             setStepValidationError('Ocorreu um erro ao processar a solicitação.');
         }
+    };
+
+    // ── Candidate model: Area winner selection handlers (local state only). Selecting a winner
+    // also mirrors it into itemAwards so downstream display steps (Allocation/Review) keep
+    // resolving quotation data without change; the SUBMITTED authority is always Selections. ──
+    const handleBatchCandidateSelect = (approvalBatchItemId: string, candidateId: string, requestLineItemId: string, quotationItemId: string) => {
+        setHasInteracted(true);
+        setBatchSelections(prev => ({ ...prev, [approvalBatchItemId]: candidateId }));
+        setItemAwards(prev => ({ ...prev, [requestLineItemId]: quotationItemId }));
+    };
+
+    const handleSelectionJustificationChange = (approvalBatchItemId: string, text: string) => {
+        setHasInteracted(true);
+        setSelectionJustifications(prev => ({ ...prev, [approvalBatchItemId]: text }));
     };
 
     // --- Award helpers ---
@@ -597,6 +651,11 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                                 quotations={quotations}
                                 activeBatch={activeBatch}
                                 onDownloadAttachment={onDownloadAttachment}
+                                selections={batchSelections}
+                                selectionJustifications={selectionJustifications}
+                                onSelectCandidate={handleBatchCandidateSelect}
+                                onJustificationChange={handleSelectionJustificationChange}
+                                showSelectionValidation={showSelectionValidation}
                             />
                         ) : (
                             <WizardStepSelection
@@ -618,6 +677,10 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                     {currentStepConfig.key === 'BUDGET' && (
                         <WizardStepBudget
                             requestId={request.id}
+                            batchId={activeBatch?.id ?? null}
+                            batchSelections={isCandidateBatch
+                                ? Object.entries(batchSelections).map(([approvalBatchItemId, selectedCandidateId]) => ({ approvalBatchItemId, selectedCandidateId }))
+                                : undefined}
                             itemAwards={itemAwards}
                             itemAssignments={itemAssignments}
                             itemAllocations={itemAllocations}
