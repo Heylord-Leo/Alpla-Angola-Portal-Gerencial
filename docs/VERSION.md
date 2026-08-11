@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.226.0
+v2.226.1
+
+## [v2.226.1] - 2026-08-11
+
+### Fixed — quotation reconciliation summary-IVA false blocker
+
+- Document-level/global IVA that was correctly recognized for the final item values no longer
+  remains classified as an unexplained OCR header-vs-lines difference: the calculator credits a
+  `DocumentSummaryIvaCredit` (inference: null per-line OCR rate + confirmed rate must IMPROVE
+  header consistency; extracted rates and tax-free documents never gain credit).
+- The structural difference stays visible as a diagnostic; only the true residual after
+  recognized components requires justification.
+- Backend-authoritative across save/update/preview; UI adds the recognized-IVA row and a
+  reconciled-within-tolerance state. No migration; line-level rules unchanged.
 
 ## [v2.226.0] - 2026-08-11
 

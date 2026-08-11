@@ -582,6 +582,9 @@ export interface QuotationReconciliationDto {
     globalDiscountImpact: number;
     manualAdditionsImpact: number;
     explainedLineAdjustments: number;
+    /** Summary-level document IVA recognized by backend reconciliation inference (v2.226.1) —
+     * an automatically recognized component, credited against the residual. */
+    documentSummaryIvaCredit: number;
     residualVariance: number;
     toleranceApplied: number;
     residualExceedsTolerance: boolean;

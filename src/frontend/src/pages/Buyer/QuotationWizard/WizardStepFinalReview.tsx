@@ -205,6 +205,11 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                     <Row label="IVA" value={reconciliation.ivaImpact} />
                                     <Row label="Adições manuais" value={reconciliation.manualAdditionsImpact} />
                                     <Row label="Desconto global" value={reconciliation.globalDiscountImpact} />
+                                    {/* Recognized automatically from the document summary (v2.226.1) —
+                                        distinguishes the document's own tax from buyer adjustments. */}
+                                    {reconciliation.documentSummaryIvaCredit !== 0 && (
+                                        <Row label="IVA de resumo reconhecido" value={reconciliation.documentSummaryIvaCredit} />
+                                    )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--color-border)', margin: '4px 0' }} />
                                     <Row label="Total final considerado" value={reconciliation.finalConsideredTotal} strong />
                                 </div>
@@ -214,7 +219,7 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         {/* Residual verdict */}
                         {!reconciliationLoading && !reconciliationError && reconciliation && !reconciliationStale && !residualBlocks && (
                             <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#166534' }}>
-                                <CheckCircle2 size={16} /> Diferença residual de {money(reconciliation.residualVariance)} dentro da tolerância ({money(reconciliation.toleranceApplied)}). Nenhuma justificativa de diferença é necessária.
+                                <CheckCircle2 size={16} /> Documento reconciliado dentro da tolerância — diferença residual de {money(reconciliation.residualVariance)} (tolerância {money(reconciliation.toleranceApplied)}). Nenhuma justificativa de diferença é necessária.
                             </div>
                         )}
 

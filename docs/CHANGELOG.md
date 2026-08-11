@@ -4,7 +4,33 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.226.0
+v2.226.1
+
+## [v2.226.1] - 2026-08-11
+
+### Fixed — quotation reconciliation no longer reports the document's own summary IVA as unexplained
+
+A quotation whose document states IVA only in its summary (net lines 1,323,000 + IVA 14%
+185,220 = header 1,508,220) correctly showed the IVA under "Ajustes explicados" — and then
+demanded a manual justification for an "unexplained difference" of exactly that IVA.
+
+- **Root cause:** the residual was algebraically anchored to `header − reconstructed line
+  baseline`, and a summary-only tax cannot exist in the per-line baseline (OCR extracts no
+  per-line rate), so the document's own IVA always surfaced as residual.
+- **Fix:** the calculator now recognizes a **document-summary IVA credit** by reconciliation
+  inference — only for baselined lines whose OCR rate is genuinely null (an extracted 0% stays
+  confirmed tax-free), computed on the ORIGINAL line components, and granted only when it
+  IMPROVES header consistency, so a genuinely tax-free document never gains artificial credit
+  from a buyer-selected rate. Wrong/removed rates leave an honest residual that still blocks.
+- **The structural difference (cabeçalho − linhas) remains visible** as a diagnostic — it is no
+  longer the blocker; only the true residual after recognized components requires justification.
+- UI shows the new "IVA de resumo reconhecido" row and a neutral "Documento reconciliado dentro
+  da tolerância" state; save/update/preview share the same authoritative calculator.
+- Known follow-up (documented, unchanged): OCR-summary-only **discounts** have the same
+  architectural shape and are not yet credited.
+
+Line-level quantity/price reconciliation rules are unchanged. No OperationInvoice/Release 4
+Phase 2 code touched. No migration.
 
 ## [v2.226.0] - 2026-08-11
 

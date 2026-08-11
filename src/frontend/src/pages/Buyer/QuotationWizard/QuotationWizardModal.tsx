@@ -553,6 +553,7 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                             <span>Preço: {formatCurrencyAO(r.unitPriceImpact, c)}</span>
                             <span>Desconto: {formatCurrencyAO(r.discountImpact, c)}</span>
                             <span>IVA: {formatCurrencyAO(r.ivaImpact, c)}</span>
+                            <span>IVA de resumo reconhecido: {formatCurrencyAO(r.documentSummaryIvaCredit, c)}</span>
                             <span>Desconto global: {formatCurrencyAO(r.globalDiscountImpact, c)}</span>
                             <span>Adições manuais: {formatCurrencyAO(r.manualAdditionsImpact, c)}</span>
                             <span>Tolerância: {formatCurrencyAO(r.toleranceApplied, c)}</span>
