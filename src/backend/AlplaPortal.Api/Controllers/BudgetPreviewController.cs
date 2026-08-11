@@ -75,10 +75,15 @@ public class BudgetPreviewController : BaseController
         // Winners come from ApprovalBatchItem.SelectedQuotationItemId (dto.ItemAwards is ignored).
         decimal approvedBatchesConsumedAdjustment = 0;
 
+        // Candidate model: line items valued from the FROZEN winning/tentative candidate snapshot.
+        // Empty outside the batch path; entries here take precedence over any live-quotation value.
+        var frozenAmountByLineItemId = new Dictionary<Guid, decimal>();
+
         if (dto.BatchId.HasValue)
         {
             var batch = await _context.ApprovalBatches
                 .Include(b => b.Items)
+                    .ThenInclude(bi => bi.Candidates)
                 .FirstOrDefaultAsync(b => b.Id == dto.BatchId.Value && b.RequestId == id);
 
             if (batch == null)
@@ -89,15 +94,49 @@ public class BudgetPreviewController : BaseController
             previewLineItems = previewLineItems.Where(li => batchRliIds.Contains(li.Id)).ToList();
 
             // Override ItemAwards from batch items. Candidate model: before the Area decision the
-            // winner is null — such items simply contribute no award to the preview (the wizard
-            // recomputes after selection).
+            // winner is null — such items contribute no award unless a TENTATIVE selection below
+            // resolves them.
             dto.ItemAwards = batch.Items
                 .Where(bi => bi.SelectedQuotationItemId.HasValue)
                 .ToDictionary(bi => bi.RequestLineItemId, bi => bi.SelectedQuotationItemId!.Value);
 
+            // Already-decided candidate items: value from the frozen winning snapshot.
+            foreach (var bi in batch.Items.Where(b => b.SelectedCandidateId.HasValue))
+            {
+                var winner = bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId!.Value);
+                if (winner != null)
+                    frozenAmountByLineItemId[bi.RequestLineItemId] = winner.LineTotal;
+            }
+
+            // ── Tentative Area selections (candidate model, preview-only — NOTHING persists). ──
+            // Identity-only payload; validated exactly like area approval will validate it, then
+            // valued from the frozen snapshot. Partial selections are allowed: unselected items
+            // simply contribute nothing to this preview.
+            if (dto.Selections is { Count: > 0 })
+            {
+                var duplicated = dto.Selections.GroupBy(s => s.ApprovalBatchItemId).Any(g => g.Count() > 1);
+                if (duplicated)
+                    return BadRequest(new ProblemDetails { Title = "Pré-visualização Inválida", Detail = "Existe mais de uma seleção para o mesmo item do lote.", Status = 400 });
+
+                var itemsById = batch.Items.ToDictionary(bi => bi.Id);
+                foreach (var selection in dto.Selections)
+                {
+                    if (!itemsById.TryGetValue(selection.ApprovalBatchItemId, out var bi))
+                        return BadRequest(new ProblemDetails { Title = "Pré-visualização Inválida", Detail = "Uma seleção refere um item que não pertence a este lote.", Status = 400 });
+
+                    var candidate = bi.Candidates.FirstOrDefault(c => c.Id == selection.SelectedCandidateId);
+                    if (candidate == null)
+                        return BadRequest(new ProblemDetails { Title = "Pré-visualização Inválida", Detail = "A opção selecionada não pertence ao item do lote indicado.", Status = 400 });
+
+                    dto.ItemAwards[bi.RequestLineItemId] = candidate.QuotationItemId;
+                    frozenAmountByLineItemId[bi.RequestLineItemId] = candidate.LineTotal;
+                }
+            }
+
             // Compute consumed adjustment: sum approved amounts from other approved batches of the same request
             var otherApprovedBatches = await _context.ApprovalBatches
                 .Include(b => b.Items)
+                    .ThenInclude(bi => bi.Candidates)
                 .Where(b => b.RequestId == id
                     && b.Id != dto.BatchId.Value
                     && b.Status == RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval)
@@ -105,18 +144,28 @@ public class BudgetPreviewController : BaseController
 
             if (otherApprovedBatches.Any())
             {
-                var approvedBatchItemQiIds = otherApprovedBatches
-                    .SelectMany(b => b.Items)
-                    .Where(bi => bi.SelectedQuotationItemId.HasValue)
-                    .Select(bi => bi.SelectedQuotationItemId!.Value)
-                    .Distinct()
-                    .ToList();
+                // Frozen candidate snapshots first (candidate model); live quotation values only
+                // for legacy buyer-selected items that have no snapshot.
+                decimal candidateSum = 0;
+                var legacyQiIds = new List<Guid>();
+                foreach (var bi in otherApprovedBatches.SelectMany(b => b.Items))
+                {
+                    var winner = bi.SelectedCandidateId.HasValue
+                        ? bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId.Value)
+                        : null;
+                    if (winner != null)
+                        candidateSum += winner.LineTotal;
+                    else if (bi.SelectedQuotationItemId.HasValue)
+                        legacyQiIds.Add(bi.SelectedQuotationItemId.Value);
+                }
 
-                var approvedQiAmounts = await _context.QuotationItems
-                    .Where(qi => approvedBatchItemQiIds.Contains(qi.Id))
-                    .SumAsync(qi => qi.LineTotal);
+                var legacySum = legacyQiIds.Count == 0
+                    ? 0m
+                    : await _context.QuotationItems
+                        .Where(qi => legacyQiIds.Distinct().Contains(qi.Id))
+                        .SumAsync(qi => qi.LineTotal);
 
-                approvedBatchesConsumedAdjustment = approvedQiAmounts;
+                approvedBatchesConsumedAdjustment = candidateSum + legacySum;
             }
         }
 
@@ -151,9 +200,14 @@ public class BudgetPreviewController : BaseController
 
         foreach (var li in previewLineItems)
         {
-            // Determine award amount
+            // Determine award amount. Frozen candidate snapshot first (candidate model — the
+            // value that was submitted for approval, immune to later live-quotation edits).
             decimal amount = li.TotalAmount;
-            if (dto.ItemAwards != null && dto.ItemAwards.TryGetValue(li.Id, out var qItemId))
+            if (frozenAmountByLineItemId.TryGetValue(li.Id, out var frozenAmount))
+            {
+                amount = frozenAmount;
+            }
+            else if (dto.ItemAwards != null && dto.ItemAwards.TryGetValue(li.Id, out var qItemId))
             {
                 var qItem = request.Quotations.SelectMany(q => q.Items).FirstOrDefault(qi => qi.Id == qItemId);
                 if (qItem != null) amount = qItem.LineTotal;

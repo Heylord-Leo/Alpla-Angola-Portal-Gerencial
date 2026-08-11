@@ -31,6 +31,22 @@ public class BudgetPreviewRequestDto
     /// Winners are read from ApprovalBatchItem.SelectedQuotationItemId (dto.ItemAwards is ignored).
     /// </summary>
     public Guid? BatchId { get; set; }
+
+    /// <summary>
+    /// Candidate model (batch-scoped previews only): the Area Approver's TENTATIVE winner
+    /// selections, carried by IDENTITY only — the server values them from the FROZEN
+    /// ApprovalBatchItemCandidate snapshots, never from client-sent amounts and never from the
+    /// live quotation. Partial selections are allowed (unselected items contribute nothing);
+    /// nothing is ever persisted by a preview.
+    /// </summary>
+    public List<BudgetPreviewSelectionDto>? Selections { get; set; }
+}
+
+/// <summary>One tentative winner selection inside a batch-scoped budget preview.</summary>
+public class BudgetPreviewSelectionDto
+{
+    public Guid ApprovalBatchItemId { get; set; }
+    public Guid SelectedCandidateId { get; set; }
 }
 
 public class BudgetPreviewResponseDto

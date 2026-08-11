@@ -68,6 +68,10 @@ public class CandidateBasedApprovalBatchTests
         ctx.RequestTypes.Add(quotationType);
         ctx.RequestStatuses.Add(status);
         ctx.Currencies.Add(new Currency { Id = 900, Code = "AOA", Symbol = "Kz" });
+        // Required navigations of the budget-preview request load (Include = inner-join
+        // semantics on InMemory: without these rows the request silently vanishes → 404).
+        ctx.Departments.Add(new Department { Id = 940, Name = "ZZ Departamento" });
+        ctx.Companies.Add(new Company { Id = 940, Name = "ZZ Companhia" });
 
         var kwanza = new Supplier { Id = 9101, Name = "Kwanza Industrial", TaxId = "5417000101", PortalCode = "ZZK1" };
         var luanda = new Supplier { Id = 9102, Name = "Luanda Suprimentos", TaxId = "5417000102", PortalCode = "ZZL1" };
@@ -81,6 +85,8 @@ public class CandidateBasedApprovalBatchTests
             Status = status,
             RequestTypeId = quotationType.Id,
             RequestType = quotationType,
+            DepartmentId = 940,
+            CompanyId = 940,
             CreatedAtUtc = DateTime.UtcNow,
             RequesterId = actor
         };
@@ -1108,6 +1114,158 @@ public class CandidateBasedApprovalBatchTests
         var loser = sensor.Candidates.Single(c => !c.IsWinner);
         Assert.Equal(s.KwanzaItems[1], loser.QuotationItemId); // losing candidate still visible
         Assert.Equal(625_860m, sensor.SelectedQuotationItemLineTotal); // frozen snapshot value
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Budget preview: tentative Area selections valued from FROZEN snapshots
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static BudgetPreviewController BuildPreviewController(ApplicationDbContext ctx, Guid actorId)
+    {
+        var controller = new BudgetPreviewController(ctx, NullLogger<BudgetPreviewController>.Instance);
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, actorId.ToString()),
+            new(ClaimTypes.Role, RoleConstants.SystemAdministrator)
+        };
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")) }
+        };
+        return controller;
+    }
+
+    [Fact]
+    public void Budget_preview_is_gated_to_approver_roles()
+    {
+        // Direct controller instantiation bypasses the auth pipeline, so the role gate is pinned
+        // structurally: the endpoint is reachable only by approver/admin roles.
+        var attribute = typeof(BudgetPreviewController)
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), inherit: true)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
+            .Single();
+        Assert.Contains(RoleConstants.SystemAdministrator, attribute.Roles);
+        Assert.Contains(RoleConstants.FinalApprover, attribute.Roles);
+    }
+
+    [Fact]
+    public async Task Tentative_preview_uses_frozen_snapshots_and_persists_nothing()
+    {
+        var s = await SeedAsync();
+        var batchId = await CreateFullBatchAsync(s);
+        var items = await LoadBatchItemsAsync(s, batchId);
+
+        // Corrupt the live quotation AFTER submission — the preview must not see it.
+        await using (var mutate = new ApplicationDbContext(s.Options))
+        {
+            var live = await mutate.QuotationItems.SingleAsync(qi => qi.Id == s.KwanzaItems[0]);
+            live.LineTotal = 1m;
+            await mutate.SaveChangesAsync();
+        }
+
+        // Tentative selection = the intended manual-TEST outcome (K, L, K, L).
+        var kwanzaWins = new[] { true, false, true, false };
+        var dto = new BudgetPreviewRequestDto { BatchId = batchId };
+        foreach (var bi in items)
+        {
+            var index = Array.IndexOf(s.LineIds, bi.RequestLineItemId);
+            var wanted = kwanzaWins[index] ? s.KwanzaItems[index] : s.LuandaItems[index];
+            dto.Selections ??= new List<BudgetPreviewSelectionDto>();
+            dto.Selections.Add(new BudgetPreviewSelectionDto
+            {
+                ApprovalBatchItemId = bi.Id,
+                SelectedCandidateId = bi.Candidates.Single(c => c.QuotationItemId == wanted).Id
+            });
+        }
+
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var result = await BuildPreviewController(ctx, s.Actor).PreviewBudget(s.RequestId, dto);
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            var preview = Assert.IsType<BudgetPreviewResponseDto>(ok.Value);
+            // Frozen snapshot total — NOT the corrupted live 1m for the rolamento.
+            Assert.Equal(253_080m + 625_860m + 266_760m + 312_360m, preview.Summary.ThisRequestAmount);
+        }
+
+        // Preview persists NOTHING: no winner stamps, no groups, batch state untouched.
+        await using var verify = new ApplicationDbContext(s.Options);
+        var batch = await verify.ApprovalBatches.AsNoTracking().Include(b => b.Items).SingleAsync(b => b.Id == batchId);
+        Assert.Equal(RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, batch.Status);
+        Assert.All(batch.Items, bi =>
+        {
+            Assert.Null(bi.SelectedCandidateId);
+            Assert.Null(bi.SelectedQuotationItemId);
+        });
+        Assert.Equal(0, await verify.RequestPoGroups.CountAsync());
+    }
+
+    [Fact]
+    public async Task Partial_preview_sums_only_the_selected_subset()
+    {
+        var s = await SeedAsync();
+        var batchId = await CreateFullBatchAsync(s);
+        var items = await LoadBatchItemsAsync(s, batchId);
+
+        // Only the rolamento decided (Kwanza) — the other three items contribute nothing yet.
+        var rolamento = items.Single(bi => bi.RequestLineItemId == s.LineIds[0]);
+        var dto = new BudgetPreviewRequestDto
+        {
+            BatchId = batchId,
+            Selections = new List<BudgetPreviewSelectionDto>
+            {
+                new()
+                {
+                    ApprovalBatchItemId = rolamento.Id,
+                    SelectedCandidateId = rolamento.Candidates.Single(c => c.QuotationItemId == s.KwanzaItems[0]).Id
+                }
+            }
+        };
+
+        await using var ctx = new ApplicationDbContext(s.Options);
+        var result = await BuildPreviewController(ctx, s.Actor).PreviewBudget(s.RequestId, dto);
+        var preview = Assert.IsType<BudgetPreviewResponseDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(253_080m, preview.Summary.ThisRequestAmount);
+    }
+
+    [Fact]
+    public async Task Preview_rejects_duplicate_and_mismatched_selections()
+    {
+        var s = await SeedAsync();
+        var batchId = await CreateFullBatchAsync(s);
+        var items = await LoadBatchItemsAsync(s, batchId);
+        var itemA = items.Single(bi => bi.RequestLineItemId == s.LineIds[0]);
+        var itemB = items.Single(bi => bi.RequestLineItemId == s.LineIds[1]);
+
+        // Candidate belonging to ANOTHER item.
+        var mismatched = new BudgetPreviewRequestDto
+        {
+            BatchId = batchId,
+            Selections = new List<BudgetPreviewSelectionDto>
+            {
+                new() { ApprovalBatchItemId = itemA.Id, SelectedCandidateId = itemB.Candidates.First().Id }
+            }
+        };
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var result = await BuildPreviewController(ctx, s.Actor).PreviewBudget(s.RequestId, mismatched);
+            Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
+
+        // Duplicate selection for the same batch item.
+        var duplicated = new BudgetPreviewRequestDto
+        {
+            BatchId = batchId,
+            Selections = new List<BudgetPreviewSelectionDto>
+            {
+                new() { ApprovalBatchItemId = itemA.Id, SelectedCandidateId = itemA.Candidates.First().Id },
+                new() { ApprovalBatchItemId = itemA.Id, SelectedCandidateId = itemA.Candidates.Last().Id }
+            }
+        };
+        await using (var ctx2 = new ApplicationDbContext(s.Options))
+        {
+            var result = await BuildPreviewController(ctx2, s.Actor).PreviewBudget(s.RequestId, duplicated);
+            Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
     }
 
     [Fact]
