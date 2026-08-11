@@ -121,8 +121,26 @@ export function PaymentDocumentComposer({
     const lockedCurrency = useMemo(() => temporaryEstablishedCurrency(documents), [documents]);
     const totals = useMemo(() => confirmedTotals(documents), [documents]);
 
+    /**
+     * The latest document array, surviving multiple updates inside ONE event.
+     *
+     * <p>`documents` is a prop, so two synchronous updates in the same handler both read the array
+     * of the render they were created in — and the second silently discards the first. That is
+     * exactly what the classification-conflict confirmation does: it stores the acknowledgement
+     * (`onConflictChange`) and then commits the type (`onChange`), and the type update was erasing
+     * the acknowledgement the user had just given. Every mutation goes through this ref so each one
+     * builds on the previous, whatever the render timing.</p>
+     */
+    const documentsRef = useRef(documents);
+    documentsRef.current = documents;
+
+    const commit = (next: TemporaryPaymentDocument[]) => {
+        documentsRef.current = next;
+        onChange(next);
+    };
+
     const patch = (tempId: string, changes: Partial<TemporaryPaymentDocument>) =>
-        onChange(documents.map(d => (d.tempId === tempId ? { ...d, ...changes } : d)));
+        commit(documentsRef.current.map(d => (d.tempId === tempId ? { ...d, ...changes } : d)));
 
     // ── Adding ──────────────────────────────────────────────────────────────────────────────
 
@@ -156,7 +174,7 @@ export function PaymentDocumentComposer({
                 currency: basedOn?.currency ?? lockedCurrency ?? null
             };
 
-            onChange([...documents, created]);
+            commit([...documentsRef.current, created]);
             onActiveChange(created.tempId);
             setShowBlockers(false);
 
@@ -240,7 +258,7 @@ export function PaymentDocumentComposer({
 
         // Nothing is persisted yet, so removal is purely local — no void, no audit to preserve.
         // The remaining documents keep the numbers they already had.
-        onChange(documents.filter(d => d.tempId !== target.tempId));
+        commit(documentsRef.current.filter(d => d.tempId !== target.tempId));
         onResetOcr(target.tempId);
         if (activeTempId === target.tempId) onActiveChange(null);
     };
@@ -269,7 +287,7 @@ export function PaymentDocumentComposer({
             entryMode: 'PENDING_OCR'
         };
 
-        onChange(documents.map(d => (d.tempId === target.tempId ? replaced : d)));
+        commit(documentsRef.current.map(d => (d.tempId === target.tempId ? replaced : d)));
         onActiveChange(replaced.tempId);
         void onRunOcr(replaced);
     };
