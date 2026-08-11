@@ -158,6 +158,9 @@ public class RequestApprovalBatchItemDto
     // ── Candidate model (Final Approval reads winner + losing candidates read-only) ──
     public Guid? SelectedCandidateId { get; set; }
     public Guid? WinnerSelectedByUserId { get; set; }
+    /// <summary>Display name of the Area Approver who selected the winner — enriched post-query
+    /// (the UI must never show the raw user id).</summary>
+    public string? WinnerSelectedByUserName { get; set; }
     public DateTime? WinnerSelectedAtUtc { get; set; }
     public string? WinnerSelectionJustification { get; set; }
 

@@ -66,9 +66,14 @@ export function computeTentativeSummary(
     const suppliers = new Set<string>();
     const totalByCurrency: Record<string, number> = {};
 
+    // Local tentative selection first; the SERVER-decided winner (Area decision already stamped
+    // — the Final-stage read) is the fallback, so decided batches summarize without any local state.
+    const effectiveSelection = (bi: any): string | null =>
+        selections[bi.id] ?? bi.selectedCandidateId ?? null;
+
     batchItems.forEach(bi => {
         if (isCandidateBatchItem(bi)) {
-            const selectedId = selections[bi.id];
+            const selectedId = effectiveSelection(bi);
             const candidate = selectedId
                 ? (bi.candidates as ApprovalBatchItemCandidate[]).find(c => c.id === selectedId)
                 : undefined;
@@ -92,7 +97,7 @@ export function computeTentativeSummary(
         allDecided: batchItems
             .filter(bi => isCandidateBatchItem(bi))
             .every(bi => {
-                const selectedId = selections[bi.id];
+                const selectedId = effectiveSelection(bi);
                 return !!selectedId && (bi.candidates as ApprovalBatchItemCandidate[]).some(c => c.id === selectedId);
             })
     };

@@ -1402,7 +1402,8 @@ public class RequestsController : BaseController
         if (request.ApprovalBatches.Any())
         {
             var batchUserIds = request.ApprovalBatches
-                .SelectMany(b => new[] { (Guid?)b.CreatedByUserId, b.UpdatedByUserId })
+                .SelectMany(b => new[] { (Guid?)b.CreatedByUserId, b.UpdatedByUserId }
+                    .Concat(b.Items.Select(i => i.WinnerSelectedByUserId)))
                 .Where(uid => uid.HasValue)
                 .Select(uid => uid!.Value)
                 .Distinct()
@@ -1418,6 +1419,11 @@ public class RequestsController : BaseController
                     batchDto.CreatedByUserName = createdName;
                 if (batchDto.UpdatedByUserId.HasValue && batchUserNamesById.TryGetValue(batchDto.UpdatedByUserId.Value, out var updatedName))
                     batchDto.UpdatedByUserName = updatedName;
+                foreach (var itemDto in batchDto.Items)
+                {
+                    if (itemDto.WinnerSelectedByUserId.HasValue && batchUserNamesById.TryGetValue(itemDto.WinnerSelectedByUserId.Value, out var winnerByName))
+                        itemDto.WinnerSelectedByUserName = winnerByName;
+                }
             }
 
             // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED

@@ -590,6 +590,13 @@ export function ApprovalDetailPanel({
                     statusName={data.statusName || ''}
                     statusBadgeColor={data.statusBadgeColor || ''}
                     totalAmount={lotView?.lotTotal ?? activeBatchTotal ?? data.estimatedTotalAmount}
+                    totalAmountOverrideLabel={(() => {
+                        // Candidate model: before the Area winner decision there IS no batch
+                        // commercial truth — never fall back to 0 or the request estimate.
+                        const candidateItems = (activeBatch?.items || []).filter((bi: any) => (bi.candidates?.length ?? 0) > 0);
+                        const pending = candidateItems.length > 0 && candidateItems.some((bi: any) => !bi.selectedCandidateId);
+                        return pending ? 'A definir pelo Aprovador de Área' : null;
+                    })()}
                     currencyCode={data.currencyCode || ''}
                     approvalStage={approvalStage}
                     onClose={onClose}
@@ -1634,6 +1641,7 @@ export function ApprovalDetailPanel({
                 batchNumber={activeBatch?.batchNumber ?? null}
                 batchItemCount={activeBatch?.items?.length ?? null}
                 isLegacyQuotationApproval={isLegacyQuotationApproval}
+                isDecidedCandidateBatch={Boolean(activeBatch?.items?.some((bi: any) => (bi.candidates?.length ?? 0) > 0 && bi.selectedCandidateId))}
             />
 
             {/* WIZARD MODAL (For Area Approval Quotes) */}

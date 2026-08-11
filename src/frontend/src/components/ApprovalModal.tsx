@@ -49,6 +49,9 @@ interface ApprovalModalProps {
     batchItemCount?: number | null;
     /** Legacy-scope context: when true, REJECT/ADJUSTMENT descriptions inform the user the action targets the complete request. */
     isLegacyQuotationApproval?: boolean;
+    /** Candidate model: the batch carries an Area winner decision that a return will revoke —
+     * ADJUSTMENT copy must say the winner selection will have to be redone. */
+    isDecidedCandidateBatch?: boolean;
     children?: React.ReactNode;
 }
 
@@ -70,6 +73,7 @@ export function ApprovalModal({
     batchNumber,
     batchItemCount,
     isLegacyQuotationApproval,
+    isDecidedCandidateBatch,
     children
 }: ApprovalModalProps) {
     if (!show) return null;
@@ -130,7 +134,7 @@ export function ApprovalModal({
                 return 'Deseja finalizar este pedido? O recibo do fornecedor será registrado e o pedido será encerrado permanentemente.';
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
             case 'REQUEST_ADJUSTMENT': return batchNumber
-                ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Informe o que precisa ser ajustado.`
+                ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados.${isDecidedCandidateBatch ? ' Este lote será devolvido para correção e a seleção de vencedores deverá ser refeita pelo Aprovador de Área (a decisão anterior fica registrada no histórico).' : ''} Informe o que precisa ser ajustado.`
                 : isLegacyQuotationApproval
                     ? 'Este pedido utiliza o fluxo legado de cotação e não possui um lote de aprovação. O pedido completo será devolvido ao comprador para que o mapeamento dos itens da cotação e a seleção dos vencedores sejam corrigidos.'
                     : 'Informe o que precisa ser ajustado no pedido pelo solicitante.';

@@ -68,10 +68,12 @@ public class CandidateBasedApprovalBatchTests
         ctx.RequestTypes.Add(quotationType);
         ctx.RequestStatuses.Add(status);
         ctx.Currencies.Add(new Currency { Id = 900, Code = "AOA", Symbol = "Kz" });
-        // Required navigations of the budget-preview request load (Include = inner-join
-        // semantics on InMemory: without these rows the request silently vanishes → 404).
+        // Required navigations of the budget-preview request load and queue projection
+        // (Include/projection = inner-join semantics on InMemory: without these rows the
+        // request silently vanishes → 404/empty queue).
         ctx.Departments.Add(new Department { Id = 940, Name = "ZZ Departamento" });
         ctx.Companies.Add(new Company { Id = 940, Name = "ZZ Companhia" });
+        ctx.Users.Add(new User { Id = actor, FullName = "ZZ Aprovador", Email = "zz.aprovador@test.local" });
 
         var kwanza = new Supplier { Id = 9101, Name = "Kwanza Industrial", TaxId = "5417000101", PortalCode = "ZZK1" };
         var luanda = new Supplier { Id = 9102, Name = "Luanda Suprimentos", TaxId = "5417000102", PortalCode = "ZZL1" };
@@ -1265,6 +1267,55 @@ public class CandidateBasedApprovalBatchTests
         {
             var result = await BuildPreviewController(ctx2, s.Actor).PreviewBudget(s.RequestId, duplicated);
             Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Approval queue amounts: null before the Area decision, snapshot total after
+    // ══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Queue_amount_is_null_before_area_decision_and_snapshot_total_after()
+    {
+        var s = await SeedAsync();
+        var batchId = await CreateFullBatchAsync(s);
+        var statusDisplay = new Dictionary<string, (string Name, string Color)>();
+        var today = DateTime.UtcNow.Date;
+
+        // Pre-decision AREA row: no amount exists — null (rendered "A definir"), never 0/estimate.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var rows = await AlplaPortal.Api.Projections.ApprovalQueueProjection.ProjectAsync(
+                ctx.Requests.Where(r => r.Id == s.RequestId),
+                AlplaPortal.Api.Projections.ApprovalQueueProjection.StageArea,
+                statusDisplay, today, today.AddDays(1), today.AddDays(4));
+            var row = Assert.Single(rows);
+            Assert.Equal(batchId, row.ApprovalBatchId);
+            Assert.Null(row.ActionableAmount);
+        }
+
+        // Area decides (K, L, K, L), then a live quotation is corrupted — the FINAL queue row
+        // must still show the frozen selected-combination total.
+        var approve = await ApproveDtoAsync(s, batchId, new[] { true, false, true, false });
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            Assert.IsType<OkObjectResult>(await BuildController(ctx, s.Actor).BatchAreaApprove(s.RequestId, batchId, approve));
+        }
+        await using (var mutate = new ApplicationDbContext(s.Options))
+        {
+            var live = await mutate.QuotationItems.SingleAsync(qi => qi.Id == s.KwanzaItems[0]);
+            live.LineTotal = 1m;
+            await mutate.SaveChangesAsync();
+        }
+
+        await using (var verify = new ApplicationDbContext(s.Options))
+        {
+            var rows = await AlplaPortal.Api.Projections.ApprovalQueueProjection.ProjectAsync(
+                verify.Requests.Where(r => r.Id == s.RequestId),
+                AlplaPortal.Api.Projections.ApprovalQueueProjection.StageFinal,
+                statusDisplay, today, today.AddDays(1), today.AddDays(4));
+            var row = Assert.Single(rows);
+            Assert.Equal(253_080m + 625_860m + 266_760m + 312_360m, row.ActionableAmount);
         }
     }
 

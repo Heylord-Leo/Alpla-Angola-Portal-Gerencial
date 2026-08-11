@@ -30,6 +30,12 @@ export const useWizardValidation = (
     const isBatchItemDecided = (item: any): boolean => {
         const batchItem = (activeBatch?.items || []).find((bi: any) => bi.requestLineItemId === item.id);
         if (batchItem && isCandidateBatchItem(batchItem)) {
+            // Server-decided (Area decision already stamped — the Final-stage read): the item is
+            // decided and the read-only review needs no local selection state.
+            if (batchItem.selectedCandidateId
+                && (batchItem.candidates || []).some((c: any) => c.id === batchItem.selectedCandidateId)) {
+                return true;
+            }
             const selectedCandidateId = batchSelections[batchItem.id];
             if (!selectedCandidateId) return false;
             const candidate = (batchItem.candidates || []).find((c: any) => c.id === selectedCandidateId);

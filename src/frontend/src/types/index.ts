@@ -359,6 +359,8 @@ export interface ApprovalBatchItemSummary {
     /** Candidate model — Area winner decision metadata (null before the Area decision). */
     selectedCandidateId?: string | null;
     winnerSelectedByUserId?: string | null;
+    /** Display name of the Area Approver who selected the winner (enriched server-side). */
+    winnerSelectedByUserName?: string | null;
     winnerSelectedAtUtc?: string | null;
     winnerSelectionJustification?: string | null;
     /** True for items decided by the Buyer under the pre-candidate model (zero candidate rows). */
