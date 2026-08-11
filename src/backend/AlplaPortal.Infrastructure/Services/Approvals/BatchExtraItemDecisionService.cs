@@ -3,6 +3,7 @@ using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Validation;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -227,6 +228,8 @@ public class BatchExtraItemDecisionService : IBatchExtraItemDecisionService
 
         var items = await _context.QuotationItems
             .Include(qi => qi.Quotation)
+                .ThenInclude(q => q.Supplier)
+            .Include(qi => qi.Unit)
             .Where(qi => quotationIds.Contains(qi.QuotationId) && qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.ExtraItem)
             .ToListAsync();
 
@@ -296,16 +299,22 @@ public class BatchExtraItemDecisionService : IBatchExtraItemDecisionService
         // doing both would duplicate the in-memory entry (caught by a unit test during Phase 2).
         _context.RequestLineItems.Add(newLineItem);
 
+        // Candidate model: the included extra line becomes a batch item with exactly ONE frozen
+        // candidate and NO winner — the Area Approver still confirms it via winner selection,
+        // exactly like any other item (all-or-return applies to it too).
         var newBatchItem = new ApprovalBatchItem
         {
             Id = Guid.NewGuid(),
             ApprovalBatchId = batch.Id,
             RequestLineItemId = newLineItem.Id,
-            SelectedQuotationItemId = quotationItem.Id,
+            SelectedQuotationItemId = null,
             CreatedAtUtc = DateTime.UtcNow
         };
         // Same reasoning as above — batch is already tracked, so fixup handles batch.Items; no manual Add.
         _context.ApprovalBatchItems.Add(newBatchItem);
+
+        _context.ApprovalBatchItemCandidates.Add(ApprovalBatchCandidateSnapshotFactory.Create(
+            quotationItem, newBatchItem.Id, buyerNote: comment, actorId, DateTime.UtcNow));
 
         if (existingDecision != null)
         {
