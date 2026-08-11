@@ -254,8 +254,8 @@ public class QuotationReuseAuthorizationIntegrationTests
             {
                 Items = new List<BatchItemDto>
                 {
-                    new() { RequestLineItemId = s.Line1, SelectedQuotationItemId = s.AbItem1 },
-                    new() { RequestLineItemId = s.Line2, SelectedQuotationItemId = s.AbItem2 }
+                    new() { RequestLineItemId = s.Line1, Candidates = { new() { QuotationItemId = s.AbItem1 } } },
+                    new() { RequestLineItemId = s.Line2, Candidates = { new() { QuotationItemId = s.AbItem2 } } }
                 }
             });
 
@@ -356,8 +356,8 @@ public class QuotationReuseAuthorizationIntegrationTests
                 {
                     Items = new List<BatchItemDto>
                     {
-                        new() { RequestLineItemId = s.Line1, SelectedQuotationItemId = s.AbItem1 },
-                        new() { RequestLineItemId = Guid.NewGuid(), SelectedQuotationItemId = s.AbItem2 } // linha inexistente
+                        new() { RequestLineItemId = s.Line1, Candidates = { new() { QuotationItemId = s.AbItem1 } } },
+                        new() { RequestLineItemId = Guid.NewGuid(), Candidates = { new() { QuotationItemId = s.AbItem2 } } } // linha inexistente
                     }
                 });
                 Assert.IsType<BadRequestObjectResult>(bad);
@@ -377,8 +377,8 @@ public class QuotationReuseAuthorizationIntegrationTests
                 {
                     Items = new List<BatchItemDto>
                     {
-                        new() { RequestLineItemId = s.Line1, SelectedQuotationItemId = s.AbItem1 },
-                        new() { RequestLineItemId = s.Line2, SelectedQuotationItemId = s.AbItem2 }
+                        new() { RequestLineItemId = s.Line1, Candidates = { new() { QuotationItemId = s.AbItem1 } } },
+                        new() { RequestLineItemId = s.Line2, Candidates = { new() { QuotationItemId = s.AbItem2 } } }
                     }
                 });
                 Assert.IsType<OkObjectResult>(okResult);
@@ -509,8 +509,8 @@ public class QuotationReuseAuthorizationIntegrationTests
             {
                 Items = new List<BatchItemDto>
                 {
-                    new() { RequestLineItemId = s.Line1, SelectedQuotationItemId = s.AbItem1 }, // troca p/ AB bloqueado
-                    new() { RequestLineItemId = s.Line2, SelectedQuotationItemId = s.QdItem2 }
+                    new() { RequestLineItemId = s.Line1, Candidates = { new() { QuotationItemId = s.AbItem1 } } }, // troca p/ AB bloqueado
+                    new() { RequestLineItemId = s.Line2, Candidates = { new() { QuotationItemId = s.QdItem2 } } }
                 }
             });
 
