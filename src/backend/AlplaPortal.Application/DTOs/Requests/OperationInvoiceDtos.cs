@@ -53,6 +53,17 @@ public class VoidOperationInvoiceDto
     public byte[]? RowVersion { get; set; }
 }
 
+/// <summary>
+/// Replaces a VALIDATED invoice with a corrected one (Phase 2c) — the only path out of VALIDATED.
+/// The header fields describe the NEW invoice; <c>RowVersion</c> is the ORIGINAL invoice's
+/// concurrency token, because the original is what this operation mutates.
+/// </summary>
+public class ReplaceOperationInvoiceDto : SaveOperationInvoiceDto
+{
+    /// <summary>Mandatory — why the validated invoice is being superseded.</summary>
+    public string? ReplacementReason { get; set; }
+}
+
 /// <summary>One operation invoice as the UI sees it. No allocation detail — that is Phase 3.</summary>
 public class OperationInvoiceDto
 {

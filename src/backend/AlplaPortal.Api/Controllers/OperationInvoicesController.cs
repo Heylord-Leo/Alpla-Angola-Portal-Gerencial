@@ -45,6 +45,7 @@ public class OperationInvoicesController : BaseController
     public const string NotVoidableCode = "OPERATION_INVOICE_NOT_VOIDABLE";
     public const string NotReplaceableCode = "OPERATION_INVOICE_NOT_REPLACEABLE";
     public const string ConcurrencyCode = "OPERATION_INVOICE_CONCURRENCY";
+    public const string DownstreamEvidenceCode = "OPERATION_INVOICE_EVIDENCE_EXISTS";
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
 
@@ -167,68 +168,12 @@ public class OperationInvoicesController : BaseController
         }
 
         // ── Field validation → the standard errors dictionary the frontend already renders ──
-        var errors = new Dictionary<string, string[]>();
-        if (dto.AttachmentId == null || dto.AttachmentId == Guid.Empty)
-            errors["AttachmentId"] = new[] { "Anexe o ficheiro da fatura antes de a registar." };
-        if (dto.SupplierId is null or <= 0)
-            errors["SupplierId"] = new[] { "Indique o fornecedor." };
-        if (string.IsNullOrWhiteSpace(dto.DocumentNumber))
-            errors["DocumentNumber"] = new[] { "Indique o número do documento." };
-        if (dto.DocumentDate == null)
-            errors["DocumentDate"] = new[] { "Indique a data do documento." };
-        if (string.IsNullOrWhiteSpace(dto.Currency))
-            errors["Currency"] = new[] { "Indique a moeda." };
-        if (dto.GrossAmount is null or <= 0)
-            errors["GrossAmount"] = new[] { "Indique o total da fatura (maior que zero)." };
-
-        // Net and tax travel together or not at all — a lone half would force the server to
-        // invent the other, and nothing here invents values.
-        if (dto.NetAmount.HasValue != dto.TaxAmount.HasValue)
-        {
-            errors["NetAmount"] = new[]
-                { "Indique o valor líquido e o imposto em conjunto, ou nenhum dos dois." };
-        }
-        else if (dto.NetAmount.HasValue && dto.GrossAmount is > 0)
-        {
-            var gross = dto.GrossAmount.Value;
-            var difference = Math.Abs(gross - (dto.NetAmount.Value + dto.TaxAmount!.Value));
-            if (difference > OperationInvoiceTolerance.For(gross))
-            {
-                errors["GrossAmount"] = new[]
-                {
-                    "O total da fatura não corresponde à soma do valor líquido com o imposto " +
-                    "(fora da tolerância)."
-                };
-            }
-        }
-
+        var errors = ValidateNewInvoiceFields(dto);
         if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
 
         // ── Supplier integrity: the same rule, the same guard, no bypass ──
-        var supplier = await _context.Suppliers.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == dto.SupplierId!.Value);
-        if (supplier == null)
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["SupplierId"] = new[] { "Fornecedor selecionado não existe." }
-            }));
-        }
-
-        var internalCompany = await _internalCompanies.ResolveSupplierAsync(dto.SupplierId);
-        if (internalCompany != null)
-        {
-            var problem = new ProblemDetails
-            {
-                Title = "Fornecedor inválido para pagamento",
-                Detail = InternalCompanyPolicy.SupplierMessage,
-                Status = 400
-            };
-            problem.Extensions["code"] = InternalCompanyPolicy.ViolationCode;
-            problem.Extensions["internalCompanyId"] = internalCompany.Id;
-            problem.Extensions["internalCompanyName"] = internalCompany.Name;
-            return BadRequest(problem);
-        }
+        var (supplier, supplierProblem) = await GuardSupplierAsync(dto.SupplierId!.Value);
+        if (supplierProblem != null) return supplierProblem;
 
         // ── Attachment: the Portal's one file mechanism, validated — never a second store ──
         var attachmentProblem = await GuardAttachmentAsync(requestId, dto.AttachmentId!.Value);
@@ -262,7 +207,7 @@ public class OperationInvoicesController : BaseController
             RequestId = requestId,
             AttachmentId = dto.AttachmentId!.Value,
             SupplierId = dto.SupplierId,
-            SupplierTaxIdSnapshot = supplier.TaxId,
+            SupplierTaxIdSnapshot = supplier!.TaxId,
             // BilledCompanyNameRead stays null: it records what OCR READ, and nothing was read.
             DocumentNumber = dto.DocumentNumber!.Trim(),
             DocumentSeries = Trimmed(dto.DocumentSeries),
@@ -388,30 +333,8 @@ public class OperationInvoicesController : BaseController
         if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
 
         // ── Supplier: existence + the internal-ALPLA rule, re-checked on every edit ──
-        var supplier = await _context.Suppliers.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == newSupplierId!.Value);
-        if (supplier == null)
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["SupplierId"] = new[] { "Fornecedor selecionado não existe." }
-            }));
-        }
-
-        var internalCompany = await _internalCompanies.ResolveSupplierAsync(newSupplierId);
-        if (internalCompany != null)
-        {
-            var problem = new ProblemDetails
-            {
-                Title = "Fornecedor inválido para pagamento",
-                Detail = InternalCompanyPolicy.SupplierMessage,
-                Status = 400
-            };
-            problem.Extensions["code"] = InternalCompanyPolicy.ViolationCode;
-            problem.Extensions["internalCompanyId"] = internalCompany.Id;
-            problem.Extensions["internalCompanyName"] = internalCompany.Name;
-            return BadRequest(problem);
-        }
+        var (supplier, supplierProblem) = await GuardSupplierAsync(newSupplierId!.Value);
+        if (supplierProblem != null) return supplierProblem;
 
         // ── Attachment replacement, only when a DIFFERENT file is offered ──
         var attachmentReplaced =
@@ -463,7 +386,7 @@ public class OperationInvoicesController : BaseController
         if (changes.Count == 0) return Ok(await ProjectAsync(invoice));   // a no-op stays silent
 
         invoice.SupplierId = newSupplierId;
-        invoice.SupplierTaxIdSnapshot = supplier.TaxId;
+        invoice.SupplierTaxIdSnapshot = supplier!.TaxId;
         invoice.DocumentNumber = newNumber;
         invoice.DocumentSeries = newSeries;
         if (dto.DocumentDate.HasValue) invoice.DocumentDate = dto.DocumentDate;
@@ -588,7 +511,257 @@ public class OperationInvoicesController : BaseController
         return Ok(await ProjectAsync(invoice));
     }
 
+    // ── Replace / supersession (Phase 2c) ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// The only path out of VALIDATED, Finance-only: the original becomes REPLACEMENT_REQUESTED
+    /// with the mandatory reason (the entity's documented use of <c>RejectionReason</c>) and the
+    /// forward pointer, and the corrected invoice is created in PENDING_VALIDATION — one
+    /// transaction, or nothing. The original's fiscal identity stops being effective in that same
+    /// transaction, which is what lets the correction reuse it; every OTHER effective invoice
+    /// still blocks it. Downstream financial evidence on the original (allocations,
+    /// reconciliation snapshots — Phase 3 artifacts) blocks replacement outright: nothing is ever
+    /// cascaded or transferred to the replacement.
+    /// </summary>
+    [HttpPost("{operationInvoiceId:guid}/replace")]
+    public async Task<IActionResult> Replace(
+        Guid requestId, Guid operationInvoiceId, [FromBody] ReplaceOperationInvoiceDto dto)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        // Finance-only (approved rule #12): replacing a VALIDATED financial document is a Finance
+        // decision. SystemAdministrator follows the administrative can-act convention; the Buyer
+        // does not reach this one.
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Finance) &&
+            !roles.Contains(RoleConstants.SystemAdministrator))
+        {
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Sem permissão",
+                Detail = "Apenas o Financeiro pode substituir uma fatura validada.",
+                Status = 403
+            });
+        }
+
+        var statusProblem = GuardMutableRequestStatus(request);
+        if (statusProblem != null) return statusProblem;
+
+        var original = await _context.OperationInvoices
+            .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
+        if (original == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        if (!OperationInvoiceLifecyclePolicy.CanReplace(original.Status))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fatura não pode ser substituída",
+                Detail = "Só uma fatura validada se corrige por substituição. Antes da validação, " +
+                         "altere ou anule a fatura; uma fatura terminal permanece como está.",
+                Status = 409
+            };
+            problem.Extensions["code"] = NotReplaceableCode;
+            return Conflict(problem);
+        }
+
+        // Downstream evidence: Phase 3 artifacts that already answer against THIS invoice.
+        var hasAllocations = await _context.OperationInvoiceAllocations
+            .AnyAsync(a => a.OperationInvoiceId == original.Id);
+        var hasReconciliations = await _context.OperationInvoiceReconciliations
+            .AnyAsync(r => r.OperationInvoiceId == original.Id);
+        if (hasAllocations || hasReconciliations)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Substituição bloqueada por evidência financeira",
+                Detail = "Esta fatura já tem alocações ou reconciliação registadas. A correção " +
+                         "requer reconciliação pelo Financeiro; nada é transferido automaticamente.",
+                Status = 409
+            };
+            problem.Extensions["code"] = DownstreamEvidenceCode;
+            return Conflict(problem);
+        }
+
+        var reason = Trimmed(dto.ReplacementReason);
+        if (reason == null)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["ReplacementReason"] = new[] { "Indique o motivo da substituição." }
+            }));
+        }
+
+        var staleToken = ApplyConcurrencyToken(original, dto.RowVersion);
+        if (staleToken != null) return staleToken;
+
+        // ── The corrected invoice passes every Create gate ──
+        var errors = ValidateNewInvoiceFields(dto);
+        if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
+
+        var (supplier, supplierProblem) = await GuardSupplierAsync(dto.SupplierId!.Value);
+        if (supplierProblem != null) return supplierProblem;
+
+        // A NEW file is mandatory: the original keeps its attachment forever, and the
+        // claimed-check below refuses any attempt to reuse it.
+        var attachmentProblem = await GuardAttachmentAsync(requestId, dto.AttachmentId!.Value);
+        if (attachmentProblem != null) return attachmentProblem;
+
+        // The original stops being effective IN THIS TRANSACTION, so its identity is excluded —
+        // and only its. Any other effective invoice still owns its identity.
+        var duplicate = await FindEffectiveDuplicateAsync(
+            dto.SupplierId!.Value, dto.DocumentNumber, dto.DocumentSeries,
+            excludeInvoiceId: original.Id);
+        if (duplicate != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fatura duplicada",
+                Detail = $"A fatura {duplicate.DocumentNumber} deste fornecedor já está registada " +
+                         "no Portal.",
+                Status = 409
+            };
+            problem.Extensions["code"] = DuplicateErrorCode;
+            problem.Extensions["existingOperationInvoiceId"] = duplicate.Id;
+            problem.Extensions["existingRequestId"] = duplicate.RequestId;
+            return Conflict(problem);
+        }
+
+        // ── One transaction: old out, new in, one audit row ──
+        var replacement = new OperationInvoice
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            AttachmentId = dto.AttachmentId!.Value,
+            SupplierId = dto.SupplierId,
+            SupplierTaxIdSnapshot = supplier!.TaxId,
+            DocumentNumber = dto.DocumentNumber!.Trim(),
+            DocumentSeries = Trimmed(dto.DocumentSeries),
+            DocumentDate = dto.DocumentDate,
+            DueDate = dto.DueDate,
+            Currency = dto.Currency!.Trim().ToUpperInvariant(),
+            NetAmount = dto.NetAmount,
+            TaxAmount = dto.TaxAmount,
+            GrossAmount = dto.GrossAmount,
+            Notes = Trimmed(dto.Notes),
+            Status = OperationInvoiceLifecyclePolicy.InitialManualStatus,
+            AmountsEnteredManually = dto.AmountsEnteredManually ?? true,
+            UploadedAtUtc = DateTime.UtcNow,
+            UploadedByUserId = CurrentUserId
+        };
+        _context.OperationInvoices.Add(replacement);
+
+        original.Status = RequestConstants.OperationInvoiceDocumentStatuses.ReplacementRequested;
+        original.RejectionReason = reason;   // the entity's documented replacement-reason slot
+        original.SupersededByOperationInvoiceId = replacement.Id;
+        original.UpdatedAtUtc = DateTime.UtcNow;
+        original.UpdatedByUserId = CurrentUserId;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = CurrentUserId,
+            ActionTaken = "FATURA_OPERACAO_SUBSTITUIDA",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Fatura final {original.DocumentNumber} substituída pela fatura " +
+                      $"{replacement.DocumentNumber}. Motivo: {reason} " +
+                      "A fatura corrigida aguarda validação do Financeiro.",
+            IdempotencyKey = PostPaymentIdempotencyKeys.OperationInvoiceReplaced(
+                original.Id, replacement.AttachmentId),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ConcurrencyConflict();
+        }
+
+        _logger.LogInformation(
+            "Operation invoice {OriginalId} superseded by {ReplacementId} on request {RequestId}.",
+            original.Id, replacement.Id, requestId);
+
+        return Ok(await ProjectAsync(replacement));
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Header-field validation shared by Create and Replace — one rulebook, one wording.</summary>
+    private static Dictionary<string, string[]> ValidateNewInvoiceFields(SaveOperationInvoiceDto dto)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (dto.AttachmentId == null || dto.AttachmentId == Guid.Empty)
+            errors["AttachmentId"] = new[] { "Anexe o ficheiro da fatura antes de a registar." };
+        if (dto.SupplierId is null or <= 0)
+            errors["SupplierId"] = new[] { "Indique o fornecedor." };
+        if (string.IsNullOrWhiteSpace(dto.DocumentNumber))
+            errors["DocumentNumber"] = new[] { "Indique o número do documento." };
+        if (dto.DocumentDate == null)
+            errors["DocumentDate"] = new[] { "Indique a data do documento." };
+        if (string.IsNullOrWhiteSpace(dto.Currency))
+            errors["Currency"] = new[] { "Indique a moeda." };
+        if (dto.GrossAmount is null or <= 0)
+            errors["GrossAmount"] = new[] { "Indique o total da fatura (maior que zero)." };
+
+        // Net and tax travel together or not at all — a lone half would force the server to
+        // invent the other, and nothing here invents values.
+        if (dto.NetAmount.HasValue != dto.TaxAmount.HasValue)
+        {
+            errors["NetAmount"] = new[]
+                { "Indique o valor líquido e o imposto em conjunto, ou nenhum dos dois." };
+        }
+        else if (dto.NetAmount.HasValue && dto.GrossAmount is > 0)
+        {
+            var gross = dto.GrossAmount.Value;
+            var difference = Math.Abs(gross - (dto.NetAmount.Value + dto.TaxAmount!.Value));
+            if (difference > OperationInvoiceTolerance.For(gross))
+            {
+                errors["GrossAmount"] = new[]
+                {
+                    "O total da fatura não corresponde à soma do valor líquido com o imposto " +
+                    "(fora da tolerância)."
+                };
+            }
+        }
+
+        return errors;
+    }
+
+    /// <summary>Supplier existence + the internal-ALPLA rule — shared by Create, Update, Replace.</summary>
+    private async Task<(Supplier? Supplier, IActionResult? Problem)> GuardSupplierAsync(int supplierId)
+    {
+        var supplier = await _context.Suppliers.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == supplierId);
+        if (supplier == null)
+        {
+            return (null, BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["SupplierId"] = new[] { "Fornecedor selecionado não existe." }
+            })));
+        }
+
+        var internalCompany = await _internalCompanies.ResolveSupplierAsync(supplierId);
+        if (internalCompany != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Fornecedor inválido para pagamento",
+                Detail = InternalCompanyPolicy.SupplierMessage,
+                Status = 400
+            };
+            problem.Extensions["code"] = InternalCompanyPolicy.ViolationCode;
+            problem.Extensions["internalCompanyId"] = internalCompany.Id;
+            problem.Extensions["internalCompanyName"] = internalCompany.Name;
+            return (null, BadRequest(problem));
+        }
+
+        return (supplier, null);
+    }
 
     /// <summary>Finance and Buyer mutate; SystemAdministrator per the administrative can-act
     /// convention — never bypassing the financial-integrity rules that follow.</summary>
