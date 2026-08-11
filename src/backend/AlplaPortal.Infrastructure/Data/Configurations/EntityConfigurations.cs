@@ -466,11 +466,77 @@ public class ApprovalBatchItemConfiguration : IEntityTypeConfiguration<ApprovalB
                .HasForeignKey(i => i.SelectedQuotationItemId)
                .OnDelete(DeleteBehavior.NoAction);
 
+        // NoAction breaks the FK cycle item ↔ candidate (candidates cascade FROM the item;
+        // the winner pointer back to a candidate must never cascade).
+        builder.HasOne(i => i.SelectedCandidate)
+               .WithMany()
+               .HasForeignKey(i => i.SelectedCandidateId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.Property(i => i.WinnerSelectionJustification).HasMaxLength(2000);
+
+        builder.HasMany(i => i.Candidates)
+               .WithOne(c => c.ApprovalBatchItem)
+               .HasForeignKey(c => c.ApprovalBatchItemId)
+               .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(i => i.ApprovalBatchId)
                .HasDatabaseName("IX_ApprovalBatchItem_BatchId");
 
         builder.HasIndex(i => i.RequestLineItemId)
                .HasDatabaseName("IX_ApprovalBatchItem_LineItemId");
+    }
+}
+
+public class ApprovalBatchItemCandidateConfiguration : IEntityTypeConfiguration<ApprovalBatchItemCandidate>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchItemCandidate> builder)
+    {
+        builder.HasKey(c => c.Id);
+
+        // Snapshot columns mirror the precision/length conventions of their live counterparts.
+        builder.Property(c => c.SupplierNameSnapshot).IsRequired().HasMaxLength(255);
+        builder.Property(c => c.SupplierNifSnapshot).HasMaxLength(50);
+        builder.Property(c => c.QuotedDescription).IsRequired().HasMaxLength(1000);
+        builder.Property(c => c.QuotedQuantity).HasColumnType("decimal(18,4)");
+        builder.Property(c => c.UnitTextSnapshot).HasMaxLength(100);
+        builder.Property(c => c.UnitPrice).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.DiscountAmount).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.IvaRatePercent).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.IvaAmount).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.GrossSubtotal).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.LineTotal).HasColumnType("decimal(18,2)");
+        builder.Property(c => c.Currency).IsRequired().HasMaxLength(10);
+        builder.Property(c => c.QuotationDocumentNumber).HasMaxLength(100);
+        builder.Property(c => c.ReconciliationStatusSnapshot).HasMaxLength(50);
+        builder.Property(c => c.ReconciliationJustificationSnapshot).HasMaxLength(2000);
+        builder.Property(c => c.LineAdjustmentJustificationSnapshot).HasMaxLength(2000);
+        builder.Property(c => c.BuyerNote).HasMaxLength(1000);
+
+        // Traceability FKs only — snapshots are the read path, so none of these cascade.
+        builder.HasOne(c => c.QuotationItem)
+               .WithMany()
+               .HasForeignKey(c => c.QuotationItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasOne(c => c.Quotation)
+               .WithMany()
+               .HasForeignKey(c => c.QuotationId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // UnitId/SupplierId are plain snapshot ints (no FK) — frozen facts must not block
+        // master-data changes, mirroring the OcrOriginalUnitId convention.
+
+        // The same quotation line cannot be offered twice for one batch item.
+        builder.HasIndex(c => new { c.ApprovalBatchItemId, c.QuotationItemId })
+               .IsUnique()
+               .HasDatabaseName("UX_ApprovalBatchItemCandidate_Item_QuotationItem");
+
+        builder.HasIndex(c => c.ApprovalBatchItemId)
+               .HasDatabaseName("IX_ApprovalBatchItemCandidate_BatchItemId");
+
+        builder.HasIndex(c => c.QuotationItemId)
+               .HasDatabaseName("IX_ApprovalBatchItemCandidate_QuotationItemId");
     }
 }
 

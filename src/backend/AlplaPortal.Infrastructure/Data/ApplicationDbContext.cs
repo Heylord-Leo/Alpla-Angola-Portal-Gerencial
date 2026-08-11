@@ -55,6 +55,7 @@ public class ApplicationDbContext : DbContext
     // Partial Quotation Approval (Batch Model)
     public DbSet<ApprovalBatch> ApprovalBatches => Set<ApprovalBatch>();
     public DbSet<ApprovalBatchItem> ApprovalBatchItems => Set<ApprovalBatchItem>();
+    public DbSet<ApprovalBatchItemCandidate> ApprovalBatchItemCandidates => Set<ApprovalBatchItemCandidate>();
     public DbSet<ApprovalBatchExtraItemDecision> ApprovalBatchExtraItemDecisions => Set<ApprovalBatchExtraItemDecision>();
     public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
 

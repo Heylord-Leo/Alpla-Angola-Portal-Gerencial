@@ -150,7 +150,23 @@ public class RequestApprovalBatchItemDto
 {
     public Guid Id { get; set; }
     public Guid RequestLineItemId { get; set; }
-    public Guid SelectedQuotationItemId { get; set; }
+
+    /// <summary>Winning quotation item. Candidate model: null until the Area decision.
+    /// Legacy batch items (no candidate rows): the historical buyer-selected winner.</summary>
+    public Guid? SelectedQuotationItemId { get; set; }
+
+    // ── Candidate model (Final Approval reads winner + losing candidates read-only) ──
+    public Guid? SelectedCandidateId { get; set; }
+    public Guid? WinnerSelectedByUserId { get; set; }
+    public DateTime? WinnerSelectedAtUtc { get; set; }
+    public string? WinnerSelectionJustification { get; set; }
+
+    /// <summary>True for historical items decided by the Buyer under the pre-candidate model
+    /// (zero candidate rows, winner already populated).</summary>
+    public bool IsLegacyBuyerSelectedWinner { get; set; }
+
+    /// <summary>Frozen candidate snapshots (empty for legacy items — never synthesized).</summary>
+    public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
 }
 
 public class RequestLineItemDto
