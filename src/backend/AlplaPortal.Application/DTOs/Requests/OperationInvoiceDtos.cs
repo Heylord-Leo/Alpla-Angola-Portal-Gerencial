@@ -35,6 +35,22 @@ public class SaveOperationInvoiceDto
     /// state the opposite.
     /// </summary>
     public bool? AmountsEnteredManually { get; set; }
+
+    /// <summary>
+    /// Concurrency token on Update (Phase 2c): the RowVersion the client loaded. Ignored on
+    /// Create. On update, a null field keeps the persisted value (source-document convention),
+    /// so this DTO doubles as the partial-update payload.
+    /// </summary>
+    public byte[]? RowVersion { get; set; }
+}
+
+/// <summary>Voids an invoice registered in error (Phase 2c). Never a Finance rejection.</summary>
+public class VoidOperationInvoiceDto
+{
+    /// <summary>Mandatory — a void without a written reason is not auditable.</summary>
+    public string? Reason { get; set; }
+
+    public byte[]? RowVersion { get; set; }
 }
 
 /// <summary>One operation invoice as the UI sees it. No allocation detail — that is Phase 3.</summary>

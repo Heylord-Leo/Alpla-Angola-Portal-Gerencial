@@ -59,6 +59,20 @@ public static class PostPaymentIdempotencyKeys
     public static string OperationInvoiceRegistered(Guid requestId, Guid attachmentId)
         => Build("OI_REG", requestId, attachmentId);
 
+    /// <summary>
+    /// FATURA_OPERACAO_ANULADA — OI_VOID:{RequestId}:{OperationInvoiceId}. Invoice-scoped: VOIDED
+    /// is terminal, so an invoice voids at most once.
+    /// </summary>
+    public static string OperationInvoiceVoided(Guid requestId, Guid operationInvoiceId)
+        => Build("OI_VOID", requestId, operationInvoiceId);
+
+    /// <summary>
+    /// FATURA_OPERACAO_SUBSTITUIDA — OI_REP:{OriginalInvoiceId}:{NewAttachmentId}. One replacement
+    /// event per original-and-corrected pair, so a retry never writes a second row.
+    /// </summary>
+    public static string OperationInvoiceReplaced(Guid originalInvoiceId, Guid newAttachmentId)
+        => Build("OI_REP", originalInvoiceId, newAttachmentId);
+
     // ── Fiscal Receipt ──
 
     /// <summary>FISCAL_RECEIPT_UPLOADED — FR_UP:{GroupId}:{AttachmentId}</summary>

@@ -58,6 +58,14 @@ public static class OperationInvoiceLifecyclePolicy
         CreateAllowedRequestStatuses.Any(s =>
             string.Equals(s, requestStatusCode, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Update/Void/Replace share the create window (approved Phase 2c rule): the same statuses
+    /// that may receive an invoice may correct one, WAITING_PO_CORRECTION stays blocked for every
+    /// mutation, and reading is never gated by status at all.
+    /// </summary>
+    public static bool CanMutateInRequestStatus(string? requestStatusCode) =>
+        CanCreateInRequestStatus(requestStatusCode);
+
     /// <summary>The only document statuses in which fields may still change.</summary>
     public static readonly string[] EditableStatuses =
     {
