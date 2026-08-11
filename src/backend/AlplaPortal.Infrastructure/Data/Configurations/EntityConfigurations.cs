@@ -759,6 +759,8 @@ public class OperationInvoiceConfiguration : IEntityTypeConfiguration<OperationI
         builder.Property(i => i.SupplierTaxIdSnapshot).HasMaxLength(50);
         builder.Property(i => i.BilledCompanyNameRead).HasMaxLength(255);
         builder.Property(i => i.RejectionReason).HasMaxLength(2000);
+        builder.Property(i => i.Notes).HasMaxLength(2000);
+        builder.Property(i => i.VoidReason).HasMaxLength(2000);
         builder.Property(i => i.NetAmount).HasColumnType("decimal(18,2)");
         builder.Property(i => i.TaxAmount).HasColumnType("decimal(18,2)");
         builder.Property(i => i.GrossAmount).HasColumnType("decimal(18,2)");

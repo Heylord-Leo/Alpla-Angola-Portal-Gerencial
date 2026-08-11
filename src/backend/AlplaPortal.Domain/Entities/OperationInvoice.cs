@@ -47,6 +47,10 @@ public class OperationInvoice
     public string? DocumentNumber { get; set; }
     public string? DocumentSeries { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>Optional (Phase 2b decision): captured when the document states one, never required.</summary>
+    public DateTime? DueDate { get; set; }
+
     public string? Currency { get; set; }
 
     public decimal? NetAmount { get; set; }
@@ -64,11 +68,25 @@ public class OperationInvoice
     /// </summary>
     public bool AmountsEnteredManually { get; set; }
 
+    /// <summary>Free-text context from the person registering the invoice. Never parsed.</summary>
+    public string? Notes { get; set; }
+
     public DateTime UploadedAtUtc { get; set; }
     public Guid UploadedByUserId { get; set; }
 
+    public DateTime? UpdatedAtUtc { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
+
     public DateTime? ValidatedAtUtc { get; set; }
     public Guid? ValidatedByUserId { get; set; }
+
+    // ── Void (Phase 2 lifecycle: registered in error, before validation) ──
+    // Same convention as RequestAttachment/PaymentSourceDocument: a voided invoice stays readable
+    // forever — terminal, contributing nothing, never hidden. Distinct from REJECTED, which is a
+    // Finance judgement about a real document rather than an upload that should not exist.
+    public DateTime? VoidedAtUtc { get; set; }
+    public Guid? VoidedByUserId { get; set; }
+    public string? VoidReason { get; set; }
 
     /// <summary>Reason for a rejection or a replacement request. Mandatory for both.</summary>
     public string? RejectionReason { get; set; }

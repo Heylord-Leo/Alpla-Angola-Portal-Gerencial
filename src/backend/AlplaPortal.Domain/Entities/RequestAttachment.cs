@@ -31,10 +31,11 @@ public class RequestAttachment
 
     // ── Post-Payment Completion Workflow ──
     /// <summary>
-    /// Operation Invoice ("Factura da operação") uploaded post-payment by Requester, Buyer or
-    /// Finance. Renamed from FINAL_INVOICE in Release 3: "final" wrongly implied terminality, when
-    /// a Factura is simply the operation document and other obligations may still be open. The old
-    /// code was never written to any row, so nothing carries it.
+    /// Operation Invoice ("Factura da operação") uploaded post-approval by Buyer or Finance
+    /// (Release 4 Phase 2 approved rule: Requester and Receiving are read-only). Renamed from
+    /// FINAL_INVOICE in Release 3: "final" wrongly implied terminality, when a Factura is simply
+    /// the operation document and other obligations may still be open. The old code was never
+    /// written to any row, so nothing carries it.
     /// </summary>
     public const string TYPE_OPERATION_INVOICE = "OPERATION_INVOICE";
 

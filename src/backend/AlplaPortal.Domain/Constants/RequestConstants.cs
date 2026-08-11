@@ -433,6 +433,12 @@ public static class RequestConstants
         public const string ReplacementRequested = "REPLACEMENT_REQUESTED";
         /// <summary>Something Finance must decide on explicitly before the document can be accepted.</summary>
         public const string DivergenceDetected = "DIVERGENCE_DETECTED";
+        /// <summary>
+        /// Registered in error, before validation (Release 4 Phase 2). Terminal. Distinct from
+        /// <see cref="Rejected"/>, which is a Finance judgement about a real document rather than
+        /// an upload that should not exist.
+        /// </summary>
+        public const string Voided = "VOIDED";
 
         /// <summary>Contributes to a group's validated coverage.</summary>
         public static bool CountsTowardCoverage(string? status) =>
@@ -442,7 +448,7 @@ public static class RequestConstants
         public static readonly string[] AwaitingDecision = { Uploaded, PendingValidation };
 
         /// <summary>Terminal without coverage: contributes nothing but stays visible forever.</summary>
-        public static readonly string[] Terminal = { Rejected, ReplacementRequested };
+        public static readonly string[] Terminal = { Rejected, ReplacementRequested, Voided };
 
         public static bool IsAwaitingDecision(string? status) =>
             AwaitingDecision.Any(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));

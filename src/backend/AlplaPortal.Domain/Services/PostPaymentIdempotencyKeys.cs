@@ -50,6 +50,15 @@ public static class PostPaymentIdempotencyKeys
     public static string FinalInvoiceDivergenceAccepted(Guid groupId, Guid attachmentId)
         => Build("FI_DIV", groupId, attachmentId);
 
+    // ── Operation Invoice documents (Release 4 Phase 2) ──
+
+    /// <summary>
+    /// FATURA_OPERACAO_REGISTADA — OI_REG:{RequestId}:{AttachmentId}. Attachment-scoped: one
+    /// attachment is one invoice, so a retried create never writes a second history row.
+    /// </summary>
+    public static string OperationInvoiceRegistered(Guid requestId, Guid attachmentId)
+        => Build("OI_REG", requestId, attachmentId);
+
     // ── Fiscal Receipt ──
 
     /// <summary>FISCAL_RECEIPT_UPLOADED — FR_UP:{GroupId}:{AttachmentId}</summary>
