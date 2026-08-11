@@ -1274,14 +1274,15 @@ export function BuyerItemsList() {
     // Does NOT catch errors — PartialApprovalBatchModal awaits this and renders structured
     // 409/400 responses (pending decisions, locked reversal, invalid comment) inline itself;
     // swallowing them here would silently downgrade that to a generic page-level toast.
+    // Candidate model: the payload carries candidate OPTIONS per item (no winner field exists).
     const handlePartialApprovalSubmit = async (
-        submitData: { requestLineItemId: string, selectedQuotationItemId: string }[],
+        submitData: import('../../types').BatchItemInput[],
         extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
     ) => {
         if (!partialApprovalModal.group) return;
         await api.requests.createApprovalBatch(partialApprovalModal.group.requestId, submitData, undefined, extraItemDecisions);
         setPartialApprovalModal({ show: false, group: null });
-        setFeedback({ type: 'success', message: 'Lote de aprovação criado e enviado com sucesso.' });
+        setFeedback({ type: 'success', message: 'Lote criado — opções enviadas para o Aprovador de Área.' });
         loadData();
     };
 
@@ -2432,7 +2433,7 @@ export function BuyerItemsList() {
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                                                                                     {(() => {
-                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId)));
+                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))));
                                                                                         if (isUsedInBatch) {
                                                                                             return (
                                                                                                 <div style={{
@@ -2753,6 +2754,10 @@ export function BuyerItemsList() {
                                                                         <span>Criado em: {new Date(batch.createdAtUtc).toLocaleDateString('pt-PT')}</span>
                                                                         <span>•</span>
                                                                         <span>Itens: {batch.items?.length || 0}</span>
+                                                                        {(() => {
+                                                                            const optionCount = (batch.items || []).reduce((acc: number, bi: any) => acc + (bi.candidates?.length || 0), 0);
+                                                                            return optionCount > 0 ? (<><span>•</span><span>Opções: {optionCount}</span></>) : null;
+                                                                        })()}
                                                                     </div>
                                                                     {batch.comment && (
                                                                         <div style={{ fontSize: '0.8rem', color: 'var(--color-text-body)', marginTop: '8px', fontStyle: 'italic' }}>

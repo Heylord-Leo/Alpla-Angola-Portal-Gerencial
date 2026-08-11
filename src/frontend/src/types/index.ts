@@ -353,7 +353,64 @@ export interface RequestAttachmentDto {
 export interface ApprovalBatchItemSummary {
     id: string;
     requestLineItemId: string;
-    selectedQuotationItemId: string;
+    /** Winning quotation item. Candidate model: null until the Area Approver decides.
+     * Legacy batches: the historical buyer-selected winner. */
+    selectedQuotationItemId: string | null;
+    /** Candidate model — Area winner decision metadata (null before the Area decision). */
+    selectedCandidateId?: string | null;
+    winnerSelectedByUserId?: string | null;
+    winnerSelectedAtUtc?: string | null;
+    winnerSelectionJustification?: string | null;
+    /** True for items decided by the Buyer under the pre-candidate model (zero candidate rows). */
+    isLegacyBuyerSelectedWinner?: boolean;
+    /** Frozen candidate snapshots submitted by the Buyer (empty for legacy items). */
+    candidates?: ApprovalBatchItemCandidate[];
+}
+
+/** Frozen snapshot of one candidate option, exactly as submitted — mirrors the backend's
+ * ApprovalBatchItemCandidateDto. Commercial values here NEVER track later live-quotation edits. */
+export interface ApprovalBatchItemCandidate {
+    id: string;
+    quotationItemId: string;
+    quotationId: string;
+    supplierId?: number | null;
+    supplierName: string;
+    supplierNif?: string | null;
+    description: string;
+    quantity: number;
+    unitText?: string | null;
+    unitPrice: number;
+    discountAmount: number;
+    ivaRatePercent: number;
+    ivaAmount: number;
+    grossSubtotal: number;
+    lineTotal: number;
+    currency: string;
+    quotationDocumentNumber?: string | null;
+    quotationDocumentDate?: string | null;
+    hasReconciliationWarnings: boolean;
+    reconciliationStatus?: string | null;
+    reconciliationJustification?: string | null;
+    lineAdjustmentJustification?: string | null;
+    buyerNote?: string | null;
+    /** True when this candidate is the Area-selected winner of its item. */
+    isWinner: boolean;
+    /** "MENOR VALOR" badge — informational only, never a selection. */
+    isLowestTotal?: boolean;
+}
+
+/** Wire payload for one candidate option in CreateBatch/UpdateBatch. Identity + optional note
+ * ONLY — the backend snapshots every commercial value server-side. */
+export interface BatchCandidateInput {
+    quotationItemId: string;
+    buyerNote?: string;
+}
+
+/** Wire payload for one batch item in CreateBatch/UpdateBatch (candidate model — there is
+ * deliberately NO winner field anywhere in this contract). */
+export interface BatchItemInput {
+    requestLineItemId: string;
+    candidates: BatchCandidateInput[];
 }
 
 /** One informational (non-batch, non-total-affecting) quotation line — mirrors the backend's
@@ -421,7 +478,8 @@ export interface FinalApprovalLotView {
 
 export interface FinalApprovalLotItem {
     requestLineItemId: string;
-    selectedQuotationItemId: string;
+    /** Null = winner not yet decided (candidate model) or unresolved — flagged upstream. */
+    selectedQuotationItemId: string | null;
     description: string;
     quantity: number;
     unitCode?: string | null;

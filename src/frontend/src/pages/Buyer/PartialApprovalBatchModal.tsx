@@ -1,35 +1,45 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, AlertTriangle, CheckCircle, Package } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { X, AlertTriangle, Package, Send } from 'lucide-react';
 import { formatCurrencyAO } from '../../lib/utils';
-import { RequestLineItemDto, SavedQuotationDto, ExtraItemDecisionState, ExtraItemDecisionPayload } from '../../types';
+import { RequestLineItemDto, SavedQuotationDto, ExtraItemDecisionState, ExtraItemDecisionPayload, BatchItemInput } from '../../types';
 import { isQuotationItemSelectableForApproval } from './batchEligibility';
 import { BatchExtraItemsDecisionPanel } from './BatchExtraItemsDecisionPanel';
 import { computeRelevantExtraLines, parseExtraItemDecisionError } from './batchExtraItemsLogic';
 import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
 
-interface Candidate {
+/** One selectable quotation OPTION for a requested item. Values shown here are the current
+ * quotation data for display only — the backend freezes its own authoritative snapshot at
+ * submission; the POST payload carries candidate IDENTITY + optional BuyerNote, nothing else. */
+interface CandidateOption {
     quotationItemId: string;
     quotationId: string;
     supplierName: string;
     description: string;
-    // Persisted, backend-authoritative monetary fields (copied verbatim from SavedQuotationItemDto —
-    // never recomputed in the frontend). quantity is the QUOTATION-line quantity, not the requested qty.
     quantity: number;
+    unitLabel: string | null;
     unitPrice: number;
-    /** null = the authoritative value was absent from the API payload (never silently coerced to 0);
-     * a real stored 0 stays 0. See the lot-summary missing-field guard. */
-    taxableBase: number | null;
+    discountAmount: number;
     ivaAmount: number;
     ivaRatePercent: number;
+    grossSubtotal: number;
     lineTotal: number;
     currency: string;
     reconciliationStatus: string;
+    reconciliationJustification: string | null;
+    lineAdjustmentJustification: string | null;
+    documentNumber: string | null;
+    documentDate: string | null;
 }
 
 interface EligibleItem {
     reqItem: RequestLineItemDto;
-    candidates: Candidate[];
-    selectedCandidateId: string | null;
+    candidates: CandidateOption[];
+    /** Partial-batch inclusion: excluded items stay in the buyer queue untouched. */
+    included: boolean;
+    /** Candidate model: the buyer CHECKS one or more options — never a winner. */
+    checkedIds: string[];
+    /** Optional per-candidate "Observação do Comprador". Never auto-populated. */
+    buyerNotes: Record<string, string>;
 }
 
 interface PartialApprovalBatchModalProps {
@@ -39,7 +49,7 @@ interface PartialApprovalBatchModalProps {
     /** Must throw (not swallow) on failure so the modal can render the error inline —
      * BuyerItemsList.handlePartialApprovalSubmit only handles the success side-effects. */
     onSubmit: (
-        items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+        items: BatchItemInput[],
         extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
     ) => Promise<void>;
 }
@@ -53,6 +63,11 @@ const getRequestItemDescription = (item: any) =>
     item.requestedDescription ||
     'Descrição do item não disponível';
 
+const formatDocumentDate = (iso: string | null) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d.toLocaleDateString('pt-PT');
+};
 
 export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps> = ({
     isOpen,
@@ -70,6 +85,9 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
     const [fieldErrorItemId, setFieldErrorItemId] = useState<string | null>(null);
     const [fieldErrorMessage, setFieldErrorMessage] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    /** Inline validation is only shown after a submit attempt (not while composing). */
+    const [showValidation, setShowValidation] = useState(false);
+    const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
     useEffect(() => {
         if (!isOpen || !group) return;
@@ -89,45 +107,49 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                 return;
             }
 
-            const candidates: Candidate[] = [];
+            const candidates: CandidateOption[] = [];
             quotations.forEach(quotation => {
                 const qItems = quotation.items || [];
                 qItems.forEach(qi => {
                     if (qi.mappedRequestLineItemId === reqItemId &&
                         (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
                         isQuotationItemSelectableForApproval(qi.id, group)) {
-                        if (import.meta.env.DEV) {
-                            console.log(`[PartialApproval] Match found! Normalized RequestItemId: ${reqItemId} === Mapped: ${qi.mappedRequestLineItemId}`);
-                        }
                         candidates.push({
                             quotationItemId: qi.id,
                             quotationId: quotation.id,
                             supplierName: quotation.supplierNameSnapshot || 'Fornecedor',
                             description: qi.description,
                             quantity: qi.quantity || 0,
+                            unitLabel: qi.unitCode || qi.unitName || null,
                             unitPrice: qi.unitPrice || 0,
-                            taxableBase: qi.taxableBase ?? null,
+                            discountAmount: qi.discountAmount || 0,
                             ivaAmount: qi.ivaAmount || 0,
                             ivaRatePercent: qi.ivaRatePercent || 0,
+                            grossSubtotal: qi.grossSubtotal || 0,
                             lineTotal: qi.lineTotal || 0,
-                            currency: qi.currencyCode || 'AOA',
-                            reconciliationStatus: qi.reconciliationStatus
+                            currency: qi.currencyCode || quotation.currency || 'AOA',
+                            reconciliationStatus: qi.reconciliationStatus,
+                            reconciliationJustification: qi.reconciliationJustification || null,
+                            lineAdjustmentJustification: qi.lineAdjustmentJustification || null,
+                            documentNumber: quotation.documentNumber || null,
+                            documentDate: quotation.documentDate || null
                         });
                     }
                 });
             });
 
             if (candidates.length > 0) {
-                const selectedCandidateId = candidates.length === 1 ? candidates[0].quotationItemId : null;
+                // Default: PRECHECK ALL eligible options (approved rule) — the workflow's purpose
+                // is to hand alternatives to the Area Approver, and accidentally omitting a valid
+                // quote is worse than sending both. Everything stays visibly editable.
                 newEligibleItems.push({
                     reqItem: normalizedReqItem,
                     candidates,
-                    selectedCandidateId
+                    included: true,
+                    checkedIds: candidates.map(c => c.quotationItemId),
+                    buyerNotes: {}
                 });
             } else {
-                if (import.meta.env.DEV) {
-                    console.log(`[PartialApproval] Item ${normalizedReqItem.lineNumber} (${reqItemId}) remains pending`);
-                }
                 newPendingItems.push(normalizedReqItem);
             }
         });
@@ -141,59 +163,68 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         setLockedReason(null);
         setFieldErrorItemId(null);
         setFieldErrorMessage(null);
+        setShowValidation(false);
 
     }, [isOpen, group]);
 
+    // Contributing quotations = every quotation carrying at least one CHECKED candidate of an
+    // INCLUDED item (mirrors the backend's candidate-based contributing rule).
     const relevantExtraLines = useMemo(() => {
-        const selections = eligibleItems.map(item => {
-            const candidate = item.candidates.find(c => c.quotationItemId === item.selectedCandidateId);
-            return { quotationItemId: item.selectedCandidateId, quotationId: candidate?.quotationId || null };
-        });
+        const selections = eligibleItems
+            .filter(item => item.included)
+            .flatMap(item => item.candidates
+                .filter(c => item.checkedIds.includes(c.quotationItemId))
+                .map(c => ({ quotationItemId: c.quotationItemId, quotationId: c.quotationId })));
         return computeRelevantExtraLines(selections, group?.quotations || []);
     }, [eligibleItems, group]);
     const relevantExtraLineIds = useMemo(() => relevantExtraLines.map(l => l.quotationItemId).sort().join('|'), [relevantExtraLines]);
 
-    // Dynamic "Resumo financeiro do lote". Sums ONLY the persisted, backend-authoritative fields
-    // (taxableBase / ivaAmount / lineTotal) of the currently-included set — never re-derived from
-    // quantity/price/discount/IVA rate. Included set = each selected eligible winner + each
-    // EXTRA_ITEM whose decision is not EXCLUDE. Recomputes on winner selection, eligible-item set,
-    // relevant-extra set, and include/exclude decision changes.
-    const lotSummary = useMemo(() => {
-        let subtotalSemIva = 0, ivaTotal = 0, totalComIva = 0, selectedRequestedCount = 0, includedExtraCount = 0;
-        // Distinguish a genuinely-missing authoritative field (null — API omitted taxableBase) from a
-        // real stored zero: a missing value must never be silently summed as 0 and shown as valid.
-        let missingTaxableBaseCount = 0;
+    // ── Pre-decision batch summary ──
+    // There is NO winner and NO batch total before the Area decision. The only monetary facts a
+    // buyer may see are the commercial RANGE of the checked options (min/max possible combination)
+    // — and only when a single currency is involved. Never a "total considerado".
+    const batchSummary = useMemo(() => {
+        const included = eligibleItems.filter(i => i.included);
+        const checkedCandidates = included.flatMap(item =>
+            item.candidates.filter(c => item.checkedIds.includes(c.quotationItemId)));
 
-        const addTaxableBase = (value: number | null) => {
-            if (value == null) { missingTaxableBaseCount++; return; }
-            subtotalSemIva += value;
-        };
+        const supplierNames = new Set(checkedCandidates.map(c => c.supplierName));
+        const currencies = new Set(checkedCandidates.map(c => c.currency));
 
-        eligibleItems.forEach(item => {
-            const candidate = item.candidates.find(c => c.quotationItemId === item.selectedCandidateId);
-            if (!candidate) return;
-            selectedRequestedCount++;
-            addTaxableBase(candidate.taxableBase);
-            ivaTotal += candidate.ivaAmount;
-            totalComIva += candidate.lineTotal;
-        });
-
-        relevantExtraLines.forEach(line => {
+        const includedExtras = relevantExtraLines.filter(line => {
             const state = extraItemDecisions[line.quotationItemId] || { decision: 'INCLUDE', comment: '' };
-            if (state.decision === 'EXCLUDE') return;
-            includedExtraCount++;
-            addTaxableBase(line.taxableBase);
-            ivaTotal += line.ivaAmount;
-            totalComIva += line.lineTotal;
+            return state.decision !== 'EXCLUDE';
         });
 
-        return { subtotalSemIva, ivaTotal, totalComIva, selectedRequestedCount, includedExtraCount, hasMissingTaxableBase: missingTaxableBaseCount > 0 };
+        let minCombination: number | null = null;
+        let maxCombination: number | null = null;
+        const everyItemHasChecked = included.length > 0 && included.every(i => i.checkedIds.length > 0);
+        if (everyItemHasChecked && currencies.size === 1) {
+            let min = 0, max = 0;
+            included.forEach(item => {
+                const totals = item.candidates
+                    .filter(c => item.checkedIds.includes(c.quotationItemId))
+                    .map(c => c.lineTotal);
+                min += Math.min(...totals);
+                max += Math.max(...totals);
+            });
+            // Included EXTRA_ITEM lines are fixed (single-option) — they raise both bounds.
+            includedExtras.forEach(line => { min += line.lineTotal; max += line.lineTotal; });
+            minCombination = min;
+            maxCombination = max;
+        }
+
+        return {
+            includedItemCount: included.length,
+            optionCount: checkedCandidates.length,
+            supplierCount: supplierNames.size,
+            includedExtraCount: includedExtras.length,
+            mixedCurrencies: currencies.size > 1,
+            minCombination,
+            maxCombination
+        };
     }, [eligibleItems, relevantExtraLines, extraItemDecisions]);
 
-    // Reconcile decision state whenever the set of relevant EXTRA_ITEM lines changes (winner
-    // selection changed contributing quotations): preserve decisions for lines still relevant,
-    // drop decisions for lines no longer relevant. EXTRA_ITEM lines default to INCLUDE
-    // (review-first: a valid default always exists, the buyer only overrides).
     useEffect(() => {
         setExtraItemDecisions(prev => {
             const next: Record<string, ExtraItemDecisionState> = {};
@@ -205,9 +236,30 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [relevantExtraLineIds]);
 
-    const handleSelectCandidate = (reqItemId: string, candidateId: string) => {
+    const handleToggleCandidate = (reqItemId: string, candidateId: string) => {
+        setEligibleItems(prev => prev.map(item => {
+            if (item.reqItem.id !== reqItemId) return item;
+            const checked = item.checkedIds.includes(candidateId);
+            return {
+                ...item,
+                checkedIds: checked
+                    ? item.checkedIds.filter(id => id !== candidateId)
+                    : [...item.checkedIds, candidateId]
+            };
+        }));
+    };
+
+    const handleToggleIncluded = (reqItemId: string) => {
         setEligibleItems(prev => prev.map(item =>
-            item.reqItem.id === reqItemId ? { ...item, selectedCandidateId: candidateId } : item
+            item.reqItem.id === reqItemId ? { ...item, included: !item.included } : item
+        ));
+    };
+
+    const handleBuyerNoteChange = (reqItemId: string, candidateId: string, note: string) => {
+        setEligibleItems(prev => prev.map(item =>
+            item.reqItem.id === reqItemId
+                ? { ...item, buyerNotes: { ...item.buyerNotes, [candidateId]: note } }
+                : item
         ));
     };
 
@@ -218,14 +270,13 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
     };
 
     const isExtraItemsValid = relevantExtraLines.every(line => {
-        // Every EXTRA_ITEM line always has a valid default (INCLUDE) — the modal is submit-ready
-        // instantly; only an explicit EXCLUDE override requires a comment.
         const state = extraItemDecisions[line.quotationItemId] || { decision: 'INCLUDE', comment: '' };
         if (state.decision === 'EXCLUDE') return validateReconciliationJustification(state.comment).isValid;
         return true;
     });
 
-    const isValid = eligibleItems.every(item => item.selectedCandidateId !== null) && isExtraItemsValid && !lotSummary.hasMissingTaxableBase;
+    const includedItems = eligibleItems.filter(i => i.included);
+    const invalidItems = includedItems.filter(i => i.checkedIds.length === 0);
 
     const handleSubmit = async () => {
         setSubmitError(null);
@@ -235,13 +286,16 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         setFieldErrorItemId(null);
         setFieldErrorMessage(null);
 
-        if (eligibleItems.length === 0) {
-            setSubmitError('Nenhum item elegível para aprovação parcial.');
+        if (includedItems.length === 0) {
+            setSubmitError('Inclua pelo menos um item solicitado no lote.');
             return;
         }
 
-        if (!eligibleItems.every(item => item.selectedCandidateId !== null)) {
-            setSubmitError('Por favor, selecione uma cotação para cada item.');
+        if (invalidItems.length > 0) {
+            // Inline validation on the offending item, plus scroll/focus to the first one.
+            setShowValidation(true);
+            const firstInvalidId = invalidItems[0].reqItem.id;
+            itemRefs.current[firstInvalidId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return;
         }
 
@@ -250,42 +304,23 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
             return;
         }
 
-        if (lotSummary.hasMissingTaxableBase) {
-            setSubmitError('O valor tributável (subtotal sem IVA) de um ou mais itens não foi retornado pelo servidor. Atualize a página para recarregar os dados da cotação antes de confirmar o lote.');
-            return;
-        }
-
-        const submitData = [];
-
-        for (const item of eligibleItems) {
-            // Safely normalize to string before validating
-            const reqItemId = item.reqItem.id ? String(item.reqItem.id) : '';
-            const quotationItemId = item.selectedCandidateId ? String(item.selectedCandidateId) : '';
-
-            if (import.meta.env.DEV) {
-                console.log(`[PartialApproval] Processing Payload Entry - RequestItemId: ${reqItemId}, QuotationItemId: ${quotationItemId}`);
-            }
-
-            if (!reqItemId || reqItemId.trim() === '' || !quotationItemId || quotationItemId.trim() === '') {
-                setSubmitError(`Payload inválido: IDs ausentes na linha ${item.reqItem.lineNumber}`);
-                return; // Return safely without throwing an uncaught error
-            }
-
-            submitData.push({
-                requestLineItemId: reqItemId,
-                selectedQuotationItemId: quotationItemId
-            });
-        }
+        // Candidate model payload: identity + optional note only. No winner, no financial values
+        // — the backend snapshots the authoritative commercial facts server-side.
+        const submitData: BatchItemInput[] = includedItems.map(item => ({
+            requestLineItemId: String(item.reqItem.id),
+            candidates: item.checkedIds.map(candidateId => {
+                const note = (item.buyerNotes[candidateId] || '').trim();
+                return note
+                    ? { quotationItemId: String(candidateId), buyerNote: note }
+                    : { quotationItemId: String(candidateId) };
+            })
+        }));
 
         const extraItemDecisionsPayload: Record<string, ExtraItemDecisionPayload> = {};
         relevantExtraLines.forEach(line => {
             const state = extraItemDecisions[line.quotationItemId] || { decision: 'INCLUDE', comment: '' };
             extraItemDecisionsPayload[line.quotationItemId] = { decision: state.decision || 'INCLUDE', comment: state.comment || undefined };
         });
-
-        if (import.meta.env.DEV) {
-            console.log('[PartialApproval] Final POST Payload:', JSON.stringify({ items: submitData, extraItemDecisions: extraItemDecisionsPayload }, null, 2));
-        }
 
         setIsSubmitting(true);
         try {
@@ -332,7 +367,7 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                     backgroundColor: '#FFFFFF',
                     borderRadius: '12px',
                     width: '100%',
-                    maxWidth: '700px',
+                    maxWidth: '760px',
                     boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
                     display: 'flex',
                     flexDirection: 'column',
@@ -346,10 +381,10 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                         </div>
                         <div>
                             <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                                Aprovação Parcial de Cotações
+                                Enviar Cotações para Aprovação
                             </h2>
                             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                                Selecione os itens que deseja avançar para aprovação
+                                Selecione os itens e as opções de cotação que serão apresentadas ao Aprovador de Área. O vencedor será escolhido na aprovação.
                             </p>
                         </div>
                     </div>
@@ -361,74 +396,141 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                 <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     <div>
                         <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                            Itens a enviar no Lote ({eligibleItems.length})
+                            Itens com cotação ({eligibleItems.length})
                         </h3>
                         {eligibleItems.length === 0 ? (
-                            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Nenhum item elegível para aprovação parcial.</p>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Nenhum item elegível para envio à aprovação.</p>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {eligibleItems.map(item => (
-                                    <div key={item.reqItem.id} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--color-bg-surface)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                            <div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
-                                                    Linha {item.reqItem.lineNumber} &mdash; Qtd: {item.reqItem.quantity} {item.reqItem.unit}
-                                                </div>
-                                                <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                                    <div style={{ marginBottom: '2px' }}>Item solicitado:</div>
-                                                    <div style={{ fontWeight: 600, color: 'var(--color-text-main)', wordBreak: 'break-word' }}>
-                                                        {getRequestItemDescription(item.reqItem)}
+                                {eligibleItems.map(item => {
+                                    const itemInvalid = showValidation && item.included && item.checkedIds.length === 0;
+                                    // "MENOR VALOR" badge — per currency within this item; informational only.
+                                    const lowestByCurrency: Record<string, number> = {};
+                                    item.candidates.forEach(c => {
+                                        if (lowestByCurrency[c.currency] === undefined || c.lineTotal < lowestByCurrency[c.currency]) {
+                                            lowestByCurrency[c.currency] = c.lineTotal;
+                                        }
+                                    });
+                                    return (
+                                        <div
+                                            key={item.reqItem.id}
+                                            ref={el => { itemRefs.current[item.reqItem.id] = el; }}
+                                            style={{
+                                                border: itemInvalid ? '1px solid #dc2626' : '1px solid var(--color-border)',
+                                                borderRadius: '8px', padding: '16px',
+                                                backgroundColor: item.included ? 'var(--color-bg-surface)' : '#f9fafb',
+                                                opacity: item.included ? 1 : 0.75
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                                                        Linha {item.reqItem.lineNumber} &mdash; Qtd solicitada: {item.reqItem.quantity} {item.reqItem.unit}
+                                                    </div>
+                                                    <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                                                        <div style={{ marginBottom: '2px' }}>Item solicitado:</div>
+                                                        <div style={{ fontWeight: 600, color: 'var(--color-text-main)', wordBreak: 'break-word' }}>
+                                                            {getRequestItemDescription(item.reqItem)}
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0, fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)' }} onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={item.included}
+                                                        onChange={() => handleToggleIncluded(item.reqItem.id)}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                    Incluir no lote
+                                                </label>
                                             </div>
-                                            {item.selectedCandidateId ? (
-                                                <CheckCircle size={20} color="#059669" style={{ flexShrink: 0 }} />
-                                            ) : (
-                                                <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />
+
+                                            {item.included && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                                        Opções a Enviar para Aprovação
+                                                    </div>
+                                                    {itemInvalid && (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
+                                                            <AlertTriangle size={14} /> Selecione pelo menos uma opção de cotação para este item (ou remova-o do lote).
+                                                        </div>
+                                                    )}
+                                                    {item.candidates.map(candidate => {
+                                                        const checked = item.checkedIds.includes(candidate.quotationItemId);
+                                                        const isLowest = candidate.lineTotal === lowestByCurrency[candidate.currency];
+                                                        const quantityDiffers = item.reqItem.quantity != null
+                                                            && Number(candidate.quantity) !== Number(item.reqItem.quantity);
+                                                        const docDate = formatDocumentDate(candidate.documentDate);
+                                                        return (
+                                                            <div key={candidate.quotationItemId} style={{ border: checked ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: checked ? '#eff6ff' : 'transparent' }}>
+                                                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', cursor: 'pointer' }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={checked}
+                                                                        onChange={() => handleToggleCandidate(item.reqItem.id, candidate.quotationItemId)}
+                                                                        style={{ cursor: 'pointer', marginTop: '4px' }}
+                                                                    />
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', wordBreak: 'break-word', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                                                            {candidate.description}
+                                                                            {isLowest && (
+                                                                                <span style={{ padding: '2px 6px', backgroundColor: '#ecfdf5', color: '#047857', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', whiteSpace: 'nowrap', border: '1px solid #a7f3d0' }}>MENOR VALOR</span>
+                                                                            )}
+                                                                            {candidate.reconciliationStatus === 'SUBSTITUTE' && (
+                                                                                <span style={{ padding: '2px 6px', backgroundColor: '#fef9c3', color: '#854d0e', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', whiteSpace: 'nowrap' }}>Substituto</span>
+                                                                            )}
+                                                                            {quantityDiffers && (
+                                                                                <span style={{ padding: '2px 6px', backgroundColor: '#fff7ed', color: '#9a3412', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', whiteSpace: 'nowrap', border: '1px solid #fed7aa' }}>Qtd difere do pedido</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                                                                            Fornecedor: <span style={{ fontWeight: 600 }}>{candidate.supplierName}</span>
+                                                                            {candidate.documentNumber && (
+                                                                                <span> &middot; Doc: <span style={{ fontWeight: 600 }}>{candidate.documentNumber}</span>{docDate ? ` (${docDate})` : ''}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {(candidate.lineAdjustmentJustification || (candidate.reconciliationStatus === 'SUBSTITUTE' && candidate.reconciliationJustification)) && (
+                                                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginTop: '6px', fontSize: '0.75rem', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '6px 8px' }}>
+                                                                                <AlertTriangle size={12} style={{ marginTop: '1px', flexShrink: 0 }} />
+                                                                                <span>{candidate.lineAdjustmentJustification || candidate.reconciliationJustification}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '170px' }}>
+                                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Qtd cotada: <strong style={{ color: 'var(--color-text-main)' }}>{candidate.quantity}{candidate.unitLabel ? ` ${candidate.unitLabel}` : ''}</strong></div>
+                                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Preço unitário s/ IVA: {formatCurrencyAO(candidate.unitPrice)}</div>
+                                                                        {candidate.discountAmount > 0 && (
+                                                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Desconto: {formatCurrencyAO(candidate.discountAmount)}</div>
+                                                                        )}
+                                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>IVA ({candidate.ivaRatePercent}%): {formatCurrencyAO(candidate.ivaAmount)}</div>
+                                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)', marginTop: '2px' }}>Total da linha c/ IVA: {formatCurrencyAO(candidate.lineTotal)}</div>
+                                                                    </div>
+                                                                </label>
+                                                                {checked && (
+                                                                    <div style={{ padding: '0 12px 12px 40px' }}>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.buyerNotes[candidate.quotationItemId] || ''}
+                                                                            onChange={(e) => handleBuyerNoteChange(item.reqItem.id, candidate.quotationItemId, e.target.value)}
+                                                                            placeholder="Observação do Comprador (opcional)"
+                                                                            maxLength={1000}
+                                                                            style={{ width: '100%', padding: '6px 10px', fontSize: '0.8rem', border: '1px solid var(--color-border)', borderRadius: '4px', backgroundColor: '#fff' }}
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            {!item.included && (
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                    Fora deste lote — o item continuará na sua fila com as cotações registradas.
+                                                </div>
                                             )}
                                         </div>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
-                                                Vencedor Selecionado
-                                            </div>
-                                            {item.candidates.map(candidate => (
-                                                <label key={candidate.quotationItemId} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', border: item.selectedCandidateId === candidate.quotationItemId ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: item.selectedCandidateId === candidate.quotationItemId ? '#eff6ff' : 'transparent', cursor: 'pointer' }}>
-                                                    <input
-                                                        type="radio"
-                                                        name={`candidate-${item.reqItem.id}`}
-                                                        checked={item.selectedCandidateId === candidate.quotationItemId}
-                                                        onChange={() => handleSelectCandidate(item.reqItem.id, candidate.quotationItemId)}
-                                                        style={{ cursor: 'pointer', marginTop: '4px' }}
-                                                    />
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '2px' }}>
-                                                            Item na cotação/proforma:
-                                                        </div>
-                                                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', wordBreak: 'break-word', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                                                            {candidate.description}
-                                                            {candidate.reconciliationStatus === 'SUBSTITUTE' && (
-                                                                <span style={{ padding: '2px 6px', backgroundColor: '#fef9c3', color: '#854d0e', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', whiteSpace: 'nowrap' }}>Substituto</span>
-                                                            )}
-                                                            {candidate.reconciliationStatus === 'MAPPED' && (
-                                                                <span style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', whiteSpace: 'nowrap' }}>Mapeado</span>
-                                                            )}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
-                                                            Fornecedor: <span style={{ fontWeight: 600 }}>{candidate.supplierName}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '160px' }}>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Qtd: <strong style={{ color: 'var(--color-text-main)' }}>{candidate.quantity}</strong></div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Preço unitário s/ IVA: {formatCurrencyAO(candidate.unitPrice)}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>IVA ({candidate.ivaRatePercent}%): {formatCurrencyAO(candidate.ivaAmount)}</div>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)', marginTop: '2px' }}>Total da linha c/ IVA: {formatCurrencyAO(candidate.lineTotal)}</div>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -482,40 +584,47 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                 {eligibleItems.length > 0 && (
                     <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
                         <h3 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                            Resumo financeiro do lote
+                            Resumo do lote
                         </h3>
-                        {lotSummary.hasMissingTaxableBase && (
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '10px 12px', marginBottom: '10px' }}>
-                                <AlertTriangle size={16} color="#dc2626" style={{ marginTop: '1px', flexShrink: 0 }} />
-                                <span style={{ fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
-                                    Subtotal sem IVA indisponível: um ou mais itens incluídos não retornaram o valor tributável do servidor. Atualize a página para recarregar os dados da cotação antes de confirmar.
-                                </span>
-                            </div>
-                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
-                                <span>Itens solicitados selecionados</span>
-                                <strong style={{ color: 'var(--color-text-main)' }}>{lotSummary.selectedRequestedCount}</strong>
+                                <span>Itens selecionados</span>
+                                <strong style={{ color: 'var(--color-text-main)' }}>{batchSummary.includedItemCount}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
-                                <span>Itens adicionais incluídos</span>
-                                <strong style={{ color: 'var(--color-text-main)' }}>{lotSummary.includedExtraCount}</strong>
+                                <span>Opções enviadas</span>
+                                <strong style={{ color: 'var(--color-text-main)' }}>{batchSummary.optionCount}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
-                                <span>Subtotal sem IVA</span>
-                                {lotSummary.hasMissingTaxableBase ? (
-                                    <strong style={{ color: '#dc2626' }}>Indisponível</strong>
-                                ) : (
-                                    <strong style={{ color: 'var(--color-text-main)' }}>{formatCurrencyAO(lotSummary.subtotalSemIva)}</strong>
-                                )}
+                                <span>Fornecedores</span>
+                                <strong style={{ color: 'var(--color-text-main)' }}>{batchSummary.supplierCount}</strong>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
-                                <span>IVA total</span>
-                                <strong style={{ color: 'var(--color-text-main)' }}>{formatCurrencyAO(lotSummary.ivaTotal)}</strong>
-                            </div>
+                            {batchSummary.includedExtraCount > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
+                                    <span>Itens adicionais incluídos</span>
+                                    <strong style={{ color: 'var(--color-text-main)' }}>{batchSummary.includedExtraCount}</strong>
+                                </div>
+                            )}
+                            {batchSummary.mixedCurrencies ? (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--color-border)' }}>
+                                    <span>Faixa comercial</span>
+                                    <strong style={{ color: 'var(--color-text-main)' }}>Múltiplas moedas — não agregada</strong>
+                                </div>
+                            ) : (batchSummary.minCombination !== null && batchSummary.maxCombination !== null) && (
+                                <div style={{ paddingTop: '6px', borderTop: '1px dashed var(--color-border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
+                                        <span>Menor combinação possível</span>
+                                        <strong style={{ color: 'var(--color-text-main)' }}>{formatCurrencyAO(batchSummary.minCombination)}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)' }}>
+                                        <span>Maior combinação possível</span>
+                                        <strong style={{ color: 'var(--color-text-main)' }}>{formatCurrencyAO(batchSummary.maxCombination)}</strong>
+                                    </div>
+                                </div>
+                            )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px dashed var(--color-border)' }}>
-                                <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-primary)' }}>Total considerado neste lote</span>
-                                <strong style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-primary)' }}>{formatCurrencyAO(lotSummary.totalComIva)}</strong>
+                                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-primary)' }}>Total aprovado</span>
+                                <strong style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>A definir pelo Aprovador de Área</strong>
                             </div>
                         </div>
                     </div>
@@ -541,8 +650,9 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                     <button onClick={onClose} style={{ padding: '10px 20px', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-text-muted)', cursor: 'pointer' }}>
                         Cancelar
                     </button>
-                    <button onClick={handleSubmit} disabled={!isValid || eligibleItems.length === 0 || isSubmitting} style={{ padding: '10px 20px', backgroundColor: isValid && eligibleItems.length > 0 && !isSubmitting ? 'var(--color-primary)' : 'var(--color-border)', border: 'none', borderRadius: '8px', fontWeight: 600, color: 'white', cursor: isValid && eligibleItems.length > 0 && !isSubmitting ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {isSubmitting ? 'Enviando...' : 'Confirmar e Enviar para Aprovação'}
+                    <button onClick={handleSubmit} disabled={includedItems.length === 0 || isSubmitting} style={{ padding: '10px 20px', backgroundColor: includedItems.length > 0 && !isSubmitting ? 'var(--color-primary)' : 'var(--color-border)', border: 'none', borderRadius: '8px', fontWeight: 600, color: 'white', cursor: includedItems.length > 0 && !isSubmitting ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Send size={16} />
+                        {isSubmitting ? 'Enviando...' : 'Enviar opções para aprovação'}
                     </button>
                 </div>
             </div>

@@ -228,7 +228,9 @@ export const api = {
     requests: {
         createApprovalBatch: async (
             requestId: string,
-            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            // Candidate model: identity + optional BuyerNote per option — no winner, no financial
+            // values on the wire; the backend snapshots authoritative values server-side.
+            items: import('../types').BatchItemInput[],
             comment?: string,
             extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
         ): Promise<any> => {
@@ -243,7 +245,7 @@ export const api = {
         updateApprovalBatch: async (
             requestId: string,
             batchId: string,
-            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            items: import('../types').BatchItemInput[],
             comment?: string,
             extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
         ): Promise<any> => {
