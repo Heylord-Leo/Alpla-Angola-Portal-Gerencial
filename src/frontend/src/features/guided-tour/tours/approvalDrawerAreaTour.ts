@@ -25,7 +25,7 @@ export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
     {
         target: '[data-tour="approval-drawer-batch-banner"]',
         title: 'Lote de Aprovação Parcial',
-        content: 'Este pedido pode ainda estar em cotação, mas este lote parcial já está aguardando a sua aprovação. O status geral do pedido e o status do lote podem ser diferentes — isso é esperado. O Wizard revisará apenas os itens deste lote; itens pendentes fora do lote continuam com o comprador e não bloqueiam esta aprovação.',
+        content: 'Este pedido pode ainda estar em cotação, mas este lote parcial já está aguardando a sua aprovação. O Comprador envia as opções de cotação de cada item; dentro do Wizard, compare as opções enviadas e selecione uma vencedora para cada item — a escolha do vencedor é sua, não do Comprador. Itens pendentes fora do lote continuam com o comprador e não bloqueiam esta aprovação.',
         placement: 'bottom',
     },
     {
@@ -55,7 +55,7 @@ export const APPROVAL_DRAWER_AREA_STEPS: TourStep[] = [
     {
         target: '[data-tour="approval-drawer-actions"]',
         title: 'Ações de Aprovação',
-        content: 'Use "Revisar Pedido" para abrir o Wizard completo (atribuição financeira, revisão dos itens, análise orçamental e decisão final). Se o pedido já tiver um lote ativo, você também pode rejeitar ou solicitar reajuste diretamente por aqui — essas ações rápidas aplicam-se apenas ao lote em revisão, sem afetar os demais itens.',
+        content: 'Use "Revisar Pedido" para abrir o Wizard completo (atribuição financeira, seleção da cotação vencedora por item, análise orçamental e decisão final). Se o pedido já tiver um lote ativo, você também pode rejeitar ou solicitar reajuste diretamente por aqui — essas ações rápidas aplicam-se apenas ao lote em revisão, sem afetar os demais itens.',
         placement: 'top',
     },
 ];

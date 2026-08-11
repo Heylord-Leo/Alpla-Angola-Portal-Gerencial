@@ -455,14 +455,15 @@ export function ApprovalDetailPanel({
     };
 
     const handleWizardSubmit = async (
-        action: ApprovalActionType, 
-        awards: Record<string, string>, 
-        assignments: Record<string, ItemAssignment>, 
-        comment: string, 
+        action: ApprovalActionType,
+        awards: Record<string, string>,
+        assignments: Record<string, ItemAssignment>,
+        comment: string,
         budgetJustification?: string,
         reassignments?: AllocationReassignmentDto[],
         allocations?: Record<string, any[]>,
-        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>
+        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>,
+        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[]
     ): Promise<boolean> => {
         setApprovalProcessing(true);
         try {
@@ -472,7 +473,7 @@ export function ApprovalDetailPanel({
             if (action === 'APPROVE') {
                 result = activeBatch
                     ? (isArea
-                        ? await api.requests.approveBatchArea(data.id, activeBatch.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
+                        ? await api.requests.approveBatchArea(data.id, activeBatch.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions, selections)
                         : await api.requests.approveBatchFinal(data.id, activeBatch.id, comment))
                     : (isArea
                         ? await api.requests.approveArea(data.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
@@ -634,6 +635,22 @@ export function ApprovalDetailPanel({
                             <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#1e40af', lineHeight: 1.4, fontWeight: 500 }}>
                                 Apenas os itens pertencentes a este lote estão visíveis e incluídos nesta ação de aprovação. Os itens restantes do pedido continuam pendentes com o comprador.
                             </p>
+                            {(() => {
+                                // Candidate model: the Buyer submitted OPTIONS — the winner is chosen
+                                // by the Area Approver inside the wizard, never pre-decided here.
+                                const candidateItems = (activeBatch.items || []).filter((bi: any) => (bi.candidates?.length ?? 0) > 0);
+                                if (candidateItems.length === 0) return null;
+                                const optionCount = candidateItems.reduce((acc: number, bi: any) => acc + bi.candidates.length, 0);
+                                const undecidedCount = candidateItems.filter((bi: any) => !bi.selectedCandidateId).length;
+                                return (
+                                    <p style={{ margin: '6px 0 0 0', fontSize: '0.72rem', color: '#1e40af', lineHeight: 1.5 }}>
+                                        <strong>Opções enviadas pelo Comprador:</strong> {optionCount} para {candidateItems.length} item(ns).{' '}
+                                        {undecidedCount > 0
+                                            ? <>Vencedores a definir pelo Aprovador de Área — compare e selecione no Assistente de Revisão.</>
+                                            : <>Vencedores selecionados pelo Aprovador de Área.</>}
+                                    </p>
+                                );
+                            })()}
                             {activeBatch.status !== data.statusCode && (
                                 <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#1e40af', lineHeight: 1.5 }}>
                                     <strong>Pedido (status geral):</strong> {data.statusName || data.statusCode}
