@@ -4,7 +4,36 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.225.1
+v2.225.2
+
+## [v2.225.2] - 2026-08-11
+
+### Fixed — request creation now says WHICH fields are missing, instead of a generic toast
+
+Creating a PAYMENT request with a complete source document but an empty Título/Descrição failed
+with only "Não foi possível criar o pedido." — the real reason never reached the user.
+
+- **Título and Descrição are now validated up front** with the other mandatory header fields.
+  They carried the HTML `required` attribute, but creation is triggered programmatically (there is
+  no native form submission), so the browser never enforced it and the custom validator did not
+  check them — the request went to the server and died there.
+- **The pre-submit toast names the offending fields** ("Verifique os campos assinalados: Título,
+  Descrição.") while the precise reason appears inline under each field, which is also marked red
+  and scrolled into view — the existing `scrollToFirstError`/field-error machinery, now actually
+  reached by these fields.
+- **Backend validation details are no longer discarded on the PAYMENT path.** The API layer
+  already parsed `ValidationProblemDetails.errors` into `ApiError.fieldErrors`, and the
+  QUOTATION path already displayed them — but the multi-document creation hook flattened the
+  error to a string, and the caller then read the hook's error state from the render before it
+  was set, so every failure collapsed into the generic toast. The run result now carries
+  `error` + `fieldErrors` directly; field errors are applied to the form exactly like the
+  QUOTATION path, and the generic message remains only as the fallback for unstructured failures.
+- **The composed source-document draft is untouched by a failed validation** — documents, OCR
+  state and items stay exactly as the user left them (nothing was cleared before; now the failure
+  path is also explicit about it).
+
+Backend validation is unchanged and remains authoritative. No OperationInvoice, classification,
+grouping-key or reconciliation logic was touched.
 
 ## [v2.225.1] - 2026-08-11
 

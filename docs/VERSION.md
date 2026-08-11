@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.225.1
+v2.225.2
+
+## [v2.225.2] - 2026-08-11
+
+### Fixed — request-create validation feedback
+
+- Título/Descrição validated up front (native `required` never ran — creation is programmatic);
+  invalid fields are marked, explained inline, and scrolled into view; the toast names them.
+- Backend `ValidationProblemDetails.errors` are surfaced on the PAYMENT creation path (the run
+  result now carries error + fieldErrors; hook state was read one render too early, collapsing
+  every failure into "Não foi possível criar o pedido.").
+- Generic toast remains only as fallback for unstructured failures; document draft preserved.
 
 ## [v2.225.1] - 2026-08-11
 
