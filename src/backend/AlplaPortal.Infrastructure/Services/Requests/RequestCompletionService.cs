@@ -49,9 +49,10 @@ public class RequestCompletionService : IRequestCompletionService
         Guid actorUserId,
         CancellationToken ct = default)
     {
-        // Feature gate first: while disabled this method must be indistinguishable from not
-        // existing at all — no query, no tracked entity, no log noise on the hot path.
-        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_options))
+        // Completion gate first (Phase 3A checkpoint split: intake may be on while the Phase 4
+        // lifecycle is not): while completion is disabled this method must be indistinguishable
+        // from not existing at all — no query, no tracked entity, no log noise on the hot path.
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_options))
             return Task.FromResult(GroupCompletionResult.NoOp);
 
         // Release 4 replaces this with the evaluation of plan v6 §11.2:
@@ -69,7 +70,7 @@ public class RequestCompletionService : IRequestCompletionService
         Guid actorUserId,
         CancellationToken ct = default)
     {
-        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_options))
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_options))
             return Task.FromResult(ParentCompletionResult.NoOp);
 
         // Contract guard — this is the whole reason the phase exists. Running the parent

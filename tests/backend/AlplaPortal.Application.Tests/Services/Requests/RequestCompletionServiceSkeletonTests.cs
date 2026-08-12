@@ -39,12 +39,14 @@ public class RequestCompletionServiceSkeletonTests
             .UseSqlServer(NonConnectingConnectionString)
             .Options);
 
-    private static IRequestCompletionService Service(ApplicationDbContext context, bool enabled) =>
+    private static IRequestCompletionService Service(
+        ApplicationDbContext context, bool enabled, bool completionEnabled = false) =>
         new RequestCompletionService(
             context,
             Options.Create(new PostPaymentCompletionOptions
             {
                 Enabled = enabled,
+                CompletionEnabled = completionEnabled,
                 EffectiveDateUtc = enabled
                     ? new DateTime(2026, 8, 15, 0, 0, 0, DateTimeKind.Utc)
                     : DateTime.MaxValue
@@ -97,13 +99,47 @@ public class RequestCompletionServiceSkeletonTests
         await service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid());
     }
 
-    // ── Enabled: represented, not activated ──
+    // ── The Phase 3B window (flag split): intake on, completion lifecycle still a no-op ──
 
     [Fact]
-    public async Task Group_phase_is_not_activated_in_release_1()
+    public async Task Completion_stays_a_no_op_while_only_intake_is_enabled()
+    {
+        // Enabled=true / CompletionEnabled=false — the exact Phase 3B TEST configuration. The
+        // service must NOT throw NotImplementedException: coverage can work while grouped
+        // requests keep finalizing through the legacy path. The non-connecting context also
+        // proves no query runs.
+        using var context = ModelOnlyContext();
+        var service = Service(context, enabled: true, completionEnabled: false);
+
+        var group = await service.EvaluateGroupCompletionAsync(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var parent = await service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid());
+
+        Assert.False(group.AnyGroupCompleted);
+        Assert.False(parent.RequestCompleted);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task Completion_without_intake_stays_disabled_too()
+    {
+        // CompletionEnabled=true with Enabled=false is a mistyped configuration: it fails closed.
+        using var context = ModelOnlyContext();
+        var service = Service(context, enabled: false, completionEnabled: true);
+
+        var group = await service.EvaluateGroupCompletionAsync(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var parent = await service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid());
+
+        Assert.False(group.AnyGroupCompleted);
+        Assert.False(parent.RequestCompleted);
+    }
+
+    // ── Fully enabled: represented, not activated (Phase 4 pin — routing only) ──
+
+    [Fact]
+    public async Task Group_phase_is_not_activated_before_phase_4()
     {
         using var context = ModelOnlyContext();
-        var service = Service(context, enabled: true);
+        var service = Service(context, enabled: true, completionEnabled: true);
 
         var ex = await Assert.ThrowsAsync<NotImplementedException>(
             () => service.EvaluateGroupCompletionAsync(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
@@ -112,10 +148,10 @@ public class RequestCompletionServiceSkeletonTests
     }
 
     [Fact]
-    public async Task Parent_phase_is_not_activated_in_release_1()
+    public async Task Parent_phase_is_not_activated_before_phase_4()
     {
         using var context = ModelOnlyContext();
-        var service = Service(context, enabled: true);
+        var service = Service(context, enabled: true, completionEnabled: true);
 
         var ex = await Assert.ThrowsAsync<NotImplementedException>(
             () => service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid()));
@@ -261,6 +297,7 @@ public class RequestCompletionServiceTransactionGuardTests
             Options.Create(new PostPaymentCompletionOptions
             {
                 Enabled = true,
+                CompletionEnabled = true,   // the guard sits behind the completion gate
                 EffectiveDateUtc = new DateTime(2026, 8, 15, 0, 0, 0, DateTimeKind.Utc)
             }),
             NullLogger<RequestCompletionService>.Instance);

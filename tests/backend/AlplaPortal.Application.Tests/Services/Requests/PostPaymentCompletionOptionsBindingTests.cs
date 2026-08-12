@@ -74,6 +74,46 @@ public class PostPaymentCompletionOptionsBindingTests
         Assert.NotNull(options);
         Assert.False(options.Enabled);
         Assert.True(PostPaymentCompletionPolicy.IsFeatureDisabled(options));
+
+        // Phase 3A checkpoint split: the committed default keeps the Phase 4 lifecycle off too.
+        Assert.False(options.CompletionEnabled);
+        Assert.True(PostPaymentCompletionPolicy.IsCompletionDisabled(options));
+    }
+
+    [Fact]
+    public void Completion_flag_binds_through_the_real_registration()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new System.Collections.Generic.Dictionary<string, string?>
+            {
+                ["PostPaymentCompletion:Enabled"] = "true",
+                ["PostPaymentCompletion:CompletionEnabled"] = "true",
+                ["PostPaymentCompletion:EffectiveDateUtc"] = "2026-08-15T00:00:00Z"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddPostPaymentCompletionOptions(config);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PostPaymentCompletionOptions>>().Value;
+
+        Assert.True(options.Enabled);
+        Assert.True(options.CompletionEnabled);
+        Assert.False(PostPaymentCompletionPolicy.IsCompletionDisabled(options));
+    }
+
+    [Fact]
+    public void A_missing_completion_key_fails_closed()
+    {
+        // The Phase 3B TEST file will carry Enabled=true and MAY omit CompletionEnabled — the
+        // absence must mean "completion off", never "completion follows Enabled".
+        var options = PostPaymentCompletionOptions.FromConfigurationValues(
+            "true", "2026-08-15T00:00:00Z", completionEnabledRaw: null);
+
+        Assert.True(options.Enabled);
+        Assert.False(options.CompletionEnabled);
+        Assert.True(PostPaymentCompletionPolicy.IsCompletionDisabled(options));
     }
 
     [Fact]

@@ -33,6 +33,20 @@ public static class PostPaymentCompletionPolicy
     }
 
     /// <summary>
+    /// Phase 4 completion lifecycle disabled — the Phase 3A checkpoint split. Completion
+    /// presupposes intake: <c>CompletionEnabled</c> without <c>Enabled</c> is still disabled,
+    /// so a mistyped configuration fails closed instead of half-activating Phase 4. Gates only
+    /// the legacy-FinalizeRequest redirect into the new completion path and the
+    /// RequestCompletionService evaluation; every intake/classification/coverage gate stays on
+    /// <see cref="IsFeatureDisabled"/>.
+    /// </summary>
+    public static bool IsCompletionDisabled(PostPaymentCompletionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return !options.Enabled || !options.CompletionEnabled;
+    }
+
+    /// <summary>
     /// New workflow mandatory for this request: the billing document type must be chosen at
     /// creation/submission, and completion happens exclusively through the completion service.
     /// </summary>

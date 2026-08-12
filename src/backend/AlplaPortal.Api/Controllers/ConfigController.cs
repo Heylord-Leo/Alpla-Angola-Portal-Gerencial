@@ -45,7 +45,11 @@ public class ConfigController : ControllerBase
             SourceDocumentTypeRequired = classificationRequired,
             // Multi-document rides the same switch: it is part of the same workflow, and a
             // half-enabled payment origin would be worse than none.
-            PaymentMultiDocumentEnabled = enabled
+            PaymentMultiDocumentEnabled = enabled,
+            // Phase 4 lifecycle is its own switch (Phase 3A checkpoint split). The policy
+            // computes the effective value, so CompletionEnabled without Enabled stays false.
+            CompletionLifecycleEnabled =
+                !PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions)
         });
     }
 }

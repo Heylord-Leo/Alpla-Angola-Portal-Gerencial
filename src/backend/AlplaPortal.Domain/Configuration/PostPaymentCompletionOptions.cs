@@ -16,11 +16,27 @@ public class PostPaymentCompletionOptions
     public const string SectionName = "PostPaymentCompletion";
 
     /// <summary>
-    /// Master switch. When false, all new-workflow behavior is disabled and the system behaves
-    /// exactly as it did before this feature: no dimension is written, no completion is evaluated,
-    /// no new endpoint is reachable, and FinalizeRequest keeps its original code path.
+    /// Master switch of the Release 4 INTAKE/COVERAGE capability: document classification and
+    /// multi-source-document enforcement, PO-group obligation stamping (including
+    /// ExpectedOperationInvoiceTotal capture), the operation-invoice obligations read model and
+    /// the R15 unclassified-data quality guard. When false, all new-workflow behavior is disabled
+    /// and the system behaves exactly as it did before this feature: no dimension is written, no
+    /// completion is evaluated, no new endpoint is reachable, and FinalizeRequest keeps its
+    /// original code path.
     /// </summary>
     public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// The Phase 4 COMPLETION lifecycle switch, split from <see cref="Enabled"/> at the Phase 3A
+    /// checkpoint: the redirect from legacy FinalizeRequest into the new post-payment completion
+    /// path, and the RequestCompletionService evaluation. Meaningless on its own — completion
+    /// presupposes intake, so the effective test is always
+    /// <see cref="PostPaymentCompletionPolicy.IsCompletionDisabled"/>
+    /// (<c>Enabled &amp;&amp; CompletionEnabled</c>). The Phase 3B TEST configuration is
+    /// Enabled=true with CompletionEnabled=false: coverage works, legacy finalization keeps
+    /// working, and Phase 4 transitions do not run.
+    /// </summary>
+    public bool CompletionEnabled { get; set; } = false;
 
     /// <summary>
     /// Requests whose <c>Request.CreatedAtUtc</c> is at or after this UTC instant use the new
@@ -45,12 +61,13 @@ public class PostPaymentCompletionOptions
     /// that controller. Parsing here is timezone-independent and never throws.</para>
     /// </summary>
     public static PostPaymentCompletionOptions FromConfigurationValues(
-        string? enabledRaw, string? effectiveDateUtcRaw)
+        string? enabledRaw, string? effectiveDateUtcRaw, string? completionEnabledRaw = null)
     {
         return new PostPaymentCompletionOptions
         {
             // Fail closed: anything that is not an explicit "true" leaves the feature off.
             Enabled = bool.TryParse(enabledRaw, out var enabled) && enabled,
+            CompletionEnabled = bool.TryParse(completionEnabledRaw, out var completion) && completion,
             EffectiveDateUtc = ParseEffectiveDateUtc(effectiveDateUtcRaw)
         };
     }

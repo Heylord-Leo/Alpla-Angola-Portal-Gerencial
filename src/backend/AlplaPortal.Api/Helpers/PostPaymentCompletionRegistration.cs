@@ -28,9 +28,11 @@ public static class PostPaymentCompletionRegistration
         {
             var bound = PostPaymentCompletionOptions.FromConfigurationValues(
                 section["Enabled"],
-                section["EffectiveDateUtc"]);
+                section["EffectiveDateUtc"],
+                section["CompletionEnabled"]);
 
             options.Enabled = bound.Enabled;
+            options.CompletionEnabled = bound.CompletionEnabled;
             options.EffectiveDateUtc = bound.EffectiveDateUtc;
         });
 

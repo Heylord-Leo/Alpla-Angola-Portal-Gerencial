@@ -7659,15 +7659,25 @@ public class RequestsController : BaseController
                 return Ok(new { Message = "Pedido já finalizado.", StatusCode = "COMPLETED" });
             }
 
-            // ── Post-Payment Completion Workflow guard (Release 1 foundation) ──
-            // Entirely inside the feature-enabled branch: while PostPaymentCompletion.Enabled is
-            // false — the Release 1 state in every environment — this block is skipped before any
-            // query runs and FinalizeRequest executes exactly the code path it executed before.
+            // ── Post-Payment Completion Workflow guard (Release 1 foundation, split at the
+            // Phase 3A checkpoint) ──
+            // Two independently switched rules live here:
             //
-            // Once enabled, a request that owns PO groups may no longer be finalized here: an
-            // UNCLASSIFIED group must be classified first (rule R15), and a classified one
-            // completes through RequestCompletionService after the Fiscal Receipt upload. The
-            // legacy fallback survives only for historical requests that have no PO group at all.
+            //   R15 data-quality guard (intake family, PostPaymentCompletion.Enabled): a request
+            //   owning an UNCLASSIFIED group may not finalize until someone says what the
+            //   documents are — classification is what derives the obligations the coverage
+            //   model reads.
+            //
+            //   Completion redirect (completion family, CompletionEnabled): once Phase 4 is on,
+            //   a classified grouped request completes exclusively through
+            //   RequestCompletionService after the Fiscal Receipt. During Phase 3B
+            //   (Enabled=true, CompletionEnabled=false) a classified grouped request still
+            //   finalizes through the legacy path below — deliberately, because the new
+            //   completion lifecycle does not exist yet.
+            //
+            // While both switches are false — the committed default everywhere — this block is
+            // skipped before any query runs and FinalizeRequest executes exactly the code path
+            // it executed before the feature existed.
             if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
             {
                 var hasPoGroups = await _context.RequestPoGroups
@@ -7690,13 +7700,19 @@ public class RequestsController : BaseController
                         });
                     }
 
-                    return BadRequest(new ProblemDetails
+                    if (!PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions))
                     {
-                        Title = "Fluxo Atualizado",
-                        Detail = "Este pedido utiliza o novo fluxo de conclusão pós-pagamento. " +
-                                 "A finalização ocorre automaticamente após o upload do Recibo Fiscal.",
-                        Status = 400
-                    });
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Fluxo Atualizado",
+                            Detail = "Este pedido utiliza o novo fluxo de conclusão pós-pagamento. " +
+                                     "A finalização ocorre automaticamente após o upload do Recibo Fiscal.",
+                            Status = 400
+                        });
+                    }
+
+                    // Classified + completion lifecycle not yet active → legacy finalization
+                    // remains the completion path (the Phase 3B window).
                 }
 
                 // No PO groups → historical groupless request → legacy fallback below is allowed.

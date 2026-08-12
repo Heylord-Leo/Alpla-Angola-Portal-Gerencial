@@ -46,6 +46,23 @@ on unclassified legacy data. Migration: `AddOperationInvoiceAllocationAudit` (al
 - **An unallocated invoice can no longer be validated** — Phase 2's "validation creates trust,
   not coverage" gives way to Phase 3A's "validation makes a fully-attributed document count".
 
+### Phase 3A checkpoint (corrective patch + flag split)
+
+- **Header-drift fix**: editing an invoice's Supplier/Currency while it holds allocations is
+  refused with the same allocation integrity codes (`OI_ALLOC_SUPPLIER_MISMATCH` /
+  `OI_ALLOC_CURRENCY_MISMATCH`) — an edit can no longer invalidate accepted allocation
+  evidence; Validate re-runs the identical recheck against the persisted header before any
+  reconciliation snapshot or status mutation (belt-and-braces against historical/manual drift).
+  No company or plant comparison invented: company is inherited from the shared request scope;
+  the invoice carries no plant identity by design.
+- **Feature-flag split**: `PostPaymentCompletion.Enabled` now governs only intake/
+  classification/coverage (Phases 1–3B); new `CompletionEnabled` governs the Phase 4 completion
+  lifecycle (legacy-finalize redirect + `RequestCompletionService`), effective only as
+  `Enabled && CompletionEnabled`. Phase 3B TEST configuration: `Enabled=true,
+  CompletionEnabled=false` — coverage works while grouped requests keep the legacy finalization
+  path. Committed defaults remain false/false; configuration-only, no migration. Frontend
+  discovery gains `CompletionLifecycleEnabled`.
+
 ## [v2.227.1] - 2026-08-11
 
 ### Fixed — candidate-based approval read models/UI and quotation attachment classification

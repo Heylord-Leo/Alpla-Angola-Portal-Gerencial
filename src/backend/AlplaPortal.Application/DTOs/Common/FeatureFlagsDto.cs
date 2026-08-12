@@ -29,4 +29,15 @@ public class FeatureFlagsDto
     /// through the legacy path.</para>
     /// </summary>
     public bool PaymentMultiDocumentEnabled { get; set; }
+
+    /// <summary>
+    /// Release 4 Phase 4: the automatic post-payment completion LIFECYCLE is switched on —
+    /// grouped requests complete through the new path (Fiscal Receipt driven) instead of the
+    /// legacy finalization. Deliberately separate from
+    /// <see cref="PostPaymentCompletionEnabled"/>: during Phase 3B the intake/coverage
+    /// capability is on while this stays false, and the UI must keep offering the legacy
+    /// finalization affordances it offers today. Never true unless
+    /// <see cref="PostPaymentCompletionEnabled"/> is also true.
+    /// </summary>
+    public bool CompletionLifecycleEnabled { get; set; }
 }

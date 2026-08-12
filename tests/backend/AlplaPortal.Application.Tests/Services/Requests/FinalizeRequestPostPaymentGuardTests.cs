@@ -213,9 +213,18 @@ public class FinalizeRequestPostPaymentGuardTests
 
     // ── The guard is real once enabled (not part of Release 1 behaviour) ──
 
+    /// <summary>Phase 3B state: intake/coverage on, completion lifecycle off.</summary>
     private static PostPaymentCompletionOptions EnabledOptions() => new()
     {
         Enabled = true,
+        EffectiveDateUtc = new DateTime(2026, 8, 15, 0, 0, 0, DateTimeKind.Utc)
+    };
+
+    /// <summary>Phase 4 state: both switches on.</summary>
+    private static PostPaymentCompletionOptions CompletionOptions() => new()
+    {
+        Enabled = true,
+        CompletionEnabled = true,
         EffectiveDateUtc = new DateTime(2026, 8, 15, 0, 0, 0, DateTimeKind.Utc)
     };
 
@@ -239,8 +248,28 @@ public class FinalizeRequestPostPaymentGuardTests
     }
 
     [Fact]
-    public async Task Enabled_feature_redirects_a_classified_grouped_request_to_the_new_flow()
+    public async Task Completion_enabled_redirects_a_classified_grouped_request_to_the_new_flow()
     {
+        using var ctx = NewContext();
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Satisfied);
+
+        var controller = BuildController(ctx, seed.ActorId, CompletionOptions());
+
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto());
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        var problem = Assert.IsType<ProblemDetails>(bad.Value);
+        Assert.Equal("Fluxo Atualizado", problem.Title);
+    }
+
+    // ── The Phase 3B window (flag split): intake on, completion off ──
+
+    [Fact]
+    public async Task Phase_3b_window_still_finalizes_a_classified_grouped_request_through_the_legacy_path()
+    {
+        // Enabled=true / CompletionEnabled=false — the exact Phase 3B TEST configuration. The
+        // R15 classification guard stays live (previous test), but a CLASSIFIED grouped request
+        // keeps its legacy completion path: the new lifecycle does not exist until Phase 4.
         using var ctx = NewContext();
         var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Satisfied);
 
@@ -248,9 +277,28 @@ public class FinalizeRequestPostPaymentGuardTests
 
         var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto());
 
-        var bad = Assert.IsType<BadRequestObjectResult>(result);
-        var problem = Assert.IsType<ProblemDetails>(bad.Value);
-        Assert.Equal("Fluxo Atualizado", problem.Title);
+        Assert.IsType<OkObjectResult>(result);
+        var status = await ctx.Requests.Where(r => r.Id == seed.RequestId)
+                                       .Select(r => r.Status!.Code).FirstAsync();
+        Assert.Equal(RequestConstants.Statuses.Completed, status);
+    }
+
+    [Fact]
+    public async Task Completion_without_intake_fails_closed_and_changes_nothing()
+    {
+        // CompletionEnabled=true with Enabled=false is a mistyped configuration: the whole guard
+        // is skipped (intake off), so legacy finalization proceeds exactly as before the feature.
+        using var ctx = NewContext();
+        var seed = await SeedFinalizableAsync(ctx, RequestConstants.OperationInvoiceStatuses.Unclassified);
+
+        var controller = BuildController(ctx, seed.ActorId, new PostPaymentCompletionOptions
+        {
+            CompletionEnabled = true
+        });
+
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto());
+
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]

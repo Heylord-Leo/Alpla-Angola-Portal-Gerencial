@@ -66,6 +66,49 @@ public class PostPaymentCompletionPolicyTests
             options, requestIsCompleted: false, hasAnyGroup: true, anyGroupUnclassified: true));
     }
 
+    // ── Completion split (Phase 3A checkpoint): Enabled ≠ CompletionEnabled ──
+
+    [Fact]
+    public void Completion_defaults_to_disabled()
+    {
+        var options = new PostPaymentCompletionOptions();
+
+        Assert.False(options.CompletionEnabled);
+        Assert.True(PostPaymentCompletionPolicy.IsCompletionDisabled(options));
+    }
+
+    [Theory]
+    [InlineData(false, false, true)]   // committed default everywhere
+    [InlineData(true, false, true)]    // the Phase 3B TEST state: intake on, completion off
+    [InlineData(false, true, true)]    // mistyped config fails closed — completion presupposes intake
+    [InlineData(true, true, false)]    // Phase 4 activation
+    public void Completion_is_enabled_only_when_both_switches_are_on(
+        bool enabled, bool completionEnabled, bool expectedDisabled)
+    {
+        var options = new PostPaymentCompletionOptions
+        {
+            Enabled = enabled,
+            CompletionEnabled = completionEnabled,
+            EffectiveDateUtc = EffectiveDate
+        };
+
+        Assert.Equal(expectedDisabled, PostPaymentCompletionPolicy.IsCompletionDisabled(options));
+    }
+
+    [Fact]
+    public void The_phase_3b_state_keeps_intake_on_while_completion_stays_off()
+    {
+        var options = new PostPaymentCompletionOptions
+        {
+            Enabled = true,
+            CompletionEnabled = false,
+            EffectiveDateUtc = EffectiveDate
+        };
+
+        Assert.False(PostPaymentCompletionPolicy.IsFeatureDisabled(options));      // coverage capability on
+        Assert.True(PostPaymentCompletionPolicy.IsCompletionDisabled(options));    // Phase 4 lifecycle off
+    }
+
     // ── Effective date: evaluated against Request.CreatedAtUtc only ──
 
     [Fact]

@@ -184,6 +184,27 @@ Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no compl
 (Phase 4), no OCR (Phase 5); `PostPaymentCompletion.Enabled` stays `false` everywhere.** While
 UNCLASSIFIED groups fail eligibility, the endpoints are functionally inert on legacy data.
 
+### Feature-flag split (Phase 3A checkpoint)
+
+The single flag was too broad: enabling it would have opened the coverage capability AND
+redirected every grouped request into a Phase 4 completion path that does not exist yet. The
+`PostPaymentCompletion` section therefore carries two switches:
+
+| Switch | Governs | Phase 3B TEST | Phase 4 | Committed default |
+|---|---|---|---|---|
+| `Enabled` | intake/classification, multi-source-document enforcement, group obligation stamping + `ExpectedOperationInvoiceTotal` capture, obligations read model, R15 unclassified guard, frontend capability discovery | **true** | true | **false** |
+| `CompletionEnabled` | legacy-FinalizeRequest redirect into the new completion path, `RequestCompletionService` evaluation (Phase 4 lifecycle) | **false** | true | **false** |
+
+Effective completion is `Enabled && CompletionEnabled`
+(`PostPaymentCompletionPolicy.IsCompletionDisabled`) — `CompletionEnabled` alone fails closed.
+During the Phase 3B window (`Enabled=true, CompletionEnabled=false`): new groups are classified
+with expected totals captured, the obligations/coverage read model is reachable, the allocation
+flow works, the R15 guard blocks finalizing unclassified grouped requests, **and a classified
+grouped request still finalizes through the legacy path** — the completion redirect and the
+Phase 4 lifecycle stay dormant (`RequestCompletionService` is a no-op, never
+`NotImplementedException`). The frontend reads both states from `/api/v1/config/features`
+(`PostPaymentCompletionEnabled`, `CompletionLifecycleEnabled`).
+
 ### Allocation lifecycle (draft-then-count)
 
 `PUT /api/v1/requests/{id}/operation-invoices/{oid}/allocations` — an **atomic replace-set**:
@@ -211,6 +232,19 @@ in gate order:
 An identical payload is an **idempotent no-op** (no audit row, no touch). Sequence numbers are
 per-group ("the Nth allocation this group ever received"). Audit: `OI_ALLOC_SET` on first set,
 `OI_ALLOC_CHANGED` after, with per-group amounts and "anterior X" on changes.
+
+**Supplier/Currency integrity is enforced twice** (Phase 3A checkpoint corrective patch): once
+when the allocation is created/updated (the rules above), and again whenever the invoice
+HEADER changes or validates — an Update whose merged Supplier/Currency would contradict an
+existing allocation is refused with the SAME codes (`OI_ALLOC_SUPPLIER_MISMATCH` /
+`OI_ALLOC_CURRENCY_MISMATCH`; header-drift guard), and Validate re-runs the identical recheck
+against the persisted header before any snapshot or status mutation, protecting against
+historical rows, manual database drift and any path that bypasses Update. The reconciliation
+snapshot's `SupplierMatched/CurrencyMatched/CompanyMatched` remain evidence of a valid
+comparison, never a bypass mechanism. Company integrity is structurally inherited from the
+shared request scope (one company per request — no duplicate comparison); the invoice carries
+**no plant identity** by design, so no plant rule exists and a request-scoped invoice may
+legitimately allocate across several plants' groups.
 
 ### Effective coverage rule and re-derivation
 
