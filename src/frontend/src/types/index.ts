@@ -522,6 +522,12 @@ export interface FeatureFlagsDto {
      * Management keeps one document per quotation regardless.
      */
     paymentMultiDocumentEnabled: boolean;
+    /**
+     * Release 4 Phase 4: the automatic completion LIFECYCLE is on. Deliberately separate from
+     * postPaymentCompletionEnabled — during Phase 3B coverage works while this stays false, and
+     * that is the INTENDED state, never an error to warn about.
+     */
+    completionLifecycleEnabled: boolean;
 }
 
 export interface RequestDetailsDto extends RequestListItemDto {
