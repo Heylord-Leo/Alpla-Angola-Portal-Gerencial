@@ -466,6 +466,73 @@ public class OperationInvoiceAllocationTests
         Assert.Equal(403, Assert.IsType<ObjectResult>(result).StatusCode);
     }
 
+    // ── Header-drift guard: an edit cannot invalidate accepted allocation evidence ──
+
+    [Fact]
+    public async Task Editing_the_supplier_away_from_an_allocated_group_is_refused_and_nothing_moves()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Other", TaxId = "222000222" });
+        var invoice = AddInvoice(ctx, seed, gross: 500_000m);
+        var group = AddGroup(ctx, seed, expected: 500_000m);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);
+        Body(await controller.SaveAllocations(seed.RequestId, invoice.Id, Payload((group.Id, 500_000m))));
+
+        AssertCode(await controller.Update(seed.RequestId, invoice.Id,
+                new SaveOperationInvoiceDto { SupplierId = 20 }),
+            OperationInvoicesController.AllocationSupplierMismatchCode);
+
+        ctx.ChangeTracker.Clear();
+        var persisted = await ctx.OperationInvoices.SingleAsync(i => i.Id == invoice.Id);
+        Assert.Equal(10, persisted.SupplierId);                       // header unchanged
+        var allocation = Assert.Single(await ctx.OperationInvoiceAllocations.ToListAsync());
+        Assert.Equal(500_000m, allocation.AllocatedGrossAmount);      // evidence unchanged
+    }
+
+    [Fact]
+    public async Task Editing_the_currency_away_from_an_allocated_group_is_refused()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var invoice = AddInvoice(ctx, seed, gross: 500_000m);
+        var group = AddGroup(ctx, seed, expected: 500_000m);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);
+        Body(await controller.SaveAllocations(seed.RequestId, invoice.Id, Payload((group.Id, 500_000m))));
+
+        AssertCode(await controller.Update(seed.RequestId, invoice.Id,
+                new SaveOperationInvoiceDto { Currency = "USD" }),
+            OperationInvoicesController.AllocationCurrencyMismatchCode);
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal("AOA", (await ctx.OperationInvoices.SingleAsync(i => i.Id == invoice.Id)).Currency);
+    }
+
+    [Fact]
+    public async Task Editing_an_unrelated_field_stays_allowed_with_allocations_present()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var invoice = AddInvoice(ctx, seed, gross: 500_000m);
+        var group = AddGroup(ctx, seed, expected: 500_000m);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);
+        Body(await controller.SaveAllocations(seed.RequestId, invoice.Id, Payload((group.Id, 500_000m))));
+
+        var result = await controller.Update(seed.RequestId, invoice.Id,
+            new SaveOperationInvoiceDto { Notes = "ZZTEST nota administrativa" });
+
+        Assert.IsType<OkObjectResult>(result);
+        ctx.ChangeTracker.Clear();
+        Assert.Equal("ZZTEST nota administrativa",
+            (await ctx.OperationInvoices.SingleAsync(i => i.Id == invoice.Id)).Notes);
+    }
+
     // ── Read ──
 
     [Fact]

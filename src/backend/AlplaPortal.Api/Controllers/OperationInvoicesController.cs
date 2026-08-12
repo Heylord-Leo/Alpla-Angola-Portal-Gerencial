@@ -394,6 +394,13 @@ public class OperationInvoicesController : BaseController
             return Conflict(problem);
         }
 
+        // ── Header-drift guard (Phase 3A): once allocations exist, the MERGED header must still
+        // satisfy the same hard identity rules the allocation write enforced — an edit cannot
+        // invalidate evidence that was accepted against the old header. Same codes, same rules.
+        var allocationIntegrityProblem = await GuardAllocatedGroupsIntegrityAsync(
+            requestId, invoice.Id, newSupplierId, newCurrency);
+        if (allocationIntegrityProblem != null) return allocationIntegrityProblem;
+
         // ── Apply, with a field-change summary so the audit says WHAT moved ──
         var changes = new List<string>();
         if (invoice.SupplierId != newSupplierId) changes.Add("Fornecedor");
@@ -936,6 +943,16 @@ public class OperationInvoicesController : BaseController
             problem.Extensions["tolerance"] = gateTolerance;
             return Conflict(problem);
         }
+
+        // ── Belt-and-braces identity recheck (Phase 3A drift fix): the persisted header must
+        // STILL satisfy the hard integrity rules every allocation was accepted under. Update
+        // already refuses drifting edits; this recheck is the last line against historical rows,
+        // manual database drift and any future path that bypasses Update. A mismatch FAILS the
+        // validation — the reconciliation snapshot is evidence of a valid comparison, never a
+        // bypass mechanism.
+        var allocationIntegrityProblem = await GuardAllocatedGroupsIntegrityAsync(
+            requestId, invoice.Id, invoice.SupplierId, invoice.Currency);
+        if (allocationIntegrityProblem != null) return allocationIntegrityProblem;
 
         // ── Over-expected groups need the EXPLICIT Finance decision (approved rule #13):
         // an acceptance entry with a meaningful justification per affected group — never
@@ -1732,6 +1749,84 @@ public class OperationInvoicesController : BaseController
             Detail = "Apenas o Financeiro e o Comprador podem registar ou alterar faturas finais.",
             Status = 403
         });
+    }
+
+    /// <summary>
+    /// The hard identity rules of the allocation write, re-run against a CANDIDATE header state —
+    /// by Update (merged header, before persistence) and by Validate (persisted header, before
+    /// any snapshot or status mutation). One rulebook, one set of codes: request scope and
+    /// obligation eligibility answer <see cref="AllocationGroupInvalidCode"/>, supplier answers
+    /// <see cref="AllocationSupplierMismatchCode"/>, currency answers
+    /// <see cref="AllocationCurrencyMismatchCode"/> — never an alternate code for the same
+    /// invariant. Company needs no rule of its own (invoice and group share the request, and a
+    /// request has exactly one company); Plant is deliberately absent (the invoice carries no
+    /// plant identity — a request-scoped document may legitimately span several plants' groups).
+    /// </summary>
+    private async Task<IActionResult?> GuardAllocatedGroupsIntegrityAsync(
+        Guid requestId, Guid invoiceId, int? supplierId, string? currency)
+    {
+        var allocatedGroupIds = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => a.OperationInvoiceId == invoiceId)
+            .Select(a => a.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+        if (allocatedGroupIds.Count == 0) return null;
+
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => allocatedGroupIds.Contains(g.Id))
+            .ToListAsync();
+
+        foreach (var group in groups)
+        {
+            if (group.RequestId != requestId ||
+                !group.RequiresOperationInvoice ||
+                string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Alocação inconsistente com o grupo",
+                    Detail = "Uma alocação desta fatura aponta para um grupo que já não sustenta a " +
+                             "obrigação de fatura final. Corrija as alocações antes de continuar.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationGroupInvalidCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            if (group.SupplierId.HasValue && supplierId.HasValue && group.SupplierId != supplierId)
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Fornecedor não corresponde",
+                    Detail = $"A fatura ficaria com o fornecedor {supplierId}, mas uma alocação " +
+                             $"existente pertence ao grupo de {group.SupplierNameSnapshot ?? group.SupplierId.ToString()}. " +
+                             "Remova a alocação antes de alterar o fornecedor.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationSupplierMismatchCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            if (!string.IsNullOrWhiteSpace(group.CurrencyCode) &&
+                !string.Equals(group.CurrencyCode, currency, StringComparison.OrdinalIgnoreCase))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Moeda não corresponde",
+                    Detail = $"A fatura ficaria em {currency}, mas uma alocação existente pertence a " +
+                             $"um grupo em {group.CurrencyCode}. Remova a alocação antes de alterar a moeda.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationCurrencyMismatchCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The approved mutation window — WAITING_PO_CORRECTION included in the blocked set.</summary>

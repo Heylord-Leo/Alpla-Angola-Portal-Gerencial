@@ -368,6 +368,52 @@ public class OperationInvoiceValidationReconciliationTests
         Assert.True(snapshot.SupplierMatched);
     }
 
+    // ── Belt-and-braces identity recheck: drifted rows fail validation, they are not recorded ──
+
+    [Fact]
+    public async Task A_historically_mismatched_supplier_fails_validation_and_mints_no_snapshot()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Other", TaxId = "222000222" });
+        var group = AddGroup(ctx, seed, expected: 300_000m);
+        var invoice = AddInvoice(ctx, seed, gross: 300_000m, number: "FT 408");
+        await ctx.SaveChangesAsync();
+        Allocate(ctx, invoice, group, 300_000m, seed.ActorId);
+        // Historical drift the Update guard never saw: the header no longer matches the group.
+        invoice.SupplierId = 20;
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId).Validate(
+            seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto());
+
+        AssertCode(result, OperationInvoicesController.AllocationSupplierMismatchCode);
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(Doc.PendingValidation,
+            (await ctx.OperationInvoices.SingleAsync(i => i.Id == invoice.Id)).Status);
+        Assert.False(await ctx.OperationInvoiceReconciliations.AnyAsync());   // no snapshot bypass
+    }
+
+    [Fact]
+    public async Task A_historically_mismatched_currency_fails_validation_and_mints_no_snapshot()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var group = AddGroup(ctx, seed, expected: 300_000m);
+        var invoice = AddInvoice(ctx, seed, gross: 300_000m, number: "FT 409");
+        await ctx.SaveChangesAsync();
+        Allocate(ctx, invoice, group, 300_000m, seed.ActorId);
+        invoice.Currency = "USD";
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId).Validate(
+            seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto());
+
+        AssertCode(result, OperationInvoicesController.AllocationCurrencyMismatchCode);
+        ctx.ChangeTracker.Clear();
+        Assert.False(await ctx.OperationInvoiceReconciliations.AnyAsync());
+    }
+
     // ── Rejection and the aggregate ──
 
     [Fact]
