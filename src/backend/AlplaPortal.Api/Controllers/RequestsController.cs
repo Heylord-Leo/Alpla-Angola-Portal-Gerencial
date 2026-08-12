@@ -7487,7 +7487,23 @@ public class RequestsController : BaseController
             .Where(a => groupIds.Contains(a.RequestPoGroupId))
             .Join(_context.OperationInvoices.Where(i => i.SupersededByOperationInvoiceId == null),
                   a => a.OperationInvoiceId, i => i.Id,
-                  (a, i) => new { a.RequestPoGroupId, i.Status, a.AllocatedGrossAmount })
+                  (a, i) => new
+                  {
+                      a.Id,
+                      a.RequestPoGroupId,
+                      a.OperationInvoiceId,
+                      i.Status,
+                      i.DocumentNumber,
+                      i.DocumentSeries,
+                      a.AllocatedNetAmount,
+                      a.AllocatedTaxAmount,
+                      a.AllocatedGrossAmount,
+                      a.SequenceNumber,
+                      a.Notes,
+                      a.CreatedAtUtc,
+                      a.UpdatedAtUtc
+                  })
+            .OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.SequenceNumber)
             .ToListAsync();
 
         var activeShortCloses = await _context.OperationInvoiceShortCloses.AsNoTracking()
@@ -7567,7 +7583,32 @@ public class RequestsController : BaseController
                     PaymentSourceDocumentIds = o.SourceDocumentIds.ToList(),
                     LineItemCount = o.LineItemCount,
                     ReasonCode = o.ReasonCode,
-                    Explanation = o.Explanation
+                    Explanation = o.Explanation,
+                    // Phase 3A: percentage only against a known, positive finish line — an
+                    // unknown expected total has no percentage, deliberately not 0.
+                    CoveragePercent = o.ExpectedAmount is > 0
+                        ? Math.Round(o.ValidatedCoveredAmount / o.ExpectedAmount.Value * 100m, 2)
+                        : null,
+                    Allocations = allocations
+                        .Where(a => a.RequestPoGroupId == o.GroupId)
+                        .Select(a => new OperationInvoiceObligationAllocationDto
+                        {
+                            AllocationId = a.Id,
+                            OperationInvoiceId = a.OperationInvoiceId,
+                            InvoiceDocumentNumber = a.DocumentNumber,
+                            InvoiceDocumentSeries = a.DocumentSeries,
+                            InvoiceStatus = a.Status,
+                            AllocatedNetAmount = a.AllocatedNetAmount,
+                            AllocatedTaxAmount = a.AllocatedTaxAmount,
+                            AllocatedGrossAmount = a.AllocatedGrossAmount,
+                            SequenceNumber = a.SequenceNumber,
+                            Notes = a.Notes,
+                            IsEffective = RequestConstants.OperationInvoiceDocumentStatuses.CountsTowardCoverage(a.Status),
+                            IsPendingDecision = RequestConstants.OperationInvoiceDocumentStatuses.IsAwaitingDecision(a.Status),
+                            CreatedAtUtc = a.CreatedAtUtc,
+                            UpdatedAtUtc = a.UpdatedAtUtc
+                        })
+                        .ToList()
                 };
             }).ToList(),
             Rollup = new OperationInvoiceObligationRollupDto

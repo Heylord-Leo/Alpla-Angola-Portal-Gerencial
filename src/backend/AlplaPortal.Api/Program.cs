@@ -144,6 +144,11 @@ builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 builder.Services.AddPostPaymentCompletionOptions(builder.Configuration);
 builder.Services.AddScoped<IRequestCompletionService, RequestCompletionService>();
 
+// Release 4 Phase 3A — single aggregate re-derivation policy for operation-invoice coverage.
+// Called inside the writers' transactions only; functionally inert while groups stay UNCLASSIFIED
+// (PostPaymentCompletion.Enabled=false keeps classification off).
+builder.Services.AddScoped<IOperationInvoiceCoverageService, OperationInvoiceCoverageService>();
+
 // Department Manager redesign — single source of truth for area-approval routing
 builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();
 builder.Services.AddScoped<IBatchExtraItemDecisionService, BatchExtraItemDecisionService>();

@@ -1,5 +1,6 @@
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Validation;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
@@ -29,14 +30,17 @@ public class OperationInvoicesController : BaseController
 {
     private readonly ILogger<OperationInvoicesController> _logger;
     private readonly IInternalCompanyGuard _internalCompanies;
+    private readonly IOperationInvoiceCoverageService _coverage;
 
     public OperationInvoicesController(
         ApplicationDbContext context,
         ILogger<OperationInvoicesController> logger,
-        IInternalCompanyGuard internalCompanies) : base(context)
+        IInternalCompanyGuard internalCompanies,
+        IOperationInvoiceCoverageService coverage) : base(context)
     {
         _logger = logger;
         _internalCompanies = internalCompanies;
+        _coverage = coverage;
     }
 
     /// <summary>Typed business codes, so the UI branches on codes and never on Portuguese.</summary>
@@ -50,6 +54,14 @@ public class OperationInvoicesController : BaseController
     public const string AttachmentClaimedCode = "OPERATION_INVOICE_ATTACHMENT_CLAIMED";
     public const string NotValidatableCode = "OPERATION_INVOICE_NOT_VALIDATABLE";
     public const string NotRejectableCode = "OPERATION_INVOICE_NOT_REJECTABLE";
+
+    // ── Phase 3A allocation codes ──
+    public const string AllocationNotEditableCode = "OI_ALLOC_NOT_EDITABLE";
+    public const string AllocationGroupInvalidCode = "OI_ALLOC_GROUP_INVALID";
+    public const string AllocationSupplierMismatchCode = "OI_ALLOC_SUPPLIER_MISMATCH";
+    public const string AllocationCurrencyMismatchCode = "OI_ALLOC_CURRENCY_MISMATCH";
+    public const string AllocationInvoiceOverCode = "OI_ALLOC_INVOICE_OVER";
+    public const string AllocationGroupOverCode = "OI_ALLOC_GROUP_OVER";
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
 
@@ -525,6 +537,20 @@ public class OperationInvoicesController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        // Phase 3A: a void may retire pending-decision coverage — re-derive the allocated groups
+        // in this same transaction. A voided invoice never counted as effective, so no forced
+        // touch is needed: only a real status change matters here.
+        var voidedGroupIds = await _context.OperationInvoiceAllocations
+            .Where(a => a.OperationInvoiceId == invoice.Id)
+            .Select(a => a.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+        if (voidedGroupIds.Count > 0)
+        {
+            var coverageChanges = await _coverage.RederiveAsync(voidedGroupIds, forceGroupTouch: false);
+            AddGroupStatusHistories(request, coverageChanges);
+        }
+
         try
         {
             await _context.SaveChangesAsync();
@@ -992,6 +1018,20 @@ public class OperationInvoicesController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        // Phase 3A: a rejection drops the invoice's allocations out of the pending-decision set —
+        // re-derive the allocated groups in this same transaction. Rejected allocations were never
+        // effective, so no forced touch: only a real status change matters here.
+        var rejectedGroupIds = await _context.OperationInvoiceAllocations
+            .Where(a => a.OperationInvoiceId == invoice.Id)
+            .Select(a => a.RequestPoGroupId)
+            .Distinct()
+            .ToListAsync();
+        if (rejectedGroupIds.Count > 0)
+        {
+            var coverageChanges = await _coverage.RederiveAsync(rejectedGroupIds, forceGroupTouch: false);
+            AddGroupStatusHistories(request, coverageChanges);
+        }
+
         try
         {
             await _context.SaveChangesAsync();
@@ -1002,6 +1042,426 @@ public class OperationInvoicesController : BaseController
         }
 
         return Ok(await ProjectAsync(invoice));
+    }
+
+    // ── Phase 3A: Allocations ───────────────────────────────────────────────────────────────
+
+    /// <summary>The invoice's allocation set, with server-derived effectiveness per row.</summary>
+    [HttpGet("{operationInvoiceId:guid}/allocations")]
+    public async Task<ActionResult<List<OperationInvoiceAllocationDto>>> GetAllocations(
+        Guid requestId, Guid operationInvoiceId)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var invoice = await _context.OperationInvoices.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
+        if (invoice == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        return Ok(await ProjectAllocationsAsync(invoice));
+    }
+
+    /// <summary>
+    /// Atomic replace-set of one invoice's allocations (Phase 3A). The payload IS the resulting
+    /// set; the server adds/updates/removes rows to match it, validates the ENTIRE result before
+    /// mutating anything, re-derives every touched group's aggregate in the same transaction, and
+    /// commits with ONE SaveChanges. An identical payload is an idempotent no-op.
+    ///
+    /// <para>Effectiveness is never decided here: drafts on an UPLOADED/PENDING_VALIDATION
+    /// invoice count only toward pending coverage; validation is what makes them effective.</para>
+    /// </summary>
+    [HttpPut("{operationInvoiceId:guid}/allocations")]
+    public async Task<IActionResult> SaveAllocations(
+        Guid requestId, Guid operationInvoiceId, [FromBody] SaveOperationInvoiceAllocationsDto dto)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var roleProblem = GuardMutationRole();
+        if (roleProblem != null) return roleProblem;
+
+        var statusProblem = GuardMutableRequestStatus(request);
+        if (statusProblem != null) return statusProblem;
+
+        var invoice = await _context.OperationInvoices
+            .Include(i => i.Allocations)
+            .FirstOrDefaultAsync(i => i.Id == operationInvoiceId && i.RequestId == requestId);
+        if (invoice == null) return NotFound(Problem404("Fatura final não encontrada."));
+
+        // Drafting window: only while the document awaits the Finance decision. A VALIDATED
+        // invoice's allocations are immutable (correct via Reject/Replace); a terminal invoice
+        // keeps its historical drafts untouched.
+        if (!RequestConstants.OperationInvoiceDocumentStatuses.IsAwaitingDecision(invoice.Status))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Alocações não podem ser alteradas",
+                Detail = "As alocações só podem ser editadas enquanto a fatura aguarda validação. " +
+                         "Numa fatura validada, a correção passa por rejeição/substituição.",
+                Status = 409
+            };
+            problem.Extensions["code"] = AllocationNotEditableCode;
+            return Conflict(problem);
+        }
+
+        var staleToken = ApplyConcurrencyToken(invoice, dto.RowVersion);
+        if (staleToken != null) return staleToken;
+
+        // ── Payload shape ──
+        var items = dto.Allocations ?? new List<SaveOperationInvoiceAllocationItemDto>();
+        var errors = new Dictionary<string, string[]>();
+
+        if (items.GroupBy(i => i.RequestPoGroupId).Any(g => g.Count() > 1))
+            errors["Allocations"] = new[] { "O mesmo grupo aparece mais de uma vez — uma fatura atinge um grupo com no máximo uma alocação." };
+
+        if (invoice.SupplierId is null or <= 0)
+            errors["SupplierId"] = new[] { "A fatura não tem fornecedor — defina-o antes de alocar." };
+        if (string.IsNullOrWhiteSpace(invoice.Currency))
+            errors["Currency"] = new[] { "A fatura não tem moeda — defina-a antes de alocar." };
+        if (invoice.GrossAmount is null or <= 0)
+            errors["GrossAmount"] = new[] { "A fatura não tem um total válido — defina-o antes de alocar." };
+
+        for (var n = 0; n < items.Count; n++)
+        {
+            var item = items[n];
+            if (item.AllocatedGrossAmount <= 0)
+                errors[$"Allocations[{n}].AllocatedGrossAmount"] = new[] { "O valor alocado deve ser maior que zero." };
+
+            // Components travel together and must reconcile to the gross — nothing disappears.
+            if (item.AllocatedNetAmount != 0 || item.AllocatedTaxAmount != 0)
+            {
+                var difference = Math.Abs(item.AllocatedGrossAmount - (item.AllocatedNetAmount + item.AllocatedTaxAmount));
+                if (difference > OperationInvoiceTolerance.For(item.AllocatedGrossAmount))
+                    errors[$"Allocations[{n}].AllocatedGrossAmount"] = new[] { "Líquido + imposto não corresponde ao valor alocado (fora da tolerância)." };
+            }
+        }
+
+        if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
+
+        // ── Group integrity: identity + obligation eligibility, all validated BEFORE mutating ──
+        var groupIds = items.Select(i => i.RequestPoGroupId).ToList();
+        var groups = await _context.RequestPoGroups
+            .Where(g => groupIds.Contains(g.Id))
+            .ToDictionaryAsync(g => g.Id);
+
+        // Validated coverage each group already holds from OTHER invoices — the number the
+        // over-expected rule is measured against (drafts elsewhere never pre-consume budget).
+        var validatedByOthers = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => groupIds.Contains(a.RequestPoGroupId) && a.OperationInvoiceId != invoice.Id)
+            .Join(_context.OperationInvoices.Where(i =>
+                    i.Status == RequestConstants.OperationInvoiceDocumentStatuses.Validated &&
+                    i.SupersededByOperationInvoiceId == null),
+                a => a.OperationInvoiceId, i => i.Id,
+                (a, i) => new { a.RequestPoGroupId, a.AllocatedGrossAmount })
+            .GroupBy(a => a.RequestPoGroupId)
+            .Select(g => new { GroupId = g.Key, Total = g.Sum(x => x.AllocatedGrossAmount) })
+            .ToDictionaryAsync(x => x.GroupId, x => x.Total);
+
+        var isFinanceActor = CurrentUserRoles.Contains(RoleConstants.Finance) ||
+                             CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
+
+        foreach (var item in items)
+        {
+            if (!groups.TryGetValue(item.RequestPoGroupId, out var group) || group.RequestId != requestId)
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Grupo inválido",
+                    Detail = "O grupo indicado não pertence ao pedido desta fatura — uma fatura só cobre grupos do seu próprio pedido.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationGroupInvalidCode;
+                problem.Extensions["requestPoGroupId"] = item.RequestPoGroupId;
+                return Conflict(problem);
+            }
+
+            // Obligation eligibility: classified, owing an invoice, in an accepting state, and not
+            // parked in PO correction. A pre-Final PENDING group is UNCLASSIFIED and fails here.
+            if (!group.RequiresOperationInvoice ||
+                !RequestConstants.OperationInvoiceStatuses.AcceptsUploadIn(group.OperationInvoiceStatus) ||
+                string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection, StringComparison.OrdinalIgnoreCase))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Grupo não elegível para alocação",
+                    Detail = "Este grupo não está num estado que aceite alocação de fatura final " +
+                             $"(obrigação: {group.OperationInvoiceStatus}; grupo: {group.Status}).",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationGroupInvalidCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            // Frozen-evidence identity: the group's snapshot vs the invoice's registered facts.
+            if (group.SupplierId.HasValue && invoice.SupplierId.HasValue && group.SupplierId != invoice.SupplierId)
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Fornecedor não corresponde",
+                    Detail = $"A fatura é do fornecedor {invoice.SupplierId}, mas o grupo pertence a " +
+                             $"{group.SupplierNameSnapshot ?? group.SupplierId.ToString()}.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationSupplierMismatchCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            if (!string.IsNullOrWhiteSpace(group.CurrencyCode) &&
+                !string.Equals(group.CurrencyCode, invoice.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Moeda não corresponde",
+                    Detail = $"A fatura está em {invoice.Currency}, mas o grupo está em {group.CurrencyCode}.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationCurrencyMismatchCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            // ── Over-expected rule (approved #13). Buyer: hard block. Finance/SysAdmin: allowed
+            // only as an explicit divergence candidate — meaningful explanation required NOW, and
+            // the acceptance decision still belongs to validation. Nothing is ever capped. ──
+            if (group.ExpectedOperationInvoiceTotal is > 0)
+            {
+                var expected = group.ExpectedOperationInvoiceTotal.Value;
+                var tolerance = OperationInvoiceTolerance.For(expected);
+                var covered = validatedByOthers.TryGetValue(group.Id, out var v) ? v : 0m;
+
+                if (covered + item.AllocatedGrossAmount > expected + tolerance)
+                {
+                    if (!isFinanceActor)
+                    {
+                        var problem = new ProblemDetails
+                        {
+                            Title = "Alocação excede o valor esperado do grupo",
+                            Detail = "A alocação ultrapassa o total esperado do grupo. Apenas o " +
+                                     "Financeiro pode registar uma divergência acima do esperado.",
+                            Status = 409
+                        };
+                        problem.Extensions["code"] = AllocationGroupOverCode;
+                        problem.Extensions["requestPoGroupId"] = group.Id;
+                        problem.Extensions["expectedTotal"] = expected;
+                        problem.Extensions["currentValidated"] = covered;
+                        problem.Extensions["attemptedAllocated"] = item.AllocatedGrossAmount;
+                        problem.Extensions["tolerance"] = tolerance;
+                        return Conflict(problem);
+                    }
+
+                    if (!ReconciliationJustificationValidator.IsValid(item.Notes, out var notesError))
+                    {
+                        return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+                        {
+                            [$"Allocations[{groupIds.IndexOf(group.Id)}].Notes"] = new[]
+                            {
+                                "A alocação excede o total esperado do grupo — explique a divergência " +
+                                $"nas observações da alocação. {notesError}"
+                            }
+                        }));
+                    }
+                }
+            }
+        }
+
+        // ── Invoice-side balance: the document cannot distribute more than it is worth ──
+        var attemptedTotal = items.Sum(i => i.AllocatedGrossAmount);
+        var invoiceGross = invoice.GrossAmount!.Value;
+        var invoiceTolerance = OperationInvoiceTolerance.For(invoiceGross);
+        if (attemptedTotal > invoiceGross + invoiceTolerance)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Alocações excedem o total da fatura",
+                Detail = "A soma das alocações ultrapassa o total da própria fatura.",
+                Status = 409
+            };
+            problem.Extensions["code"] = AllocationInvoiceOverCode;
+            problem.Extensions["invoiceGross"] = invoiceGross;
+            problem.Extensions["currentAllocated"] = invoice.Allocations.Sum(a => a.AllocatedGrossAmount);
+            problem.Extensions["attemptedAllocated"] = attemptedTotal;
+            problem.Extensions["tolerance"] = invoiceTolerance;
+            return Conflict(problem);
+        }
+
+        // ── Idempotency: an identical resulting set is the same request arriving twice ──
+        var existingByGroup = invoice.Allocations.ToDictionary(a => a.RequestPoGroupId);
+        var isNoOp = items.Count == existingByGroup.Count && items.All(item =>
+            existingByGroup.TryGetValue(item.RequestPoGroupId, out var existing) &&
+            existing.AllocatedNetAmount == item.AllocatedNetAmount &&
+            existing.AllocatedTaxAmount == item.AllocatedTaxAmount &&
+            existing.AllocatedGrossAmount == item.AllocatedGrossAmount &&
+            string.Equals(existing.Notes ?? string.Empty, (item.Notes ?? string.Empty).Trim(), StringComparison.Ordinal));
+        if (isNoOp) return Ok(await ProjectAllocationsAsync(invoice));
+
+        var hadAllocations = invoice.Allocations.Count > 0;
+        var previousByGroup = invoice.Allocations
+            .ToDictionary(a => a.RequestPoGroupId, a => a.AllocatedGrossAmount);
+
+        // ── Apply: remove missing, update changed, add new ──
+        var wantedGroupIds = items.Select(i => i.RequestPoGroupId).ToHashSet();
+        foreach (var stale in invoice.Allocations.Where(a => !wantedGroupIds.Contains(a.RequestPoGroupId)).ToList())
+        {
+            invoice.Allocations.Remove(stale);
+            _context.OperationInvoiceAllocations.Remove(stale);
+        }
+
+        // Per-group sequence numbers: the Nth allocation THAT group ever received.
+        var touchedGroupIds = wantedGroupIds.Union(previousByGroup.Keys).ToList();
+        var maxSequenceByGroup = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => touchedGroupIds.Contains(a.RequestPoGroupId))
+            .GroupBy(a => a.RequestPoGroupId)
+            .Select(g => new { GroupId = g.Key, Max = g.Max(a => a.SequenceNumber) })
+            .ToDictionaryAsync(x => x.GroupId, x => x.Max);
+
+        var nowUtc = DateTime.UtcNow;
+        foreach (var item in items)
+        {
+            var trimmedNotes = string.IsNullOrWhiteSpace(item.Notes) ? null : item.Notes.Trim();
+            if (existingByGroup.TryGetValue(item.RequestPoGroupId, out var existing))
+            {
+                if (existing.AllocatedNetAmount != item.AllocatedNetAmount ||
+                    existing.AllocatedTaxAmount != item.AllocatedTaxAmount ||
+                    existing.AllocatedGrossAmount != item.AllocatedGrossAmount ||
+                    !string.Equals(existing.Notes, trimmedNotes, StringComparison.Ordinal))
+                {
+                    existing.AllocatedNetAmount = item.AllocatedNetAmount;
+                    existing.AllocatedTaxAmount = item.AllocatedTaxAmount;
+                    existing.AllocatedGrossAmount = item.AllocatedGrossAmount;
+                    existing.Notes = trimmedNotes;
+                    existing.UpdatedAtUtc = nowUtc;
+                    existing.UpdatedByUserId = CurrentUserId;
+                }
+            }
+            else
+            {
+                var nextSequence = (maxSequenceByGroup.TryGetValue(item.RequestPoGroupId, out var max) ? max : 0) + 1;
+                maxSequenceByGroup[item.RequestPoGroupId] = nextSequence;
+                _context.OperationInvoiceAllocations.Add(new OperationInvoiceAllocation
+                {
+                    Id = Guid.NewGuid(),
+                    OperationInvoiceId = invoice.Id,
+                    RequestPoGroupId = item.RequestPoGroupId,
+                    AllocatedNetAmount = item.AllocatedNetAmount,
+                    AllocatedTaxAmount = item.AllocatedTaxAmount,
+                    AllocatedGrossAmount = item.AllocatedGrossAmount,
+                    SequenceNumber = nextSequence,
+                    Notes = trimmedNotes,
+                    CreatedAtUtc = nowUtc,
+                    CreatedByUserId = CurrentUserId
+                });
+            }
+        }
+
+        invoice.UpdatedAtUtc = nowUtc;
+        invoice.UpdatedByUserId = CurrentUserId;
+
+        // ── History: the resulting set, with per-group previous values where they changed ──
+        var setDescriptions = items.Select(item =>
+        {
+            var group = groups[item.RequestPoGroupId];
+            var previous = previousByGroup.TryGetValue(item.RequestPoGroupId, out var p) ? p : (decimal?)null;
+            var change = previous.HasValue && previous.Value != item.AllocatedGrossAmount
+                ? $" (anterior {previous.Value:N2})"
+                : string.Empty;
+            return $"{group.SupplierNameSnapshot ?? "grupo"} {item.AllocatedGrossAmount:N2} {invoice.Currency}{change}";
+        });
+        var removedDescriptions = previousByGroup.Keys.Except(wantedGroupIds)
+            .Select(gid => groups.TryGetValue(gid, out var g) ? g.SupplierNameSnapshot ?? gid.ToString() : gid.ToString())
+            .ToList();
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = CurrentUserId,
+            ActionTaken = hadAllocations ? "OI_ALLOC_CHANGED" : "OI_ALLOC_SET",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Fatura {invoice.DocumentNumber}: alocações {(hadAllocations ? "alteradas" : "definidas")} — " +
+                      (items.Count > 0 ? string.Join("; ", setDescriptions) : "todas removidas") +
+                      (removedDescriptions.Count > 0 ? $". Removidas: {string.Join(", ", removedDescriptions)}" : "") + ".",
+            CreatedAtUtc = nowUtc
+        });
+
+        // ── Re-derive every touched group's aggregate in this same transaction ──
+        var coverageChanges = await _coverage.RederiveAsync(touchedGroupIds, forceGroupTouch: false);
+        AddGroupStatusHistories(request, coverageChanges);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ConcurrencyConflict();
+        }
+
+        return Ok(await ProjectAllocationsAsync(invoice));
+    }
+
+    /// <summary>GROUP_OI_STATUS audit rows for every aggregate transition a write produced.</summary>
+    private void AddGroupStatusHistories(Request request, List<GroupCoverageChange> changes)
+    {
+        foreach (var change in changes.Where(c => c.StatusChanged))
+        {
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = CurrentUserId,
+                ActionTaken = "GROUP_OI_STATUS",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = $"Obrigação de fatura final do grupo {change.RequestPoGroupId}: " +
+                          $"{change.PreviousStatus} → {change.NewStatus} " +
+                          $"(validado {change.Coverage.ValidatedTotal:N2}; pendente {change.Coverage.PendingValidationTotal:N2}; " +
+                          $"restante {change.Coverage.RemainingAmount:N2} de {change.Coverage.ExpectedTotal:N2}).",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+    }
+
+    /// <summary>Allocation read projection — invoice status classifies each row server-side.</summary>
+    private async Task<List<OperationInvoiceAllocationDto>> ProjectAllocationsAsync(OperationInvoice invoice)
+    {
+        var rows = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => a.OperationInvoiceId == invoice.Id)
+            .OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.SequenceNumber)
+            .ToListAsync();
+
+        var groupIds = rows.Select(r => r.RequestPoGroupId).Distinct().ToList();
+        var groupInfo = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => groupIds.Contains(g.Id))
+            .Select(g => new { g.Id, g.SupplierNameSnapshot, g.CurrencyCode })
+            .ToDictionaryAsync(g => g.Id);
+
+        return rows.Select(a =>
+        {
+            groupInfo.TryGetValue(a.RequestPoGroupId, out var g);
+            return new OperationInvoiceAllocationDto
+            {
+                Id = a.Id,
+                OperationInvoiceId = a.OperationInvoiceId,
+                RequestPoGroupId = a.RequestPoGroupId,
+                AllocatedNetAmount = a.AllocatedNetAmount,
+                AllocatedTaxAmount = a.AllocatedTaxAmount,
+                AllocatedGrossAmount = a.AllocatedGrossAmount,
+                SequenceNumber = a.SequenceNumber,
+                Notes = a.Notes,
+                CreatedAtUtc = a.CreatedAtUtc,
+                UpdatedAtUtc = a.UpdatedAtUtc,
+                InvoiceStatus = invoice.Status,
+                InvoiceDocumentNumber = invoice.DocumentNumber,
+                InvoiceDocumentSeries = invoice.DocumentSeries,
+                IsEffective = RequestConstants.OperationInvoiceDocumentStatuses.CountsTowardCoverage(invoice.Status),
+                IsPendingDecision = RequestConstants.OperationInvoiceDocumentStatuses.IsAwaitingDecision(invoice.Status),
+                GroupSupplierName = g?.SupplierNameSnapshot,
+                GroupCurrencyCode = g?.CurrencyCode
+            };
+        }).ToList();
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────
