@@ -4,14 +4,21 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.227.1
+v2.228.0
 
-## [Unreleased] — Release 4 Phase 3B: Operation Invoice registration/allocation/coverage UI
+## [v2.228.0] - 2026-08-12
 
-Frontend for the Phase 2/3A backend, gated by capability discovery
-(`postPaymentCompletionEnabled`; the Phase 4 `completionLifecycleEnabled` staying false is the
-intended Phase 3B state, never warned about). Manual checklist:
-`docs/RELEASE4_PHASE3B_MANUAL_CHECKLIST.md`.
+### Release 4 financial coverage capability — Final Invoice registration, allocation and coverage
+
+Phases 3A (backend) and 3B (UI) together: register the Final Invoice (OperationInvoice),
+distribute it across RequestPoGroups, Finance validates or rejects, validated allocations
+become effective financial coverage per group, divergences are decided explicitly, and a group
+may close short by a two-person decision. Runs for PAYMENT and QUOTATION requests alike, gated
+by capability discovery — the Phase 4 completion lifecycle stays off and its absence is the
+intended state. Migration: `AddOperationInvoiceAllocationAudit` (allocation `Notes` + audit
+columns only; must run before the backend deploys). References:
+`docs/POST_PAYMENT_COMPLETION_RELEASE4.md` (Phase 3A) and
+`docs/RELEASE4_PHASE3B_MANUAL_CHECKLIST.md` (manual TEST checklist).
 
 ### Added
 
@@ -44,21 +51,6 @@ intended Phase 3B state, never warned about). Manual checklist:
   registration had no upload path. `FeatureFlagsDto` consumed with
   `completionLifecycleEnabled`.
 
-### Deliberately absent (Phase 4/5)
-
-- No operational receipt, fiscal receipt, completion gating, CompletionEnabled toggle, OCR,
-  line matching, or admin activation panel (the expected-total backfill remains a documented
-  SysAdmin API step before TEST activation).
-
-## [Unreleased] — Release 4 Phase 3A: allocation, reconciliation & short-close (backend only)
-
-Backend-only activation of the Phase 3 model. **No UI, no completion wiring, no OCR;
-`PostPaymentCompletion.Enabled` remains `false`** — endpoints exist but are functionally inert
-on unclassified legacy data. Migration: `AddOperationInvoiceAllocationAudit` (allocation
-`Notes` + audit columns only). Reference: `docs/POST_PAYMENT_COMPLETION_RELEASE4.md` (Phase 3A).
-
-### Added
-
 - **Allocation replace-set** `GET/PUT …/operation-invoices/{id}/allocations`: atomic, validated
   as a whole, one row per (invoice, group), idempotent no-op on identical payloads; group
   integrity (request/supplier/currency/eligibility), invoice-side balance, and the approved
@@ -83,29 +75,53 @@ on unclassified legacy data. Migration: `AddOperationInvoiceAllocationAudit` (al
   approve (Finance/SysAdmin, proposer ≠ approver; group → SATISFIED/`ClosedShort` in the same
   transaction) / reject (decider, or the proposer as withdrawal; mandatory reason).
 - **Obligations endpoint**: each group gains `CoveragePercent` (null when the finish line is
-  unknown, never 0) and `Allocations[]`.
+  unknown, never 0) and `Allocations[]` — the one authoritative coverage read every screen
+  consumes.
+- **Real-provider concurrency pin**: SQL Server LocalDB integration test proving the group
+  `[Timestamp]` rowversion plus the forced touch — two writers racing for the last remaining
+  coverage cannot both commit.
+- **Final Invoice attachment path**: `AttachmentsController.Upload` gains the
+  `OPERATION_INVOICE` case — uploadable in the operation-invoice mutation window
+  (post-approval, pre-completion) by Buyer/Finance/SysAdmin, with the "Fatura Final" history
+  label. The Final Invoice stays a distinct document context, never confused with
+  Cotação/Proforma uploads.
+- **Feature-flag split (Phase 3/Phase 4)**: `PostPaymentCompletion.Enabled` +
+  new `CompletionEnabled`, exposed to the frontend as `PostPaymentCompletionEnabled` and
+  `CompletionLifecycleEnabled`.
 
 ### Changed
 
-- **An unallocated invoice can no longer be validated** — Phase 2's "validation creates trust,
-  not coverage" gives way to Phase 3A's "validation makes a fully-attributed document count".
+- **An unallocated invoice can no longer be validated** — validation now requires the full
+  allocation of the invoice gross amount within tolerance
+  (`OI_VALIDATE_ALLOCATION_INCOMPLETE`); Phase 2's "validation creates trust, not coverage"
+  gives way to "validation makes a fully-attributed document count".
+- **Supplier/Currency allocation integrity is enforced at three points**: allocation
+  create/update, invoice header update (an edit that would contradict existing allocations is
+  refused with the same codes — the header-drift fix), and again at validation before any
+  snapshot or status mutation. Company integrity is structurally inherited from the shared
+  request scope; the invoice deliberately carries no plant identity.
+- **`PostPaymentCompletion.Enabled` now means the intake/classification/coverage capability**
+  (Phases 1–3B): document classification and multi-source-document enforcement, group
+  obligation stamping with expected-total capture, the obligations read model, the R15
+  unclassified guard and frontend discovery.
+- **`CompletionEnabled` separately controls the Phase 4 completion lifecycle** (legacy-finalize
+  redirect + `RequestCompletionService`), effective only as `Enabled && CompletionEnabled` —
+  alone it fails closed. Phase 3B TEST state: `Enabled=true, CompletionEnabled=false`; grouped
+  requests keep the legacy finalization path. Committed defaults remain false/false.
 
-### Phase 3A checkpoint (corrective patch + flag split)
+### Deferred (deliberately NOT in v2.228.0)
 
-- **Header-drift fix**: editing an invoice's Supplier/Currency while it holds allocations is
-  refused with the same allocation integrity codes (`OI_ALLOC_SUPPLIER_MISMATCH` /
-  `OI_ALLOC_CURRENCY_MISMATCH`) — an edit can no longer invalidate accepted allocation
-  evidence; Validate re-runs the identical recheck against the persisted header before any
-  reconciliation snapshot or status mutation (belt-and-braces against historical/manual drift).
-  No company or plant comparison invented: company is inherited from the shared request scope;
-  the invoice carries no plant identity by design.
-- **Feature-flag split**: `PostPaymentCompletion.Enabled` now governs only intake/
-  classification/coverage (Phases 1–3B); new `CompletionEnabled` governs the Phase 4 completion
-  lifecycle (legacy-finalize redirect + `RequestCompletionService`), effective only as
-  `Enabled && CompletionEnabled`. Phase 3B TEST configuration: `Enabled=true,
-  CompletionEnabled=false` — coverage works while grouped requests keep the legacy finalization
-  path. Committed defaults remain false/false; configuration-only, no migration. Frontend
-  discovery gains `CompletionLifecycleEnabled`.
+- Operational receipt completion (including the approved decision that service-type groups
+  will require it too — Phase 4).
+- Fiscal receipt handling and the `WAITING_FISCAL_RECEIPT` transition (Phase 4).
+- `RequestPoGroup` completion (`CompletedAtUtc`) and Request completion gating (Phase 4).
+- Phase 5 OCR: automatic extraction, `OperationInvoiceLine` activation, line matching,
+  confidence scoring — registration is manual only.
+- Per-allocation Net/Tax split UI — the Phase 3B wizard allocates Gross only (backend accepts
+  the components and validates them when supplied); tax-level allocation can be added later if
+  Finance needs it, without schema change.
+- Admin activation panel — the expected-total backfill remains a documented SysAdmin API step
+  executed before TEST activation.
 
 ## [v2.227.1] - 2026-08-11
 

@@ -2,7 +2,25 @@
 
 ## Current Version
 
-v2.227.1
+v2.228.0
+
+## [v2.228.0] - 2026-08-12
+
+### Release 4 financial coverage capability (Phases 3A + 3B)
+
+- Final Invoice (OperationInvoice) registration/edit/void/reject/replace UI; atomic allocation
+  replace-set against RequestPoGroups; Finance validation turning allocations into effective
+  coverage with immutable reconciliation snapshots; explicit divergence candidate + acceptance;
+  short-close proposal/decision with separation of duties; authoritative group coverage read
+  model (obligations endpoint + "Fatura Final — Cobertura" section).
+- Validation now requires full allocation of the invoice gross; Supplier/Currency integrity
+  enforced at allocation, header edit and validation.
+- Feature-flag split: `Enabled` = intake/classification/coverage; new `CompletionEnabled` =
+  Phase 4 completion lifecycle only. Committed defaults both false; Phase 3B TEST runs
+  Enabled=true / CompletionEnabled=false.
+- Migration `AddOperationInvoiceAllocationAudit` (allocation Notes + audit columns) must run
+  before the backend deploys. Deferred: Phase 4 completion (operational/fiscal receipt,
+  completion gating), Phase 5 OCR, per-allocation Net/Tax UI, admin activation panel.
 
 ## [v2.227.1] - 2026-08-11
 
