@@ -179,6 +179,25 @@ public class AttachmentsController : BaseController
                 }
                 detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, adiantamento ou conclusão.";
                 break;
+            case RequestAttachment.TYPE_OPERATION_INVOICE:
+                // Release 4 Phase 3B: the Final Invoice evidence rides the SAME window as the
+                // invoice registration it exists for — post-approval, pre-completion, never in
+                // WAITING_PO_CORRECTION (OperationInvoiceLifecyclePolicy, the one rulebook).
+                // Roles mirror the OperationInvoicesController mutation guard.
+                isUploadable = AlplaPortal.Domain.Services.OperationInvoiceLifecyclePolicy
+                    .CanCreateInRequestStatus(statusCode);
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Finance) &&
+                    !CurrentUserRoles.Contains(RoleConstants.Buyer) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Financeiro e o Comprador podem carregar a Fatura Final.";
+                    break;
+                }
+                detail = "A Fatura Final só pode ser carregada depois da aprovação do pedido e " +
+                         "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
+                break;
             case AttachmentConstants.Types.Receipt:
                 isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);
                 if (isUploadable && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
@@ -378,6 +397,7 @@ public class AttachmentsController : BaseController
         else if (typeCode == AttachmentConstants.Types.PaymentSchedule) typeLabel = "Cronograma de Pagamento";
         else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
         else if (typeCode == AttachmentConstants.Types.Receipt) typeLabel = "Recibo";
+        else if (typeCode == RequestAttachment.TYPE_OPERATION_INVOICE) typeLabel = "Fatura Final";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."
