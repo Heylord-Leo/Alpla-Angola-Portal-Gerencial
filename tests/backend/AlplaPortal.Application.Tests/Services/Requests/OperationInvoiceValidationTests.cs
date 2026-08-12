@@ -47,7 +47,8 @@ public class OperationInvoiceValidationTests
         var controller = new OperationInvoicesController(
             ctx,
             NullLogger<OperationInvoicesController>.Instance,
-            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx));
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
+            new AlplaPortal.Infrastructure.Services.OperationInvoiceCoverageService(ctx));
 
         controller.ControllerContext = new ControllerContext
         {
@@ -151,6 +152,47 @@ public class OperationInvoiceValidationTests
             Assert.IsType<ProblemDetails>(conflict.Value).Extensions["code"]);
     }
 
+    /// <summary>
+    /// Phase 3A: validation now requires a fully-attributed document. An eligible group with the
+    /// invoice's full gross allocated to it is the minimal shape that passes the allocation gate.
+    /// </summary>
+    private static RequestPoGroup AddFullyAllocatedGroup(
+        ApplicationDbContext ctx, Seed seed, OperationInvoice invoice, decimal? expectedOverride = null)
+    {
+        var gross = invoice.GrossAmount!.Value;
+        var group = new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = seed.RequestId,
+            SupplierId = invoice.SupplierId,
+            SupplierNameSnapshot = "ZZTEST Supplier",
+            CurrencyCode = invoice.Currency,
+            TotalAmount = expectedOverride ?? gross,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = Types.Proforma,
+            OperationInvoiceStatus = Agg.PendingUpload,
+            RequiresOperationInvoice = true,
+            ExpectedOperationInvoiceTotal = expectedOverride ?? gross,
+            ExpectedOperationInvoiceCurrency = invoice.Currency,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-5),
+            CreatedByUserId = seed.ActorId
+        };
+        ctx.RequestPoGroups.Add(group);
+        ctx.OperationInvoiceAllocations.Add(new OperationInvoiceAllocation
+        {
+            Id = Guid.NewGuid(),
+            OperationInvoiceId = invoice.Id,
+            RequestPoGroupId = group.Id,
+            AllocatedNetAmount = invoice.NetAmount ?? 0m,
+            AllocatedTaxAmount = invoice.TaxAmount ?? 0m,
+            AllocatedGrossAmount = gross,
+            SequenceNumber = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddHours(-1),
+            CreatedByUserId = seed.ActorId
+        });
+        return group;
+    }
+
     // ── Validate: happy path, stamps, retry ──
 
     [Fact]
@@ -159,6 +201,7 @@ public class OperationInvoiceValidationTests
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx);
         var invoice = AddPendingInvoice(ctx, seed);
+        AddFullyAllocatedGroup(ctx, seed, invoice);
         await ctx.SaveChangesAsync();
 
         var controller = BuildController(ctx, seed.ActorId);
@@ -529,10 +572,10 @@ public class OperationInvoiceValidationTests
             .AnyAsync(h => h.ActionTaken == "FATURA_OPERACAO_REJEITADA"));
     }
 
-    // ── Phase 1 non-interaction: validation creates trust, not coverage ──
+    // ── Phase 3A allocation gate: an unallocated invoice can no longer be validated at all ──
 
     [Fact]
-    public async Task A_validated_unallocated_invoice_still_covers_nothing()
+    public async Task Validation_refuses_an_unallocated_invoice_and_nothing_moves()
     {
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx);
@@ -557,32 +600,21 @@ public class OperationInvoiceValidationTests
         var invoice = AddPendingInvoice(ctx, seed);
         await ctx.SaveChangesAsync();
 
-        Body(await BuildController(ctx, seed.ActorId).Validate(
-            seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto()));
+        var result = await BuildController(ctx, seed.ActorId).Validate(
+            seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto());
+        AssertCode(result, OperationInvoicesController.ValidateAllocationIncompleteCode);
 
+        // Nothing moved: the document still awaits its decision, the group still awaits upload,
+        // and no reconciliation snapshot was minted for a refused validation.
         ctx.ChangeTracker.Clear();
+        Assert.Equal(Doc.PendingValidation,
+            (await ctx.OperationInvoices.SingleAsync(i => i.Id == invoice.Id)).Status);
         var persisted = await ctx.RequestPoGroups.SingleAsync(g => g.Id == group.Id);
         Assert.Equal(Agg.PendingUpload, persisted.OperationInvoiceStatus);
         Assert.Equal(100_000m, persisted.ExpectedOperationInvoiceTotal);
-
-        var obligation = Assert.Single(OperationInvoiceObligationProjector.Project(new[]
-        {
-            new OperationInvoiceObligationGroupSnapshot
-            {
-                GroupId = persisted.Id,
-                SourceDocumentType = persisted.SourceDocumentType,
-                ExpectedTotal = persisted.ExpectedOperationInvoiceTotal,
-                ExpectedCurrency = persisted.ExpectedOperationInvoiceCurrency,
-                PersistedStatus = persisted.OperationInvoiceStatus
-                // No allocations — exactly what the projection reads from the database.
-            }
-        }).Obligations);
-
-        Assert.Equal(Agg.PendingUpload, obligation.DerivedStatus);
-        Assert.Equal(0m, obligation.ValidatedCoveredAmount);
-        Assert.Equal(0m, obligation.PendingCoveredAmount);
-        Assert.Equal(100_000m, obligation.RemainingAmount);
-        Assert.False(obligation.StatusDrift);
+        Assert.False(await ctx.OperationInvoiceReconciliations.AnyAsync());
+        Assert.False(await ctx.RequestStatusHistories
+            .AnyAsync(h => h.ActionTaken == "FATURA_OPERACAO_VALIDADA"));
     }
 
     // ── Replacement lifecycle through the decision routes ──
@@ -611,6 +643,12 @@ public class OperationInvoiceValidationTests
                 ReplacementReason = "ZZTEST correção"
             }));
         Assert.Equal(Doc.PendingValidation, invoiceB.Status);
+
+        // Phase 3A: the replacement passes the same allocation gate as any other validation.
+        ctx.ChangeTracker.Clear();
+        var invoiceBEntity = await ctx.OperationInvoices.SingleAsync(i => i.Id == invoiceB.Id);
+        AddFullyAllocatedGroup(ctx, seed, invoiceBEntity);
+        await ctx.SaveChangesAsync();
 
         Body(await controller.Validate(seed.RequestId, invoiceB.Id, new ValidateOperationInvoiceDto()));
 

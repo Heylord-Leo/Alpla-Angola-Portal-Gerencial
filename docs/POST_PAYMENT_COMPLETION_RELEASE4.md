@@ -178,6 +178,112 @@ B are non-effective, so the fiscal identity is free; the new invoice C starts un
 dead chain. Known cosmetic gap, accepted: B carries no pointer to C, so the audit chain is
 A→B (rejected), C standalone.
 
+## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
+
+Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no completion wiring
+(Phase 4), no OCR (Phase 5); `PostPaymentCompletion.Enabled` stays `false` everywhere.** While
+UNCLASSIFIED groups fail eligibility, the endpoints are functionally inert on legacy data.
+
+### Allocation lifecycle (draft-then-count)
+
+`PUT /api/v1/requests/{id}/operation-invoices/{oid}/allocations` — an **atomic replace-set**:
+the payload IS the resulting set; the server derives add/update/remove, validates the ENTIRE
+result before mutating anything, and commits with one SaveChanges. N:M with **one row per
+(invoice, group)** — enforced by payload validation and the pre-existing unique index. Rules,
+in gate order:
+
+1. **Drafting window**: only while the invoice is `UPLOADED`/`PENDING_VALIDATION`
+   (`OI_ALLOC_NOT_EDITABLE` otherwise). VALIDATED allocations are immutable — correct via
+   reject/replace. Roles: Buyer/Finance/SysAdmin, same mutation window as every invoice write.
+2. **Group integrity** (`OI_ALLOC_GROUP_INVALID` / `OI_ALLOC_SUPPLIER_MISMATCH` /
+   `OI_ALLOC_CURRENCY_MISMATCH`): the group must belong to the same request, be classified with
+   `RequiresOperationInvoice`, be in an upload-accepting aggregate state, not be parked in
+   `WAITING_PO_CORRECTION`, and match the invoice's supplier and currency (no FX).
+3. **Invoice-side balance** (`OI_ALLOC_INVOICE_OVER`): Σ allocations ≤ invoice gross +
+   tolerance (`max(1.00, 0.1%)` — the Portal's standard financial tolerance).
+4. **Over-expected rule (approved decision #13)**: an allocation that pushes
+   `validated-by-others + allocated` beyond the group's expected total + tolerance is **hard-
+   blocked for the Buyer** (`OI_ALLOC_GROUP_OVER`, with expected/current/attempted/tolerance in
+   the problem payload) and is a **divergence candidate for Finance/SysAdmin** — allowed only
+   with a meaningful explanation (≥20 chars, placeholder-rejected) in the allocation `Notes`.
+   Nothing is ever silently capped; the acceptance decision itself belongs to validation.
+
+An identical payload is an **idempotent no-op** (no audit row, no touch). Sequence numbers are
+per-group ("the Nth allocation this group ever received"). Audit: `OI_ALLOC_SET` on first set,
+`OI_ALLOC_CHANGED` after, with per-group amounts and "anterior X" on changes.
+
+### Effective coverage rule and re-derivation
+
+**Only allocations on VALIDATED, non-superseded invoices count toward coverage**; drafts count
+toward pending. `OperationInvoiceCoverageService.RederiveAsync` recomputes the cached
+`RequestPoGroup.OperationInvoiceStatus` through `OperationInvoiceAggregateDeriver` (single
+aggregate policy) **inside the caller's transaction** for every allocation/validation/
+rejection/void/short-close write, reading the caller's in-transaction state through the change
+tracker. Transitions are audited as `GROUP_OI_STATUS` rows. Coverage totals are **never
+persisted** — always derived. Concurrency: effective-coverage writes (validation, short-close
+approval) force a RowVersion-checked touch on every affected group even when the derived status
+is unchanged, so two racing effective-coverage writers can never both commit against the same
+stale reading; draft writes rely on the invoice RowVersion alone.
+
+### Validation gate, divergence acceptance and the reconciliation snapshot
+
+Finance validation now validates a **fully-attributed document**: Σ allocations must equal the
+invoice gross within tolerance (`OI_VALIDATE_ALLOCATION_INCOMPLETE`) — an unallocated invoice
+can no longer be validated. Every group the validation would push beyond its expected total +
+tolerance requires an **explicit acceptance entry** (`DivergenceAcceptances[]`, `Accepted=true`
++ meaningful justification) or the validation fails with `OI_VALIDATE_DIVERGENCE_REQUIRED` and
+the full numeric context. Never inferred, never auto-accepted, never capped.
+
+On the VALIDATED transition, one **immutable `OperationInvoiceReconciliation` snapshot per
+allocation** records the moment of the decision: NIF/supplier/currency/company matches (facts,
+not gates — mismatches are recorded honestly, the decision was Finance's), allocated total,
+cumulative validated-before, expected-at-comparison, baseline, invoice total, signed residual
+variance, applied tolerance, and the divergence decision with its justification. Snapshots are
+never updated; the idempotent VALIDATED early-return precedes the write, so an exact retry can
+never duplicate one.
+
+### Expected-total activation (audited backfill)
+
+`/api/v1/admin/release4/expected-operation-invoice-totals` — the controlled exception to the
+"no historical backfill" rule, for turning the feature on over pre-flag data. **GET preview**
+(Finance/SysAdmin, dry-run) lists every group whose expected total is null, split into eligible
+(classified + `RequiresOperationInvoice` + `TotalAmount > 0` → proposed = `TotalAmount`) and
+skipped (`NOT_CLASSIFIED` / `NOT_REQUIRED` / `NO_TOTAL`). **POST apply** (SysAdmin only,
+mandatory meaningful reason) freezes `TotalAmount` as the expected total with the manual-set
+audit trio and justification `[ATIVAÇÃO R4] {reason}`, re-derives, and writes one
+`OI_EXPECTED_TOTAL_BACKFILLED` history row per touched request. **Never overwrites** a non-null
+expected total; structurally idempotent (a written group stops being a candidate).
+
+### Short-close policy (separation of duties)
+
+`/api/v1/requests/{id}/po-groups/{gid}/operation-invoice-short-close` — the audited two-person
+decision that a group will legitimately never reach its expected total. **Propose**
+(Buyer/Finance/SysAdmin): eligible obligation, remaining = expected − validated > tolerance,
+meaningful justification, optional evidence attachment (must belong to the request);
+`RemainingAmountAtProposal` is frozen. One ACTIVE (PROPOSED/APPROVED) short-close per group —
+precheck plus the filtered unique index as concurrency backstop. **Approve** (Finance/SysAdmin,
+**proposer ≠ approver** structurally — a SysAdmin cannot approve their own proposal): re-derives
+the group to SATISFIED/`ClosedShort` in the same transaction. **Reject** (Finance/SysAdmin, or
+**the proposer themself as the withdrawal path** — the model has no separate cancellation
+state; a self-rejection with its mandatory reason is the recorded withdrawal). Decisions are
+terminal; retries are idempotent; events `OI_SHORTCLOSE_PROPOSED/APPROVED/REJECTED`.
+
+### Obligations endpoint additions
+
+Each obligation now carries `CoveragePercent` (validated/expected × 100, `null` when the
+expected total is unknown or not positive — never 0) and `Allocations[]` (the group-side view of
+the same rows: invoice number/series/status, amounts, sequence, notes, `IsEffective`,
+`IsPendingDecision`, audit timestamps). The endpoint remains flag-gated (404 while disabled)
+and strictly read-only.
+
+### Phase 4/5 boundaries (not in 3A)
+
+- **Phase 4 (completion)**: group/request completion transitions, fiscal receipts, operational
+  receipt UI. Approved business decision recorded for Phase 4 planning: **operational receipt is
+  required for service-type groups too** (documentation only; no code in 3A).
+- **Phase 5 (OCR)**: `OperationInvoiceLine`, line matching, `UPLOADED` intake. Dormant.
+- Phase 3B (allocation/validation/short-close UI) follows separately; nothing in 3A renders.
+
 ## Known open questions for Phase 2/3 (Finance)
 
 Carried from plan v7 §9, plus Release 4 findings:

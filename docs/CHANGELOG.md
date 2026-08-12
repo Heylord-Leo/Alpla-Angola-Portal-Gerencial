@@ -6,6 +6,46 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.227.1
 
+## [Unreleased] — Release 4 Phase 3A: allocation, reconciliation & short-close (backend only)
+
+Backend-only activation of the Phase 3 model. **No UI, no completion wiring, no OCR;
+`PostPaymentCompletion.Enabled` remains `false`** — endpoints exist but are functionally inert
+on unclassified legacy data. Migration: `AddOperationInvoiceAllocationAudit` (allocation
+`Notes` + audit columns only). Reference: `docs/POST_PAYMENT_COMPLETION_RELEASE4.md` (Phase 3A).
+
+### Added
+
+- **Allocation replace-set** `GET/PUT …/operation-invoices/{id}/allocations`: atomic, validated
+  as a whole, one row per (invoice, group), idempotent no-op on identical payloads; group
+  integrity (request/supplier/currency/eligibility), invoice-side balance, and the approved
+  over-expected rule — Buyer hard-blocked (`OI_ALLOC_GROUP_OVER`), Finance/SysAdmin divergence
+  candidate requiring meaningful notes. Audit `OI_ALLOC_SET`/`OI_ALLOC_CHANGED`.
+- **Effective-coverage derivation** (`OperationInvoiceCoverageService`): every allocation/
+  validation/rejection/void/short-close write re-derives the touched groups' cached aggregate
+  in the same transaction (`GROUP_OI_STATUS` audit); only VALIDATED, non-superseded invoices
+  count; totals are always derived, never persisted; effective-coverage writes force a
+  RowVersion-checked group touch against racing writers.
+- **Validation allocation gate + reconciliation snapshots**: validation requires the invoice
+  fully attributed (`OI_VALIDATE_ALLOCATION_INCOMPLETE`); over-expected groups require explicit
+  `DivergenceAcceptances` with justification (`OI_VALIDATE_DIVERGENCE_REQUIRED`); on VALIDATED,
+  one immutable `OperationInvoiceReconciliation` row per allocation freezes the decision context
+  (identity matches, cumulative coverage, residual variance, divergence decision).
+- **Expected-total activation** `admin/release4/expected-operation-invoice-totals`: audited
+  backfill for pre-flag groups — preview (Finance/SysAdmin) with NOT_CLASSIFIED/NOT_REQUIRED/
+  NO_TOTAL skip reasons; apply (SysAdmin only, mandatory meaningful reason) freezes the group's
+  own `TotalAmount`, never overwrites, structurally idempotent (`OI_EXPECTED_TOTAL_BACKFILLED`).
+- **Short-close lifecycle** `…/po-groups/{gid}/operation-invoice-short-close`: propose
+  (Buyer/Finance/SysAdmin; frozen remaining; meaningful justification; one active per group) /
+  approve (Finance/SysAdmin, proposer ≠ approver; group → SATISFIED/`ClosedShort` in the same
+  transaction) / reject (decider, or the proposer as withdrawal; mandatory reason).
+- **Obligations endpoint**: each group gains `CoveragePercent` (null when the finish line is
+  unknown, never 0) and `Allocations[]`.
+
+### Changed
+
+- **An unallocated invoice can no longer be validated** — Phase 2's "validation creates trust,
+  not coverage" gives way to Phase 3A's "validation makes a fully-attributed document count".
+
 ## [v2.227.1] - 2026-08-11
 
 ### Fixed — candidate-based approval read models/UI and quotation attachment classification

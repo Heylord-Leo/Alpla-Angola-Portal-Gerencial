@@ -46,7 +46,8 @@ public class OperationInvoiceReplaceTests
         var controller = new OperationInvoicesController(
             ctx,
             NullLogger<OperationInvoicesController>.Instance,
-            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx));
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
+            new AlplaPortal.Infrastructure.Services.OperationInvoiceCoverageService(ctx));
 
         controller.ControllerContext = new ControllerContext
         {
