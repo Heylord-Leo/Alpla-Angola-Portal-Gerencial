@@ -62,6 +62,8 @@ public class OperationInvoicesController : BaseController
     public const string AllocationCurrencyMismatchCode = "OI_ALLOC_CURRENCY_MISMATCH";
     public const string AllocationInvoiceOverCode = "OI_ALLOC_INVOICE_OVER";
     public const string AllocationGroupOverCode = "OI_ALLOC_GROUP_OVER";
+    public const string ValidateAllocationIncompleteCode = "OI_VALIDATE_ALLOCATION_INCOMPLETE";
+    public const string ValidateDivergenceRequiredCode = "OI_VALIDATE_DIVERGENCE_REQUIRED";
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────
 
@@ -906,6 +908,94 @@ public class OperationInvoicesController : BaseController
             return Conflict(problem);
         }
 
+        // ── Phase 3A allocation gate: Finance validates a FULLY-ATTRIBUTED document. The sum of
+        // allocations must reconcile to the invoice gross within tolerance — no unexplained
+        // balance may quietly disappear, and an unallocated invoice with a real gross cannot
+        // become effective coverage of nothing. ──
+        var allocations = await _context.OperationInvoiceAllocations
+            .Where(a => a.OperationInvoiceId == invoice.Id)
+            .ToListAsync();
+
+        var grossForGate = invoice.GrossAmount!.Value;
+        var gateTolerance = OperationInvoiceTolerance.For(grossForGate);
+        var allocatedTotal = allocations.Sum(a => a.AllocatedGrossAmount);
+        if (Math.Abs(grossForGate - allocatedTotal) > gateTolerance)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Alocações incompletas",
+                Detail = allocations.Count == 0
+                    ? "A fatura não tem alocações. Distribua o total da fatura pelos grupos antes de validar."
+                    : "A soma das alocações não corresponde ao total da fatura (fora da tolerância). " +
+                      "Nenhum saldo da fatura pode ficar por explicar.",
+                Status = 409
+            };
+            problem.Extensions["code"] = ValidateAllocationIncompleteCode;
+            problem.Extensions["invoiceGross"] = grossForGate;
+            problem.Extensions["allocatedTotal"] = allocatedTotal;
+            problem.Extensions["tolerance"] = gateTolerance;
+            return Conflict(problem);
+        }
+
+        // ── Over-expected groups need the EXPLICIT Finance decision (approved rule #13):
+        // an acceptance entry with a meaningful justification per affected group — never
+        // inferred, never auto-accepted, never silently capped. ──
+        var gateGroupIds = allocations.Select(a => a.RequestPoGroupId).Distinct().ToList();
+        var gateGroups = await _context.RequestPoGroups
+            .Where(g => gateGroupIds.Contains(g.Id))
+            .ToDictionaryAsync(g => g.Id);
+
+        var gateValidatedByOthers = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => gateGroupIds.Contains(a.RequestPoGroupId) && a.OperationInvoiceId != invoice.Id)
+            .Join(_context.OperationInvoices.Where(i =>
+                    i.Status == RequestConstants.OperationInvoiceDocumentStatuses.Validated &&
+                    i.SupersededByOperationInvoiceId == null),
+                a => a.OperationInvoiceId, i => i.Id,
+                (a, i) => new { a.RequestPoGroupId, a.AllocatedGrossAmount })
+            .GroupBy(a => a.RequestPoGroupId)
+            .Select(g => new { GroupId = g.Key, Total = g.Sum(x => x.AllocatedGrossAmount) })
+            .ToDictionaryAsync(x => x.GroupId, x => x.Total);
+
+        var acceptancesByGroup = (dto.DivergenceAcceptances ?? new List<OperationInvoiceDivergenceAcceptanceDto>())
+            .GroupBy(a => a.RequestPoGroupId)
+            .ToDictionary(g => g.Key, g => g.Last());
+
+        var divergenceByGroup = new Dictionary<Guid, (decimal Residual, string Justification)>();
+        foreach (var allocation in allocations)
+        {
+            var group = gateGroups[allocation.RequestPoGroupId];
+            if (group.ExpectedOperationInvoiceTotal is not > 0) continue;
+
+            var expected = group.ExpectedOperationInvoiceTotal.Value;
+            var groupTolerance = OperationInvoiceTolerance.For(expected);
+            var coveredBefore = gateValidatedByOthers.TryGetValue(group.Id, out var v) ? v : 0m;
+            var residual = coveredBefore + allocation.AllocatedGrossAmount - expected;
+            if (residual <= groupTolerance) continue;
+
+            acceptancesByGroup.TryGetValue(group.Id, out var acceptance);
+            if (acceptance is not { Accepted: true } ||
+                !ReconciliationJustificationValidator.IsValid(acceptance.Justification, out _))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Divergência requer decisão explícita",
+                    Detail = $"A alocação leva o grupo {group.SupplierNameSnapshot ?? group.Id.ToString()} " +
+                             $"acima do total esperado ({expected:N2} {group.CurrencyCode}). A validação exige " +
+                             "a aceitação explícita da divergência com justificativa (mín. 20 caracteres significativos).",
+                    Status = 409
+                };
+                problem.Extensions["code"] = ValidateDivergenceRequiredCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                problem.Extensions["expectedTotal"] = expected;
+                problem.Extensions["currentValidated"] = coveredBefore;
+                problem.Extensions["allocatedAmount"] = allocation.AllocatedGrossAmount;
+                problem.Extensions["tolerance"] = groupTolerance;
+                return Conflict(problem);
+            }
+
+            divergenceByGroup[group.Id] = (residual, acceptance.Justification!.Trim());
+        }
+
         // ── The decision. Nothing else moves: amounts, attachment, snapshots, chain, void
         // fields all stay exactly as Finance saw them.
         invoice.Status = RequestConstants.OperationInvoiceDocumentStatuses.Validated;
@@ -922,10 +1012,77 @@ public class OperationInvoicesController : BaseController
             ActionTaken = "FATURA_OPERACAO_VALIDADA",
             PreviousStatusId = request.StatusId,
             NewStatusId = request.StatusId,
-            Comment = $"Fatura final {invoice.DocumentNumber} validada pelo Financeiro.",
+            Comment = $"Fatura final {invoice.DocumentNumber} validada pelo Financeiro." +
+                      (divergenceByGroup.Count > 0
+                          ? $" Divergência aceite em {divergenceByGroup.Count} grupo(s)."
+                          : string.Empty),
             IdempotencyKey = PostPaymentIdempotencyKeys.OperationInvoiceValidated(requestId, invoice.Id),
             CreatedAtUtc = DateTime.UtcNow
         });
+
+        // ── Phase 3A: one IMMUTABLE reconciliation snapshot per allocation, written only on this
+        // transition (the idempotent VALIDATED retry above never reaches here, so an exact retry
+        // can never duplicate a snapshot). ──
+        var companyName = await _context.Companies.AsNoTracking()
+            .Where(c => c.Id == request.CompanyId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync();
+
+        foreach (var allocation in allocations)
+        {
+            var group = gateGroups[allocation.RequestPoGroupId];
+            var expected = group.ExpectedOperationInvoiceTotal ?? 0m;
+            var coveredBefore = gateValidatedByOthers.TryGetValue(group.Id, out var v) ? v : 0m;
+            var hasDivergence = divergenceByGroup.TryGetValue(group.Id, out var divergence);
+
+            _context.OperationInvoiceReconciliations.Add(new OperationInvoiceReconciliation
+            {
+                Id = Guid.NewGuid(),
+                RequestPoGroupId = group.Id,
+                OperationInvoiceAttachmentId = invoice.AttachmentId,
+                OperationInvoiceId = invoice.Id,
+                OperationInvoiceAllocationId = allocation.Id,
+                NifMatched = !string.IsNullOrWhiteSpace(invoice.SupplierTaxIdSnapshot) &&
+                             !string.IsNullOrWhiteSpace(group.SupplierNifSnapshot) &&
+                             string.Equals(invoice.SupplierTaxIdSnapshot.Trim(), group.SupplierNifSnapshot.Trim(),
+                                 StringComparison.OrdinalIgnoreCase),
+                CompanyMatched = !string.IsNullOrWhiteSpace(invoice.BilledCompanyNameRead) &&
+                                 !string.IsNullOrWhiteSpace(companyName) &&
+                                 invoice.BilledCompanyNameRead.Contains(companyName!, StringComparison.OrdinalIgnoreCase),
+                SupplierMatched = invoice.SupplierId.HasValue && group.SupplierId.HasValue &&
+                                  invoice.SupplierId == group.SupplierId,
+                CurrencyMatched = string.Equals(invoice.Currency, group.CurrencyCode, StringComparison.OrdinalIgnoreCase),
+                AllocatedTotal = allocation.AllocatedGrossAmount,
+                CumulativeValidatedTotalBefore = coveredBefore,
+                ExpectedTotalAtComparison = expected,
+                BaselineTotal = group.TotalAmount,
+                InvoiceTotal = invoice.GrossAmount!.Value,
+                ResidualVariance = expected > 0 ? coveredBefore + allocation.AllocatedGrossAmount - expected : 0m,
+                ToleranceApplied = OperationInvoiceTolerance.For(expected),
+                DivergenceDetected = hasDivergence,
+                DivergenceAccepted = hasDivergence,
+                DivergenceJustification = hasDivergence ? divergence.Justification : null,
+                ReconciliationDataJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    invoice.DocumentNumber,
+                    invoice.DocumentSeries,
+                    invoice.Currency,
+                    invoice.NetAmount,
+                    invoice.TaxAmount,
+                    invoice.GrossAmount,
+                    AllocationSequence = allocation.SequenceNumber,
+                    GroupSupplier = group.SupplierNameSnapshot,
+                    GroupCurrency = group.CurrencyCode
+                }),
+                CreatedAtUtc = DateTime.UtcNow,
+                CreatedByUserId = CurrentUserId
+            });
+        }
+
+        // ── Effective coverage moved: re-derive every allocated group WITH the forced row touch,
+        // so a concurrent effective-coverage writer conflicts instead of double-covering. ──
+        var validateCoverageChanges = await _coverage.RederiveAsync(gateGroupIds, forceGroupTouch: true);
+        AddGroupStatusHistories(request, validateCoverageChanges);
 
         try
         {
