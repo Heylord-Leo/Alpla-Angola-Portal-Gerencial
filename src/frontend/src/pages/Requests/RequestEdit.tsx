@@ -39,6 +39,7 @@ import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocum
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
+import { OperationInvoiceSection } from './components/OperationInvoiceSection';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
@@ -539,6 +540,21 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         canCreateSupplier={canCreateSupplier}
                         onSummaryChange={handleSourceDocumentsSummary}
                         onEditingStateChange={setDocumentEditingState}
+                    />
+                )}
+
+                {/* Release 4 Phase 3B: Final Invoice registration, allocation and coverage. Works
+                    for PAYMENT and QUOTATION alike — the obligations read model is the abstraction.
+                    Renders nothing while the coverage capability is off or nothing exists to show.
+                    The completion lifecycle (Phase 4) is deliberately absent. */}
+                {id && (
+                    <OperationInvoiceSection
+                        requestId={id}
+                        coverageEnabled={featureFlags.postPaymentCompletionEnabled}
+                        isFinance={isFinance}
+                        isBuyer={isBuyer}
+                        isAdmin={user?.roles?.includes('System Administrator') ?? false}
+                        currentUserId={user?.id ?? null}
                     />
                 )}
 
