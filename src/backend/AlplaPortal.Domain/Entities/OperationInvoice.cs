@@ -127,6 +127,19 @@ public class OperationInvoiceAllocation
     /// <summary>The Nth allocation received by THAT group — shown as "Fatura 1 de N".</summary>
     public int SequenceNumber { get; set; }
 
+    /// <summary>
+    /// Free-text context for THIS share (Phase 3A). For a Finance/SysAdmin allocation that pushes
+    /// a group beyond its expected total, this carries the mandatory divergence explanation until
+    /// validation freezes the accepted justification into the reconciliation snapshot.
+    /// </summary>
+    public string? Notes { get; set; }
+
+    // Audit fields (Phase 3A)
+    public DateTime CreatedAtUtc { get; set; }
+    public Guid CreatedByUserId { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
+
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public ICollection<OperationInvoiceLine> Lines { get; set; } = new List<OperationInvoiceLine>();

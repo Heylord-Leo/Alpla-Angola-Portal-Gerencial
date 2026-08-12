@@ -60,6 +60,12 @@ public class VoidOperationInvoiceDto
 public class ValidateOperationInvoiceDto
 {
     public byte[]? RowVersion { get; set; }
+
+    /// <summary>
+    /// Phase 3A: explicit Finance decisions for allocations that push a group beyond its expected
+    /// total (approved rule #13). One entry per over-expected group; validation fails without them.
+    /// </summary>
+    public List<OperationInvoiceDivergenceAcceptanceDto>? DivergenceAcceptances { get; set; }
 }
 
 /// <summary>Finance rejection of a pending invoice (Phase 2e). Terminal; reason mandatory.</summary>
@@ -169,4 +175,153 @@ public class OperationInvoiceDuplicateCandidateDto
     public string? DocumentNumber { get; set; }
     public string? DocumentSeries { get; set; }
     public string Status { get; set; } = string.Empty;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// Release 4 Phase 3A — allocation / coverage / short-close / expected-total activation
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+/// <summary>One allocation as the UI reads it. Effectiveness is DERIVED from the owning
+/// invoice's status — the row itself carries no state.</summary>
+public class OperationInvoiceAllocationDto
+{
+    public Guid Id { get; set; }
+    public Guid OperationInvoiceId { get; set; }
+    public Guid RequestPoGroupId { get; set; }
+
+    public decimal AllocatedNetAmount { get; set; }
+    public decimal AllocatedTaxAmount { get; set; }
+    public decimal AllocatedGrossAmount { get; set; }
+
+    public int SequenceNumber { get; set; }
+    public string? Notes { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
+
+    // ── Derived classification (server-computed, never client-decided) ──
+    /// <summary>Owning invoice status — see RequestConstants.OperationInvoiceDocumentStatuses.</summary>
+    public string InvoiceStatus { get; set; } = string.Empty;
+    public string? InvoiceDocumentNumber { get; set; }
+    public string? InvoiceDocumentSeries { get; set; }
+
+    /// <summary>Counts toward validated coverage (invoice VALIDATED).</summary>
+    public bool IsEffective { get; set; }
+    /// <summary>Draft awaiting the Finance decision (invoice UPLOADED/PENDING_VALIDATION).</summary>
+    public bool IsPendingDecision { get; set; }
+
+    public string? GroupSupplierName { get; set; }
+    public string? GroupCurrencyCode { get; set; }
+}
+
+/// <summary>
+/// Atomic replace-set for one invoice's allocations (Phase 3A). The payload IS the resulting
+/// set: rows are added/updated/removed server-side to match it. Identity + amounts + note only —
+/// coverage, remaining, tolerance and effectiveness are computed by the server.
+/// <c>RowVersion</c> is the INVOICE token; every touched group is additionally guarded by its
+/// own database RowVersion inside the same transaction.
+/// </summary>
+public class SaveOperationInvoiceAllocationsDto
+{
+    public byte[]? RowVersion { get; set; }
+    public List<SaveOperationInvoiceAllocationItemDto> Allocations { get; set; } = new();
+}
+
+public class SaveOperationInvoiceAllocationItemDto
+{
+    public Guid RequestPoGroupId { get; set; }
+    public decimal AllocatedNetAmount { get; set; }
+    public decimal AllocatedTaxAmount { get; set; }
+    public decimal AllocatedGrossAmount { get; set; }
+    /// <summary>Optional context. MANDATORY (meaningful text) when a Finance/SysAdmin allocation
+    /// pushes the group beyond its expected total — the draft-time divergence explanation.</summary>
+    public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Explicit Finance decision on an over-expected group at validation time (approved rule #13):
+/// without an entry carrying <c>Accepted=true</c> and a meaningful justification for every
+/// over-expected group, validation fails. Never inferred, never auto-accepted.
+/// </summary>
+public class OperationInvoiceDivergenceAcceptanceDto
+{
+    public Guid RequestPoGroupId { get; set; }
+    public bool Accepted { get; set; }
+    public string? Justification { get; set; }
+}
+
+/// <summary>Read model of one short-close proposal/decision.</summary>
+public class OperationInvoiceShortCloseDto
+{
+    public Guid Id { get; set; }
+    public Guid RequestPoGroupId { get; set; }
+    public string Status { get; set; } = string.Empty;
+
+    public Guid ProposedByUserId { get; set; }
+    public string? ProposedByName { get; set; }
+    public DateTime ProposedAtUtc { get; set; }
+    public string ProposalJustification { get; set; } = string.Empty;
+    public Guid? EvidenceAttachmentId { get; set; }
+    public decimal RemainingAmountAtProposal { get; set; }
+
+    public Guid? DecidedByUserId { get; set; }
+    public string? DecidedByName { get; set; }
+    public DateTime? DecidedAtUtc { get; set; }
+    public string? DecisionReason { get; set; }
+
+    public byte[]? RowVersion { get; set; }
+}
+
+public class ProposeOperationInvoiceShortCloseDto
+{
+    /// <summary>Mandatory meaningful justification for closing below the expected total.</summary>
+    public string? Justification { get; set; }
+    /// <summary>Optional supporting evidence (attachment of this request).</summary>
+    public Guid? EvidenceAttachmentId { get; set; }
+}
+
+public class DecideOperationInvoiceShortCloseDto
+{
+    /// <summary>Optional on approval; MANDATORY on rejection.</summary>
+    public string? DecisionReason { get; set; }
+    public byte[]? RowVersion { get; set; }
+}
+
+// ── Expected-total activation (controlled Release 4 backfill — Admin operation) ──
+
+/// <summary>One group as the activation preview reports it. PREVIEW never mutates.</summary>
+public class ExpectedTotalBackfillGroupDto
+{
+    public Guid RequestId { get; set; }
+    public string? RequestNumber { get; set; }
+    public Guid RequestPoGroupId { get; set; }
+    public string? SupplierName { get; set; }
+    public string? CurrencyCode { get; set; }
+    public string GroupStatus { get; set; } = string.Empty;
+    public string OperationInvoiceStatus { get; set; } = string.Empty;
+    public decimal? CurrentExpectedTotal { get; set; }
+    public decimal? ProposedExpectedTotal { get; set; }
+    public bool Eligible { get; set; }
+    /// <summary>Why the group is skipped (NOT_CLASSIFIED / NOT_REQUIRED / NO_TOTAL / …).</summary>
+    public string? SkipReason { get; set; }
+}
+
+public class ExpectedTotalBackfillPreviewDto
+{
+    public int EligibleCount { get; set; }
+    public int SkippedCount { get; set; }
+    public List<ExpectedTotalBackfillGroupDto> Groups { get; set; } = new();
+}
+
+public class ApplyExpectedTotalBackfillDto
+{
+    /// <summary>Mandatory meaningful reason, frozen into every written group's justification.</summary>
+    public string? Reason { get; set; }
+}
+
+public class ExpectedTotalBackfillResultDto
+{
+    public int WrittenCount { get; set; }
+    public int SkippedCount { get; set; }
+    public List<ExpectedTotalBackfillGroupDto> WrittenGroups { get; set; } = new();
 }

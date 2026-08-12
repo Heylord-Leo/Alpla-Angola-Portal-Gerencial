@@ -87,6 +87,24 @@ public static class PostPaymentIdempotencyKeys
     public static string OperationInvoiceRejected(Guid requestId, Guid operationInvoiceId)
         => Build("OI_REJ", requestId, operationInvoiceId);
 
+    // ── Operation Invoice short-close (Release 4 Phase 3) ──
+
+    /// <summary>
+    /// OI_SHORTCLOSE_PROPOSED — OI_SC_PROP:{ShortCloseId}. Row-scoped: a short-close row is
+    /// proposed exactly once (it is born PROPOSED), so a retried propose that returns the
+    /// existing row never writes a second event.
+    /// </summary>
+    public static string ShortCloseProposed(Guid shortCloseId)
+        => $"OI_SC_PROP:{Format(shortCloseId)}";
+
+    /// <summary>OI_SHORTCLOSE_APPROVED — OI_SC_APPR:{ShortCloseId}. APPROVED is terminal.</summary>
+    public static string ShortCloseApproved(Guid shortCloseId)
+        => $"OI_SC_APPR:{Format(shortCloseId)}";
+
+    /// <summary>OI_SHORTCLOSE_REJECTED — OI_SC_REJ:{ShortCloseId}. REJECTED is terminal.</summary>
+    public static string ShortCloseRejected(Guid shortCloseId)
+        => $"OI_SC_REJ:{Format(shortCloseId)}";
+
     // ── Fiscal Receipt ──
 
     /// <summary>FISCAL_RECEIPT_UPLOADED — FR_UP:{GroupId}:{AttachmentId}</summary>

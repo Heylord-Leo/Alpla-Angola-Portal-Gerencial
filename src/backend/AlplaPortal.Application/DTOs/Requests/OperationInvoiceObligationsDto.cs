@@ -48,6 +48,16 @@ public class OperationInvoiceObligationDto
     public decimal? RemainingAmount { get; set; }
     public decimal AppliedTolerance { get; set; }
 
+    /// <summary>
+    /// Validated coverage as a share of the expected total, 0–100 (may exceed 100 on an accepted
+    /// divergence). Null when <see cref="ExpectedAmount"/> is unknown or not positive — an unknown
+    /// finish line has no percentage, deliberately not 0.
+    /// </summary>
+    public decimal? CoveragePercent { get; set; }
+
+    /// <summary>Phase 3A: every allocation touching this group, effective or awaiting decision.</summary>
+    public List<OperationInvoiceObligationAllocationDto> Allocations { get; set; } = new();
+
     // ── State ──
     /// <summary>Recomputed from authoritative inputs on this read.</summary>
     public string DerivedStatus { get; set; } = string.Empty;
@@ -70,6 +80,33 @@ public class OperationInvoiceObligationDto
     // ── Explanation ──
     public string ReasonCode { get; set; } = string.Empty;
     public string Explanation { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// One allocation as the obligations projection reports it (Phase 3A) — the group-side view of
+/// the same rows the invoice-side allocation endpoint returns.
+/// </summary>
+public class OperationInvoiceObligationAllocationDto
+{
+    public Guid AllocationId { get; set; }
+    public Guid OperationInvoiceId { get; set; }
+    public string? InvoiceDocumentNumber { get; set; }
+    public string? InvoiceDocumentSeries { get; set; }
+    public string InvoiceStatus { get; set; } = string.Empty;
+
+    public decimal AllocatedNetAmount { get; set; }
+    public decimal AllocatedTaxAmount { get; set; }
+    public decimal AllocatedGrossAmount { get; set; }
+    public int SequenceNumber { get; set; }
+    public string? Notes { get; set; }
+
+    /// <summary>VALIDATED invoice — the allocation counts toward coverage.</summary>
+    public bool IsEffective { get; set; }
+    /// <summary>UPLOADED / PENDING_VALIDATION invoice — visible, not yet counted.</summary>
+    public bool IsPendingDecision { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
 }
 
 /// <summary>Request-level counts plus per-currency sums. Currencies are never summed together.</summary>

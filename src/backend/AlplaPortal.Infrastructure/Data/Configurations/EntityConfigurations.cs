@@ -870,6 +870,7 @@ public class OperationInvoiceAllocationConfiguration : IEntityTypeConfiguration<
         builder.Property(a => a.AllocatedNetAmount).HasColumnType("decimal(18,2)");
         builder.Property(a => a.AllocatedTaxAmount).HasColumnType("decimal(18,2)");
         builder.Property(a => a.AllocatedGrossAmount).HasColumnType("decimal(18,2)");
+        builder.Property(a => a.Notes).HasMaxLength(1000);
         builder.Property(a => a.RowVersion).IsRowVersion();
 
         builder.HasOne(a => a.OperationInvoice)
