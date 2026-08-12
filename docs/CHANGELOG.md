@@ -6,6 +6,50 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.227.1
 
+## [Unreleased] — Release 4 Phase 3B: Operation Invoice registration/allocation/coverage UI
+
+Frontend for the Phase 2/3A backend, gated by capability discovery
+(`postPaymentCompletionEnabled`; the Phase 4 `completionLifecycleEnabled` staying false is the
+intended Phase 3B state, never warned about). Manual checklist:
+`docs/RELEASE4_PHASE3B_MANUAL_CHECKLIST.md`.
+
+### Added
+
+- **"Fatura Final — Cobertura" section** in the request detail (and therefore the Finance
+  drawer): per-group coverage cards from the authoritative obligations read model — Esperado /
+  Validado / Em validação / Restante / Cobertura % / status label (Aguardando Fatura Final,
+  Fatura em Validação, Parcialmente Faturado, Fatura Final Completa, Divergência em Análise,
+  Encerrado com Saldo Aceite) — plus the registered-invoice list with status chips, manual-entry
+  disclosure and attachment access. Unknown expected totals read "Valor esperado ainda não
+  definido", never 0.
+- **"Registrar Fatura Final"** modal (create/edit/replace) with supplier autocomplete
+  (internal entities excluded), advisory duplicate preflight naming the conflicting invoice,
+  distinct OPERATION_INVOICE attachment upload, net+tax≈gross hint and structured backend
+  errors. VALIDATED headers are read-only; correction goes through Substituir.
+- **"Distribuir Fatura Final"** 5-step wizard (Fatura → Grupos → Distribuição → Revisão →
+  Confirmar): whole-set replacement, only backend-eligible groups, live invoice and group
+  balances, Buyer over-coverage hard-blocked, Finance divergence CANDIDATE with mandatory
+  justification and explicit "not accepted yet" wording, backend error codes surfaced on the
+  offending group row.
+- **"Validar Fatura"** review: completeness gate mirrored, per-group divergence decision with
+  Expected/Validated-before/Allocation/Resulting/Variance/Tolerance and the explicit
+  "ACEITAR DIVERGÊNCIA" action (never pre-selected); Reject/Anular modals with the
+  document-not-request distinction.
+- **Short-close UI**: propose ("Propor Encerramento com Saldo", frozen remaining shown),
+  decide (proposer never sees Approve; withdrawal labelled "Retirar Proposta"), history, and the
+  "Encerrado com Saldo Aceite" group state.
+- **Backend (narrow, reported)**: `AttachmentsController.Upload` gains the OPERATION_INVOICE
+  case — uploadable in the operation-invoice mutation window (post-approval, pre-completion) by
+  Buyer/Finance/SysAdmin; previously the type fell into the drafts-only default and Phase 2
+  registration had no upload path. `FeatureFlagsDto` consumed with
+  `completionLifecycleEnabled`.
+
+### Deliberately absent (Phase 4/5)
+
+- No operational receipt, fiscal receipt, completion gating, CompletionEnabled toggle, OCR,
+  line matching, or admin activation panel (the expected-total backfill remains a documented
+  SysAdmin API step before TEST activation).
+
 ## [Unreleased] — Release 4 Phase 3A: allocation, reconciliation & short-close (backend only)
 
 Backend-only activation of the Phase 3 model. **No UI, no completion wiring, no OCR;
