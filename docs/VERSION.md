@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.228.3
+v2.228.4
+
+## [v2.228.4] - 2026-08-13
+
+### Release 4 Phase 3 closure patch
+
+- Invoice supplier restricted to the request's obligation-bearing group suppliers
+  (`OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST`; modal offers only those suppliers).
+- Phase 3B API module: repository-standard 401 session handling + friendly 403.
+- Coverage section stays a pre-Final read-only preview; all Phase 3 actions gated by the
+  operation-invoice lifecycle window.
+- Short-close hidden while a pending invoice covers the remaining; validated=0 proposals keep
+  the explicit full-balance warning. "Divergência Aceite: +valor" badge on accepted
+  over-coverage. Code-only, no migration.
 
 ## [v2.228.3] - 2026-08-13
 

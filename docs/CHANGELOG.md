@@ -4,7 +4,37 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.228.3
+v2.228.4
+
+## [v2.228.4] - 2026-08-13
+
+### Release 4 Phase 3 closure patch
+
+The four confirmed items from the Phase 3 closure audit, plus the approved short-close
+visibility refinement. Code-only; no migration; TEST flags untouched; Phase 4 NOT started.
+
+- **Supplier-at-registration integrity**: the invoice supplier must match at least one
+  obligation-bearing `RequestPoGroup` of the request (never `Request.SupplierId` — the domain
+  is multi-group/multi-supplier), enforced at Create and on a supplier-changing Update with
+  409 `OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST`. The register modal now offers ONLY the
+  request's obligation-group suppliers (single supplier preselected) instead of the global
+  autocomplete. Closes the Kwanza-only/Luanda-invoice orphan defect.
+- **Session expiry**: the Phase 3B API module now mirrors the repository-standard 401 handling
+  (session cleared, redirect to login, "Sessão expirada…") and the friendly 403 message — an
+  expired token can no longer surface as a misleading contextual error such as
+  "Falha ao verificar duplicidade da fatura."
+- **Lifecycle action gating**: the coverage section remains visible pre-Final Approval as a
+  read-only preview, but registration/edit/distribute/validate/reject/void/replace/short-close
+  actions now appear only inside the operation-invoice lifecycle window (UX mirror of
+  `OperationInvoiceLifecyclePolicy`; backend unchanged and authoritative).
+- **Short-close visibility refinement (approved)**: proposals are hidden while a pending Final
+  Invoice allocation contributes toward the remaining amount ("Existe uma Fatura Final em
+  validação para este grupo."); a validated=0 proposal remains possible — legitimate
+  full-balance case — with the explicit modal warning that the whole expected amount will be
+  accepted as unbilled balance. Backend proposal policy deliberately unchanged.
+- **Accepted-divergence visibility**: groups whose effective coverage exceeds expected +
+  tolerance — impossible without an explicitly accepted divergence (validation-gate
+  invariant) — now show the "Divergência Aceite: +valor" badge beside "Fatura Final Completa".
 
 ## [v2.228.3] - 2026-08-13
 

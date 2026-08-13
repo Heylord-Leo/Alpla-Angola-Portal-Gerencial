@@ -188,6 +188,35 @@ B are non-effective, so the fiscal identity is free; the new invoice C starts un
 dead chain. Known cosmetic gap, accepted: B carries no pointer to C, so the audit chain is
 A→B (rejected), C standalone.
 
+## Phase 3 — CLOSED at v2.228.4 (Phases 3A + 3B)
+
+**Formally closed after the TEST validation cycle v2.228.0 → v2.228.4** (pending the final
+v2.228.4 TEST smoke). The manual acceptance record: Scenario A (REQ-12/08/2026-230 — QUOTATION
+classification/expected capture, full and cumulative coverage, the complete Finance divergence
+flow at 103,2% with frozen +30.000 reconciliation, reject/re-derive) and Scenario B (incomplete
+allocation block, 90% partial coverage, short-close with frozen remaining, segregation of
+duties, "Encerrado com Saldo Aceite" never presenting as 100%). Patch trail:
+
+- **v2.228.1** — registration is obligation-driven, never type-driven (PAYMENT + QUOTATION;
+  `OPERATION_INVOICE_NO_OBLIGATION`).
+- **v2.228.2** — drawer menu layering; calendar-date vs UTC-instant display split.
+- **v2.228.3** — SATISFIED is financial, not structural: Finance divergence on fully covered
+  groups; `OI_ALLOC_GROUP_CLOSED_SHORT` hard blocker; wizard eligibility + justification gate.
+- **v2.228.4 (closure patch)** — supplier-at-registration rule
+  (`OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST`: the invoice supplier must own an
+  obligation-bearing group of the request; modal offers only those suppliers); standard 401/403
+  session handling in the Phase 3B API module; lifecycle gating of every Phase 3 action (the
+  coverage section stays a pre-Final read-only preview); short-close hidden while a pending
+  invoice covers the remaining (validated=0 full-balance proposals stay possible with an
+  explicit warning — backend policy unchanged by decision); "Divergência Aceite: +valor" badge
+  (derived from the validation-gate invariant: effective coverage above expected + tolerance
+  exists only through explicit acceptance).
+
+Open backlog carried out of Phase 3 (deliberately NOT in scope): dedicated Finance "Faturas
+Finais" workspace; monetary input masking; OCR/autofill (Phase 5); generic drawer hydration;
+short-close reopening workflow; Release 5 legacy classification. Phase 4 (completion lifecycle,
+operational/fiscal receipts, `CompletionEnabled=true`) is NOT started.
+
 ## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
 
 Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no completion wiring

@@ -1,5 +1,32 @@
 # Release 4 Phase 3B — Manual TEST Checklist (Operation Invoice / Fatura Final)
 
+## v2.228.4 closure-patch regression
+
+- [ ] **A** — one-supplier request: register modal preselects that supplier; no other supplier
+      offered (no global autocomplete).
+- [ ] **B** — multi-supplier request (Kwanza + Luanda groups): both offered, nothing else;
+      an out-of-request supplier forced via API → 409 `OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST`.
+- [ ] **C** — pre-Final Approval: "Fatura Final — Cobertura" visible as read-only preview;
+      no register/edit/distribute/validate/void/replace/short-close actions offered.
+- [ ] **D** — post-approval window: actions available as before.
+- [ ] **E** — expired session: any Fatura Final action routes to login with "Sessão expirada…"
+      (never a contextual error like "Falha ao verificar duplicidade da fatura").
+- [ ] **F** — group with a pending invoice covering the remaining: "Propor Encerramento com
+      Saldo" not offered; note "Existe uma Fatura Final em validação para este grupo."
+- [ ] **G** — group with validated = 0 and no pending invoice: proposal available; modal shows
+      the explicit full-balance warning.
+- [ ] **H** — accepted over-coverage (Luanda 968.220/938.220): badge
+      "Divergência Aceite: +30.000" beside "Fatura Final Completa".
+
+## Phase 3 manual acceptance record (executed 12–13/08/2026)
+
+Scenario A — REQ-12/08/2026-230: classification + expected capture (519.840/938.220), PO
+registration, QUOTATION registration (v2.228.1), FT-KW-001 full coverage 100%, FT-LU-001/002
+cumulative 63,95% → 100%, FT-LU-003 divergence flow (candidate → explicit acceptance → 103,2%,
+frozen +30.000), FT-LU-004 reject/re-derive. Scenario B — incomplete-allocation validation
+block (80.000/100.000), reject/re-derive to zero, FT-KW-R4-SC-001 90% partial, short-close with
+frozen 10.000, proposer≠approver enforced, approved state "Encerrado com Saldo Aceite" at 90%.
+
 ## v2.228.3 patch regression (SATISFIED divergence + ClosedShort + wizard eligibility)
 
 - [ ] Luanda (938.220 / 938.220, "Fatura Final Completa"): as **Finance**, Step 2 shows the group
