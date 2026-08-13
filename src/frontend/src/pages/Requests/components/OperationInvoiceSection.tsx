@@ -10,6 +10,8 @@ import {
     isInvoiceAwaitingDecision,
     isInvoiceEditable,
     formatMoney,
+    formatDateOnly,
+    formatUtcTimestampDate,
     coverageView,
     isShortCloseProposable,
     mapOperationInvoiceError
@@ -481,8 +483,8 @@ function InvoiceCard({
                 </div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
                     {invoice.supplierName || '—'}
-                    {invoice.documentDate ? ` · Doc: ${new Date(invoice.documentDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : ''}
-                    {invoice.dueDate ? ` · Venc: ${new Date(invoice.dueDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : ''}
+                    {invoice.documentDate ? ` · Doc: ${formatDateOnly(invoice.documentDate)}` : ''}
+                    {invoice.dueDate ? ` · Venc: ${formatDateOnly(invoice.dueDate)}` : ''}
                 </div>
                 <div style={{ fontSize: '0.85rem', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                     <span><b>Total:</b> {formatMoney(invoice.grossAmount, invoice.currency)}</span>
@@ -490,8 +492,8 @@ function InvoiceCard({
                     {invoice.taxAmount != null && <span><b>Imposto:</b> {formatMoney(invoice.taxAmount, invoice.currency)}</span>}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                    Registada por {invoice.uploadedByName || '—'} em {new Date(invoice.uploadedAtUtc).toLocaleDateString('pt-BR')}
-                    {invoice.validatedAtUtc && ` · Validada em ${new Date(invoice.validatedAtUtc).toLocaleDateString('pt-BR')}`}
+                    Registada por {invoice.uploadedByName || '—'} em {formatUtcTimestampDate(invoice.uploadedAtUtc)}
+                    {invoice.validatedAtUtc && ` · Validada em ${formatUtcTimestampDate(invoice.validatedAtUtc)}`}
                     {invoice.rejectionReason && invoice.status === 'REJECTED' && ` · Motivo: ${invoice.rejectionReason}`}
                     {invoice.voidReason && ` · Motivo: ${invoice.voidReason}`}
                 </div>

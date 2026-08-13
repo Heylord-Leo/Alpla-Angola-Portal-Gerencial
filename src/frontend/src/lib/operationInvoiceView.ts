@@ -68,6 +68,40 @@ export function isInvoiceEditable(status: string | null | undefined): boolean {
     return isInvoiceAwaitingDecision(status);
 }
 
+// ── Dates (v2.228.2) ────────────────────────────────────────────────────────────────────────
+
+/**
+ * CALENDAR date formatter for DateOnly-like business fields (DocumentDate, DueDate).
+ *
+ * <p>The API serializes these as offsetless strings ("2026-08-12T00:00:00"); `new Date(...)`
+ * would parse that as browser-LOCAL time, and any UTC-based re-formatting then shifts the date
+ * by one day on a UTC+ browser (12/08 → 11/08 — the exact TEST defect). A calendar date is not
+ * an instant, so no Date object is involved at all: pure string slicing, timezone-proof.</p>
+ */
+export function formatDateOnly(value: string | null | undefined): string {
+    if (!value) return '—';
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) return value;
+    return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+/**
+ * INSTANT formatter for UTC audit timestamps (UploadedAtUtc, ValidatedAtUtc, ProposedAtUtc, …).
+ *
+ * <p>These ARE instants and are parsed with Date — but the backend serializes them without an
+ * offset after an EF round-trip (Kind=Unspecified), so the value is normalized to its true UTC
+ * meaning (trailing "Z") BEFORE parsing; display then follows the Portal convention of the
+ * browser-local date. Never use this for DateOnly-like business dates.</p>
+ */
+export function formatUtcTimestampDate(value: string | null | undefined): string {
+    if (!value) return '—';
+    const normalized = /(Z|[+-]\d{2}:?\d{2})$/.test(value)
+        ? value
+        : /T/.test(value) ? `${value}Z` : value;
+    const parsed = new Date(normalized);
+    return isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('pt-BR');
+}
+
 // ── Money ───────────────────────────────────────────────────────────────────────────────────
 
 export function formatMoney(amount: number | null | undefined, currency: string | null | undefined): string {

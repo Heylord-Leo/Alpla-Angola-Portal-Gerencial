@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ModalWrapper } from '../common/ModalWrapper';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
-import { formatMoney, coverageView, mapOperationInvoiceError } from '../../lib/operationInvoiceView';
+import { formatMoney, coverageView, formatUtcTimestampDate, mapOperationInvoiceError } from '../../lib/operationInvoiceView';
 import type {
     OperationInvoiceObligationDto,
     OperationInvoiceShortCloseDto
@@ -104,7 +104,7 @@ export function OperationInvoiceShortCloseModal({
                         </div>
                         <div style={{ fontSize: '0.83rem' }}>
                             <b>Proposta por:</b> {pending.proposedByName || '—'} em{' '}
-                            {new Date(pending.proposedAtUtc).toLocaleDateString('pt-BR')}
+                            {formatUtcTimestampDate(pending.proposedAtUtc)}
                         </div>
                         <div style={{ fontSize: '0.83rem' }}>
                             <b>Justificativa:</b> {pending.proposalJustification}
