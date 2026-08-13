@@ -14,6 +14,9 @@ import {
     formatUtcTimestampDate,
     coverageView,
     isShortCloseProposable,
+    shortCloseBlockedByPending,
+    isOperationInvoiceLifecycleOpen,
+    acceptedDivergence,
     mapOperationInvoiceError
 } from '../../../lib/operationInvoiceView';
 import type {
@@ -32,6 +35,8 @@ interface OperationInvoiceSectionProps {
     requestId: string;
     /** Coverage capability discovery (flags.postPaymentCompletionEnabled). Renders nothing when off. */
     coverageEnabled: boolean;
+    /** Request status code — actions mirror OperationInvoiceLifecyclePolicy (v2.228.4). */
+    statusCode: string | null;
     isFinance: boolean;
     isBuyer: boolean;
     isAdmin: boolean;
@@ -49,10 +54,13 @@ interface OperationInvoiceSectionProps {
  * intended Phase 3B state, not a warning.
  */
 export function OperationInvoiceSection({
-    requestId, coverageEnabled, isFinance, isBuyer, isAdmin, currentUserId
+    requestId, coverageEnabled, statusCode, isFinance, isBuyer, isAdmin, currentUserId
 }: OperationInvoiceSectionProps) {
-    const canWrite = isFinance || isBuyer || isAdmin;
-    const canDecide = isFinance || isAdmin;
+    // Role AND lifecycle: pre-Final the section is a read-only preview — no action the backend
+    // would reject is offered (v2.228.4). The backend remains authoritative either way.
+    const lifecycleOpen = isOperationInvoiceLifecycleOpen(statusCode);
+    const canWrite = (isFinance || isBuyer || isAdmin) && lifecycleOpen;
+    const canDecide = (isFinance || isAdmin) && lifecycleOpen;
 
     const [obligations, setObligations] = useState<OperationInvoiceObligationsDto | null>(null);
     const [invoices, setInvoices] = useState<OperationInvoiceDto[]>([]);
@@ -80,9 +88,9 @@ export function OperationInvoiceSection({
             setObligations(obligationsResult);
             setInvoices(invoicesResult);
 
-            // Short-close context, loaded only for groups where it can matter (active or history).
-            const relevant = obligationsResult.obligations.filter(o =>
-                o.closedShort || isShortCloseProposable(o));
+            // Short-close context for every obligation-bearing group — active proposals must
+            // display even when new proposals are currently blocked (e.g. pending invoice).
+            const relevant = obligationsResult.obligations.filter(o => o.requiresOperationInvoice);
             const entries = await Promise.all(relevant.map(async o => {
                 try {
                     return [o.groupId, await operationInvoiceApi.listShortCloses(requestId, o.groupId)] as const;
@@ -103,6 +111,18 @@ export function OperationInvoiceSection({
     const relevantObligations = useMemo(
         () => (obligations?.obligations ?? []).filter(o => o.requiresOperationInvoice),
         [obligations]);
+
+    // v2.228.4: the invoice supplier comes from the request's OWN obligation-bearing groups —
+    // never the global supplier catalogue (multi-group requests offer every group supplier).
+    const supplierOptions = useMemo(() => {
+        const unique = new Map<number, string>();
+        for (const o of relevantObligations) {
+            if (o.supplierId != null && !unique.has(o.supplierId)) {
+                unique.set(o.supplierId, o.supplierName || `Fornecedor ${o.supplierId}`);
+            }
+        }
+        return Array.from(unique, ([id, name]) => ({ id, name }));
+    }, [relevantObligations]);
 
     // Groups can exist without owing an invoice; requests can predate groups entirely. The section
     // only renders when the capability is on AND there is something to say.
@@ -220,6 +240,7 @@ export function OperationInvoiceSection({
                     requestId={requestId}
                     mode={registerModal.mode}
                     invoice={registerModal.invoice}
+                    supplierOptions={supplierOptions}
                     onClose={() => setRegisterModal(null)}
                     onSaved={() => { setRegisterModal(null); void refresh(); }}
                 />
@@ -306,6 +327,7 @@ function GroupCoverageCard({
     const status = aggregateStatusPresentation(obligation.derivedStatus, obligation.closedShort);
     const pendingProposal = shortCloses.find(c => c.status === 'PROPOSED');
     const approvedShortClose = shortCloses.find(c => c.status === 'APPROVED');
+    const divergence = acceptedDivergence(obligation);
 
     return (
         <div style={{
@@ -320,7 +342,18 @@ function GroupCoverageCard({
                         {obligation.currency ? ` · ${obligation.currency}` : ''}
                     </span>
                 </div>
-                <StatusChip label={status.label} severity={status.severity} />
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Effective coverage above expected + tolerance can ONLY exist through an
+                        explicitly accepted divergence (validation-gate invariant) — the badge
+                        derives from that, never from a mere >100% reading. */}
+                    {divergence && (
+                        <StatusChip
+                            label={`Divergência Aceite: +${formatMoney(divergence.variance, obligation.currency)}`}
+                            severity="warning"
+                        />
+                    )}
+                    <StatusChip label={status.label} severity={status.severity} />
+                </div>
             </div>
 
             {/* The five coverage numbers — VALIDADO and EM VALIDAÇÃO are never conflated. */}
@@ -404,6 +437,12 @@ function GroupCoverageCard({
                     >
                         Propor Encerramento com Saldo
                     </button>
+                </div>
+            )}
+
+            {canWrite && !pendingProposal && !approvedShortClose && shortCloseBlockedByPending(obligation) && (
+                <div style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                    Existe uma Fatura Final em validação para este grupo.
                 </div>
             )}
         </div>

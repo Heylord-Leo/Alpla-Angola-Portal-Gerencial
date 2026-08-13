@@ -68,6 +68,38 @@ export function isInvoiceEditable(status: string | null | undefined): boolean {
     return isInvoiceAwaitingDecision(status);
 }
 
+/**
+ * REQUEST statuses in which operation-invoice mutations are possible — a UX mirror of
+ * OperationInvoiceLifecyclePolicy.CreateAllowedRequestStatuses (v2.228.4). The coverage section
+ * stays visible as a read-only preview outside this window (pre-Final groups are honest
+ * information), but no action the backend would reject is offered. Backend stays authoritative.
+ */
+const LIFECYCLE_OPEN_STATUSES = new Set([
+    'APPROVED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED',
+    'PAYMENT_REQUEST_SENT', 'PAYMENT_SCHEDULED', 'PAID', 'PAYMENT_COMPLETED',
+    'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECEIPT', 'WAITING_RECONCILIATION',
+    'IN_FOLLOWUP', 'WAITING_FISCAL_RECEIPT',
+    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_COMPLETED'
+]);
+
+export function isOperationInvoiceLifecycleOpen(requestStatusCode: string | null | undefined): boolean {
+    return !!requestStatusCode && LIFECYCLE_OPEN_STATUSES.has(requestStatusCode.toUpperCase());
+}
+
+/**
+ * Accepted over-coverage indicator (v2.228.4). Effective coverage above expected + tolerance is
+ * IMPOSSIBLE without an explicitly accepted divergence — the validation gate refuses it
+ * otherwise — so this derivation is an invariant of the domain, not a >100% heuristic. The
+ * variance shown is validated − expected, exactly what the reconciliation snapshot froze.
+ */
+export function acceptedDivergence(
+    obligation: OperationInvoiceObligationDto
+): { variance: number } | null {
+    if (obligation.expectedAmount == null || obligation.expectedAmount <= 0) return null;
+    const variance = obligation.validatedCoveredAmount - obligation.expectedAmount;
+    return variance > obligation.appliedTolerance ? { variance } : null;
+}
+
 // ── Dates (v2.228.2) ────────────────────────────────────────────────────────────────────────
 
 /**
@@ -155,13 +187,31 @@ export function isGroupAllocatable(obligation: OperationInvoiceObligationDto): b
         obligation.derivedStatus !== 'UNCLASSIFIED';
 }
 
-/** A short-close proposal makes sense only with a real remaining amount beyond tolerance. */
-export function isShortCloseProposable(obligation: OperationInvoiceObligationDto): boolean {
+/** Structural short-close eligibility: real remaining beyond tolerance, not already closed. */
+function isShortCloseStructurallyProposable(obligation: OperationInvoiceObligationDto): boolean {
     return isGroupAllocatable(obligation) &&
         !obligation.closedShort &&
         obligation.expectedAmount != null && obligation.expectedAmount > 0 &&
         obligation.remainingAmount != null &&
         obligation.remainingAmount > obligation.appliedTolerance;
+}
+
+/**
+ * v2.228.4 visibility refinement (approved): while a pending Final Invoice allocation is
+ * contributing toward the remaining amount, proposing a short-close is premature — Finance
+ * should decide the invoice first. UX only; the backend proposal policy is deliberately NOT
+ * hardened (a validated=0 full-balance short-close remains a legitimate business case,
+ * flagged with an explicit warning in the proposal modal instead).
+ */
+export function isShortCloseProposable(obligation: OperationInvoiceObligationDto): boolean {
+    return isShortCloseStructurallyProposable(obligation) &&
+        obligation.pendingCoveredAmount <= 0;
+}
+
+/** The explanatory state for a group whose ONLY short-close impediment is a pending invoice. */
+export function shortCloseBlockedByPending(obligation: OperationInvoiceObligationDto): boolean {
+    return isShortCloseStructurallyProposable(obligation) &&
+        obligation.pendingCoveredAmount > 0;
 }
 
 // ── Structured backend error mapping ────────────────────────────────────────────────────────

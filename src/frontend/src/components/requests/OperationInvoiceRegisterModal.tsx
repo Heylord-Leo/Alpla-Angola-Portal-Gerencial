@@ -4,7 +4,6 @@ import { ModalWrapper } from '../common/ModalWrapper';
 import { api, ApiError } from '../../lib/api';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
 import { mapOperationInvoiceError, formatMoney } from '../../lib/operationInvoiceView';
-import { SupplierAutocomplete } from '../SupplierAutocomplete';
 import type {
     OperationInvoiceDto,
     OperationInvoiceDuplicateResultDto,
@@ -18,6 +17,12 @@ interface OperationInvoiceRegisterModalProps {
     mode: RegisterModalMode;
     /** The invoice being edited, or the VALIDATED original being replaced. Null on create. */
     invoice: OperationInvoiceDto | null;
+    /**
+     * v2.228.4: the ONLY valid invoice suppliers — the request's obligation-bearing group
+     * suppliers. Never the global supplier catalogue; the backend enforces the same rule
+     * (OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST).
+     */
+    supplierOptions: { id: number; name: string }[];
     onClose: () => void;
     onSaved: () => void;
 }
@@ -47,11 +52,14 @@ interface FormState {
  * Duplicate preflight is advisory: the backend Create stays authoritative against races.
  */
 export function OperationInvoiceRegisterModal({
-    requestId, mode, invoice, onClose, onSaved
+    requestId, mode, invoice, supplierOptions, onClose, onSaved
 }: OperationInvoiceRegisterModalProps) {
     const [form, setForm] = useState<FormState>(() => ({
-        supplierId: invoice?.supplierId ?? null,
-        supplierName: invoice?.supplierName ?? '',
+        // Single obligation supplier → preselected; several → user picks among them.
+        supplierId: invoice?.supplierId
+            ?? (supplierOptions.length === 1 ? supplierOptions[0].id : null),
+        supplierName: invoice?.supplierName
+            ?? (supplierOptions.length === 1 ? supplierOptions[0].name : ''),
         documentNumber: mode === 'replace' ? (invoice?.documentNumber ?? '') : (invoice?.documentNumber ?? ''),
         documentSeries: invoice?.documentSeries ?? '',
         documentDate: invoice?.documentDate ? invoice.documentDate.substring(0, 10) : '',
@@ -200,11 +208,28 @@ export function OperationInvoiceRegisterModal({
 
                 <div>
                     <label style={labelStyle}>Fornecedor *</label>
-                    <SupplierAutocomplete
-                        initialName={form.supplierName}
-                        excludeInternal
-                        onChange={(id, name) => set({ supplierId: id, supplierName: name })}
-                    />
+                    <select
+                        style={inputStyle}
+                        value={form.supplierId ?? ''}
+                        onChange={e => {
+                            const id = e.target.value ? Number(e.target.value) : null;
+                            const option = supplierOptions.find(o => o.id === id);
+                            set({ supplierId: id, supplierName: option?.name ?? '' });
+                        }}
+                    >
+                        <option value="">Selecionar fornecedor…</option>
+                        {supplierOptions.map(o => (
+                            <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                        {/* Edit/replace of an invoice whose supplier predates the rule: keep it
+                            visible so the header renders honestly; the backend decides. */}
+                        {form.supplierId != null && !supplierOptions.some(o => o.id === form.supplierId) && (
+                            <option value={form.supplierId}>{form.supplierName || `Fornecedor ${form.supplierId}`}</option>
+                        )}
+                    </select>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '2px' }}>
+                        Apenas fornecedores com obrigação de Fatura Final neste pedido.
+                    </div>
                     {fieldError('SupplierId')}
                 </div>
 

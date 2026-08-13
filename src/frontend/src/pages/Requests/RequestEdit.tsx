@@ -551,6 +551,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     <OperationInvoiceSection
                         requestId={id}
                         coverageEnabled={featureFlags.postPaymentCompletionEnabled}
+                        statusCode={status || null}
                         isFinance={isFinance}
                         isBuyer={isBuyer}
                         isAdmin={user?.roles?.includes('System Administrator') ?? false}

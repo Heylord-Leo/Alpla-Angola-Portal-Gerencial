@@ -24,8 +24,20 @@ import type {
  */
 
 async function fail(response: Response, defaultMsg: string): Promise<never> {
+    // Session expiry MUST behave like everywhere else in the Portal (v2.228.4): the repository-
+    // standard handleApiError clears the session and routes to login — an expired token must
+    // never surface as a misleading contextual error ("Falha ao verificar duplicidade…").
+    if (response.status === 401) {
+        sessionStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_user');
+        window.location.href = '/login';
+        throw new ApiError('Sessão expirada ou acesso não autorizado.', 401);
+    }
+
     const errJson = await response.json().catch(() => null);
-    const msg = errJson?.detail || errJson?.title || errJson?.message || defaultMsg;
+    const msg = response.status === 403
+        ? (errJson?.detail || 'Você não tem permissão para realizar esta ação.')
+        : (errJson?.detail || errJson?.title || errJson?.message || defaultMsg);
 
     if (response.status === 400 && errJson?.errors) {
         throw new ApiError(errJson.title || 'Existem campos inválidos.', response.status, errJson.errors,
