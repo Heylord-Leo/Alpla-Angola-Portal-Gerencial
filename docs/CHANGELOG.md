@@ -4,7 +4,22 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.228.1
+v2.228.2
+
+## [v2.228.2] - 2026-08-13
+
+### Fixed
+
+- **OperationInvoice action menu hidden behind Request Drawer.** The kebab popup rendered via
+  the body portal at the page dropdown layer (500) underneath the drawer (1400/1401). KebabMenu
+  gains an optional `zIndex` prop (default unchanged for every existing consumer); the
+  OperationInvoice section's drawer-hosted menu passes the MODAL token (1500) — above the
+  drawer, below the ModalWrapper flows it opens (2000). Global `--z-dropdown` untouched.
+- **OperationInvoice document/due dates shifted by timezone during display.** The API's
+  offsetless DateOnly-like values ("2026-08-12T00:00:00") were parsed as browser-local and
+  re-formatted in UTC, showing the previous day on UTC+ browsers. Document/due dates now use a
+  pure string calendar formatter (no Date parsing); UTC audit timestamps are normalized to
+  their true UTC meaning before parsing. Persisted values were always correct — display only.
 
 ## [v2.228.1] - 2026-08-13
 

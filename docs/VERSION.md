@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.228.1
+v2.228.2
+
+## [v2.228.2] - 2026-08-13
+
+### Fixed — drawer menu layering and calendar-date display
+
+- OperationInvoice kebab menu now renders above the Request Drawer (KebabMenu `zIndex` prop,
+  MODAL token; page-context menus unchanged).
+- OperationInvoice document/due dates render as entered (string-based calendar formatter;
+  UTC timestamps normalized before parsing). Frontend-only; no migration.
 
 ## [v2.228.1] - 2026-08-13
 

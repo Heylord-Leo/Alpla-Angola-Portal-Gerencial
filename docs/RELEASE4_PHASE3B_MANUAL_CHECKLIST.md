@@ -1,5 +1,22 @@
 # Release 4 Phase 3B — Manual TEST Checklist (Operation Invoice / Fatura Final)
 
+## v2.228.2 patch regression (drawer menu + calendar dates)
+
+- [ ] **A** — Request Drawer → FT-KW-001 → ⋮ : the action menu is fully visible ABOVE the
+      drawer (not a movement behind the blur); actions readable and clickable; menu closes on
+      action click and on outside click.
+- [ ] **B** — "Distribuir Fatura Final" is reachable from that menu (per lifecycle/role).
+- [ ] **C** — the allocation wizard (and any modal opened from the menu) stacks above BOTH the
+      drawer and the menu.
+- [ ] **D** — page-context kebab menus (Finance payments list, Buyer items, Contracts, IT,
+      requests table) behave exactly as before (default layer unchanged).
+- [ ] **E** — FT-KW-001 shows **Doc: 12/08/2026** (the exact entered date; previously 11/08).
+- [ ] **F** — FT-KW-001 shows **Venc: 26/08/2026** (previously 25/08). No re-registration —
+      the persisted values were always correct.
+- [ ] **G** — "Registada por … em …", "Validada em …" and the short-close "proposta em …"
+      timestamps still show the correct day per Portal conventions (UTC value, local display).
+- [ ] **H** — no dark/light visual regression on the menu or the invoice card.
+
 > Prerequisite TEST configuration (server-side, applied at the approved activation step):
 >
 > ```json
