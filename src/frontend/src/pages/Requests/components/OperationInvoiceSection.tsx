@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileText, Plus, RefreshCw, AlertTriangle } from 'lucide-react';
 import { KebabMenu } from '../../../components/ui/KebabMenu';
+import { Z_INDEX } from '../../../constants/ui';
 import { api } from '../../../lib/api';
 import { operationInvoiceApi } from '../../../lib/operationInvoiceApi';
 import {
@@ -495,7 +496,9 @@ function InvoiceCard({
                     {invoice.voidReason && ` · Motivo: ${invoice.voidReason}`}
                 </div>
             </div>
-            <div><KebabMenu options={options} /></div>
+            {/* This section renders inside the request Drawer (1400/1401): the menu must clear
+                it (MODAL = 1500) while staying below the ModalWrapper flows it opens (2000). */}
+            <div><KebabMenu options={options} zIndex={Z_INDEX.MODAL} /></div>
         </div>
     );
 }
