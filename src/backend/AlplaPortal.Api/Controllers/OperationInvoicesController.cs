@@ -57,6 +57,7 @@ public class OperationInvoicesController : BaseController
     public const string NotValidatableCode = "OPERATION_INVOICE_NOT_VALIDATABLE";
     public const string NotRejectableCode = "OPERATION_INVOICE_NOT_REJECTABLE";
     public const string NoObligationCode = "OPERATION_INVOICE_NO_OBLIGATION";
+    public const string SupplierNotInRequestCode = "OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST";
 
     // ── Phase 3A allocation codes ──
     public const string AllocationNotEditableCode = "OI_ALLOC_NOT_EDITABLE";
@@ -211,6 +212,15 @@ public class OperationInvoicesController : BaseController
         // ── Supplier integrity: the same rule, the same guard, no bypass ──
         var (supplier, supplierProblem) = await GuardSupplierAsync(dto.SupplierId!.Value);
         if (supplierProblem != null) return supplierProblem;
+
+        // ── Supplier-in-request rule (v2.228.4): the invoice supplier must belong to at least
+        // one obligation-bearing group of THIS request — the domain is multi-group and multi-
+        // supplier, so any obligation group's supplier is valid, but a supplier outside them all
+        // would produce an invoice that allocation can never accept (supplier mismatch) and that
+        // validation can therefore never validate: a permanently orphaned pending row. ──
+        var supplierInRequestProblem = await GuardSupplierBelongsToObligationGroupAsync(
+            requestId, dto.SupplierId.Value);
+        if (supplierInRequestProblem != null) return supplierInRequestProblem;
 
         // ── Attachment: the Portal's one file mechanism, validated — never a second store ──
         var attachmentProblem = await GuardAttachmentAsync(requestId, dto.AttachmentId!.Value);
@@ -381,6 +391,16 @@ public class OperationInvoicesController : BaseController
         // ── Supplier: existence + the internal-ALPLA rule, re-checked on every edit ──
         var (supplier, supplierProblem) = await GuardSupplierAsync(newSupplierId!.Value);
         if (supplierProblem != null) return supplierProblem;
+
+        // ── Supplier-in-request rule on the MERGED header (v2.228.4): an edit must not create
+        // the orphan state Create now blocks. Checked only when the supplier actually changes,
+        // so historical rows keep loading and non-supplier edits stay untouched. ──
+        if (newSupplierId != invoice.SupplierId)
+        {
+            var supplierInRequestProblem = await GuardSupplierBelongsToObligationGroupAsync(
+                requestId, newSupplierId!.Value);
+            if (supplierInRequestProblem != null) return supplierInRequestProblem;
+        }
 
         // ── Attachment replacement, only when a DIFFERENT file is offered ──
         var attachmentReplaced =
@@ -1746,6 +1766,31 @@ public class OperationInvoicesController : BaseController
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// v2.228.4: the invoice supplier must match at least one obligation-bearing group of the
+    /// request. Never Request.SupplierId — the domain is multi-group/multi-supplier, so every
+    /// obligation group's supplier is a valid choice and only outsiders are refused.
+    /// </summary>
+    private async Task<IActionResult?> GuardSupplierBelongsToObligationGroupAsync(
+        Guid requestId, int supplierId)
+    {
+        var belongs = await _context.RequestPoGroups
+            .AnyAsync(g => g.RequestId == requestId &&
+                           g.RequiresOperationInvoice &&
+                           g.SupplierId == supplierId);
+        if (belongs) return null;
+
+        var problem = new ProblemDetails
+        {
+            Title = "Fornecedor sem obrigação neste pedido",
+            Detail = "O fornecedor da fatura não corresponde a nenhum grupo com obrigação de " +
+                     "Fatura Final neste pedido.",
+            Status = 409
+        };
+        problem.Extensions["code"] = SupplierNotInRequestCode;
+        return Conflict(problem);
     }
 
     /// <summary>Supplier existence + the internal-ALPLA rule — shared by Create, Update, Replace.</summary>

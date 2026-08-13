@@ -310,6 +310,94 @@ public class OperationInvoicesEndpointTests
             (await BuildController(ctx, seed.ActorId).Get(other.Id, created.Id)).Result);
     }
 
+    // ── Supplier-in-request rule (v2.228.4) ──
+
+    /// <summary>
+    /// The invoice supplier must match at least one obligation-bearing group of the request —
+    /// never Request.SupplierId. The seed's Kwanza-shaped single group (supplier 10) accepts its
+    /// own supplier (pinned by every happy-path Create) and refuses an outsider: the exact TEST
+    /// defect where a Luanda invoice entered a Kwanza-only request as a permanently
+    /// unallocatable orphan.
+    /// </summary>
+    [Fact]
+    public async Task A_supplier_outside_every_obligation_group_is_refused_at_registration()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);                     // one obligation group, supplier 10
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Luanda", TaxId = "222000222" });
+        var attachment = AddInvoiceAttachment(ctx, seed);
+        await ctx.SaveChangesAsync();
+
+        var dto = ValidDto(attachment.Id);
+        dto.SupplierId = 20;
+
+        var conflict = Assert.IsType<ConflictObjectResult>(
+            await BuildController(ctx, seed.ActorId).Create(seed.RequestId, dto));
+        var problem = Assert.IsType<ProblemDetails>(conflict.Value);
+        Assert.Equal(OperationInvoicesController.SupplierNotInRequestCode, problem.Extensions["code"]);
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(0, await ctx.OperationInvoices.CountAsync());
+    }
+
+    [Fact]
+    public async Task Every_obligation_group_supplier_is_a_valid_registration_choice()
+    {
+        // Multi-supplier request (Kwanza 10 + Luanda 20): BOTH suppliers register successfully.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Luanda", TaxId = "222000222" });
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = seed.RequestId,
+            SupplierId = 20,
+            SupplierNameSnapshot = "ZZTEST Luanda",
+            CurrencyCode = "AOA",
+            TotalAmount = 200_000m,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = Types.Proforma,
+            OperationInvoiceStatus = Agg.PendingUpload,
+            RequiresOperationInvoice = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-9),
+            CreatedByUserId = seed.ActorId
+        });
+        var attachment1 = AddInvoiceAttachment(ctx, seed);
+        var attachment2 = AddInvoiceAttachment(ctx, seed);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var kwanza = ValidDto(attachment1.Id);               // supplier 10
+        Assert.IsType<OkObjectResult>(await controller.Create(seed.RequestId, kwanza));
+
+        var luanda = ValidDto(attachment2.Id);
+        luanda.SupplierId = 20;
+        luanda.DocumentNumber = "FT 8/2026";
+        Assert.IsType<OkObjectResult>(await controller.Create(seed.RequestId, luanda));
+    }
+
+    [Fact]
+    public async Task An_editable_invoice_cannot_change_to_a_supplier_outside_the_obligation_groups()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Luanda", TaxId = "222000222" });
+        var attachment = AddInvoiceAttachment(ctx, seed);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);
+        var created = Created(await controller.Create(seed.RequestId, ValidDto(attachment.Id)));
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.Update(
+            seed.RequestId, created.Id, new SaveOperationInvoiceDto { SupplierId = 20 }));
+        Assert.Equal(OperationInvoicesController.SupplierNotInRequestCode,
+            Assert.IsType<ProblemDetails>(conflict.Value).Extensions["code"]);
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(10, (await ctx.OperationInvoices.SingleAsync()).SupplierId);
+    }
+
     // ── Obligation and status gates (v2.228.1: obligation-driven, never type-driven) ──
 
     /// <summary>

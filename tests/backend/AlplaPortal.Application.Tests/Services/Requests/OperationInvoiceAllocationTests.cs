@@ -599,6 +599,9 @@ public class OperationInvoiceAllocationTests
         ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Other", TaxId = "222000222" });
         var invoice = AddInvoice(ctx, seed, gross: 500_000m);
         var group = AddGroup(ctx, seed, expected: 500_000m);
+        // Supplier 20 owns its own obligation group, so the v2.228.4 supplier-in-request rule
+        // passes and this pin keeps testing the ALLOCATED-evidence drift guard specifically.
+        AddGroup(ctx, seed, expected: 200_000m, supplierId: 20);
         await ctx.SaveChangesAsync();
 
         var controller = BuildController(ctx, seed.ActorId);
