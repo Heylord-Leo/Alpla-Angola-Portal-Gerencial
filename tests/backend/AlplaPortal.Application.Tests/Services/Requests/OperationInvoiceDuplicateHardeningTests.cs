@@ -86,6 +86,23 @@ public class OperationInvoiceDuplicateHardeningTests
         };
         ctx.Requests.Add(request);
 
+        // v2.228.1: registration is obligation-driven — seed the group every Create call needs.
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            SupplierId = 10,
+            SupplierNameSnapshot = "ZZTEST Supplier",
+            CurrencyCode = "AOA",
+            TotalAmount = 114_000m,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = RequestConstants.SourceDocumentTypes.Proforma,
+            OperationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            RequiresOperationInvoice = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-10),
+            CreatedByUserId = actor.Id
+        });
+
         await ctx.SaveChangesAsync();
         return new Seed(request.Id, actor.Id);
     }
@@ -106,6 +123,23 @@ public class OperationInvoiceDuplicateHardeningTests
             CreatedAtUtc = DateTime.UtcNow
         };
         ctx.Requests.Add(other);
+
+        // v2.228.1: registration is obligation-driven — seed the group every Create call needs.
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = other.Id,
+            SupplierId = 10,
+            SupplierNameSnapshot = "ZZTEST Supplier",
+            CurrencyCode = "AOA",
+            TotalAmount = 114_000m,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = RequestConstants.SourceDocumentTypes.Proforma,
+            OperationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            RequiresOperationInvoice = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-10),
+            CreatedByUserId = seed.ActorId
+        });
         return other;
     }
 

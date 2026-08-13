@@ -138,6 +138,16 @@ The manual final-invoice document lifecycle, header-only, on
 `/api/v1/requests/{id}/operation-invoices`. **Allocation does not exist yet** — Phase 3 owns
 allocation and reconciliation exclusively.
 
+> **v2.228.1 correction — obligation-driven, never type-driven.** Phase 2b shipped with a
+> PAYMENT-only guard on Create ("Faturas finais existem apenas em pedidos de Pagamento") that
+> the Phase 3 model superseded: OperationInvoice is request-scoped and OBLIGATION-driven, and
+> **both PAYMENT and QUOTATION register final invoices**. The guard is now: the request must own
+> at least one classified `RequestPoGroup` with `RequiresOperationInvoice = true`, else 409
+> `OPERATION_INVOICE_NO_OBLIGATION`. Approved tightening: a legacy PAYMENT request whose groups
+> are all UNCLASSIFIED is refused too — an invoice that could never be allocated must not be
+> registered. Guard order in Create: visibility 404 → role 403 → obligation 409 →
+> lifecycle-status 409 → field validation → supplier/attachment integrity → duplicates.
+
 ```
 create (Finance/Buyer) ──► PENDING_VALIDATION ──► VALIDATED ──► REPLACEMENT_REQUESTED
                                 │        │            (immutable;      (terminal; forward

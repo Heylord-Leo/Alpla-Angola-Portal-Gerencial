@@ -92,6 +92,24 @@ public class OperationInvoicesEndpointTests
         };
         ctx.Requests.Add(request);
 
+        // v2.228.1: registration is obligation-driven — the request must own at least one
+        // classified group with RequiresOperationInvoice. Every Create test rides this seed.
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            SupplierId = 10,
+            SupplierNameSnapshot = "ZZTEST Supplier",
+            CurrencyCode = "AOA",
+            TotalAmount = 114_000m,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = RequestConstants.SourceDocumentTypes.Proforma,
+            OperationInvoiceStatus = Agg.PendingUpload,
+            RequiresOperationInvoice = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-10),
+            CreatedByUserId = actor.Id
+        });
+
         await ctx.SaveChangesAsync();
         return new Seed(request.Id, actor.Id);
     }
@@ -292,10 +310,16 @@ public class OperationInvoicesEndpointTests
             (await BuildController(ctx, seed.ActorId).Get(other.Id, created.Id)).Result);
     }
 
-    // ── Request type and status gates ──
+    // ── Obligation and status gates (v2.228.1: obligation-driven, never type-driven) ──
 
+    /// <summary>
+    /// The exact production scenario that exposed the stale PAYMENT-only guard: a QUOTATION
+    /// request past Final Approval with classified awarded groups (Kwanza 519.840 / Luanda
+    /// 938.220, both owing a Final Invoice) must register FT-KW-001 like any PAYMENT request.
+    /// The RequestPoGroup obligation is authoritative — candidate-approval records play no part.
+    /// </summary>
     [Fact]
-    public async Task A_quotation_request_takes_no_operation_invoice()
+    public async Task A_quotation_request_with_obligation_bearing_groups_registers_an_invoice()
     {
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx);
@@ -314,6 +338,26 @@ public class OperationInvoicesEndpointTests
             CreatedAtUtc = DateTime.UtcNow
         };
         ctx.Requests.Add(quotation);
+        foreach (var (name, total) in new[] { ("Kwanza", 519_840m), ("Luanda", 938_220m) })
+        {
+            ctx.RequestPoGroups.Add(new RequestPoGroup
+            {
+                Id = Guid.NewGuid(),
+                RequestId = quotation.Id,
+                SupplierId = 10,
+                SupplierNameSnapshot = name,
+                CurrencyCode = "AOA",
+                TotalAmount = total,
+                Status = RequestConstants.PoGroupStatuses.PoIssued,
+                SourceDocumentType = Types.Proforma,
+                OperationInvoiceStatus = Agg.PendingUpload,
+                RequiresOperationInvoice = true,
+                ExpectedOperationInvoiceTotal = total,
+                ExpectedOperationInvoiceCurrency = "AOA",
+                CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+                CreatedByUserId = seed.ActorId
+            });
+        }
         var attachment = new RequestAttachment
         {
             Id = Guid.NewGuid(),
@@ -328,10 +372,62 @@ public class OperationInvoicesEndpointTests
         ctx.RequestAttachments.Add(attachment);
         await ctx.SaveChangesAsync();
 
-        var bad = Assert.IsType<BadRequestObjectResult>(
-            await BuildController(ctx, seed.ActorId).Create(quotation.Id, ValidDto(attachment.Id)));
-        var problem = Assert.IsType<ProblemDetails>(bad.Value);
-        Assert.Contains("Pagamento", problem.Detail);
+        var dto = ValidDto(attachment.Id);
+        dto.DocumentNumber = "FT-KW-001";
+        dto.NetAmount = null;
+        dto.TaxAmount = null;
+        dto.GrossAmount = 519_840m;
+
+        var body = Created(await BuildController(ctx, seed.ActorId).Create(quotation.Id, dto));
+        Assert.Equal(Doc.PendingValidation, body.Status);
+        Assert.Equal("FT-KW-001", body.DocumentNumber);
+        Assert.Equal(519_840m, body.GrossAmount);
+    }
+
+    /// <summary>
+    /// The approved tightening: no obligation-bearing group → no registration, for BOTH types.
+    /// A legacy PAYMENT request whose groups are all UNCLASSIFIED is refused exactly like a
+    /// group-less QUOTATION — RequestType buys nothing.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]    // PAYMENT whose only group is unclassified
+    [InlineData(false)]   // PAYMENT with no groups at all
+    public async Task A_request_without_an_obligation_bearing_group_is_refused(bool withUnclassifiedGroup)
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+
+        // Strip the seed's obligation group; optionally replace it with an UNCLASSIFIED one.
+        ctx.RequestPoGroups.RemoveRange(ctx.RequestPoGroups);
+        if (withUnclassifiedGroup)
+        {
+            ctx.RequestPoGroups.Add(new RequestPoGroup
+            {
+                Id = Guid.NewGuid(),
+                RequestId = seed.RequestId,
+                SupplierId = 10,
+                SupplierNameSnapshot = "ZZTEST Supplier",
+                CurrencyCode = "AOA",
+                TotalAmount = 114_000m,
+                Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+                SourceDocumentType = null,
+                OperationInvoiceStatus = Agg.Unclassified,
+                RequiresOperationInvoice = false,
+                CreatedAtUtc = DateTime.UtcNow.AddDays(-10),
+                CreatedByUserId = seed.ActorId
+            });
+        }
+        var attachment = AddInvoiceAttachment(ctx, seed);
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId).Create(seed.RequestId, ValidDto(attachment.Id));
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        var problem = Assert.IsType<ProblemDetails>(conflict.Value);
+        Assert.Equal(OperationInvoicesController.NoObligationCode, problem.Extensions["code"]);
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(0, await ctx.OperationInvoices.CountAsync());
     }
 
     [Theory]
@@ -505,6 +601,22 @@ public class OperationInvoicesEndpointTests
             CreatedAtUtc = DateTime.UtcNow
         };
         ctx.Requests.Add(other);
+        // The second request must clear the obligation gate so the pin stays about DUPLICATES.
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = other.Id,
+            SupplierId = 10,
+            SupplierNameSnapshot = "ZZTEST Supplier",
+            CurrencyCode = "AOA",
+            TotalAmount = 114_000m,
+            Status = RequestConstants.PoGroupStatuses.WaitingReceipt,
+            SourceDocumentType = Types.Proforma,
+            OperationInvoiceStatus = Agg.PendingUpload,
+            RequiresOperationInvoice = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            CreatedByUserId = seed.ActorId
+        });
         var attachment2 = new RequestAttachment
         {
             Id = Guid.NewGuid(),

@@ -12,8 +12,10 @@ using Microsoft.EntityFrameworkCore;
 namespace AlplaPortal.Api.Controllers;
 
 /// <summary>
-/// Operation invoices ("Faturas Finais") of one PAYMENT request — Release 4 Phase 2b: Create and
-/// Read only. Allocation to PO groups is Phase 3; validation is Phase 2e; OCR is Phase 5.
+/// Operation invoices ("Faturas Finais") of one request. Request-scoped and OBLIGATION-driven
+/// (v2.228.1): both PAYMENT and QUOTATION requests register final invoices — eligibility comes
+/// from owning at least one classified RequestPoGroup with RequiresOperationInvoice, never from
+/// the request type. Allocation to PO groups is Phase 3; OCR is Phase 5.
 ///
 /// <para>A dedicated controller, following the <see cref="PaymentSourceDocumentsController"/>
 /// precedent for request-scoped nested resources: the invoice lifecycle has its own permissions,
@@ -54,6 +56,7 @@ public class OperationInvoicesController : BaseController
     public const string AttachmentClaimedCode = "OPERATION_INVOICE_ATTACHMENT_CLAIMED";
     public const string NotValidatableCode = "OPERATION_INVOICE_NOT_VALIDATABLE";
     public const string NotRejectableCode = "OPERATION_INVOICE_NOT_REJECTABLE";
+    public const string NoObligationCode = "OPERATION_INVOICE_NO_OBLIGATION";
 
     // ── Phase 3A allocation codes ──
     public const string AllocationNotEditableCode = "OI_ALLOC_NOT_EDITABLE";
@@ -137,9 +140,15 @@ public class OperationInvoicesController : BaseController
     // ── Create ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Registers a final/operation invoice against this request. Manual entry only in Phase 2b;
-    /// the invoice lands in PENDING_VALIDATION and contributes no coverage until Phase 3
-    /// allocation plus Finance validation.
+    /// Registers a final/operation invoice against this request — PAYMENT or QUOTATION alike:
+    /// eligibility is the obligation (at least one group with RequiresOperationInvoice), never
+    /// the request type. Manual entry only; the invoice lands in PENDING_VALIDATION and
+    /// contributes no coverage until Phase 3 allocation plus Finance validation.
+    ///
+    /// <para>Guard order (deliberate): visibility 404 → role 403 → obligation 409
+    /// (OPERATION_INVOICE_NO_OBLIGATION — checked before status so the caller learns the
+    /// structural problem, not the transient one) → lifecycle-status 409 → field validation 400
+    /// → supplier/attachment integrity → duplicate 409s.</para>
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> Create(Guid requestId, [FromBody] SaveOperationInvoiceDto dto)
@@ -155,14 +164,23 @@ public class OperationInvoicesController : BaseController
         var roleProblem = GuardMutationRole();
         if (roleProblem != null) return roleProblem;
 
-        if (request.RequestType?.Code != RequestConstants.Types.Payment)
+        // ── Obligation gate (v2.228.1, approved rule): registration is OBLIGATION-driven, never
+        // type-driven. Any request — PAYMENT or QUOTATION — that owns at least one classified
+        // group owing an operation invoice may register one; a request with no such group may
+        // not, whatever its type. This deliberately tightens legacy PAYMENT requests whose groups
+        // are all UNCLASSIFIED: an invoice that could never be allocated must not be registered.
+        var hasObligationBearingGroup = await _context.RequestPoGroups
+            .AnyAsync(g => g.RequestId == requestId && g.RequiresOperationInvoice);
+        if (!hasObligationBearingGroup)
         {
-            return BadRequest(new ProblemDetails
+            var problem = new ProblemDetails
             {
-                Title = "Tipo de pedido inválido",
-                Detail = "Faturas finais existem apenas em pedidos de Pagamento.",
-                Status = 400
-            });
+                Title = "Sem obrigação de Fatura Final",
+                Detail = "Este pedido não possui nenhum grupo classificado que exija Fatura Final.",
+                Status = 409
+            };
+            problem.Extensions["code"] = NoObligationCode;
+            return Conflict(problem);
         }
 
         if (!OperationInvoiceLifecyclePolicy.CanCreateInRequestStatus(request.Status?.Code))

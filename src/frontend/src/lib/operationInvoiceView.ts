@@ -154,6 +154,8 @@ const ERROR_MESSAGES: Record<string, string> = {
         'A soma das distribuições não corresponde ao total da fatura. Distribua o valor completo antes de validar.',
     OI_VALIDATE_DIVERGENCE_REQUIRED:
         'Existe um grupo acima do valor esperado — a validação exige a aceitação explícita da divergência.',
+    OPERATION_INVOICE_NO_OBLIGATION:
+        'Este pedido ainda não possui um grupo classificado que exija Fatura Final.',
     OPERATION_INVOICE_DUPLICATE:
         'Já existe uma fatura registada com este fornecedor, número e série.',
     OPERATION_INVOICE_FILE_DUPLICATE:
