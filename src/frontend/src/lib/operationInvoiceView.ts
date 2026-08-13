@@ -184,6 +184,8 @@ const ERROR_MESSAGES: Record<string, string> = {
         'A soma das distribuições ultrapassa o total da própria fatura.',
     OI_ALLOC_GROUP_OVER:
         'A distribuição excede o valor esperado deste grupo.',
+    OI_ALLOC_GROUP_CLOSED_SHORT:
+        'Este grupo foi encerrado com saldo aceite e não pode receber novas Faturas Finais sem reabertura explícita.',
     OI_VALIDATE_ALLOCATION_INCOMPLETE:
         'A soma das distribuições não corresponde ao total da fatura. Distribua o valor completo antes de validar.',
     OI_VALIDATE_DIVERGENCE_REQUIRED:

@@ -11,6 +11,7 @@ import {
     formatMoney,
     mapOperationInvoiceError
 } from '../../lib/operationInvoiceView';
+import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
 import type {
     OperationInvoiceDto,
     OperationInvoiceObligationsDto,
@@ -18,6 +19,40 @@ import type {
     OperationInvoiceAllocationDto,
     SaveOperationInvoiceAllocationItemDto
 } from '../../types/operationInvoice';
+
+/**
+ * Step 2 selectability of one group against THIS invoice (v2.228.3), mirroring the backend's
+ * rule order for UX only — the backend remains authoritative. Priority: ClosedShort (hard, every
+ * actor) → supplier identity → currency identity → Buyer on a fully covered group. A fully
+ * covered, non-short-closed group stays SELECTABLE for Finance/SysAdmin as the divergence path.
+ */
+function groupSelectability(
+    group: OperationInvoiceObligationDto,
+    invoice: OperationInvoiceDto,
+    isFinanceActor: boolean
+): { disabled: boolean; note: string | null; warning: string | null } {
+    if (group.closedShort) {
+        return { disabled: true, note: 'Grupo encerrado com saldo aceite', warning: null };
+    }
+    if (group.supplierId != null && invoice.supplierId != null && group.supplierId !== invoice.supplierId) {
+        return { disabled: true, note: 'Fornecedor diferente do da fatura', warning: null };
+    }
+    if (group.currency && invoice.currency &&
+        group.currency.toUpperCase() !== invoice.currency.toUpperCase()) {
+        return { disabled: true, note: 'Moeda diferente da da fatura', warning: null };
+    }
+    const fullyCovered = group.expectedAmount != null && group.expectedAmount > 0 &&
+        group.remainingAmount != null && group.remainingAmount <= group.appliedTolerance;
+    if (fullyCovered) {
+        return isFinanceActor
+            ? {
+                disabled: false, note: null,
+                warning: 'Grupo totalmente coberto — qualquer nova distribuição exigirá análise de divergência.'
+            }
+            : { disabled: true, note: 'Grupo totalmente coberto', warning: null };
+    }
+    return { disabled: false, note: null, warning: null };
+}
 
 interface AllocationWizardProps {
     requestId: string;
@@ -113,8 +148,9 @@ export function OperationInvoiceAllocationWizard({
         return validated + parse(row.gross) > group.expectedAmount + groupTolerance;
     });
 
+    // Same rule as the backend validator (length + placeholder rejection), for UX only.
     const missingDivergenceNotes = isFinanceActor
-        ? divergenceCandidates.filter(r => r.notes.trim().length < 20)
+        ? divergenceCandidates.filter(r => !validateReconciliationJustification(r.notes).isValid)
         : [];
 
     const buyerBlocked = !isFinanceActor && divergenceCandidates.length > 0;
@@ -162,9 +198,12 @@ export function OperationInvoiceAllocationWizard({
 
     const invoiceStatus = documentStatusPresentation(invoice.status);
 
+    // The divergence justification gate lives on the STEP, not only on the final confirm: an
+    // invalid justification must never reach Revisão/Confirmar (backend stays authoritative).
     const nextDisabled =
         (step === 1 && selectedRows.length === 0 && !readOnly) ||
-        (step === 2 && !readOnly && (buyerBlocked || selectedRows.some(r => parse(r.gross) <= 0)));
+        (step === 2 && !readOnly &&
+            (buyerBlocked || selectedRows.some(r => parse(r.gross) <= 0) || missingDivergenceNotes.length > 0));
 
     return (
         <ModalWrapper title={readOnly ? 'Distribuição da Fatura Final' : 'Distribuir Fatura Final'} onClose={onClose} width={760}>
@@ -226,15 +265,23 @@ export function OperationInvoiceAllocationWizard({
                             const row = rows.find(r => r.groupId === group.groupId);
                             const view = coverageView(group);
                             const status = aggregateStatusPresentation(group.derivedStatus, group.closedShort);
+                            const selectability = groupSelectability(group, invoice, isFinanceActor);
+                            // A group that already carries an allocation of THIS invoice stays
+                            // editable (removing it is part of the replace-set); the disable
+                            // applies to NEW selection only.
+                            const checkboxDisabled = selectability.disabled && !(row?.selected ?? false);
                             return (
                                 <label key={group.groupId} style={{
                                     display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px',
                                     border: `1px solid ${row?.selected ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                    borderRadius: '8px', cursor: readOnly ? 'default' : 'pointer',
+                                    borderRadius: '8px',
+                                    cursor: readOnly || checkboxDisabled ? 'default' : 'pointer',
+                                    opacity: checkboxDisabled ? 0.6 : 1,
                                     backgroundColor: row?.selected ? 'rgba(var(--color-primary-rgb), 0.03)' : '#fff'
                                 }}>
                                     {!readOnly && (
                                         <input type="checkbox" checked={row?.selected ?? false}
+                                               disabled={checkboxDisabled}
                                                onChange={e => updateRow(group.groupId, { selected: e.target.checked })}
                                                style={{ marginTop: '3px' }} />
                                     )}
@@ -253,6 +300,16 @@ export function OperationInvoiceAllocationWizard({
                                             <span>Em validação: <b style={{ color: '#1d4ed8' }}>{view.pendingLabel}</b></span>
                                             <span>Restante: <b>{view.remainingLabel}</b></span>
                                         </div>
+                                        {selectability.note && (
+                                            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#64748b' }}>
+                                                {selectability.note}
+                                            </span>
+                                        )}
+                                        {selectability.warning && (
+                                            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#b45309' }}>
+                                                {selectability.warning}
+                                            </span>
+                                        )}
                                     </div>
                                 </label>
                             );
