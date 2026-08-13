@@ -163,6 +163,16 @@ export function OperationInvoiceShortCloseModal({
                             contar como concluído com saldo aceite APÓS a aprovação de uma segunda pessoa do
                             Financeiro ou Administração.
                         </div>
+                        {obligation.validatedCoveredAmount <= 0 && (
+                            <div style={{
+                                fontSize: '0.82rem', fontWeight: 700, color: '#92400e',
+                                backgroundColor: '#fffbeb', border: '1px solid #fde68a',
+                                borderRadius: '8px', padding: '8px 10px'
+                            }}>
+                                Nenhuma Fatura Final foi validada para este grupo. O encerramento
+                                aceitará todo o valor esperado como saldo não faturado.
+                            </div>
+                        )}
                         <div>
                             <label style={labelStyle}>Justificativa *</label>
                             <textarea style={textareaStyle} value={justification}
