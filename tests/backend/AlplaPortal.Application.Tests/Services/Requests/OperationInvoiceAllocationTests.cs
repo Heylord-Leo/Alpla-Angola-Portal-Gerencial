@@ -436,6 +436,129 @@ public class OperationInvoiceAllocationTests
             (await ctx.OperationInvoiceAllocations.SingleAsync()).AllocatedGrossAmount);
     }
 
+    // ── SATISFIED vs ClosedShort (v2.228.3) ──
+
+    /// <summary>A group at 100% validated coverage (938.220 of 938.220) — the canonical TEST shape.</summary>
+    private static RequestPoGroup AddSatisfiedGroup(
+        ApplicationDbContext ctx, Seed seed, decimal expected = 938_220m,
+        int? supplierId = 10, string? currency = "AOA")
+    {
+        var group = AddGroup(ctx, seed, expected: expected, supplierId: supplierId,
+            currency: currency, aggStatus: Agg.Satisfied);
+        var covering = AddInvoice(ctx, seed, gross: expected, status: Doc.Validated,
+            number: "FT COV-" + Guid.NewGuid().ToString("N")[..6]);
+        ctx.OperationInvoiceAllocations.Add(new OperationInvoiceAllocation
+        {
+            OperationInvoiceId = covering.Id,
+            RequestPoGroupId = group.Id,
+            AllocatedGrossAmount = expected,
+            SequenceNumber = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-2),
+            CreatedByUserId = seed.ActorId
+        });
+        return group;
+    }
+
+    [Fact]
+    public async Task Finance_allocates_to_a_satisfied_group_as_a_divergence_candidate()
+    {
+        // SATISFIED means "expected coverage is currently satisfied" — a financial reading, not
+        // structural ineligibility. Finance's 30k over the fully covered 938.220 group is the
+        // approved divergence-candidate path, never a generic eligibility error.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var group = AddSatisfiedGroup(ctx, seed);
+        var invoice = AddInvoice(ctx, seed, gross: 30_000m, number: "FT-LU-003");
+        await ctx.SaveChangesAsync();
+
+        var dto = Payload((group.Id, 30_000m));
+        dto.Allocations[0].Notes = "ZZTEST serviço adicional faturado após a cobertura completa";
+
+        var row = Assert.Single(Body(await BuildController(ctx, seed.ActorId).SaveAllocations(
+            seed.RequestId, invoice.Id, dto)));
+        Assert.Equal(30_000m, row.AllocatedGrossAmount);
+        Assert.True(row.IsPendingDecision);
+        Assert.False(row.IsEffective);          // pending only — validation decides the divergence
+
+        // Effective coverage is untouched; the aggregate re-enters Finance's court.
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(Agg.PendingValidation,
+            (await ctx.RequestPoGroups.SingleAsync(g => g.Id == group.Id)).OperationInvoiceStatus);
+    }
+
+    [Fact]
+    public async Task Buyer_on_a_satisfied_group_gets_the_precise_over_coverage_error()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var group = AddSatisfiedGroup(ctx, seed);
+        var invoice = AddInvoice(ctx, seed, gross: 30_000m, number: "FT-LU-003");
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId, RoleConstants.Buyer).SaveAllocations(
+            seed.RequestId, invoice.Id, Payload((group.Id, 30_000m)));
+
+        // The financial reason, not the generic eligibility error.
+        AssertCode(result, OperationInvoicesController.AllocationGroupOverCode);
+    }
+
+    [Fact]
+    public async Task Satisfied_groups_keep_the_structural_supplier_and_currency_blockers()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        ctx.Suppliers.Add(new Supplier { Id = 20, Name = "ZZTEST Other", TaxId = "222000222" });
+        var wrongSupplier = AddSatisfiedGroup(ctx, seed, supplierId: 20);
+        var wrongCurrency = AddSatisfiedGroup(ctx, seed, expected: 500_000m, currency: "USD");
+        var invoice = AddInvoice(ctx, seed, gross: 30_000m, number: "FT-LU-003");
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, seed.ActorId);   // Finance — divergence never bypasses identity
+        AssertCode(await controller.SaveAllocations(
+                seed.RequestId, invoice.Id, Payload((wrongSupplier.Id, 30_000m))),
+            OperationInvoicesController.AllocationSupplierMismatchCode);
+        AssertCode(await controller.SaveAllocations(
+                seed.RequestId, invoice.Id, Payload((wrongCurrency.Id, 30_000m))),
+            OperationInvoicesController.AllocationCurrencyMismatchCode);
+    }
+
+    [Theory]
+    [InlineData(RoleConstants.Buyer)]
+    [InlineData(RoleConstants.Finance)]
+    [InlineData(RoleConstants.SystemAdministrator)]
+    public async Task A_short_closed_group_refuses_new_allocations_for_every_actor(string role)
+    {
+        // An APPROVED short-close is an explicit audited closure — different from SATISFIED by
+        // full coverage. No actor allocates into it until an explicit reopening workflow exists.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var group = AddGroup(ctx, seed, expected: 1_000_000m, aggStatus: Agg.Satisfied);
+        ctx.OperationInvoiceShortCloses.Add(new OperationInvoiceShortClose
+        {
+            RequestPoGroupId = group.Id,
+            Status = RequestConstants.ShortCloseStatuses.Approved,
+            ProposedByUserId = seed.ActorId,
+            ProposedAtUtc = DateTime.UtcNow.AddDays(-2),
+            ProposalJustification = "ZZTEST fornecedor não emitirá o restante",
+            RemainingAmountAtProposal = 400_000m,
+            DecidedByUserId = Guid.NewGuid(),
+            DecidedAtUtc = DateTime.UtcNow.AddDays(-1)
+        });
+        var invoice = AddInvoice(ctx, seed, gross: 30_000m, number: "FT-LU-003");
+        await ctx.SaveChangesAsync();
+
+        var dto = Payload((group.Id, 30_000m));
+        dto.Allocations[0].Notes = "ZZTEST justificativa suficientemente longa para divergência";
+
+        var result = await BuildController(ctx, seed.ActorId, role).SaveAllocations(
+            seed.RequestId, invoice.Id, dto);
+
+        AssertCode(result, OperationInvoicesController.AllocationGroupClosedShortCode);
+        ctx.ChangeTracker.Clear();
+        Assert.False(await ctx.OperationInvoiceAllocations
+            .AnyAsync(a => a.OperationInvoiceId == invoice.Id));
+    }
+
     // ── Editability window ──
 
     [Fact]

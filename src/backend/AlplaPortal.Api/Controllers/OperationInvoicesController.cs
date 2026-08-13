@@ -65,6 +65,7 @@ public class OperationInvoicesController : BaseController
     public const string AllocationCurrencyMismatchCode = "OI_ALLOC_CURRENCY_MISMATCH";
     public const string AllocationInvoiceOverCode = "OI_ALLOC_INVOICE_OVER";
     public const string AllocationGroupOverCode = "OI_ALLOC_GROUP_OVER";
+    public const string AllocationGroupClosedShortCode = "OI_ALLOC_GROUP_CLOSED_SHORT";
     public const string ValidateAllocationIncompleteCode = "OI_VALIDATE_ALLOCATION_INCOMPLETE";
     public const string ValidateDivergenceRequiredCode = "OI_VALIDATE_DIVERGENCE_REQUIRED";
 
@@ -1352,6 +1353,18 @@ public class OperationInvoicesController : BaseController
         var isFinanceActor = CurrentUserRoles.Contains(RoleConstants.Finance) ||
                              CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
 
+        // ── ClosedShort (v2.228.3, approved rule): an APPROVED short-close is an explicit audited
+        // financial closure — new allocations are refused for EVERY actor until a future explicit
+        // reopening workflow exists. Deliberately different from SATISFIED-by-full-coverage, which
+        // merely says current coverage equals expected and stays open to the Finance divergence
+        // path below. ──
+        var closedShortGroupIds = (await _context.OperationInvoiceShortCloses.AsNoTracking()
+                .Where(c => groupIds.Contains(c.RequestPoGroupId) &&
+                            c.Status == RequestConstants.ShortCloseStatuses.Approved)
+                .Select(c => c.RequestPoGroupId)
+                .ToListAsync())
+            .ToHashSet();
+
         foreach (var item in items)
         {
             if (!groups.TryGetValue(item.RequestPoGroupId, out var group) || group.RequestId != requestId)
@@ -1367,20 +1380,37 @@ public class OperationInvoicesController : BaseController
                 return Conflict(problem);
             }
 
-            // Obligation eligibility: classified, owing an invoice, in an accepting state, and not
-            // parked in PO correction. A pre-Final PENDING group is UNCLASSIFIED and fails here.
+            // Structural obligation eligibility (v2.228.3): classified and owing an invoice, not
+            // parked in PO correction. The aggregate SATISFIED state is DELIBERATELY NOT a blanket
+            // blocker here — "expected coverage is currently satisfied" is a financial reading,
+            // not structural ineligibility, and the amount-based over-expected rule below is what
+            // decides who may go further (Buyer: hard block; Finance: divergence candidate).
+            // AcceptsUploadIn keeps its original meaning for its own consumers untouched.
             if (!group.RequiresOperationInvoice ||
-                !RequestConstants.OperationInvoiceStatuses.AcceptsUploadIn(group.OperationInvoiceStatus) ||
                 string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection, StringComparison.OrdinalIgnoreCase))
             {
                 var problem = new ProblemDetails
                 {
                     Title = "Grupo não elegível para alocação",
-                    Detail = "Este grupo não está num estado que aceite alocação de fatura final " +
+                    Detail = "Este grupo não tem uma obrigação de fatura final ativa " +
                              $"(obrigação: {group.OperationInvoiceStatus}; grupo: {group.Status}).",
                     Status = 409
                 };
                 problem.Extensions["code"] = AllocationGroupInvalidCode;
+                problem.Extensions["requestPoGroupId"] = group.Id;
+                return Conflict(problem);
+            }
+
+            if (closedShortGroupIds.Contains(group.Id))
+            {
+                var problem = new ProblemDetails
+                {
+                    Title = "Grupo encerrado com saldo aceite",
+                    Detail = "Este grupo foi encerrado com saldo aceite e não pode receber novas " +
+                             "Faturas Finais sem reabertura explícita.",
+                    Status = 409
+                };
+                problem.Extensions["code"] = AllocationGroupClosedShortCode;
                 problem.Extensions["requestPoGroupId"] = group.Id;
                 return Conflict(problem);
             }

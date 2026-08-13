@@ -315,6 +315,83 @@ public class OperationInvoiceValidationReconciliationTests
             (await ctx.RequestPoGroups.SingleAsync(g => g.Id == group.Id)).OperationInvoiceStatus);
     }
 
+    /// <summary>
+    /// v2.228.3, the approved TEST scenario end-to-end: Luanda fully covered (938.220 of
+    /// 938.220, SATISFIED), Finance allocates FT-LU-003 (30.000) as a divergence candidate,
+    /// validation refuses without the explicit acceptance and then freezes the +30.000 variance
+    /// into the reconciliation snapshot on acceptance.
+    /// </summary>
+    [Fact]
+    public async Task A_satisfied_group_takes_a_finance_divergence_that_validation_freezes()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var group = AddGroup(ctx, seed, expected: 938_220m);
+        var covering = AddInvoice(ctx, seed, gross: 938_220m, number: "FT-LU-001", status: Doc.Validated);
+        await ctx.SaveChangesAsync();
+        Allocate(ctx, covering, group, 938_220m, seed.ActorId, sequence: 1);
+        group.OperationInvoiceStatus = Agg.Satisfied;
+        var invoice = AddInvoice(ctx, seed, gross: 30_000m, number: "FT-LU-003");
+        await ctx.SaveChangesAsync();
+
+        // Finance drafts the over-coverage allocation through the endpoint (the exact path the
+        // stale AcceptsUploadIn guard used to refuse with a generic eligibility error).
+        var controller = BuildController(ctx, seed.ActorId);
+        var saveResult = await controller.SaveAllocations(seed.RequestId, invoice.Id,
+            new AlplaPortal.Application.DTOs.Requests.SaveOperationInvoiceAllocationsDto
+            {
+                Allocations = new List<AlplaPortal.Application.DTOs.Requests.SaveOperationInvoiceAllocationItemDto>
+                {
+                    new()
+                    {
+                        RequestPoGroupId = group.Id,
+                        AllocatedGrossAmount = 30_000m,
+                        Notes = "ZZTEST serviço adicional faturado após cobertura completa"
+                    }
+                }
+            });
+        Assert.IsType<OkObjectResult>(saveResult);
+
+        // Pending coverage only — the effective total is untouched before the decision.
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(Agg.PendingValidation,
+            (await ctx.RequestPoGroups.SingleAsync(g => g.Id == group.Id)).OperationInvoiceStatus);
+
+        // Without the explicit acceptance the validation refuses.
+        AssertCode(await controller.Validate(seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto()),
+            OperationInvoicesController.ValidateDivergenceRequiredCode);
+
+        // With the explicit acceptance it succeeds and the snapshot freezes the variance.
+        var body = Body(await controller.Validate(seed.RequestId, invoice.Id, new ValidateOperationInvoiceDto
+        {
+            DivergenceAcceptances = new List<OperationInvoiceDivergenceAcceptanceDto>
+            {
+                new() { RequestPoGroupId = group.Id, Accepted = true,
+                        Justification = "ZZTEST divergência aceite: serviço adicional confirmado" }
+            }
+        }));
+        Assert.Equal(Doc.Validated, body.Status);
+
+        ctx.ChangeTracker.Clear();
+        var snapshot = Assert.Single(await ctx.OperationInvoiceReconciliations
+            .Where(r => r.OperationInvoiceId == invoice.Id).ToListAsync());
+        Assert.Equal(938_220m, snapshot.ExpectedTotalAtComparison);
+        Assert.Equal(938_220m, snapshot.CumulativeValidatedTotalBefore);
+        Assert.Equal(30_000m, snapshot.AllocatedTotal);
+        Assert.Equal(30_000m, snapshot.ResidualVariance);       // 968.220 − 938.220
+        Assert.True(snapshot.DivergenceDetected);
+        Assert.True(snapshot.DivergenceAccepted);
+        Assert.Equal("ZZTEST divergência aceite: serviço adicional confirmado", snapshot.DivergenceJustification);
+
+        // The covering invoice's earlier state is untouched; the group ends SATISFIED again.
+        Assert.Equal(Agg.Satisfied,
+            (await ctx.RequestPoGroups.SingleAsync(g => g.Id == group.Id)).OperationInvoiceStatus);
+        Assert.Equal(968_220m, await ctx.OperationInvoiceAllocations
+            .Join(ctx.OperationInvoices.Where(i => i.Status == Doc.Validated),
+                a => a.OperationInvoiceId, i => i.Id, (a, i) => a.AllocatedGrossAmount)
+            .SumAsync());
+    }
+
     // ── The immutable snapshot ──
 
     [Fact]
