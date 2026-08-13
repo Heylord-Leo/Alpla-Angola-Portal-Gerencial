@@ -4,7 +4,37 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.228.2
+v2.228.3
+
+## [v2.228.3] - 2026-08-13
+
+### Fixed — Finance divergence on fully covered groups; ClosedShort protection
+
+Manual TEST validation hit the SATISFIED-group blocker: the allocation guard borrowed
+`AcceptsUploadIn` (an aggregate document-upload reading) as structural ineligibility, making the
+approved Finance over-coverage divergence path unreachable on a 100%-covered group (Luanda
+938.220 + FT-LU-003 30.000 → generic "grupo não elegível").
+
+- **SATISFIED is no longer a blanket allocation blocker.** Structural eligibility is now: same
+  request, `RequiresOperationInvoice`, not WAITING_PO_CORRECTION, supplier/currency identity.
+  A fully covered, non-short-closed group flows into the existing amount-based rule: Buyer →
+  precise 409 `OI_ALLOC_GROUP_OVER` (no more generic error); Finance/SysAdmin → divergence
+  candidate with mandatory justification, decided explicitly at validation, variance frozen
+  into the reconciliation snapshot. `AcceptsUploadIn` itself is unchanged for its own consumers.
+- **ClosedShort is a hard blocker for every actor** (new 409 `OI_ALLOC_GROUP_CLOSED_SHORT`):
+  an approved short-close is an explicit audited financial closure — different from SATISFIED
+  by full coverage — and takes no new allocations until an explicit reopening workflow exists
+  (not part of this patch).
+- **Allocation wizard Step 2 now mirrors the domain rules**: ClosedShort → disabled ("Grupo
+  encerrado com saldo aceite"); supplier/currency mismatch → disabled with the reason; fully
+  covered → disabled for Buyer ("Grupo totalmente coberto"), selectable for Finance/SysAdmin
+  with the divergence warning. Groups stay visible, never hidden; backend remains authority.
+- **Divergence justification gate on Step 3**: advancing to Revisão/Confirmar now requires a
+  justification satisfying the same rule as the backend (≥20 meaningful chars, placeholder
+  rejection via the existing shared validator).
+
+Code-only — no migration. Monetary-input masking and the other recorded UX follow-ups remain
+deferred.
 
 ## [v2.228.2] - 2026-08-13
 

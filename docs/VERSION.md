@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.228.2
+v2.228.3
+
+## [v2.228.3] - 2026-08-13
+
+### Fixed — SATISFIED-group divergence flow and ClosedShort blocker
+
+- Allocation eligibility no longer treats SATISFIED as structural: Finance/SysAdmin may create
+  the approved over-coverage divergence candidate on a fully covered group (Buyer gets the
+  precise `OI_ALLOC_GROUP_OVER`); short-closed groups refuse all new allocations with
+  `OI_ALLOC_GROUP_CLOSED_SHORT` until an explicit reopening workflow exists. Wizard Step 2
+  mirrors the rules (disabled reasons / Finance warning) and Step 3 enforces the divergence
+  justification. Code-only, no migration.
 
 ## [v2.228.2] - 2026-08-13
 

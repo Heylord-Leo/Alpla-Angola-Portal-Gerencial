@@ -1,5 +1,24 @@
 # Release 4 Phase 3B — Manual TEST Checklist (Operation Invoice / Fatura Final)
 
+## v2.228.3 patch regression (SATISFIED divergence + ClosedShort + wizard eligibility)
+
+- [ ] Luanda (938.220 / 938.220, "Fatura Final Completa"): as **Finance**, Step 2 shows the group
+      selectable with "Grupo totalmente coberto — qualquer nova distribuição exigirá análise de
+      divergência."; FT-LU-003 (30.000) allocates as divergence candidate (no generic
+      eligibility error).
+- [ ] After the draft: group shows Em validação 30.000, Validado unchanged 938.220.
+- [ ] Validate FT-LU-003 without "ACEITAR DIVERGÊNCIA" → refused; with acceptance +
+      justification → succeeds; snapshot freezes Expected 938.220 / Validado antes 938.220 /
+      Alocação 30.000 / Variação +30.000.
+- [ ] As **Buyer**, the same fully covered group is disabled ("Grupo totalmente coberto");
+      forcing via API returns `OI_ALLOC_GROUP_OVER`.
+- [ ] A short-closed group is disabled for ALL actors ("Grupo encerrado com saldo aceite");
+      forcing via API returns `OI_ALLOC_GROUP_CLOSED_SHORT`.
+- [ ] Supplier-mismatch and currency-mismatch groups appear disabled with their reasons;
+      Finance cannot bypass identity via divergence.
+- [ ] Step 3: a divergence candidate with a short/placeholder justification cannot advance to
+      Revisão; a meaningful justification (≥20 chars) can.
+
 ## v2.228.2 patch regression (drawer menu + calendar dates)
 
 - [ ] **A** — Request Drawer → FT-KW-001 → ⋮ : the action menu is fully visible ABOVE the
