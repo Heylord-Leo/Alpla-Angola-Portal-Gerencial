@@ -4,7 +4,31 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.228.0
+v2.228.1
+
+## [v2.228.1] - 2026-08-13
+
+### Fixed — Final Invoice registration for QUOTATION requests (obligation-driven rule)
+
+Manual TEST validation of v2.228.0 (REQ-12/08/2026-230) hit the stale Phase 2b PAYMENT-only
+guard in OperationInvoice Create ("Faturas finais existem apenas em pedidos de Pagamento") —
+contradicting the Release 4 architecture where coverage is RequestPoGroup-obligation-driven for
+PAYMENT **and** QUOTATION alike.
+
+- The request-type guard is removed. Create now requires the request to own **at least one
+  classified `RequestPoGroup` with `RequiresOperationInvoice = true`**; otherwise it refuses
+  with 409 `OPERATION_INVOICE_NO_OBLIGATION` ("Este pedido não possui nenhum grupo classificado
+  que exija Fatura Final."). Guard order: visibility → role → obligation → lifecycle status →
+  field validation → supplier/attachment integrity → duplicates.
+- **Approved tightening**: a legacy PAYMENT request whose groups are all UNCLASSIFIED (or that
+  owns no groups) is now refused too — RequestType alone buys nothing, preventing orphan
+  invoices that could never be allocated. No compatibility bypass.
+- Update/Validate/Replace/Void semantics untouched; the OPERATION_INVOICE attachment path was
+  already type-agnostic. Frontend error map gains the new code. Code-only — **no migration**.
+- Tests: the stale "quotation takes no operation invoice" pin became its inverse (the exact
+  Kwanza 519.840/Luanda 938.220 production scenario registering FT-KW-001); Create-path seeds
+  gained obligation-bearing groups; new negative pin covers no-group and unclassified-only
+  requests for both types.
 
 ## [v2.228.0] - 2026-08-12
 

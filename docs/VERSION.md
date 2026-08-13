@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.228.0
+v2.228.1
+
+## [v2.228.1] - 2026-08-13
+
+### Fixed — obligation-driven Final Invoice registration
+
+- OperationInvoice Create no longer restricted to PAYMENT: any request (PAYMENT or QUOTATION)
+  with at least one classified group requiring a Final Invoice may register one; requests
+  without such a group get 409 `OPERATION_INVOICE_NO_OBLIGATION` (approved tightening for
+  legacy unclassified PAYMENT requests included). Code-only, no migration.
 
 ## [v2.228.0] - 2026-08-12
 
