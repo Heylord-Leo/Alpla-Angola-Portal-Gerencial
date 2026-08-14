@@ -198,6 +198,25 @@ public class AttachmentsController : BaseController
                 detail = "A Fatura Final só pode ser carregada depois da aprovação do pedido e " +
                          "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
                 break;
+            case RequestAttachment.TYPE_FISCAL_RECEIPT:
+                // Release 4 Phase 4B: the Recibo Fiscal is the terminal closing evidence. It rides
+                // the same post-approval/pre-completion window as the completion lifecycle, and
+                // only the roles that may BIND it to a group may store it (rules R5/R6). Binding
+                // itself is the separate, audited FiscalReceiptsController step — this case only
+                // stores the file. Never TYPE_RECEIPT: that legacy code stays untouched (rule R18).
+                isUploadable = AlplaPortal.Domain.Services.OperationInvoiceLifecyclePolicy
+                    .CanCreateInRequestStatus(statusCode);
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Finance) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Financeiro pode carregar o Recibo Fiscal.";
+                    break;
+                }
+                detail = "O Recibo Fiscal só pode ser carregado depois da aprovação do pedido e " +
+                         "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
+                break;
             case AttachmentConstants.Types.Receipt:
                 isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);
                 if (isUploadable && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
@@ -398,6 +417,7 @@ public class AttachmentsController : BaseController
         else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
         else if (typeCode == AttachmentConstants.Types.Receipt) typeLabel = "Recibo";
         else if (typeCode == RequestAttachment.TYPE_OPERATION_INVOICE) typeLabel = "Fatura Final";
+        else if (typeCode == RequestAttachment.TYPE_FISCAL_RECEIPT) typeLabel = "Recibo Fiscal";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."

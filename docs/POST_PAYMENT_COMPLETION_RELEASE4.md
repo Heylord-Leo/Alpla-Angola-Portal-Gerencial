@@ -285,6 +285,64 @@ Architecture report approved on 2026-08-14 with all eight business decisions res
   (ConfirmReceiving/Finance/OperationInvoice/short-close/PO), parent completion, legacy-writer
   suppression, status-calculator priority, frontend, flag changes, migration (none needed).
 
+### Phase 4B — operational receipt stamping + fiscal receipt upload (implemented)
+
+**Operational receipt (live writer).** `ConfirmReceiving` now stamps
+`OperationalReceiptCompletedAtUtc/ByUserId` when the confirmation leaves every group item
+RECEIVED (`OperationalReceiptFacts` — the same rulebook as the projection), with the actual
+event time and the confirming actor, and writes `OPERATIONAL_RECEIPT_COMPLETED`
+(`OR_DONE:{GroupId}`) with normal receipt-completion wording. **Approved flag semantics: the
+stamp is a factual dimension record gated by `PostPaymentCompletion.Enabled`, NOT by
+`CompletionEnabled`** — under the current TEST configuration (`Enabled=true,
+CompletionEnabled=false`) the stamp and its history are written while all Phase-4 transitions
+stay dormant; with `Enabled=false` the legacy receiving path is byte-identical (no stamp, no
+history). Partial receiving stamps nothing and keeps the IN_FOLLOWUP behavior. A retried
+confirmation preserves the original stamp and writes no duplicate. Ownership split: NEW
+receiving events → ConfirmReceiving (live wording); pre-activation fully-received groups with
+no stamp → the Phase-1 lazy derivation (derivation wording). `OR_DONE` dedup makes double
+writing impossible. After the receiving mutation, ConfirmReceiving invokes
+`EvaluateGroupCompletionAsync` in the same transaction before SaveChanges — the one approved
+4B trigger caller; it is an exact no-op while `CompletionEnabled=false`.
+
+**Fiscal receipt (two-step, atomic binding).**
+- Step 1 — file storage: the standard attachment upload now supports
+  `TYPE_FISCAL_RECEIPT` ("Recibo Fiscal") as a narrow case: same post-approval/pre-completion
+  window as the completion lifecycle (`OperationInvoiceLifecyclePolicy`), **Finance/SysAdmin
+  only** (Requesters/Buyers/Receiving cannot store this type; previously it fell into the
+  generic default case). Legacy `TYPE_RECEIPT` untouched (rule R18).
+- Step 2 — binding: `POST /api/v1/requests/{requestId}/po-groups/{groupId}/fiscal-receipt`
+  (`FiscalReceiptsController`, body `{ attachmentId }`), Finance/SysAdmin only, endpoint
+  404-gated by `Enabled`. Guard order: feature gate → scoped 404 → role 403 → request mutation
+  window (409 `FISCAL_RECEIPT_REQUEST_STATE`; COMPLETED/REJECTED/CANCELLED/WAITING_PO_CORRECTION
+  refuse) → group 404 → **idempotent already-uploaded check** (same attachment → 200, no new
+  history, even after the group completed; different attachment → 409
+  `FISCAL_RECEIPT_ALREADY_UPLOADED`, no replacement flow in 4B) → group terminal/correction
+  states (409) → 409 `FISCAL_RECEIPT_NOT_REQUIRED` when `RequiresSeparateFiscalReceipt=false`
+  ("Este grupo não exige Recibo Fiscal separado.") → deriver must read PENDING else 409
+  `FISCAL_RECEIPT_LOCKED` (detail lists the pending dimensions via `PostPaymentPendingReason`;
+  unclassified is LOCKED) → attachment integrity (exists on THIS request, not deleted, typed
+  `FISCAL_RECEIPT`, not already another group's receipt) else 409
+  `FISCAL_RECEIPT_ATTACHMENT_INVALID`.
+- On success, ONE SaveChanges persists: the binding
+  (`FiscalReceiptAttachmentId/UploadedAtUtc/UploadedByUserId`), `FISCAL_RECEIPT_UPLOADED`
+  history (`FR_UP:{GroupId}:{AttachmentId}`, group + file + supplier identified) and the Phase-1
+  evaluation — a `WAITING_FISCAL_RECEIPT` group completes here (`GROUP_COMPLETED`,
+  `GC:{GroupId}:{AttachmentId}`). No partial state is representable. With
+  `CompletionEnabled=false` the binding is stored and audited as a dimension fact and no
+  transition runs. The fiscal-receipt STATE remains derived (`FiscalReceiptStateDeriver`),
+  never persisted.
+
+**Known 4C consolidation item (recorded, not fixed in 4B by instruction):** once
+`CompletionEnabled=true`, ConfirmReceiving's post-save `AggregateRequestStatusAsync` could
+propagate an all-groups-COMPLETED reading to the parent request without history (aggregation
+back door), and `LineItemsController.UpdateStatus` retains its legacy auto-complete. Both are
+exactly the competing-writer consolidations Phase 4C performs before the flag ever turns on;
+`WAITING_FISCAL_RECEIPT` also still needs its `RequestStatusCalculator` priority (95) in 4C.
+
+**Not in 4B**: parent completion (Phase 2 dormant, ambient guard intact), the remaining
+trigger callers (payment/invoice/short-close/PO), legacy-writer suppression, calculator
+priority, frontend, flag changes, migration (none needed).
+
 ## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
 
 Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no completion wiring

@@ -8,6 +8,28 @@ v2.228.4
 
 ## [Unreleased]
 
+### Release 4 Phase 4B — operational receipt stamping + fiscal receipt upload (backend only)
+
+Development state on top of Phase 4A; no version bump, no migration, no frontend change. TEST
+remains `Enabled=true, CompletionEnabled=false`.
+
+- **ConfirmReceiving stamps the operational receipt** when every group item is received: real
+  event time/actor, `OPERATIONAL_RECEIPT_COMPLETED` (`OR_DONE:{GroupId}`), normal-completion
+  wording. Approved flag rule: the stamp is a dimension fact gated by `Enabled` (not
+  `CompletionEnabled`); `Enabled=false` keeps legacy receiving byte-identical. Partial
+  receiving stamps nothing; retries preserve the original stamp. ConfirmReceiving is the one
+  approved Phase-1 trigger caller (same transaction, exact no-op while completion is off).
+- **Fiscal receipt upload lifecycle** (two-step, atomic): `TYPE_FISCAL_RECEIPT` storage via
+  the standard attachment path (Finance/SysAdmin only, completion-lifecycle window; label
+  "Recibo Fiscal") + `POST /requests/{id}/po-groups/{gid}/fiscal-receipt` binding endpoint
+  (Finance/SysAdmin; 404-gated by `Enabled`). Typed refusals:
+  `FISCAL_RECEIPT_NOT_REQUIRED`, `FISCAL_RECEIPT_LOCKED` (pending dimensions listed),
+  `FISCAL_RECEIPT_ALREADY_UPLOADED` (no replacement flow), `FISCAL_RECEIPT_ATTACHMENT_INVALID`,
+  `FISCAL_RECEIPT_REQUEST_STATE`. Exact retry is idempotent even after completion. One
+  SaveChanges persists binding + `FISCAL_RECEIPT_UPLOADED` (`FR_UP`) + Phase-1 evaluation —
+  a `WAITING_FISCAL_RECEIPT` group completes with `GC:{GroupId}:{AttachmentId}`. Parent
+  request untouched (Phase 2 stays 4C).
+
 ### Release 4 Phase 4A — group completion projection + Phase 1 lifecycle (backend only)
 
 Development state on top of v2.228.4; no version bump, no migration, no frontend change, no
