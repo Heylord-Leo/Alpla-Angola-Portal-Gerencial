@@ -26,6 +26,7 @@ using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.Approvals;
+using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Application.Validation;
 using AlplaPortal.Domain.Configuration;
 using Microsoft.Extensions.Options;
@@ -7378,6 +7379,54 @@ public class RequestsController : BaseController
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.RequestStatusHistories.Add(history);
+
+            // ── Release 4 Phase 4B: operational receipt dimension ──
+            // The stamp is a FACTUAL dimension record (approved decision: gated by Enabled, not
+            // CompletionEnabled — it feeds Phase 3/4 readiness without activating completion).
+            // This is the LIVE writer for new receiving events: real event time, real actor,
+            // normal-completion wording. The Phase-1 lazy derivation covers only pre-activation
+            // groups that were already fully received with no stamp — never this path, because
+            // the stamp below exists before the evaluation runs.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                if (poGroup.OperationalReceiptCompletedAtUtc == null &&
+                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup))
+                {
+                    var receiptStampedAt = DateTime.UtcNow;
+                    poGroup.OperationalReceiptCompletedAtUtc = receiptStampedAt;
+                    poGroup.OperationalReceiptCompletedByUserId = actorId;
+
+                    var orKey = PostPaymentIdempotencyKeys.OperationalReceiptCompleted(poGroup.Id);
+                    var orExists = _context.RequestStatusHistories.Local
+                                       .Any(h => h.IdempotencyKey == orKey)
+                                   || await _context.RequestStatusHistories
+                                       .AnyAsync(h => h.IdempotencyKey == orKey);
+                    if (!orExists)
+                    {
+                        _context.RequestStatusHistories.Add(new RequestStatusHistory
+                        {
+                            Id = Guid.NewGuid(),
+                            RequestId = request.Id,
+                            ActorUserId = actorId,
+                            ActionTaken = WorkflowEventCodes.OperationalReceiptCompleted,
+                            PreviousStatusId = oldStatusId,
+                            NewStatusId = request.StatusId,
+                            Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"}] " +
+                                      "Recebimento operacional concluído: todos os itens do grupo " +
+                                      "foram recebidos.",
+                            IdempotencyKey = orKey,
+                            CreatedAtUtc = receiptStampedAt
+                        });
+                    }
+                }
+
+                // Phase 1 completion evaluation — same transaction, before SaveChanges, per the
+                // committed contract (no transaction/SaveChanges of its own). Exact no-op while
+                // CompletionEnabled=false; idempotent when the group cannot progress.
+                var completionService = HttpContext.RequestServices
+                    .GetRequiredService<IRequestCompletionService>();
+                await completionService.EvaluateGroupCompletionAsync(request.Id, poGroup.Id, actorId);
+            }
 
             await _context.SaveChangesAsync();
             
