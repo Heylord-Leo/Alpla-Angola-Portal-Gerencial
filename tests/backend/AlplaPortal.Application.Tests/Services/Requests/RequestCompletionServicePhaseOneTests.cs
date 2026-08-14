@@ -422,7 +422,7 @@ public class RequestCompletionServicePhaseOneTests
     }
 
     [Fact]
-    public async Task Parent_request_is_never_completed_in_phase_4a()
+    public async Task Phase_one_alone_never_completes_the_parent()
     {
         using var ctx = new ApplicationDbContext(NewOptions());
         var seed = await SeedNofrCompletableAsync(ctx);
@@ -431,17 +431,18 @@ public class RequestCompletionServicePhaseOneTests
         await service.EvaluateGroupCompletionAsync(seed.RequestId, seed.GroupId, seed.ActorId);
         await ctx.SaveChangesAsync();
 
-        // Every group is COMPLETED, yet the parent stays exactly where it was…
+        // Every group is COMPLETED, yet Phase 1 never touches the parent — that transition
+        // belongs exclusively to Phase 2 (Phase 4C), invoked by callers strictly after commit.
         var request = await ctx.Requests.SingleAsync(r => r.Id == seed.RequestId);
         Assert.Equal(seed.RequestStatusId, request.StatusId);
         Assert.Null(request.CompletionCycleId);
         Assert.False(await ctx.RequestStatusHistories.AnyAsync(
             h => h.ActionTaken == "REQUEST_COMPLETED"));
 
-        // …and Phase 2 remains dormant until Phase 4C.
-        var ex = await Assert.ThrowsAsync<NotImplementedException>(
-            () => service.EvaluateParentCompletionAsync(seed.RequestId, seed.ActorId));
-        Assert.Contains("Phase 4C", ex.Message, StringComparison.Ordinal);
+        // Phase 2 (real since 4C) then performs the authoritative transition once.
+        var parent = await service.EvaluateParentCompletionAsync(seed.RequestId, seed.ActorId);
+        Assert.True(parent.RequestCompleted);
+        Assert.NotNull(parent.CompletionCycleId);
     }
 
     [Fact]

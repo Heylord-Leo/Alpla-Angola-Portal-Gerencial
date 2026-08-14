@@ -155,15 +155,23 @@ public class RequestCompletionServiceSkeletonTests
     }
 
     [Fact]
-    public async Task Parent_phase_is_not_activated_before_phase_4c()
+    public async Task Parent_phase_is_active_since_phase_4c()
     {
-        using var context = ModelOnlyContext();
+        // Phase 2 no longer throws NotImplementedException — it evaluates. An unknown request
+        // is an error result, never an exception. Behaviour is pinned in
+        // RequestCompletionServiceParentTests; this is the routing pin only.
+        using var context = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+                .ConfigureWarnings(w => w.Ignore(
+                    Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+                .Options);
         var service = Service(context, enabled: true, completionEnabled: true);
 
-        var ex = await Assert.ThrowsAsync<NotImplementedException>(
-            () => service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid()));
+        var result = await service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid());
 
-        Assert.Contains("Phase 4C", ex.Message, StringComparison.Ordinal);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.False(result.RequestCompleted);
     }
 
     // ── Contract surface ──

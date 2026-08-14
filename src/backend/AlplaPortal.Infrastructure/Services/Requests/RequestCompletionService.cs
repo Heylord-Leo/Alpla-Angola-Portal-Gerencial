@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -16,35 +18,45 @@ using Microsoft.Extensions.Options;
 namespace AlplaPortal.Infrastructure.Services.Requests;
 
 /// <summary>
-/// Two-phase Post-Payment Completion evaluation.
+/// Two-phase Post-Payment Completion evaluation — REAL since Phase 4C.
 ///
-/// <para><b>Phase 4A state</b>: Phase 1 (GROUP completion) is REAL — it derives the
-/// <see cref="GroupCompletionProjector"/> reading of every evaluated group inside the caller's
-/// transaction and performs the WAITING_FISCAL_RECEIPT / COMPLETED transitions with their
-/// idempotent history. Phase 2 (PARENT completion) remains dormant until Phase 4C: the ambient
-/// transaction guard and the feature gate are live, the evaluation body is not.</para>
+/// <para><b>Phase 1</b> (GROUP completion) derives the <see cref="GroupCompletionProjector"/>
+/// reading of every evaluated group inside the caller's transaction and performs the
+/// WAITING_FISCAL_RECEIPT / COMPLETED transitions with their idempotent history.</para>
+///
+/// <para><b>Phase 2</b> (PARENT completion) runs strictly AFTER the caller's commit, in its own
+/// short transaction, and is the SINGLE authoritative writer that transitions a grouped,
+/// classified Request to COMPLETED — assigning <c>CompletionCycleId</c> exactly once, writing
+/// REQUEST_COMPLETED (<c>RC:{RequestId}:{CompletionCycleId}</c>) and emitting the
+/// RequestFinalized notification with the cycle id as correlation identity. COMPLETED is
+/// terminal: an already-completed request returns AlreadyCompleted with the persisted cycle id
+/// and produces nothing new.</para>
 ///
 /// <para>While <c>Enabled &amp;&amp; CompletionEnabled</c> is not true — the committed default and
 /// the current TEST state — both methods are pure no-ops that read nothing and write nothing.</para>
 /// </summary>
 public class RequestCompletionService : IRequestCompletionService
 {
-    private const string ParentNotActivatedMessage =
-        "Post-Payment PARENT completion evaluation is not implemented in Release 4 Phase 4A. " +
-        "Phase 2 (parent) is activated in Phase 4C.";
-
     private readonly ApplicationDbContext _context;
     private readonly PostPaymentCompletionOptions _options;
     private readonly ILogger<RequestCompletionService> _logger;
+    private readonly IWorkflowNotificationOrchestrator? _orchestrator;
 
+    /// <summary>
+    /// The orchestrator is optional-by-default so the many existing direct constructions (tests)
+    /// keep compiling; the DI container always supplies the registered instance in production.
+    /// A null orchestrator only skips the non-critical notification, never the transition.
+    /// </summary>
     public RequestCompletionService(
         ApplicationDbContext context,
         IOptions<PostPaymentCompletionOptions> options,
-        ILogger<RequestCompletionService> logger)
+        ILogger<RequestCompletionService> logger,
+        IWorkflowNotificationOrchestrator? orchestrator = null)
     {
         _context = context;
         _options = options?.Value ?? new PostPaymentCompletionOptions();
         _logger = logger;
+        _orchestrator = orchestrator;
     }
 
     /// <inheritdoc />
@@ -213,13 +225,13 @@ public class RequestCompletionService : IRequestCompletionService
     }
 
     /// <inheritdoc />
-    public Task<ParentCompletionResult> EvaluateParentCompletionAsync(
+    public async Task<ParentCompletionResult> EvaluateParentCompletionAsync(
         Guid requestId,
         Guid actorUserId,
         CancellationToken ct = default)
     {
         if (PostPaymentCompletionPolicy.IsCompletionDisabled(_options))
-            return Task.FromResult(ParentCompletionResult.NoOp);
+            return ParentCompletionResult.NoOp;
 
         // Contract guard — this is the whole reason the phase exists. Running the parent
         // evaluation inside the caller's transaction makes it read the caller's own uncommitted
@@ -239,14 +251,229 @@ public class RequestCompletionService : IRequestCompletionService
                 "committed, never inside it.");
         }
 
-        // Phase 4C replaces this with the atomic transition of plan v7/R4:
-        //   own ReadCommitted transaction; reload Request (+RowVersion); return AlreadyCompleted
-        //   when already COMPLETED; re-read every active group; when all are COMPLETED, assign
-        //   Request.CompletionCycleId, write REQUEST_COMPLETED (RC:{RequestId}:{CompletionCycleId})
-        //   and enqueue RequestFinalized with the same CorrelationId, all in ONE SaveChanges +
-        //   commit; on DbUpdateConcurrencyException reload once and retry, second failure returns
-        //   ConflictUnresolved.
-        throw new NotImplementedException(ParentNotActivatedMessage);
+        // Retry-once semantics: a DbUpdateConcurrencyException means another evaluator raced us
+        // on Request.RowVersion. The retry reloads committed state — if the winner completed the
+        // request, the reload returns AlreadyCompleted with the winner's persisted cycle id and
+        // never generates another one. A second consecutive conflict is surfaced, not looped on.
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                return await TryParentTransitionAsync(requestId, actorUserId, ct);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _context.ChangeTracker.Clear();
+
+                if (attempt == 2)
+                {
+                    _logger.LogError(ex,
+                        "Parent completion for Request {RequestId} lost two consecutive concurrency " +
+                        "races. The dimension change is committed and unaffected; the request stays " +
+                        "open until the next trigger or the recovery sweep re-evaluates it.",
+                        requestId);
+                    return new ParentCompletionResult { ConflictUnresolved = true };
+                }
+
+                _logger.LogInformation(
+                    "Parent completion for Request {RequestId} hit a concurrency conflict; retrying once.",
+                    requestId);
+            }
+        }
+
+        return new ParentCompletionResult { ConflictUnresolved = true }; // unreachable
+    }
+
+    /// <summary>
+    /// One atomic parent-transition attempt in its OWN short transaction over freshly reloaded
+    /// state — never the caller's possibly-stale change tracker.
+    /// </summary>
+    private async Task<ParentCompletionResult> TryParentTransitionAsync(
+        Guid requestId, Guid actorUserId, CancellationToken ct)
+    {
+        await using var tx = await _context.Database.BeginTransactionAsync(ct);
+
+        var request = await _context.Requests
+            .FirstOrDefaultAsync(r => r.Id == requestId, ct);
+        if (request == null)
+        {
+            await tx.RollbackAsync(ct);
+            return new ParentCompletionResult
+            {
+                ErrorMessage = $"Request {requestId} not found for parent completion evaluation."
+            };
+        }
+
+        // The scoped DbContext may still track this request from Phase 1 — refresh it so the
+        // decision (and the RowVersion the UPDATE will be guarded by) reflects the DATABASE'S
+        // committed state, not a stale in-memory copy.
+        await _context.Entry(request).ReloadAsync(ct);
+
+        var statusCode = await _context.RequestStatuses.AsNoTracking()
+            .Where(s => s.Id == request.StatusId)
+            .Select(s => s.Code)
+            .FirstOrDefaultAsync(ct);
+
+        if (string.Equals(statusCode, RequestConstants.Statuses.Completed, StringComparison.OrdinalIgnoreCase))
+        {
+            // Terminal and idempotent: the persisted cycle id is returned unchanged; no history,
+            // no notification, no new identity — ever.
+            await tx.RollbackAsync(ct);
+            return new ParentCompletionResult
+            {
+                AlreadyCompleted = true,
+                CompletionCycleId = request.CompletionCycleId
+            };
+        }
+
+        if (request.IsCancelled ||
+            string.Equals(statusCode, RequestConstants.Statuses.Rejected, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(statusCode, RequestConstants.Statuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+        {
+            await tx.RollbackAsync(ct);
+            return ParentCompletionResult.NoOp;
+        }
+
+        // Fresh, tracker-independent group reads: the Phase-1 commitments are what Phase 2
+        // trusts — group obligations are never re-derived here.
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == requestId)
+            .Select(g => new { g.Status, g.OperationInvoiceStatus, g.SourceDocumentType })
+            .ToListAsync(ct);
+
+        // Zero groups → the groupless legacy flow owns completion; Phase 4 never touches it.
+        if (groups.Count == 0)
+        {
+            await tx.RollbackAsync(ct);
+            return ParentCompletionResult.NoOp;
+        }
+
+        var relevant = groups
+            .Where(g => !StatusIs(g.Status, RequestConstants.PoGroupStatuses.Cancelled))
+            .ToList();
+
+        // All groups cancelled → nothing was fulfilled; cancellation flows own that request.
+        if (relevant.Count == 0)
+        {
+            await tx.RollbackAsync(ct);
+            return ParentCompletionResult.NoOp;
+        }
+
+        // R15 fail-closed: an UNCLASSIFIED group can never contribute to completion — even one
+        // blocks the parent until the Release 5 classification tool resolves it.
+        var anyUnclassified = relevant.Any(g =>
+            g.SourceDocumentType == null ||
+            StatusIs(g.OperationInvoiceStatus, RequestConstants.OperationInvoiceStatuses.Unclassified));
+
+        var anyIncomplete = relevant.Any(g =>
+            !StatusIs(g.Status, RequestConstants.PoGroupStatuses.Completed));
+
+        // Request-level blocker: ANY active reconciliation of this request — including rows with
+        // a null RequestPoGroupId, which cannot be attributed to a group and would otherwise
+        // slip past every group-scoped predicate.
+        var activeReconciliation = await _context.RequestReconciliations.AsNoTracking()
+            .AnyAsync(r => r.RequestId == requestId &&
+                           (r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.Draft ||
+                            r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.InProgress),
+                ct);
+
+        if (anyUnclassified || anyIncomplete || activeReconciliation)
+        {
+            await tx.RollbackAsync(ct);
+            return ParentCompletionResult.NoOp;
+        }
+
+        var completedStatus = await _context.RequestStatuses
+            .FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.Completed, ct);
+        if (completedStatus == null)
+        {
+            await tx.RollbackAsync(ct);
+            return new ParentCompletionResult
+            {
+                ErrorMessage = "Status COMPLETED is not configured — parent completion aborted."
+            };
+        }
+
+        // ── The winning transition: identity + status + history in ONE SaveChanges/commit ──
+        var cycleId = Guid.NewGuid();
+        var completedAt = DateTime.UtcNow;
+        var previousStatusId = request.StatusId;
+
+        request.CompletionCycleId = cycleId;
+        request.StatusId = completedStatus.Id;
+        request.UpdatedAtUtc = completedAt;
+        request.UpdatedByUserId = actorUserId;
+
+        var key = PostPaymentIdempotencyKeys.RequestCompleted(requestId, cycleId);
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorUserId,
+            ActionTaken = "REQUEST_COMPLETED",
+            PreviousStatusId = previousStatusId,
+            NewStatusId = completedStatus.Id,
+            Comment = $"Pedido CONCLUÍDO pelo fluxo de conclusão pós-pagamento: " +
+                      $"{relevant.Count} grupo(s) com todas as obrigações satisfeitas. " +
+                      $"Ciclo de conclusão {cycleId:D}.",
+            IdempotencyKey = key,
+            CreatedAtUtc = completedAt
+        });
+
+        await _context.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        // Post-commit, non-critical notification: same RequestFinalized mechanism the legacy
+        // finalization used, correlated by the completion cycle so retries can never duplicate.
+        await EmitRequestFinalizedAsync(request, actorUserId, cycleId);
+
+        _logger.LogInformation(
+            "Request {RequestId} completed by the post-payment completion workflow " +
+            "(cycle {CycleId}, {GroupCount} group(s)).",
+            requestId, cycleId, relevant.Count);
+
+        return new ParentCompletionResult
+        {
+            RequestCompleted = true,
+            CompletionCycleId = cycleId
+        };
+    }
+
+    private async Task EmitRequestFinalizedAsync(Request request, Guid actorUserId, Guid cycleId)
+    {
+        if (_orchestrator == null) return;
+
+        try
+        {
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == actorUserId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync();
+
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.RequestFinalized,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = RequestConstants.Statuses.Completed,
+                ActionTaken = "REQUEST_COMPLETED",
+                ActorUserId = actorUserId,
+                ActorName = actorName ?? "Sistema",
+                CorrelationId = cycleId,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                PlantId = request.PlantId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Non-critical: RequestFinalized notification failed for completed Request {RequestId} (cycle {CycleId}).",
+                request.Id, cycleId);
+        }
     }
 
     /// <summary>
