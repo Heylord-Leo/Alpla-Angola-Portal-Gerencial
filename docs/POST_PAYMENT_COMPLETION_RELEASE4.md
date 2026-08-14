@@ -343,6 +343,80 @@ exactly the competing-writer consolidations Phase 4C performs before the flag ev
 trigger callers (payment/invoice/short-close/PO), legacy-writer suppression, calculator
 priority, frontend, flag changes, migration (none needed).
 
+### Phase 4C — parent completion + trigger matrix + writer consolidation (implemented)
+
+**Phase 2 is real** (`EvaluateParentCompletionAsync`): exact no-op while
+`Enabled && CompletionEnabled` is false; ambient-transaction guard unchanged; own short
+transaction over FRESHLY reloaded state (`ReloadAsync` + `AsNoTracking` group/reconciliation
+reads — never the caller's stale tracker). Blockers, in order: request not found (error
+result) → already COMPLETED (AlreadyCompleted + the persisted `CompletionCycleId`, nothing
+new ever written — COMPLETED is terminal) → rejected/cancelled → zero groups (groupless
+legacy flow owns completion) → all groups cancelled → any UNCLASSIFIED/null-source group
+(R15 fail-closed; Release 5 owns classification) → any non-cancelled group not COMPLETED
+(the Phase-1 commitment is trusted — obligations are never re-derived in Phase 2) → ANY
+active reconciliation of the request, explicitly including null-group request-level rows.
+The winning transition assigns `CompletionCycleId` exactly once, sets COMPLETED, writes
+`REQUEST_COMPLETED` (`RC:{RequestId}:{CompletionCycleId}`, group count + cycle in the
+comment) in ONE SaveChanges/commit, then emits `RequestFinalized` post-commit with
+`CorrelationId = CompletionCycleId` (non-critical). **Concurrency**: retry-once on
+`DbUpdateConcurrencyException`; the retry reloads committed state and returns
+AlreadyCompleted with the winner's cycle id (never a second identity); a second consecutive
+conflict returns `ConflictUnresolved` (logged; the dimension action is never rolled back —
+the next trigger or the sweep recovers).
+
+**Authoritative COMPLETED writer rule** — after 4C the only first-writers of
+`Request.StatusId = COMPLETED` are: (A) `RequestCompletionService` for grouped classified
+requests under `CompletionEnabled=true`; (B) legacy `FinalizeRequest` for groupless requests
+(and for grouped requests only while `CompletionEnabled=false` — the Phase 3B window); (C)
+the not-quoted auto-close paths (zero active groups/batches, invariants unchanged).
+Consolidations: `LineItemsController.UpdateStatus` no longer completes a grouped request
+while completion is on — it delegates to Phase 1 (item's group; lazy receipt stamp through
+the shared engine) + post-save Phase 2; legacy behaviour byte-identical when the flag is off
+or the request is groupless. `StatusAggregationService` defers a calculated COMPLETED for a
+grouped request while completion is on (it may reaffirm an already-completed request, never
+be first); legacy behaviour preserved when off. `RequestStatusCalculator` gains
+`WAITING_FISCAL_RECEIPT = 95` (no collision; WAITING_RECEIPT 70 stays further behind,
+COMPLETED 100 still wins). `FinalizeRequest` unchanged — its dormant redirect (grouped +
+classified + completion on → 400 "Fluxo Atualizado") simply becomes live at activation.
+
+**Trigger matrix wired** (Phase 1 inside the dimension transaction/save; Phase 2 strictly
+post-commit, never failing the user action):
+
+| Path | Phase 1 scope | Notes |
+|---|---|---|
+| ConfirmReceiving (4B) | group | Phase 2 added post-commit |
+| Fiscal receipt binding (4B) | group | Phase 2 added post-save |
+| Invoice Validate | all request groups | THE effective-coverage event (incl. accepted divergence) |
+| Invoice Reject / Void | all request groups | pending-coverage retirement |
+| Invoice Replace | all request groups | uniformity; replacement is blocked on downstream evidence |
+| Short-close APPROVE | group | SATISFIED via ClosedShort |
+| Short-close REJECT/withdraw | — NOT wired | a PROPOSED short-close contributes nothing to effective coverage; nothing can change |
+| MarkAsPaid | group | actual payment only — SCHEDULED is never paid |
+| ConfirmAdvancePayment | group | advance actually paid |
+| ReconcileRequest | all request groups | COMPLETED reconciliation may discharge regularization; a created FINAL_BALANCE is a NEW tracked blocker Phase 1 observes before the save |
+| RegisterPo (incl. corrected-P.O.) | all request groups | projector decides; a P.O. alone never completes |
+| Allocation draft changes | — NOT wired | pending-only, never effective |
+
+Wiring is inert while `CompletionEnabled=false` (the service self-gates with zero queries);
+controller dependencies are optional-by-default (DI always supplies them in production) so
+every existing direct construction keeps its exact legacy behaviour.
+
+**Recovery sweep** — `GET/POST /api/v1/admin/release4/parent-completion-sweep/{preview|apply}`
+(`ParentCompletionSweepController`). Preview (Finance/SysAdmin, ungated dry-run — consistent
+with the expected-total activation tool): open, non-cancelled, grouped requests whose
+non-cancelled groups are ALL COMPLETED, with skip reasons (`UNCLASSIFIED_GROUP`,
+`ACTIVE_RECONCILIATION`). Apply (SysAdmin only, mandatory meaningful reason): fails closed
+with 409 `COMPLETION_DISABLED` while `Enabled && CompletionEnabled` is not true — the sweep
+never implicitly activates Phase 4 — and recovers exclusively by invoking
+`EvaluateParentCompletionAsync` (never a direct COMPLETED write; every service guard applies
+identically). Idempotent: recovered requests stop being candidates. The sweep never
+completes UNCLASSIFIED, never fixes obligations, never fabricates facts, never bypasses
+reconciliation, never touches groupless requests.
+
+**Not in 4C**: frontend (Phase 4D), flag changes (TEST stays `Enabled=true,
+CompletionEnabled=false`), version bump (Phase 4 RC closure), migration (none needed),
+post-completion reopen workflow, Phase 5.
+
 ## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
 
 Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no completion wiring

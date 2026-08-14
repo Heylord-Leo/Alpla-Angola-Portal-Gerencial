@@ -8,6 +8,31 @@ v2.228.4
 
 ## [Unreleased]
 
+### Release 4 Phase 4C — parent completion + trigger matrix + writer consolidation (backend only)
+
+Development state on top of Phase 4B; no version bump, no migration, no frontend change. TEST
+remains `Enabled=true, CompletionEnabled=false` — 4C makes activation SAFE, it does not activate.
+
+- **Phase 2 is real**: `EvaluateParentCompletionAsync` is the single authoritative writer that
+  completes a grouped classified request — own post-commit transaction over reloaded state,
+  every blocker enforced (terminal/rejected/cancelled, groupless, all-cancelled, UNCLASSIFIED
+  fail-closed, incomplete groups, ANY active reconciliation incl. request-level null-group
+  rows), `CompletionCycleId` assigned exactly once, `REQUEST_COMPLETED` history
+  (`RC:{RequestId}:{CycleId}`) and `RequestFinalized` (CorrelationId = cycle) exactly once,
+  retry-once concurrency with AlreadyCompleted reusing the winner's identity and
+  `ConflictUnresolved` on a second loss. COMPLETED is terminal.
+- **Competing writers consolidated**: LineItems last-item shortcut suppressed for grouped
+  requests under completion (delegates to Phase 1/Phase 2; legacy byte-identical otherwise);
+  StatusAggregation defers a calculated COMPLETED (may reaffirm, never first);
+  `WAITING_FISCAL_RECEIPT` aggregation priority 95.
+- **Trigger matrix wired** (Phase 1 in-transaction, Phase 2 post-commit, inert while the flag
+  is off): ConfirmReceiving, fiscal receipt binding, invoice Validate/Reject/Void/Replace,
+  short-close APPROVE, MarkAsPaid, ConfirmAdvancePayment, ReconcileRequest, RegisterPo.
+  Short-close reject and allocation drafts deliberately not wired (no effective change).
+- **Recovery sweep**: `admin/release4/parent-completion-sweep` preview/apply — SysAdmin apply
+  with mandatory reason, fails closed while completion is disabled, recovers exclusively via
+  the authoritative service; idempotent.
+
 ### Release 4 Phase 4B — operational receipt stamping + fiscal receipt upload (backend only)
 
 Development state on top of Phase 4A; no version bump, no migration, no frontend change. TEST
