@@ -93,6 +93,12 @@ public class FiscalReceiptUploadTests
 
         var status = new RequestStatus { Id = 16, Code = requestStatusCode, Name = "ZZTEST Status", DisplayOrder = 17 };
         ctx.RequestStatuses.Add(status);
+        if (requestStatusCode != RequestConstants.Statuses.Completed)
+        {
+            // Phase 4C: the parent transition needs the COMPLETED lookup row.
+            ctx.RequestStatuses.Add(new RequestStatus
+            { Id = 17, Code = RequestConstants.Statuses.Completed, Name = "Finalizado", DisplayOrder = 19 });
+        }
 
         var request = new Request
         {
@@ -195,9 +201,12 @@ public class FiscalReceiptUploadTests
             PostPaymentIdempotencyKeys.GroupCompleted(seed.GroupId, seed.AttachmentId),
             completed.IdempotencyKey);
 
-        // Parent untouched — Phase 2 is 4C.
+        // Phase 4C canonical chain: binding → Phase 1 group COMPLETED → commit → Phase 2 parent
+        // COMPLETED through the authoritative service (cycle id + RC history), exactly once.
         var request = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
-        Assert.Null(request.CompletionCycleId);
+        Assert.NotNull(request.CompletionCycleId);
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(
+            h => h.ActionTaken == "REQUEST_COMPLETED"));
     }
 
     // ── C/D: forbidden roles ──
@@ -321,6 +330,9 @@ public class FiscalReceiptUploadTests
             h => h.ActionTaken == WorkflowEventCodes.FiscalReceiptUploaded));
         Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(
             h => h.ActionTaken == WorkflowEventCodes.GroupCompleted));
+        // Phase 2 completed the parent exactly once across both calls.
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(
+            h => h.ActionTaken == "REQUEST_COMPLETED"));
     }
 
     // ── K: a different attachment is a refused replacement ──

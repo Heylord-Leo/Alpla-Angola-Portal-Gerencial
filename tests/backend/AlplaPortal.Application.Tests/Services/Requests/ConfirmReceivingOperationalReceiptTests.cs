@@ -125,7 +125,8 @@ public class ConfirmReceivingOperationalReceiptTests
         var paymentCompleted = new RequestStatus { Id = 14, Code = RequestConstants.Statuses.PaymentCompleted, Name = "Pagamento Concluído", DisplayOrder = 14 };
         var waitingReceipt = new RequestStatus { Id = 16, Code = RequestConstants.Statuses.WaitingReceipt, Name = "Aguardando Recibo", DisplayOrder = 17 };
         var inFollowup = new RequestStatus { Id = 18, Code = RequestConstants.Statuses.InFollowup, Name = "Em Acompanhamento", DisplayOrder = 18 };
-        ctx.RequestStatuses.AddRange(paymentCompleted, waitingReceipt, inFollowup);
+        var completed = new RequestStatus { Id = 17, Code = RequestConstants.Statuses.Completed, Name = "Finalizado", DisplayOrder = 19 };
+        ctx.RequestStatuses.AddRange(paymentCompleted, waitingReceipt, inFollowup, completed);
 
         var received = new LineItemStatus { Id = 91, Code = "RECEIVED", Name = "Recebido" };
         var partial = new LineItemStatus { Id = 92, Code = "PARTIALLY_RECEIVED", Name = "Parcial" };
@@ -292,10 +293,10 @@ public class ConfirmReceivingOperationalReceiptTests
             h => h.ActionTaken == WorkflowEventCodes.FiscalReceiptUnlocked));
     }
 
-    // ── E: CompletionEnabled=true, no separate receipt owed — direct completion ──
+    // ── E: CompletionEnabled=true, no separate receipt owed — the FULL 4C chain ──
 
     [Fact]
-    public async Task E_full_receipt_with_no_separate_fiscal_receipt_completes_directly()
+    public async Task E_full_receipt_with_no_separate_fiscal_receipt_completes_group_and_parent()
     {
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
@@ -314,9 +315,17 @@ public class ConfirmReceivingOperationalReceiptTests
             PostPaymentIdempotencyKeys.GroupCompletedWithoutFiscalReceipt(seed.GroupId),
             completion.IdempotencyKey);
 
-        // Parent untouched — Phase 2 is 4C.
+        // Phase 4C: receiving → Phase 1 group COMPLETED → commit → Phase 2 parent COMPLETED,
+        // through the authoritative service (cycle id + RC history), exactly once.
         var request = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
-        Assert.Null(request.CompletionCycleId);
+        Assert.NotNull(request.CompletionCycleId);
+        var rc = await ctx.RequestStatusHistories.SingleAsync(h => h.ActionTaken == "REQUEST_COMPLETED");
+        Assert.Equal(
+            PostPaymentIdempotencyKeys.RequestCompleted(seed.RequestId, request.CompletionCycleId!.Value),
+            rc.IdempotencyKey);
+        var completedStatus = await ctx.RequestStatuses.AsNoTracking()
+            .SingleAsync(s => s.Code == RequestConstants.Statuses.Completed);
+        Assert.Equal(completedStatus.Id, request.StatusId);
     }
 
     // ── F: Enabled=false — legacy behaviour byte-identical, no Phase-4 artifacts ──

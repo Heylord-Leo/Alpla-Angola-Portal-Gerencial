@@ -35,13 +35,22 @@ public class FinanceController : BaseController
         IWorkflowNotificationOrchestrator orchestrator,
         ILogger<FinanceController> logger,
         IStatusAggregationService statusAggregationService,
-        IFinancePaymentEligibilityService eligibility) : base(context)
+        IFinancePaymentEligibilityService eligibility,
+        AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? completionService = null) : base(context)
     {
         _orchestrator = orchestrator;
         _logger = logger;
         _statusAggregationService = statusAggregationService;
         _eligibility = eligibility;
+        _completionService = completionService;
     }
+
+    /// <summary>
+    /// Phase 4C: optional-by-default so existing direct constructions (tests) keep compiling;
+    /// DI always supplies the registered service in production. Self-gates on the completion
+    /// flags with zero queries while disabled.
+    /// </summary>
+    private readonly AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? _completionService;
 
     private IQueryable<Request> GetFinanceQuery()
     {
@@ -1346,6 +1355,12 @@ public class FinanceController : BaseController
         r.ActualPaidAtUtc = requestDto.PaidDate;
 
         _context.RequestStatusHistories.Add(history);
+
+        // Phase 4C: the actual-payment fact (never SCHEDULED) may satisfy the group's payment
+        // dimension — Phase 1 runs on the freshly tracked paid state, in this same save.
+        if (_completionService != null)
+            await _completionService.EvaluateGroupCompletionAsync(id, group.Id, CurrentUserId);
+
         await _context.SaveChangesAsync();
 
         // QUOTATION: now that this group's paid status is persisted, let the shared aggregator
@@ -1435,6 +1450,20 @@ public class FinanceController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Non-critical: notification dispatch failed for MarkAsPaid on Request {RequestId}", id);
+        }
+
+        // Phase 2 strictly after every save of this action; never fails the payment.
+        if (_completionService != null)
+        {
+            try
+            {
+                await _completionService.EvaluateParentCompletionAsync(id, CurrentUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Non-critical: parent completion evaluation failed after MarkAsPaid on Request {RequestId}.", id);
+            }
         }
 
         return Ok();

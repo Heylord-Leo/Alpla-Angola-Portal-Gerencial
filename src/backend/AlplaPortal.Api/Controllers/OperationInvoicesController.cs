@@ -38,11 +38,45 @@ public class OperationInvoicesController : BaseController
         ApplicationDbContext context,
         ILogger<OperationInvoicesController> logger,
         IInternalCompanyGuard internalCompanies,
-        IOperationInvoiceCoverageService coverage) : base(context)
+        IOperationInvoiceCoverageService coverage,
+        AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? completionService = null) : base(context)
     {
         _logger = logger;
         _internalCompanies = internalCompanies;
         _coverage = coverage;
+        _completionService = completionService;
+    }
+
+    /// <summary>
+    /// Phase 4C: optional-by-default so existing direct constructions (tests) keep compiling; DI
+    /// always supplies the registered service in production. The service self-gates on the
+    /// completion flags with zero queries while disabled.
+    /// </summary>
+    private readonly AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? _completionService;
+
+    /// <summary>Phase 1 — inside the current transaction scope, after the coverage rederive and
+    /// before SaveChanges, over the freshly tracked state. Effective-coverage events only.</summary>
+    private async Task EvaluateCompletionPhaseOneAsync(Guid requestId)
+    {
+        if (_completionService == null) return;
+        await _completionService.EvaluateGroupCompletionAsync(requestId, null, CurrentUserId);
+    }
+
+    /// <summary>Phase 2 — strictly after the successful SaveChanges. Never fails the user's
+    /// action: a race or technical failure leaves the request open for the next trigger/sweep.</summary>
+    private async Task EvaluateCompletionPhaseTwoAsync(Guid requestId)
+    {
+        if (_completionService == null) return;
+        try
+        {
+            await _completionService.EvaluateParentCompletionAsync(requestId, CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Non-critical: parent completion evaluation failed after an operation-invoice write on Request {RequestId}.",
+                requestId);
+        }
     }
 
     /// <summary>Typed business codes, so the UI branches on codes and never on Portuguese.</summary>
@@ -599,6 +633,8 @@ public class OperationInvoicesController : BaseController
             AddGroupStatusHistories(request, coverageChanges);
         }
 
+        await EvaluateCompletionPhaseOneAsync(requestId);
+
         try
         {
             await _context.SaveChangesAsync();
@@ -607,6 +643,8 @@ public class OperationInvoicesController : BaseController
         {
             return ConcurrencyConflict();
         }
+
+        await EvaluateCompletionPhaseTwoAsync(requestId);
 
         return Ok(await ProjectAsync(invoice));
     }
@@ -792,6 +830,11 @@ public class OperationInvoicesController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        // Replacement is blocked while downstream evidence exists, so effective coverage cannot
+        // move here — but the supersession retires the original's identity, and re-evaluating is
+        // a cheap idempotent read that keeps every effective-decision path uniformly wired.
+        await EvaluateCompletionPhaseOneAsync(requestId);
+
         try
         {
             await _context.SaveChangesAsync();
@@ -809,6 +852,8 @@ public class OperationInvoicesController : BaseController
         _logger.LogInformation(
             "Operation invoice {OriginalId} superseded by {ReplacementId} on request {RequestId}.",
             original.Id, replacement.Id, requestId);
+
+        await EvaluateCompletionPhaseTwoAsync(requestId);
 
         return Ok(await ProjectAsync(replacement));
     }
@@ -1140,6 +1185,11 @@ public class OperationInvoicesController : BaseController
         var validateCoverageChanges = await _coverage.RederiveAsync(gateGroupIds, forceGroupTouch: true);
         AddGroupStatusHistories(request, validateCoverageChanges);
 
+        // Phase 4C: validation (including accepted divergence) is THE effective-coverage event —
+        // a group whose obligation just satisfied may advance to WAITING_FISCAL_RECEIPT or
+        // complete outright, in this same transaction.
+        await EvaluateCompletionPhaseOneAsync(requestId);
+
         try
         {
             await _context.SaveChangesAsync();
@@ -1148,6 +1198,8 @@ public class OperationInvoicesController : BaseController
         {
             return ConcurrencyConflict();
         }
+
+        await EvaluateCompletionPhaseTwoAsync(requestId);
 
         return Ok(await ProjectAsync(invoice));
     }
@@ -1245,6 +1297,8 @@ public class OperationInvoicesController : BaseController
             AddGroupStatusHistories(request, coverageChanges);
         }
 
+        await EvaluateCompletionPhaseOneAsync(requestId);
+
         try
         {
             await _context.SaveChangesAsync();
@@ -1253,6 +1307,8 @@ public class OperationInvoicesController : BaseController
         {
             return ConcurrencyConflict();
         }
+
+        await EvaluateCompletionPhaseTwoAsync(requestId);
 
         return Ok(await ProjectAsync(invoice));
     }

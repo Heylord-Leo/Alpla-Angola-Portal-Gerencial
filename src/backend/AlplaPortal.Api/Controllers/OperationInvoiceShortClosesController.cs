@@ -33,13 +33,24 @@ public class OperationInvoiceShortClosesController : BaseController
     private readonly ILogger<OperationInvoiceShortClosesController> _logger;
     private readonly IOperationInvoiceCoverageService _coverage;
 
+    /// <summary>
+    /// Phase 4C: optional-by-default so existing direct constructions (tests) keep compiling;
+    /// DI always supplies the registered service in production. Self-gates on the completion
+    /// flags with zero queries while disabled. Only APPROVE is wired — a rejection/withdrawal
+    /// never changes effective coverage (a PROPOSED short-close contributes nothing), so it
+    /// cannot change completion readiness and takes no completion evaluation.
+    /// </summary>
+    private readonly AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? _completionService;
+
     public OperationInvoiceShortClosesController(
         ApplicationDbContext context,
         ILogger<OperationInvoiceShortClosesController> logger,
-        IOperationInvoiceCoverageService coverage) : base(context)
+        IOperationInvoiceCoverageService coverage,
+        AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? completionService = null) : base(context)
     {
         _logger = logger;
         _coverage = coverage;
+        _completionService = completionService;
     }
 
     /// <summary>Typed business codes — the UI branches on codes, never on Portuguese.</summary>
@@ -333,6 +344,11 @@ public class OperationInvoiceShortClosesController : BaseController
         var coverageChanges = await _coverage.RederiveAsync(new[] { groupId }, forceGroupTouch: true);
         AddGroupStatusHistories(request, coverageChanges);
 
+        // Phase 4C: an approved short-close satisfies the invoice obligation (SATISFIED via
+        // ClosedShort) — the group may advance in this same transaction.
+        if (_completionService != null)
+            await _completionService.EvaluateGroupCompletionAsync(requestId, groupId, CurrentUserId);
+
         try
         {
             await _context.SaveChangesAsync();
@@ -340,6 +356,21 @@ public class OperationInvoiceShortClosesController : BaseController
         catch (DbUpdateConcurrencyException)
         {
             return ConcurrencyConflict();
+        }
+
+        // Phase 2 strictly post-save; never fails the approval.
+        if (_completionService != null)
+        {
+            try
+            {
+                await _completionService.EvaluateParentCompletionAsync(requestId, CurrentUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Non-critical: parent completion evaluation failed after short-close approval on Request {RequestId}.",
+                    requestId);
+            }
         }
 
         return Ok(await ProjectOneAsync(shortClose));

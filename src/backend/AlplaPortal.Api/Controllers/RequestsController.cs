@@ -6878,6 +6878,12 @@ public class RequestsController : BaseController
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = CurrentUserId;
 
+        // Phase 4C: a P.O. registration (including the corrected-P.O. path that clears
+        // WAITING_PO_CORRECTION) changes the PoSatisfied/NoBlockingCorrection facts — Phase 1
+        // reads the freshly tracked group state; the projector alone decides whether anything
+        // advances (registering a P.O. never completes a group by itself).
+        await EvaluateCompletionPhaseOneAsync(id, null);
+
         await _context.SaveChangesAsync();
 
         // ── Notifications ──
@@ -6892,6 +6898,9 @@ public class RequestsController : BaseController
                 CorrelationId = Guid.NewGuid()
             });
         } catch { }
+
+        // Phase 2 strictly post-save; never fails the registration.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = successMsg });
     }
@@ -7100,11 +7109,18 @@ public class RequestsController : BaseController
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
+        // Phase 4C: the advance is now actually PAID (never merely scheduled) — Phase 1 reads
+        // the freshly tracked payment/group state in this same save.
+        await EvaluateCompletionPhaseOneAsync(id, group.Id);
+
         await _context.SaveChangesAsync();
 
         // Aggregate to update parent status
         var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
         await _statusAggregationService.AggregateRequestStatusAsync(id);
+
+        // Phase 2 strictly post-save; never fails the confirmation.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = "Adiantamento confirmado.", paymentId = advancePayment.Id });
     }
@@ -7226,7 +7242,17 @@ public class RequestsController : BaseController
 
         activeReconciliation.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
+
+        // Phase 4C: a reconciliation decision changes the payment dimension either way — a
+        // COMPLETED reconciliation may discharge the regularization obligation, while a created
+        // FINAL_BALANCE row is a NEW tracked blocker Phase 1 must observe before the save. The
+        // reconciliation is request-level, so every group is evaluated.
+        await EvaluateCompletionPhaseOneAsync(id, null);
+
         await _context.SaveChangesAsync();
+
+        // Phase 2 strictly post-save; never fails the reconciliation.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = "Reconciliação registrada com sucesso.", statusCode = request.Status!.Code });
     }
@@ -7429,11 +7455,31 @@ public class RequestsController : BaseController
             }
 
             await _context.SaveChangesAsync();
-            
+
             // Re-aggregate the parent status
             await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
-            
+
             await transaction.CommitAsync();
+
+            // ── Phase 4C: parent completion — STRICTLY after the commit (two-phase contract).
+            // The aggregation above never writes COMPLETED first (Phase 4C safeguard); this is
+            // the authoritative path. A ConflictUnresolved or technical failure never fails the
+            // receiving action — the next trigger or the recovery sweep re-evaluates.
+            if (!PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions))
+            {
+                try
+                {
+                    var parentCompletion = HttpContext.RequestServices
+                        .GetRequiredService<IRequestCompletionService>();
+                    await parentCompletion.EvaluateParentCompletionAsync(request.Id, actorId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "Non-critical: parent completion evaluation failed after ConfirmReceiving on Request {RequestId}.",
+                        request.Id);
+                }
+            }
 
             // Notification dispatch
             try
@@ -7685,6 +7731,37 @@ public class RequestsController : BaseController
                     .ToList()
             }
         });
+    }
+
+    // ── Phase 4C completion-trigger helpers ──
+    // The service self-gates on the flags, but the gate is checked here too so no resolution
+    // happens at all on the hot path while completion is disabled (and so tests that construct
+    // this controller without registering the service never resolve it).
+
+    /// <summary>Phase 1 — inside the current transaction scope, before SaveChanges.</summary>
+    private async Task EvaluateCompletionPhaseOneAsync(Guid requestId, Guid? groupId)
+    {
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions)) return;
+
+        var completion = HttpContext.RequestServices.GetRequiredService<IRequestCompletionService>();
+        await completion.EvaluateGroupCompletionAsync(requestId, groupId, CurrentUserId);
+    }
+
+    /// <summary>Phase 2 — strictly after the successful save/commit; never fails the action.</summary>
+    private async Task EvaluateCompletionPhaseTwoAsync(Guid requestId)
+    {
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions)) return;
+
+        try
+        {
+            var completion = HttpContext.RequestServices.GetRequiredService<IRequestCompletionService>();
+            await completion.EvaluateParentCompletionAsync(requestId, CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Non-critical: parent completion evaluation failed on Request {RequestId}.", requestId);
+        }
     }
 
     [HttpPost("{id}/operational/finalize")]

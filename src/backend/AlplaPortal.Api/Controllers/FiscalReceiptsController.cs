@@ -88,29 +88,15 @@ public class FiscalReceiptsController : BaseController
             });
         }
 
-        // Same post-approval mutation window as every completion-workflow write: COMPLETED,
-        // REJECTED, CANCELLED and WAITING_PO_CORRECTION requests take no fiscal receipt.
-        if (!OperationInvoiceLifecyclePolicy.CanMutateInRequestStatus(request.Status?.Code))
-        {
-            var problem = new ProblemDetails
-            {
-                Title = "Estado do pedido não permite esta operação",
-                Detail = "O Recibo Fiscal só pode ser carregado enquanto o pedido está no período " +
-                         "pós-aprovação e não em correção de P.O., concluído, rejeitado ou cancelado.",
-                Status = 409
-            };
-            problem.Extensions["code"] = RequestStateCode;
-            return Conflict(problem);
-        }
-
         var group = await _context.RequestPoGroups
             .FirstOrDefaultAsync(g => g.Id == groupId && g.RequestId == requestId);
         if (group == null) return NotFound(Problem404("Grupo não encontrado."));
 
-        // Already uploaded FIRST: an exact retry is an idempotent success even after the group
-        // has completed (a retried request must never read "group state changed" for its own
-        // successful write); anything else is a refused replacement — post-completion/post-upload
-        // correction is a future explicit workflow.
+        // Already uploaded FIRST — before every state guard: an exact retry is an idempotent
+        // success even after the group (or, since Phase 4C, the whole request) has completed —
+        // a retried request must never read "state changed" for its own successful write.
+        // Anything else is a refused replacement — post-completion/post-upload correction is a
+        // future explicit workflow.
         if (group.FiscalReceiptAttachmentId != null)
         {
             if (group.FiscalReceiptAttachmentId == dto.AttachmentId)
@@ -124,6 +110,21 @@ public class FiscalReceiptsController : BaseController
                 Status = 409
             };
             problem.Extensions["code"] = AlreadyUploadedCode;
+            return Conflict(problem);
+        }
+
+        // Same post-approval mutation window as every completion-workflow write: COMPLETED,
+        // REJECTED, CANCELLED and WAITING_PO_CORRECTION requests take no NEW fiscal receipt.
+        if (!OperationInvoiceLifecyclePolicy.CanMutateInRequestStatus(request.Status?.Code))
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Estado do pedido não permite esta operação",
+                Detail = "O Recibo Fiscal só pode ser carregado enquanto o pedido está no período " +
+                         "pós-aprovação e não em correção de P.O., concluído, rejeitado ou cancelado.",
+                Status = 409
+            };
+            problem.Extensions["code"] = RequestStateCode;
             return Conflict(problem);
         }
 
@@ -262,6 +263,22 @@ public class FiscalReceiptsController : BaseController
         _logger.LogInformation(
             "Fiscal receipt {AttachmentId} bound to group {GroupId} of request {RequestId} by {UserId}.",
             attachment.Id, groupId, requestId, CurrentUserId);
+
+        // ── Phase 4C: parent completion — strictly after the binding commit. The canonical
+        // sequence: WAITING_FISCAL_RECEIPT → upload → Phase 1 group COMPLETED → commit →
+        // Phase 2 parent may complete. The binding NEVER depends on Phase-2 success: a race or
+        // technical failure leaves the receipt stored and the parent open for the next trigger
+        // or the recovery sweep.
+        try
+        {
+            await _completion.EvaluateParentCompletionAsync(requestId, CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Non-critical: parent completion evaluation failed after fiscal receipt binding on Request {RequestId}.",
+                requestId);
+        }
 
         return Ok(Project(group));
     }
