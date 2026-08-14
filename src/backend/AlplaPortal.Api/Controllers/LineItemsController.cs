@@ -1,10 +1,13 @@
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Api.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using System.Security.Claims;
+using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Domain.Constants;
 
 namespace AlplaPortal.Api.Controllers;
@@ -16,12 +19,22 @@ public class LineItemsController : BaseController
 {
     private readonly ILogger<LineItemsController> _logger;
     private readonly AlplaPortal.Application.Interfaces.IApprovalRoutingService _approvalRouting;
+    private readonly PostPaymentCompletionOptions? _postPaymentOptions;
+    private readonly IRequestCompletionService? _completionService;
 
+    /// <summary>
+    /// The Phase 4 dependencies are optional-by-default so existing direct constructions (tests)
+    /// keep compiling with the exact legacy behaviour; DI always supplies both in production.
+    /// </summary>
     public LineItemsController(ApplicationDbContext context, ILogger<LineItemsController> logger,
-        AlplaPortal.Application.Interfaces.IApprovalRoutingService approvalRouting) : base(context)
+        AlplaPortal.Application.Interfaces.IApprovalRoutingService approvalRouting,
+        IOptions<PostPaymentCompletionOptions>? postPaymentOptions = null,
+        IRequestCompletionService? completionService = null) : base(context)
     {
         _logger = logger;
         _approvalRouting = approvalRouting;
+        _postPaymentOptions = postPaymentOptions?.Value;
+        _completionService = completionService;
     }
 
     [HttpGet]
@@ -547,6 +560,32 @@ public class LineItemsController : BaseController
         };
         _context.RequestStatusHistories.Add(history);
 
+        // ── Phase 4C competing-writer consolidation ──
+        // While the Phase 4 completion lifecycle is active, a GROUPED request's parent
+        // completion belongs exclusively to RequestCompletionService — this legacy shortcut
+        // (last item RECEIVED → request COMPLETED, bypassing invoice/fiscal-receipt
+        // obligations) is suppressed and replaced by a delegation to the authoritative
+        // engine: Phase 1 evaluates the item's group with the freshly tracked item state
+        // (stamping the operational receipt through the lazy-derivation rule when the item
+        // records prove full receipt), and Phase 2 runs after the save. Groupless legacy
+        // requests, and every request while CompletionEnabled=false, keep the exact
+        // pre-Phase-4 behaviour.
+        var delegatedToPhase4 = false;
+        if (shouldCompleteRequest &&
+            _postPaymentOptions != null &&
+            !PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions) &&
+            await _context.RequestPoGroups.AnyAsync(g => g.RequestId == request.Id))
+        {
+            shouldCompleteRequest = false;
+            delegatedToPhase4 = true;
+
+            if (_completionService != null)
+            {
+                await _completionService.EvaluateGroupCompletionAsync(
+                    request.Id, item.RequestPoGroupId, actorId);
+            }
+        }
+
         if (shouldCompleteRequest)
         {
             var completedStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == "COMPLETED");
@@ -573,6 +612,24 @@ public class LineItemsController : BaseController
         }
 
         await _context.SaveChangesAsync();
+
+        // Phase 2 strictly after the save (the caller-transaction rule): the parent completes
+        // through the authoritative service or not at all. A failure here never fails the item
+        // action — the next trigger or the recovery sweep re-evaluates.
+        if (delegatedToPhase4 && _completionService != null)
+        {
+            try
+            {
+                await _completionService.EvaluateParentCompletionAsync(request.Id, actorId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Non-critical: parent completion evaluation failed after item status change on Request {RequestId}.",
+                    request.Id);
+            }
+        }
+
         return NoContent();
     }
 

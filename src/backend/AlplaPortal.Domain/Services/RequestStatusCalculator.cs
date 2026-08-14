@@ -63,6 +63,11 @@ public static class RequestStatusCalculator
         [RequestConstants.PoGroupStatuses.WaitingReceipt] = 70,
         [RequestConstants.PoGroupStatuses.WaitingReconciliation] = 80,
         [RequestConstants.PoGroupStatuses.InFollowup] = 90,
+        // Phase 4C: the fiscal-receipt antechamber sits between every operational stage and
+        // COMPLETED. 95 — NOT 80, which WAITING_RECONCILIATION already holds (the collision the
+        // Release 1 audit warned about): a group waiting only for its Recibo Fiscal is further
+        // along than any receiving/reconciliation stage, and only completion beats it.
+        [RequestConstants.PoGroupStatuses.WaitingFiscalReceipt] = 95,
         [RequestConstants.PoGroupStatuses.Completed] = 100,
     };
 
