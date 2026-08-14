@@ -133,22 +133,29 @@ public class RequestCompletionServiceSkeletonTests
         Assert.False(parent.RequestCompleted);
     }
 
-    // ── Fully enabled: represented, not activated (Phase 4 pin — routing only) ──
+    // ── Fully enabled: Phase 1 is real since Phase 4A; Phase 2 stays dormant until 4C ──
 
     [Fact]
-    public async Task Group_phase_is_not_activated_before_phase_4()
+    public async Task Group_phase_is_active_since_phase_4a()
     {
-        using var context = ModelOnlyContext();
+        // The group phase no longer throws NotImplementedException — it evaluates. An unknown
+        // request is reported as an error result, never an exception (the caller's transaction
+        // must not be poisoned by a missing row). Behaviour is pinned in
+        // RequestCompletionServicePhaseOneTests; this is the routing pin only.
+        using var context = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+                .Options);
         var service = Service(context, enabled: true, completionEnabled: true);
 
-        var ex = await Assert.ThrowsAsync<NotImplementedException>(
-            () => service.EvaluateGroupCompletionAsync(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+        var result = await service.EvaluateGroupCompletionAsync(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
-        Assert.Contains("Release 4", ex.Message, StringComparison.Ordinal);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.False(result.AnyGroupCompleted);
     }
 
     [Fact]
-    public async Task Parent_phase_is_not_activated_before_phase_4()
+    public async Task Parent_phase_is_not_activated_before_phase_4c()
     {
         using var context = ModelOnlyContext();
         var service = Service(context, enabled: true, completionEnabled: true);
@@ -156,7 +163,7 @@ public class RequestCompletionServiceSkeletonTests
         var ex = await Assert.ThrowsAsync<NotImplementedException>(
             () => service.EvaluateParentCompletionAsync(Guid.NewGuid(), Guid.NewGuid()));
 
-        Assert.Contains("Release 4", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Phase 4C", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Contract surface ──

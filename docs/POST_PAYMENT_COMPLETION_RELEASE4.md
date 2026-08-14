@@ -215,7 +215,75 @@ duties, "Encerrado com Saldo Aceite" never presenting as 100%). Patch trail:
 Open backlog carried out of Phase 3 (deliberately NOT in scope): dedicated Finance "Faturas
 Finais" workspace; monetary input masking; OCR/autofill (Phase 5); generic drawer hydration;
 short-close reopening workflow; Release 5 legacy classification. Phase 4 (completion lifecycle,
-operational/fiscal receipts, `CompletionEnabled=true`) is NOT started.
+operational/fiscal receipts, `CompletionEnabled=true`) started AFTER this closure — see the
+Phase 4 section below.
+
+## Phase 4 — Completion lifecycle (architecture approved; 4A implemented)
+
+Architecture report approved on 2026-08-14 with all eight business decisions resolved:
+
+1. **Conditional fiscal receipt** — `FiscalReceiptStateDeriver`/completability honor
+   `RequiresSeparateFiscalReceipt`: a group classified as Factura-Recibo (or any future
+   no-separate-receipt identity) owes no separate Recibo Fiscal and must never wait for one.
+   The persisted classification result is authoritative; never re-inferred from
+   `SourceDocumentType` at evaluation time.
+2. **GROUP_COMPLETED identity** — `GC:{GroupId}:{FiscalReceiptAttachmentId}` when a receipt is
+   owed; `GC:{GroupId}:NOFR` when none is. Never an empty GUID, never a timestamp.
+3. **Payment predicate** — per group: no owed-money `RequestPayment` (ADVANCE/FINAL_BALANCE/
+   REGULARIZATION) still PLANNED/SCHEDULED (request-level rows block every group); no active
+   `RequestReconciliation` (request- or group-level); `RequiresAdvanceRegularization` demands a
+   COMPLETED reconciliation; the group must have reached the actually-paid stage (PAID and
+   PAYMENT_COMPLETED equivalent; WAITING_RECONCILIATION is NOT a paid stage). SCHEDULED is
+   never paid. `Request.ActualPaidAmount`/request-level status are never the source of truth.
+4. **Lazy operational receipt** — pre-activation groups whose item records already prove full
+   receipt are stamped by the Phase 1 WRITE path at evaluation time; the physical receiving
+   date is never fabricated — the history states the stamp is derived from pre-existing
+   receiving records. The pure projection never writes.
+5. **Service receipt** — services and materials share the identical item-received requirement;
+   no exemption, no separate confirmation flow (there is no material/service field anywhere in
+   the model — receipt is item-based and universal).
+6. **Completion is terminal** — COMPLETED never reopens automatically; post-completion
+   correction is a future explicit workflow. Group completion writes `CompletedAtUtc` once.
+7. **Legacy/unclassified fail-closed** — an UNCLASSIFIED (or null-source) group is skipped by
+   the evaluation, never thrown on, never inferred over, and blocks the future parent
+   completion until the Release 5 classification tool.
+8. **Competing writers** — consolidation (legacy `LineItemsController` auto-complete
+   suppression, `RequestStatusCalculator` WAITING_FISCAL_RECEIPT priority, trigger wiring)
+   deferred to Phase 4C by decision; Phase 4A wires NO production caller.
+
+### Phase 4A — group completion projection + Phase 1 (implemented; no callers)
+
+- **`GroupCompletionProjector`** (`Domain/Services/GroupCompletionProjection.cs`) — the single
+  rulebook. Projects, per non-cancelled group: `Classified`, `PoSatisfied` (left
+  PENDING/WAITING_PO), `NoBlockingCorrection` (WAITING_PO_CORRECTION independent hard
+  blocker), `PaymentSatisfied` (decision 3), `ReceiptSatisfied` (stamp OR
+  `OperationalReceiptFacts.AreAllGroupItemsReceived` — the Api receiving helper now delegates
+  to this same domain fact), `OperationInvoiceSatisfied`
+  (`OperationInvoiceStatuses.IsSatisfied` — NOT_REQUIRED/SATISFIED incl. accepted divergence
+  and approved short-close; no duplicate financial calculation), `ClosedShort` (informational),
+  `FiscalReceiptRequired`/`FiscalReceiptSatisfied` (decision 1), `Complete`,
+  `ReadyForFiscalReceipt`, and ordered `BlockingReasons` codes
+  (`GroupCompletionBlockingReasons`) for future ownership labels — codes only, presentation
+  text stays out of the domain.
+- **`FiscalReceiptStateDeriver`** — new derived state `NOT_REQUIRED` (never persisted);
+  UPLOADED still reported honestly whenever an upload exists; unclassified stays LOCKED even
+  though the obligation column default is false; `IsGroupCompletable` requires the attachment
+  id only when a receipt is owed.
+- **`RequestCompletionService.EvaluateGroupCompletionAsync`** (Phase 1) — real since 4A.
+  Contract preserved: caller's transaction, no SaveChanges, no own transaction,
+  change-tracker-aware loads (coverage-service pattern: Deleted dropped, Added joined),
+  `CompletionEnabled=false` → exact no-op with zero queries. Per evaluated group: terminal
+  states (CANCELLED/COMPLETED) are strict no-ops; UNCLASSIFIED skipped; lazy receipt stamp +
+  `OPERATIONAL_RECEIPT_COMPLETED` (`OR_DONE:{GroupId}`); all-but-owed-receipt →
+  `WAITING_FISCAL_RECEIPT` + `FISCAL_RECEIPT_UNLOCKED` (`FR_UNLOCK:{GroupId}`, written only on
+  actual change); complete → group `COMPLETED` + `CompletedAtUtc` + `GROUP_COMPLETED` with the
+  decision-2 identity. History dedup checks the change tracker AND the database; the filtered
+  unique index remains the backstop. Parent request untouched; `ParentEvaluationRequired`
+  returned as hint; Phase 2 still guarded (ambient-transaction) and `NotImplementedException`
+  until 4C.
+- **Not in 4A** (by instruction): fiscal-receipt upload writer, production trigger callers
+  (ConfirmReceiving/Finance/OperationInvoice/short-close/PO), parent completion, legacy-writer
+  suppression, status-calculator priority, frontend, flag changes, migration (none needed).
 
 ## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
 

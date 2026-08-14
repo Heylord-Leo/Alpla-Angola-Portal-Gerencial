@@ -6,6 +6,36 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.228.4
 
+## [Unreleased]
+
+### Release 4 Phase 4A — group completion projection + Phase 1 lifecycle (backend only)
+
+Development state on top of v2.228.4; no version bump, no migration, no frontend change, no
+production caller wired (`RequestCompletionService.EvaluateGroupCompletionAsync` is proven by
+tests only). TEST remains `Enabled=true, CompletionEnabled=false`; with the completion flag
+off the whole phase is an exact no-op.
+
+- **Group completion projection** (`GroupCompletionProjector`, pure): the single authoritative
+  predicate — Classified · PoSatisfied · NoBlockingCorrection · PaymentSatisfied (payment rows
+  + reconciliations, never request-level status; SCHEDULED is never paid; request-level owed
+  rows block every group) · ReceiptSatisfied (stamp or item records; services and materials
+  identical) · OperationInvoiceSatisfied (reuses `OperationInvoiceStatuses.IsSatisfied`) ·
+  conditional FiscalReceiptRequired/Satisfied — plus structured blocking-reason codes for the
+  future readiness UI.
+- **Conditional fiscal receipt (approved decision)**: `FiscalReceiptStateDeriver` now honors
+  `RequiresSeparateFiscalReceipt` — a Factura-Recibo-class group derives `NOT_REQUIRED` and is
+  completable without an attachment; unclassified groups stay LOCKED (the column default is
+  never read as "not owed").
+- **Phase 1 lifecycle** (`EvaluateGroupCompletionAsync`, inside the caller's transaction, no
+  SaveChanges/transaction of its own, change-tracker aware): lazy operational-receipt stamp
+  (evaluation timestamp, history explicitly states derivation from pre-existing receiving
+  records), `WAITING_FISCAL_RECEIPT` antechamber (`FISCAL_RECEIPT_UNLOCKED`,
+  `FR_UNLOCK:{GroupId}`), group completion (`GROUP_COMPLETED`,
+  `GC:{GroupId}:{FiscalReceiptAttachmentId}` or the approved `GC:{GroupId}:NOFR`), UNCLASSIFIED
+  skipped fail-closed, parent request untouched (Phase 2 dormant until 4C).
+- **Receiving rulebook unified**: `RequestWorkflowHelper.AreAllGroupItemsReceived` now
+  delegates to the domain `OperationalReceiptFacts` shared with the projection.
+
 ## [v2.228.4] - 2026-08-13
 
 ### Release 4 Phase 3 closure patch
