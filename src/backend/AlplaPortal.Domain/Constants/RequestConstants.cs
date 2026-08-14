@@ -499,6 +499,12 @@ public static class RequestConstants
         public const string PendingUpload = "PENDING";
         /// <summary>Fiscal receipt attached. Group is completable.</summary>
         public const string Uploaded = "UPLOADED";
+        /// <summary>
+        /// No separate fiscal receipt is owed (RequiresSeparateFiscalReceipt = false — e.g. a
+        /// Factura-Recibo already documents the payment). Phase 4 approved rule: such a group
+        /// must never wait for a document it does not owe. Derived only; never persisted.
+        /// </summary>
+        public const string NotRequired = "NOT_REQUIRED";
     }
 
     /// <summary>

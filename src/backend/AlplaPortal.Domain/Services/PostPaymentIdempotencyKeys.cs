@@ -111,6 +111,15 @@ public static class PostPaymentIdempotencyKeys
     public static string FiscalReceiptUploaded(Guid groupId, Guid attachmentId)
         => Build("FR_UP", groupId, attachmentId);
 
+    /// <summary>
+    /// FISCAL_RECEIPT_UNLOCKED — FR_UNLOCK:{GroupId}.
+    /// Group-scoped: the transition into WAITING_FISCAL_RECEIPT is recorded once. Completion is
+    /// terminal (approved Phase 4 decision), so a group never legitimately unlocks twice; a
+    /// re-evaluation that finds the group already unlocked writes nothing.
+    /// </summary>
+    public static string FiscalReceiptUnlocked(Guid groupId)
+        => $"FR_UNLOCK:{Format(groupId)}";
+
     // ── Operational Receipt ──
 
     /// <summary>
@@ -129,6 +138,16 @@ public static class PostPaymentIdempotencyKeys
     /// </summary>
     public static string GroupCompleted(Guid groupId, Guid fiscalReceiptAttachmentId)
         => Build("GC", groupId, fiscalReceiptAttachmentId);
+
+    /// <summary>
+    /// GROUP_COMPLETED without a separate Fiscal Receipt — GC:{GroupId}:NOFR (approved Phase 4
+    /// identity). Used exclusively when <c>RequiresSeparateFiscalReceipt = false</c>: there is no
+    /// receipt attachment to key on, and an empty GUID is forbidden. Stable because completion is
+    /// terminal — a group completes at most once, so the literal suffix can never collide with a
+    /// second completion of the same group.
+    /// </summary>
+    public static string GroupCompletedWithoutFiscalReceipt(Guid groupId)
+        => $"GC:{Format(groupId)}:NOFR";
 
     /// <summary>
     /// REQUEST_COMPLETED — RC:{RequestId}:{CompletionCycleId}.

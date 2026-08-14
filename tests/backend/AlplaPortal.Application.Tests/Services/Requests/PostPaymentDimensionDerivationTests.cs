@@ -13,15 +13,20 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// </summary>
 public class PostPaymentDimensionDerivationTests
 {
+    // Phase 4A: the fiscal-receipt dimension is conditional on RequiresSeparateFiscalReceipt.
+    // The helper defaults it to TRUE (the pre-4A behaviour these tests always pinned); the
+    // conditional tests below flip it explicitly.
     private static RequestPoGroup Group(
         bool receiptDone = false,
         string operationInvoiceStatus = RequestConstants.OperationInvoiceStatuses.Unclassified,
         bool fiscalUploaded = false,
-        Guid? fiscalAttachmentId = null) => new()
+        Guid? fiscalAttachmentId = null,
+        bool separateReceiptRequired = true) => new()
         {
             Id = Guid.NewGuid(),
             OperationalReceiptCompletedAtUtc = receiptDone ? DateTime.UtcNow : null,
             OperationInvoiceStatus = operationInvoiceStatus,
+            RequiresSeparateFiscalReceipt = separateReceiptRequired,
             FiscalReceiptUploadedAtUtc = fiscalUploaded ? DateTime.UtcNow : null,
             FiscalReceiptAttachmentId = fiscalUploaded ? (fiscalAttachmentId ?? Guid.NewGuid()) : fiscalAttachmentId
         };
@@ -166,6 +171,58 @@ public class PostPaymentDimensionDerivationTests
             fiscalUploaded: true);
 
         Assert.False(FiscalReceiptStateDeriver.IsGroupCompletable(group));
+    }
+
+    // ── Phase 4A: conditional fiscal receipt (RequiresSeparateFiscalReceipt) ──
+
+    [Fact]
+    public void No_separate_receipt_owed_derives_not_required()
+    {
+        // A classified Factura-Recibo group owes no separate receipt — whatever the state of the
+        // other dimensions, this dimension reads NOT_REQUIRED, never LOCKED/PENDING.
+        var open = Group(receiptDone: false,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.NotRequired,
+            separateReceiptRequired: false);
+        var done = Group(receiptDone: true,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.NotRequired,
+            separateReceiptRequired: false);
+
+        Assert.Equal(RequestConstants.FiscalReceiptStatuses.NotRequired, FiscalReceiptStateDeriver.Derive(open));
+        Assert.Equal(RequestConstants.FiscalReceiptStatuses.NotRequired, FiscalReceiptStateDeriver.Derive(done));
+        // Nothing owed means nothing to upload.
+        Assert.False(FiscalReceiptStateDeriver.CanUploadFiscalReceipt(done));
+    }
+
+    [Fact]
+    public void No_separate_receipt_group_is_completable_without_any_attachment()
+    {
+        var group = Group(receiptDone: true,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.NotRequired,
+            separateReceiptRequired: false);
+
+        Assert.True(FiscalReceiptStateDeriver.IsGroupCompletable(group));
+        Assert.Null(group.FiscalReceiptAttachmentId);
+    }
+
+    [Fact]
+    public void Unclassified_group_stays_locked_even_with_the_receipt_flag_at_its_default()
+    {
+        // RequiresSeparateFiscalReceipt is still at its column default on an unclassified group —
+        // reading that default as "not owed" would silently discharge an unknown obligation.
+        var group = Group(receiptDone: true, separateReceiptRequired: false);
+
+        Assert.Equal(RequestConstants.FiscalReceiptStatuses.Locked, FiscalReceiptStateDeriver.Derive(group));
+        Assert.False(FiscalReceiptStateDeriver.IsGroupCompletable(group));
+    }
+
+    [Fact]
+    public void Pending_reason_reports_completed_for_a_no_separate_receipt_group()
+    {
+        var group = Group(receiptDone: true,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.Satisfied,
+            separateReceiptRequired: false);
+
+        Assert.Equal(PostPaymentPendingReason.Completed, PostPaymentPendingReason.Compute(group));
     }
 
     // ── Pending reason ──
