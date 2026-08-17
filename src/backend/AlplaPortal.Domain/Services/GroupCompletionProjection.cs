@@ -326,6 +326,15 @@ public static class GroupCompletionProjector
 /// projection and the receiving endpoints can never drift apart; the Api helper now delegates
 /// here. Quantities and statuses make no material/service distinction — a service line is
 /// "received" when its confirmation sets the same RECEIVED status.
+///
+/// <para>The receiving record legitimately lives on EITHER side of the award pointer. The
+/// legacy QUOTATION flow registers receipt on the winning <c>QuotationItem</c>; the PAYMENT
+/// flow (no award) registers it on the <c>RequestLineItem</c>; and the batch/candidate
+/// QUOTATION model keeps <c>SelectedQuotationItemId</c> as a compatibility pointer while the
+/// receiving UI — which sees no request-level winning quotation — registers on the
+/// <c>RequestLineItem</c>. An item therefore counts as received when either record proves it;
+/// neither side alone is authoritative. Both writers only set RECEIVED at full quantity, so
+/// this never weakens partial-receiving safety.</para>
 /// </summary>
 public static class OperationalReceiptFacts
 {
@@ -333,12 +342,16 @@ public static class OperationalReceiptFacts
     {
         ArgumentNullException.ThrowIfNull(group);
 
-        if (group.LineItems == null || !group.LineItems.Any())
+        if (group.LineItems == null)
             return false;
 
-        return group.LineItems.Where(li => !li.IsDeleted).All(li =>
-            li.SelectedQuotationItemId.HasValue && li.SelectedQuotationItem != null
-                ? li.SelectedQuotationItem.LineItemStatus?.Code == "RECEIVED"
-                : li.LineItemStatus?.Code == "RECEIVED");
+        var activeItems = group.LineItems.Where(li => !li.IsDeleted).ToList();
+        if (activeItems.Count == 0)
+            return false;
+
+        return activeItems.All(li =>
+            li.LineItemStatus?.Code == "RECEIVED"
+            || (li.SelectedQuotationItemId.HasValue
+                && li.SelectedQuotationItem?.LineItemStatus?.Code == "RECEIVED"));
     }
 }

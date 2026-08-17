@@ -665,4 +665,147 @@ public class GroupCompletionProjectionTests
         Assert.Throws<ArgumentException>(() =>
             PostPaymentIdempotencyKeys.GroupCompletedWithoutFiscalReceipt(Guid.Empty));
     }
+
+    // ── v2.229.5: the receiving record lives on EITHER side of the award pointer ──
+    // (REQ-17/08/2026-232, fifth STATE 1 finding.) The batch/candidate QUOTATION model keeps
+    // SelectedQuotationItemId as a compatibility pointer while the receiving UI registers on
+    // the RequestLineItem; the legacy QUOTATION flow registers on the winning QuotationItem;
+    // PAYMENT has no pointer at all. The rulebook accepts whichever record proves full receipt.
+
+    /// <summary>A group line item carrying the batch-model compatibility pointer, with the
+    /// receiving record independently controllable on each side of it.</summary>
+    private static RequestLineItem AwardedItem(
+        RequestPoGroup group,
+        LineItemStatus? ownStatus,
+        LineItemStatus? quotationItemStatus,
+        decimal quantity = 1m,
+        decimal receivedQuantity = 0m,
+        bool isDeleted = false)
+    {
+        var quotationItemId = Guid.NewGuid();
+        return new RequestLineItem
+        {
+            Id = Guid.NewGuid(),
+            RequestId = group.RequestId,
+            RequestPoGroupId = group.Id,
+            LineNumber = group.LineItems.Count + 1,
+            Description = "ZZTEST awarded item",
+            Quantity = quantity,
+            ReceivedQuantity = receivedQuantity,
+            IsDeleted = isDeleted,
+            LineItemStatusId = ownStatus?.Id,
+            LineItemStatus = ownStatus,
+            SelectedQuotationItemId = quotationItemId,
+            SelectedQuotationItem = new QuotationItem
+            {
+                Id = quotationItemId,
+                LineNumber = 1,
+                Description = "ZZTEST winning quotation item",
+                Quantity = quantity,
+                LineItemStatusId = quotationItemStatus?.Id,
+                LineItemStatus = quotationItemStatus
+            }
+        };
+    }
+
+    [Fact]
+    public void R5A_empty_group_and_all_deleted_items_both_fail_closed()
+    {
+        var empty = SatisfiedGroup(receiptStamped: false);
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(empty));
+        Assert.False(Project(empty).ReceiptSatisfied);
+
+        // Every item soft-deleted: All() over the filtered-empty set must never read true.
+        var deletedOnly = SatisfiedGroup(receiptStamped: false);
+        deletedOnly.LineItems.Add(AwardedItem(deletedOnly, Received, Received, isDeleted: true));
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(deletedOnly));
+        Assert.False(Project(deletedOnly).ReceiptSatisfied);
+    }
+
+    [Fact]
+    public void R5B_legacy_payment_shape_reads_the_own_line_item_record()
+    {
+        // No pointer: own RECEIVED proves it, own PENDING/PARTIAL blocks it (pre-existing shape).
+        var received = SatisfiedGroup(receiptStamped: false, itemStatuses: Received);
+        Assert.True(OperationalReceiptFacts.AreAllGroupItemsReceived(received));
+
+        var pending = SatisfiedGroup(receiptStamped: false, itemStatuses: Pending);
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(pending));
+
+        var partial = SatisfiedGroup(receiptStamped: false, itemStatuses: Partially);
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(partial));
+    }
+
+    [Fact]
+    public void R5C_legacy_quotation_shape_reads_the_winning_quotation_item_record()
+    {
+        // Pointer set, receipt registered on the QuotationItem, own line item never touched:
+        // the old quotation flow keeps working through the second disjunct.
+        var group = SatisfiedGroup(receiptStamped: false);
+        group.LineItems.Add(AwardedItem(group, ownStatus: Pending, quotationItemStatus: Received,
+            quantity: 1m, receivedQuantity: 0m));
+
+        Assert.True(OperationalReceiptFacts.AreAllGroupItemsReceived(group));
+        Assert.True(Project(group).ReceiptSatisfied);
+    }
+
+    [Fact]
+    public void R5D_req232_batch_shape_line_item_record_proves_the_receipt()
+    {
+        // THE regression: pointer set (batch award), receiving registered on the RequestLineItem
+        // (own status RECEIVED at full quantity), winning QuotationItem still PENDING. Before
+        // v2.229.5 the ternary read only the quotation side and this exact shape evaluated false.
+        var group = SatisfiedGroup(receiptStamped: false);
+        group.LineItems.Add(AwardedItem(group, ownStatus: Received, quotationItemStatus: Pending,
+            quantity: 1m, receivedQuantity: 1m));
+
+        Assert.True(OperationalReceiptFacts.AreAllGroupItemsReceived(group));
+    }
+
+    [Fact]
+    public void R5E_projector_reads_receipt_satisfied_from_the_batch_shape_without_a_stamp()
+    {
+        // §11 of the instruction: even before the live stamp exists, the pure projector must
+        // read ReceiptSatisfied=true from the corrected shared rule.
+        var group = SatisfiedGroup(receiptStamped: false, fiscalReceiptUploaded: false,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.PendingUpload);
+        group.LineItems.Add(AwardedItem(group, ownStatus: Received, quotationItemStatus: Pending,
+            quantity: 1m, receivedQuantity: 1m));
+
+        var p = Project(group);
+
+        Assert.True(p.ReceiptSatisfied);
+        Assert.Null(group.OperationalReceiptCompletedAtUtc); // pure read, no write
+        Assert.DoesNotContain(GroupCompletionBlockingReasons.ReceiptPending, p.BlockingReasons);
+        Assert.False(p.Complete); // invoice + fiscal receipt still honestly pending
+    }
+
+    [Fact]
+    public void R5F_partial_batch_shape_stays_blocked_on_both_sides()
+    {
+        // 2 authorized, 1 received: own PARTIALLY_RECEIVED, quotation side PENDING — the OR of
+        // two non-received records is still not received. Partial safety is untouched.
+        var group = SatisfiedGroup(receiptStamped: false);
+        group.LineItems.Add(AwardedItem(group, ownStatus: Partially, quotationItemStatus: Pending,
+            quantity: 2m, receivedQuantity: 1m));
+
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(group));
+        var p = Project(group);
+        Assert.False(p.ReceiptSatisfied);
+        Assert.Contains(GroupCompletionBlockingReasons.ReceiptPending, p.BlockingReasons);
+    }
+
+    [Fact]
+    public void R5G_one_received_sibling_never_carries_an_unreceived_one()
+    {
+        // Mixed group: the batch-shape item is fully received but its sibling is not — the
+        // group-level answer stays false regardless of which side proves the received one.
+        var group = SatisfiedGroup(receiptStamped: false);
+        group.LineItems.Add(AwardedItem(group, ownStatus: Received, quotationItemStatus: Pending,
+            quantity: 1m, receivedQuantity: 1m));
+        group.LineItems.Add(AwardedItem(group, ownStatus: Pending, quotationItemStatus: Pending,
+            quantity: 3m, receivedQuantity: 0m));
+
+        Assert.False(OperationalReceiptFacts.AreAllGroupItemsReceived(group));
+    }
 }
