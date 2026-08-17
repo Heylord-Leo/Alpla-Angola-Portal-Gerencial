@@ -39,6 +39,7 @@ public class FiscalReceiptsController : BaseController
     public const string AlreadyUploadedCode = "FISCAL_RECEIPT_ALREADY_UPLOADED";
     public const string AttachmentInvalidCode = "FISCAL_RECEIPT_ATTACHMENT_INVALID";
     public const string RequestStateCode = "FISCAL_RECEIPT_REQUEST_STATE";
+    public const string ConcurrencyCode = "FISCAL_RECEIPT_CONCURRENCY";
 
     private readonly ILogger<FiscalReceiptsController> _logger;
     private readonly IRequestCompletionService _completion;
@@ -258,7 +259,25 @@ public class FiscalReceiptsController : BaseController
         // Phase 2 belongs to Phase 4C. Exact no-op while CompletionEnabled=false.
         await _completion.EvaluateGroupCompletionAsync(requestId, groupId, CurrentUserId);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // The group row moved under us (RowVersion) — never bind against a stale reading and
+            // never auto-retry a stale attachment binding: the user reloads and decides again.
+            _context.ChangeTracker.Clear();
+            var problem = new ProblemDetails
+            {
+                Title = "Dados alterados entretanto",
+                Detail = "Os dados deste grupo foram alterados por outro utilizador. Recarregue os " +
+                         "dados antes de repetir o registo do Recibo Fiscal.",
+                Status = 409
+            };
+            problem.Extensions["code"] = ConcurrencyCode;
+            return Conflict(problem);
+        }
 
         _logger.LogInformation(
             "Fiscal receipt {AttachmentId} bound to group {GroupId} of request {RequestId} by {UserId}.",

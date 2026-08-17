@@ -7733,6 +7733,169 @@ public class RequestsController : BaseController
         });
     }
 
+    /// <summary>
+    /// Release 4 Phase 4D: the completion-readiness read model — a faithful, strictly read-only
+    /// projection of <see cref="GroupCompletionProjector"/> (the single Phase 4 rulebook) plus
+    /// the request-level facts Phase 2 evaluates.
+    ///
+    /// <para>A SIBLING of the obligations endpoint on purpose: the obligations DTO is the
+    /// coverage/allocation workspace, while this one answers "may this request complete, and
+    /// what is missing" — merging them would bury ten lifecycle booleans inside an already
+    /// large financial payload. The UI joins the two by group id.</para>
+    ///
+    /// <para>Normal request visibility (never Finance-only): whoever may read the request may
+    /// read its readiness. Gated-endpoint contract: 404 while the feature is disabled. Honest
+    /// under CompletionEnabled=false — the facts are returned unchanged, and
+    /// <c>CompletionLifecycleEnabled</c> tells the UI not to imply the automatic transition.</para>
+    /// </summary>
+    [HttpGet("{id:guid}/completion-readiness")]
+    public async Task<ActionResult<CompletionReadinessDto>> GetCompletionReadiness(Guid id)
+    {
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return NotFound("Pedido não encontrado.");
+
+        var scopedQuery = await GetScopedRequestsQuery();
+        var request = await scopedQuery
+            .Include(r => r.Status)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Include(g => g.Plant)
+            .Include(g => g.LineItems).ThenInclude(li => li.LineItemStatus)
+            .Include(g => g.LineItems).ThenInclude(li => li.SelectedQuotationItem!)
+                .ThenInclude(qi => qi.LineItemStatus)
+            .Where(g => g.RequestId == id)
+            .ToListAsync();
+
+        var payments = await _context.RequestPayments.AsNoTracking()
+            .Where(p => p.RequestId == id)
+            .ToListAsync();
+        var reconciliations = await _context.RequestReconciliations.AsNoTracking()
+            .Where(r => r.RequestId == id)
+            .ToListAsync();
+
+        var groupIds = groups.Select(g => g.Id).ToList();
+        var approvedShortCloses = (await _context.OperationInvoiceShortCloses.AsNoTracking()
+                .Where(c => groupIds.Contains(c.RequestPoGroupId))
+                .ToListAsync())
+            .Where(c => string.Equals(c.Status, RequestConstants.ShortCloseStatuses.Approved,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.RequestPoGroupId)
+            .ToHashSet();
+
+        // Fiscal receipt evidence: file + uploader, through the normal attachment rows.
+        var receiptAttachmentIds = groups
+            .Where(g => g.FiscalReceiptAttachmentId != null)
+            .Select(g => g.FiscalReceiptAttachmentId!.Value)
+            .ToList();
+        var receiptAttachments = await _context.RequestAttachments.AsNoTracking()
+            .Where(a => receiptAttachmentIds.Contains(a.Id))
+            .Select(a => new { a.Id, a.FileName })
+            .ToListAsync();
+        var uploaderIds = groups
+            .Where(g => g.FiscalReceiptUploadedByUserId != null)
+            .Select(g => g.FiscalReceiptUploadedByUserId!.Value)
+            .Distinct()
+            .ToList();
+        var uploaderNames = await _context.Users.AsNoTracking()
+            .Where(u => uploaderIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        var hasActiveReconciliation = reconciliations.Any(r =>
+            r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.Draft ||
+            r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.InProgress);
+
+        var isCompleted = string.Equals(request.Status?.Code, RequestConstants.Statuses.Completed,
+            StringComparison.OrdinalIgnoreCase);
+
+        DateTime? requestCompletedAt = null;
+        if (isCompleted)
+        {
+            requestCompletedAt = await _context.RequestStatusHistories.AsNoTracking()
+                .Where(h => h.RequestId == id && h.ActionTaken == "REQUEST_COMPLETED")
+                .OrderByDescending(h => h.CreatedAtUtc)
+                .Select(h => (DateTime?)h.CreatedAtUtc)
+                .FirstOrDefaultAsync();
+        }
+
+        var dto = new CompletionReadinessDto
+        {
+            CompletionLifecycleEnabled = !PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions),
+            RequestStatusCode = request.Status?.Code,
+            IsCompleted = isCompleted,
+            CompletedAtUtc = requestCompletedAt,
+            HasActiveReconciliation = hasActiveReconciliation
+        };
+
+        var relevant = groups
+            .Where(g => !string.Equals(g.Status, RequestConstants.PoGroupStatuses.Cancelled,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var group in relevant)
+        {
+            var projection = GroupCompletionProjector.Project(
+                group, payments, reconciliations,
+                hasApprovedShortClose: approvedShortCloses.Contains(group.Id));
+
+            var groupDto = new CompletionReadinessGroupDto
+            {
+                GroupId = group.Id,
+                SupplierName = group.SupplierNameSnapshot,
+                PlantName = group.Plant?.Name,
+                CurrencyCode = group.CurrencyCode,
+                PurchaseOrderNumber = group.PurchaseOrderNumber,
+                GroupStatusCode = group.Status,
+                Classified = projection.Classified,
+                PoSatisfied = projection.PoSatisfied,
+                NoBlockingCorrection = projection.NoBlockingCorrection,
+                PaymentSatisfied = projection.PaymentSatisfied,
+                ReceiptSatisfied = projection.ReceiptSatisfied,
+                OperationInvoiceSatisfied = projection.OperationInvoiceSatisfied,
+                ClosedShort = projection.ClosedShort,
+                FiscalReceiptRequired = projection.FiscalReceiptRequired,
+                FiscalReceiptSatisfied = projection.FiscalReceiptSatisfied,
+                Complete = projection.Complete,
+                CompletedAtUtc = group.CompletedAtUtc,
+                BlockingReasons = projection.BlockingReasons
+                    .Select(code => new CompletionBlockingReasonDto
+                    {
+                        Code = code,
+                        OwnerCode = GroupCompletionOwnership.OwnerOf(code)
+                    })
+                    .ToList()
+            };
+
+            if (group.FiscalReceiptAttachmentId != null)
+            {
+                groupDto.FiscalReceipt = new CompletionFiscalReceiptDto
+                {
+                    AttachmentId = group.FiscalReceiptAttachmentId.Value,
+                    FileName = receiptAttachments
+                        .FirstOrDefault(a => a.Id == group.FiscalReceiptAttachmentId.Value)?.FileName,
+                    UploadedAtUtc = group.FiscalReceiptUploadedAtUtc,
+                    UploadedByName = group.FiscalReceiptUploadedByUserId != null &&
+                                     uploaderNames.TryGetValue(group.FiscalReceiptUploadedByUserId.Value, out var name)
+                        ? name
+                        : null
+                };
+            }
+
+            dto.Groups.Add(groupDto);
+        }
+
+        dto.TotalGroupCount = relevant.Count;
+        dto.CompletedGroupCount = dto.Groups.Count(g => g.Complete);
+        dto.BlockingGroupCount = dto.Groups.Count(g => !g.Complete);
+        // Authoritative readiness — the same conjunction Phase 2 evaluates.
+        dto.IsCompletionReady = relevant.Count > 0
+            && dto.Groups.All(g => g.Complete)
+            && !hasActiveReconciliation;
+
+        return Ok(dto);
+    }
+
     // ── Phase 4C completion-trigger helpers ──
     // The service self-gates on the flags, but the gate is checked here too so no resolution
     // happens at all on the hot path while completion is disabled (and so tests that construct

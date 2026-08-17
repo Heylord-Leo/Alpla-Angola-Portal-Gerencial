@@ -40,6 +40,32 @@ public static class GroupCompletionBlockingReasons
 }
 
 /// <summary>
+/// Ownership of the next action for each blocking reason (approved Phase 4D mapping). Codes,
+/// not sentences — presentation labels live in the UI layer; the ASSIGNMENT itself is business
+/// truth and therefore lives here, beside the reasons, so no frontend ever re-derives it.
+/// </summary>
+public static class GroupCompletionOwnership
+{
+    public const string Buyer = "BUYER";
+    public const string Finance = "FINANCE";
+    public const string FinanceAdmin = "FINANCE_ADMIN";
+    public const string Receiving = "RECEIVING";
+
+    public static string OwnerOf(string blockingReason) => blockingReason switch
+    {
+        GroupCompletionBlockingReasons.ClassificationPending => FinanceAdmin,
+        GroupCompletionBlockingReasons.PoMissing => Buyer,
+        GroupCompletionBlockingReasons.PoCorrectionPending => Buyer,
+        GroupCompletionBlockingReasons.PaymentPending => Finance,
+        GroupCompletionBlockingReasons.ReconciliationPending => Finance,
+        GroupCompletionBlockingReasons.ReceiptPending => Receiving,
+        GroupCompletionBlockingReasons.OperationInvoicePending => Finance,
+        GroupCompletionBlockingReasons.FiscalReceiptPending => Finance,
+        _ => Finance
+    };
+}
+
+/// <summary>
 /// The deterministic completion reading of ONE RequestPoGroup — the single rulebook shared by
 /// <c>EvaluateGroupCompletionAsync</c> (Phase 1 transitions), the future readiness UI and the
 /// future parent completion. Never persisted: every boolean is derived from facts that already
