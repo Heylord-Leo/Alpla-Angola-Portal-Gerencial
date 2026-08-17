@@ -36,6 +36,17 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > lifecycle continues normally from its registered P.O. (payment → receipt → Final Invoice →
 > readiness).
 
+> **STATE 1 execution note 2 (2026-08-17, after v2.229.1).** Resumed STATE 1 exposed a second
+> finding on REQ-17/08/2026-232: after the real "Confirmar Adiantamento" (100%, group left in
+> ADVANCE_PAYMENT_COMPLETED — the shape the Phase 4A projection pins never used), completion
+> readiness still showed "Aguardando pagamento — Financeiro". Fixed in **v2.229.2**
+> (projection-only: COMPLETED owed-money evidence covering the group total now satisfies the
+> payment dimension; partial advances/final balances/reconciliations stay fail-closed).
+> **STATE 1 remains PAUSED until v2.229.2 is deployed to TEST.** After deployment, re-check on
+> REQ-232: Payment = satisfied on the readiness card, "Aguardando pagamento" gone, remaining
+> blockers only Recebimento / Fatura Final / Recibo Fiscal — then continue the R4-A lifecycle
+> (delivery → receipt → Final Invoice → fiscal receipt readiness).
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

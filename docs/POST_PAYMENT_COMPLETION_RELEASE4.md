@@ -249,6 +249,13 @@ RequestComplete =
 
 Invariants closed with Release 4:
 
+- **PaymentSatisfied recognizes authoritative evidence (v2.229.2, REQ-17/08/2026-232)** —
+  the paid-status ladder covers only the standard branch; a full advance leaves the group in
+  `ADVANCE_PAYMENT_COMPLETED` and may never visit a ladder status. The predicate is
+  therefore `(paidStage OR paidInFull)`, where `paidInFull` = Σ COMPLETED owed-money rows of
+  the GROUP ≥ `TotalAmount` − standard tolerance. Null-group rows block when pending but are
+  never counted as any group's money; partial advances stay pending even before their
+  FINAL_BALANCE row exists; reconciliation/regularization blockers are unchanged.
 - **UNCLASSIFIED fails closed** — an unclassified group is skipped by Phase 1, blocks
   Phase 2, and is only resolvable by the future Release 5 classification tool. No inference,
   no backfill.

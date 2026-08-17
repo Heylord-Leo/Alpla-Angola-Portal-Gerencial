@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.229.1
+v2.229.2
+
+## [v2.229.2] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, payment readiness)
+
+- Full advance payments now satisfy the Release 4 payment dimension: completion readiness
+  recognizes COMPLETED owed-money payment evidence covering the group total (standard
+  tolerance), instead of requiring the standard-branch status ladder a full-advance group
+  never walks. Partial advances, outstanding final balances, active reconciliations and
+  required regularizations remain fail-closed. Projection-only; no migration.
 
 ## [v2.229.1] - 2026-08-17
 

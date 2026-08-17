@@ -4,7 +4,38 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.1
+v2.229.2
+
+## [v2.229.2] - 2026-08-17
+
+### Release 4 TEST RC correction — advance-payment completion readiness
+
+Found by STATE 1 manual validation of REQ-17/08/2026-232: after the real Finance
+"Confirmar Adiantamento" flow (100% advance, group left in `ADVANCE_PAYMENT_COMPLETED`),
+completion readiness still showed "Aguardando pagamento — Financeiro". Projection-only fix
+plus tests; no migration; no endpoint, lifecycle, payment-write or trigger change; TEST flags
+unchanged (`Enabled=true, CompletionEnabled=false`).
+
+#### Fixed
+
+- **Full advance payments satisfy the payment dimension**: `GroupCompletionProjector` now
+  accepts authoritative payment evidence — the sum of COMPLETED owed-money rows
+  (ADVANCE/FINAL_BALANCE/REGULARIZATION; never REFUND or CANCELLED) of the group covering
+  `TotalAmount` within the Portal's standard financial tolerance — as an alternative to the
+  standard-branch paid-status ladder, which a full-advance group never walks. The ladder
+  remains the fallback for legacy shapes; request-level (null-group) rows still block every
+  group when pending but are never counted as any group's money (fail-closed on
+  multi-group requests).
+- **Fail-closed blockers preserved and pinned**: a 30% partial advance stays
+  PAYMENT_PENDING even before its FINAL_BALANCE row exists; PLANNED/SCHEDULED owed rows,
+  active reconciliations and undischarged advance regularization still block; overpayment
+  satisfies without exact equality.
+
+#### Backlog (recorded, deliberately not in this patch)
+
+- Finance Payments header shows supplier "---" for batch-model QUOTATION requests: the
+  header still resolves `SelectedQuotationId`/`Request.Supplier` while suppliers live on the
+  PO groups (the group rows on the same screen are correct). UI/read-model backlog.
 
 ## [v2.229.1] - 2026-08-17
 
