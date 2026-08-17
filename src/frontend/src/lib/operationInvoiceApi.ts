@@ -11,7 +11,9 @@ import type {
     OperationInvoiceObligationsDto,
     OperationInvoiceShortCloseDto,
     ProposeOperationInvoiceShortCloseDto,
-    DecideOperationInvoiceShortCloseDto
+    DecideOperationInvoiceShortCloseDto,
+    CompletionReadinessDto,
+    FiscalReceiptBindResultDto
 } from '../types/operationInvoice';
 
 /**
@@ -168,6 +170,26 @@ export const operationInvoiceApi = {
         const response = await apiFetch(
             `${API_BASE_URL}/api/v1/requests/${requestId}/operation-invoice-obligations`);
         if (!response.ok) return fail(response, 'Falha ao carregar a cobertura de faturas finais.');
+        return response.json();
+    },
+
+    // ── Completion readiness (Phase 4D) ─────────────────────────────────────────────────────
+
+    getCompletionReadiness: async (requestId: string): Promise<CompletionReadinessDto> => {
+        const response = await apiFetch(
+            `${API_BASE_URL}/api/v1/requests/${requestId}/completion-readiness`);
+        if (!response.ok) return fail(response, 'Falha ao carregar o estado de conclusão do pedido.');
+        return response.json();
+    },
+
+    bindFiscalReceipt: async (
+        requestId: string, groupId: string, attachmentId: string
+    ): Promise<FiscalReceiptBindResultDto> => {
+        const response = await apiFetch(
+            `${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/fiscal-receipt`, {
+                method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ attachmentId })
+            });
+        if (!response.ok) return fail(response, 'Falha ao registar o Recibo Fiscal.');
         return response.json();
     },
 

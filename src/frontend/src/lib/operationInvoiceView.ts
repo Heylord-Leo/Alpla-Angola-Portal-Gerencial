@@ -263,13 +263,27 @@ const ERROR_MESSAGES: Record<string, string> = {
     OI_SHORTCLOSE_NOT_DECIDABLE:
         'Esta proposta de encerramento já foi decidida.',
     OI_SHORTCLOSE_SELF_APPROVAL:
-        'Quem propôs o encerramento não pode aprová-lo — é necessária uma segunda pessoa.'
+        'Quem propôs o encerramento não pode aprová-lo — é necessária uma segunda pessoa.',
+    // ── Phase 4B/4D: fiscal receipt binding ──
+    FISCAL_RECEIPT_REQUEST_STATE:
+        'O estado atual do pedido ou do grupo não permite registar o Recibo Fiscal.',
+    FISCAL_RECEIPT_NOT_REQUIRED:
+        'Este grupo não exige Recibo Fiscal separado — o documento classificado já comprova o pagamento.',
+    FISCAL_RECEIPT_LOCKED:
+        'O Recibo Fiscal só pode ser registado depois de satisfeitos o recebimento operacional e a Fatura Final deste grupo.',
+    FISCAL_RECEIPT_ALREADY_UPLOADED:
+        'Este grupo já tem um Recibo Fiscal registado. A substituição não está disponível.',
+    FISCAL_RECEIPT_ATTACHMENT_INVALID:
+        'O documento indicado não é um Recibo Fiscal válido deste pedido.',
+    COMPLETION_DISABLED:
+        'O ciclo automático de conclusão ainda não está ativo neste ambiente.'
 };
 
 /** Concurrency codes — every 409 of this family gets the reload guidance. */
 const CONCURRENCY_CODES = new Set([
     'OPERATION_INVOICE_CONCURRENCY',
-    'OI_SHORTCLOSE_CONCURRENCY'
+    'OI_SHORTCLOSE_CONCURRENCY',
+    'FISCAL_RECEIPT_CONCURRENCY'
 ]);
 
 export interface MappedApiError {
@@ -311,4 +325,88 @@ function extractExtensions(details: any): Record<string, unknown> {
     // ProblemDetails extensions are serialized flat next to the standard members.
     const { type, title, status, detail, instance, errors, ...rest } = details;
     return rest;
+}
+
+// ── Release 4 Phase 4D — completion readiness presentation ──────────────────────────────────
+// Presentation ONLY: every fact comes from the readiness read model (GroupCompletionProjector,
+// server-side). These helpers translate codes to Portuguese business language — they never
+// re-derive a completion predicate.
+
+import type {
+    CompletionReadinessGroupDto,
+    CompletionBlockingReasonDto
+} from '../types/operationInvoice';
+
+/** GroupCompletionOwnership codes → user-facing Portuguese ownership labels. */
+export const COMPLETION_OWNER_LABELS: Record<string, string> = {
+    BUYER: 'Compras',
+    FINANCE: 'Financeiro',
+    FINANCE_ADMIN: 'Financeiro / Administração',
+    RECEIVING: 'Recebimento / Operações'
+};
+
+/** GroupCompletionBlockingReasons codes → "O que falta" Portuguese phrases. */
+export const COMPLETION_BLOCKING_LABELS: Record<string, string> = {
+    CLASSIFICATION_PENDING: 'Classificação pendente',
+    PO_MISSING: 'Aguardando registo da P.O.',
+    PO_CORRECTION_PENDING: 'P.O. em correção',
+    PAYMENT_PENDING: 'Aguardando pagamento',
+    RECONCILIATION_PENDING: 'Reconciliação em curso',
+    RECEIPT_PENDING: 'Aguardando recebimento',
+    OPERATION_INVOICE_PENDING: 'Aguardando Fatura Final',
+    FISCAL_RECEIPT_PENDING: 'Aguardando Recibo Fiscal'
+};
+
+/** "Aguardando pagamento — Financeiro" — the §5 presentation of one blocking reason. */
+export function blockingReasonText(reason: CompletionBlockingReasonDto): string {
+    const label = COMPLETION_BLOCKING_LABELS[reason.code] ?? 'Obrigação pendente';
+    const owner = COMPLETION_OWNER_LABELS[reason.ownerCode] ?? 'Financeiro';
+    return `${label} — ${owner}`;
+}
+
+export type CompletionChecklistState = 'done' | 'pending' | 'not-applicable' | 'blocked';
+
+export interface CompletionChecklistItem {
+    key: string;
+    label: string;
+    state: CompletionChecklistState;
+}
+
+/**
+ * The §4 compact checklist of one group card. States mirror the projection booleans exactly:
+ * ✓ Concluído · ○ Pendente · — Não aplicável (no separate fiscal receipt owed) ·
+ * ⚠ Correção/Bloqueio (P.O. correction / unclassified).
+ */
+export function completionChecklist(group: CompletionReadinessGroupDto): CompletionChecklistItem[] {
+    const poState: CompletionChecklistState = !group.noBlockingCorrection
+        ? 'blocked'
+        : group.poSatisfied ? 'done' : 'pending';
+
+    return [
+        { key: 'po', label: 'P.O.', state: poState },
+        { key: 'payment', label: 'Pagamento', state: group.paymentSatisfied ? 'done' : 'pending' },
+        { key: 'receipt', label: 'Recebimento', state: group.receiptSatisfied ? 'done' : 'pending' },
+        {
+            key: 'invoice', label: 'Fatura Final',
+            state: !group.classified ? 'blocked' : group.operationInvoiceSatisfied ? 'done' : 'pending'
+        },
+        {
+            key: 'fiscalReceipt', label: 'Recibo Fiscal',
+            state: !group.fiscalReceiptRequired
+                ? 'not-applicable'
+                : group.fiscalReceiptSatisfied ? 'done' : 'pending'
+        }
+    ];
+}
+
+/**
+ * The Finance CTA gate, mirroring the backend prerequisites for UX only: required, not yet
+ * satisfied, and the ONLY remaining blocker is the fiscal receipt itself (the backend deriver
+ * refuses anything else with FISCAL_RECEIPT_LOCKED).
+ */
+export function canOfferFiscalReceiptUpload(group: CompletionReadinessGroupDto): boolean {
+    return group.fiscalReceiptRequired &&
+        !group.fiscalReceiptSatisfied &&
+        group.blockingReasons.length === 1 &&
+        group.blockingReasons[0].code === 'FISCAL_RECEIPT_PENDING';
 }

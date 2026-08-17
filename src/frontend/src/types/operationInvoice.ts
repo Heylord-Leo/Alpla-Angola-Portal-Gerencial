@@ -295,3 +295,68 @@ export interface DecideOperationInvoiceShortCloseDto {
     decisionReason?: string | null;
     rowVersion?: string | null;
 }
+
+// ── Release 4 Phase 4D — completion readiness read model ────────────────────────────────────
+// Faithful mirror of the backend CompletionReadinessDto: the frontend renders these facts and
+// NEVER re-derives them (GroupCompletionProjector is the single rulebook, server-side).
+
+export interface CompletionBlockingReasonDto {
+    /** GroupCompletionBlockingReasons code (e.g. FISCAL_RECEIPT_PENDING). */
+    code: string;
+    /** GroupCompletionOwnership code (BUYER | FINANCE | FINANCE_ADMIN | RECEIVING). */
+    ownerCode: string;
+}
+
+export interface CompletionFiscalReceiptDto {
+    attachmentId: string;
+    fileName?: string | null;
+    uploadedAtUtc?: string | null;
+    uploadedByName?: string | null;
+}
+
+export interface CompletionReadinessGroupDto {
+    groupId: string;
+    supplierName?: string | null;
+    plantName?: string | null;
+    currencyCode?: string | null;
+    purchaseOrderNumber?: string | null;
+    groupStatusCode?: string | null;
+
+    classified: boolean;
+    poSatisfied: boolean;
+    noBlockingCorrection: boolean;
+    paymentSatisfied: boolean;
+    receiptSatisfied: boolean;
+    operationInvoiceSatisfied: boolean;
+    closedShort: boolean;
+    fiscalReceiptRequired: boolean;
+    fiscalReceiptSatisfied: boolean;
+    complete: boolean;
+
+    completedAtUtc?: string | null;
+    blockingReasons: CompletionBlockingReasonDto[];
+    fiscalReceipt?: CompletionFiscalReceiptDto | null;
+}
+
+export interface CompletionReadinessDto {
+    completionLifecycleEnabled: boolean;
+    requestStatusCode?: string | null;
+    isCompletionReady: boolean;
+    isCompleted: boolean;
+    completedAtUtc?: string | null;
+    hasActiveReconciliation: boolean;
+    totalGroupCount: number;
+    completedGroupCount: number;
+    blockingGroupCount: number;
+    groups: CompletionReadinessGroupDto[];
+}
+
+export interface FiscalReceiptBindResultDto {
+    groupId: string;
+    groupStatus?: string | null;
+    fiscalReceiptAttachmentId?: string | null;
+    fiscalReceiptUploadedAtUtc?: string | null;
+    fiscalReceiptState?: string | null;
+    completed: boolean;
+    completedAtUtc?: string | null;
+}

@@ -80,6 +80,11 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 responsible: 'Financeiro',
                 nextAction: 'Anexar recibo do fornecedor e finalizar pedido'
             };
+        case 'WAITING_FISCAL_RECEIPT':
+            return {
+                responsible: 'Financeiro',
+                nextAction: 'Registrar o Recibo Fiscal para concluir o grupo'
+            };
         case 'IN_FOLLOWUP':
             return {
                 responsible: 'Recebimento',

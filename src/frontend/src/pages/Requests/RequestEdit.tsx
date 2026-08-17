@@ -40,6 +40,7 @@ import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
 import { OperationInvoiceSection } from './components/OperationInvoiceSection';
+import { RequestCompletionSection } from './components/RequestCompletionSection';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
@@ -556,6 +557,20 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         isBuyer={isBuyer}
                         isAdmin={user?.roles?.includes('System Administrator') ?? false}
                         currentUserId={user?.id ?? null}
+                    />
+                )}
+
+                {/* Release 4 Phase 4D: completion readiness — a faithful rendering of the backend
+                    completion-readiness read model. Shows what is missing and who acts next; the
+                    completion itself is automatic (no manual "Concluir Pedido"). Renders nothing
+                    while the coverage capability is off or the request has no groups. */}
+                {id && (
+                    <RequestCompletionSection
+                        requestId={id}
+                        coverageEnabled={featureFlags.postPaymentCompletionEnabled}
+                        lifecycleEnabled={featureFlags.completionLifecycleEnabled}
+                        isFinance={isFinance}
+                        isAdmin={user?.roles?.includes('System Administrator') ?? false}
                     />
                 )}
 
