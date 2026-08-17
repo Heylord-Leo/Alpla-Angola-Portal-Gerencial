@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.229.2
+v2.229.3
+
+## [v2.229.3] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, Receiving handoff)
+
+- Confirmed advance payments now hand groups to "Ag. Entrega/Serviço"
+  (WAITING_SUPPLIER_DELIVERY) — the state the Receiving workspace and every receiving
+  endpoint already speak — instead of parking in ADVANCE_PAYMENT_COMPLETED, a state no code
+  ever left. Partial advances proceed to delivery by design while outstanding payment remains
+  a completion blocker (evidence contradicting the status ladder now wins). Parked
+  groups/requests repaired by data-only migration; payment-proof re-upload preserved.
 
 ## [v2.229.2] - 2026-08-17
 

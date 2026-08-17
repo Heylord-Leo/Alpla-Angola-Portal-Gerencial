@@ -47,6 +47,18 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > blockers only Recebimento / Fatura Final / Recibo Fiscal — then continue the R4-A lifecycle
 > (delivery → receipt → Final Invoice → fiscal receipt readiness).
 
+> **STATE 1 execution note 3 (2026-08-17, after v2.229.2).** Resumed STATE 1 exposed a third
+> finding on REQ-17/08/2026-232: the ADVANCE_PAYMENT_COMPLETED → WAITING_SUPPLIER_DELIVERY
+> transition never existed, so the confirmed-advance request was invisible to the Receiving
+> workspace and rejected by every receiving endpoint. Fixed in **v2.229.3** (ConfirmAdvancePayment
+> hands the group to "Ag. Entrega/Serviço"; data-only migration
+> `HandoffParkedAdvancePaidGroupsToDelivery` repairs parked groups/parents — REQ-232 included).
+> **STATE 1 remains PAUSED until v2.229.3 is deployed to TEST** (migration + deploy). After
+> deployment, re-check: a) REQ-232 shows "Ag. Entrega/Serviço" and appears in the Receiving
+> workspace's delivery section; b) "Receber" opens and receiving confirms; c) readiness then
+> shows Recebimento ✓ (Pagamento still ✓); d) continue with Final Invoice → fiscal receipt
+> readiness.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

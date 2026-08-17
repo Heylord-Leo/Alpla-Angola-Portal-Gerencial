@@ -4,7 +4,44 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.2
+v2.229.3
+
+## [v2.229.3] - 2026-08-17
+
+### Release 4 TEST RC correction — advance-payment Receiving handoff
+
+Found by STATE 1 manual validation of REQ-17/08/2026-232: after "Confirmar Adiantamento" the
+request was invisible to the Receiving workspace and rejected by every receiving endpoint —
+the `ADVANCE_PAYMENT_COMPLETED → WAITING_SUPPLIER_DELIVERY` transition never existed anywhere
+in the code, orphaning the whole B2P delivery chain. One DATA-ONLY migration
+(`HandoffParkedAdvancePaidGroupsToDelivery`); no schema change; no workspace or receiving
+endpoint policy change (they already spoke WAITING_SUPPLIER_DELIVERY); TEST flags unchanged.
+
+#### Fixed
+
+- **Confirmed advances hand groups off to "Ag. Entrega/Serviço"**: `ConfirmAdvancePayment` now
+  transitions the group to `WAITING_SUPPLIER_DELIVERY` after recording the payment facts (the
+  `ADVANCE_PAYMENT_COMPLETED` history row remains the financial event, with the handoff
+  noted). The aggregation then projects the request into the Receiving workspace's existing
+  delivery section, "Receber"/ConfirmReceiving/item receiving/ConfirmDelivery all accept it,
+  and the Phase 4B receipt stamp works unchanged.
+- **Partial advances remain receivable by design** (delivery precedes reconciliation/final
+  balance) while payment stays an honest completion blocker: receiving eligibility and
+  PaymentSatisfied intentionally diverge, and completed payment evidence that contradicts the
+  status ladder now wins — a 30%-paid group reaching WAITING_RECEIPT no longer reads as fully
+  paid; legacy groups without evidence rows keep the pure ladder reading.
+- **Existing parked groups repaired safely**: groups in the exact defect shape (COMPLETED
+  ADVANCE row, no operational receipt, live request, no reconciliation) move to
+  `WAITING_SUPPLIER_DELIVERY`; parents parked in `ADVANCE_PAYMENT_COMPLETED` follow only when
+  the furthest-behind reading agrees (siblings still behind leave the parent to self-heal).
+  Payment-proof re-upload after confirmation is preserved at the new status
+  (Finance/SysAdmin, exactly as before).
+
+#### Backlog (recorded, deliberately not in this patch)
+
+- Receiving workspace is request-status-driven and can hide a receiving-ready group while a
+  sibling group is further behind in payment; future correct design is a group-aware
+  receiving read model.
 
 ## [v2.229.2] - 2026-08-17
 
