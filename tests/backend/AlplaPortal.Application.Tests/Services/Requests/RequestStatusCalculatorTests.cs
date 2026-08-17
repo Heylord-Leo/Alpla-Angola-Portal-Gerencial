@@ -100,7 +100,8 @@ public class RequestStatusCalculatorTests
 
         var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
 
-        Assert.Equal(RequestConstants.Statuses.QuotationCompleted, result.StatusCode);
+        // v2.229.1: zero of N P.O.s registered is the actionable awaiting-P.O. state.
+        Assert.Equal(RequestConstants.Statuses.PoRequested, result.StatusCode);
         Assert.Null(result.IssueCode);
     }
 
@@ -119,8 +120,10 @@ public class RequestStatusCalculatorTests
     // ── Phase 2: required scenario coverage ──
 
     [Fact]
-    public void AllGroupsWaitingPo_ReturnsQuotationCompleted()
+    public void AllGroupsWaitingPo_ReturnsPoRequested()
     {
+        // v2.229.1 (REQ-17/08/2026-232): previously QUOTATION_COMPLETED — technically true,
+        // operationally misleading (the request is actively waiting for the Buyer's first P.O.).
         var request = MakeRequest("WAITING_FINAL_APPROVAL");
         var batch = MakeBatch(RequestConstants.ApprovalBatchStatuses.Approved);
         request.ApprovalBatches.Add(batch);
@@ -130,7 +133,7 @@ public class RequestStatusCalculatorTests
 
         var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
 
-        Assert.Equal(RequestConstants.Statuses.QuotationCompleted, result.StatusCode);
+        Assert.Equal(RequestConstants.Statuses.PoRequested, result.StatusCode);
         Assert.Null(result.IssueCode);
     }
 
@@ -221,7 +224,8 @@ public class RequestStatusCalculatorTests
 
         var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
 
-        Assert.Equal(RequestConstants.Statuses.QuotationCompleted, result.StatusCode);
+        // v2.229.1: the healthy WAITING_PO group makes this an awaiting-P.O. request.
+        Assert.Equal(RequestConstants.Statuses.PoRequested, result.StatusCode);
         Assert.Null(result.IssueCode);
     }
 
@@ -341,7 +345,7 @@ public class RequestStatusCalculatorTests
 
         var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
 
-        Assert.Equal(RequestConstants.Statuses.QuotationCompleted, result.StatusCode);
+        Assert.Equal(RequestConstants.Statuses.PoRequested, result.StatusCode);
         Assert.Null(result.IssueCode); // excluded by batch filter before the PENDING check runs
     }
 

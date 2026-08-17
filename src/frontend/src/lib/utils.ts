@@ -105,6 +105,11 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 responsible: 'Comprador',
                 nextAction: 'Registrar P.O. para os grupos aprovados'
             };
+        case 'PO_REQUESTED':
+            return {
+                responsible: 'Comprador',
+                nextAction: 'Registrar P.O.'
+            };
         case 'COMPLETED':
             return {
                 responsible: 'Sem ação',

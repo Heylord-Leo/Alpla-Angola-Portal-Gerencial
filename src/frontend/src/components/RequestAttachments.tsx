@@ -275,7 +275,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                     // Logic: Some sections shouldn't even be shown if they don't apply to the request type
                     // After PO_ISSUED, both types follow the financial flow, so they stay visible
                     const isFinancialType = ['PAYMENT_SCHEDULE', 'PAYMENT_PROOF', 'RECEIPT'].includes(code);
-                    if (isFinancialType && !['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED'].includes(status || '')) {
+                    if (isFinancialType && !['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED'].includes(status || '')) {
                         return null;
                     }
 

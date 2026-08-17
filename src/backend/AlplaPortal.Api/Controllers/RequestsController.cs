@@ -144,7 +144,7 @@ public class RequestsController : BaseController
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
                 InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
             })
@@ -227,7 +227,7 @@ public class RequestsController : BaseController
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
-                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted) && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 PaymentCompleted = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PaymentCompleted || r.Status!.Code == RequestConstants.Statuses.Paid),
                 WaitingReceipt = g.Count(r => r.Status!.Code == "WAITING_RECEIPT" || r.Status!.Code == RequestConstants.Statuses.InFollowup),
@@ -722,7 +722,7 @@ public class RequestsController : BaseController
                 Total = g.Count(),
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection) && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
@@ -9615,7 +9615,7 @@ public class RequestsController : BaseController
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
         new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION" } },
         new StageDef { Label = "Aprovações", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED" } },
+        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED", "PO_REQUESTED" } },
         new StageDef { Label = "Agendamento", StatusCodes = new[] { "PO_ISSUED" } },
         new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED" } },
         new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },

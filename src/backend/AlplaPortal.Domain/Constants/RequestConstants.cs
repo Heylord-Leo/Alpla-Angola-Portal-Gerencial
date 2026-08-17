@@ -53,6 +53,14 @@ public static class RequestConstants
         public const string Rejected = "REJECTED";
         public const string Cancelled = "CANCELLED";
         public const string QuotationCompleted = "QUOTATION_COMPLETED";
+        /// <summary>
+        /// v2.229.1: the request-level "awaiting first P.O." state — every approval batch
+        /// settled and EVERY eligible group still WAITING_PO (0 of N registered). Repurposes the
+        /// long-orphaned seeded lookup (Id 11, renamed "Aguardando P.O."); QUOTATION_COMPLETED
+        /// keeps only its zero-PO-group meaning. Partial registration remains
+        /// PO_PARTIALLY_UPLOADED; all-registered follows the group ladder.
+        /// </summary>
+        public const string PoRequested = "PO_REQUESTED";
         public const string PoIssued = "PO_ISSUED";
         public const string PaymentRequestSent = "PAYMENT_REQUEST_SENT";
         public const string PaymentScheduled = "PAYMENT_SCHEDULED";

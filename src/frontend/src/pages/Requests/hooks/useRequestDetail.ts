@@ -180,7 +180,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     
     const isReworkStatus = status === 'AREA_ADJUSTMENT' || status === 'FINAL_ADJUSTMENT';
     const isQuotationStage = status === 'WAITING_QUOTATION';
-    const isOperationalStage = ['APPROVED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
+    const isOperationalStage = ['APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
     const isFinalizedStatus = ['COMPLETED', 'REJECTED', 'CANCELLED'].includes(status || '');
 
     const isDraftEditable = status === 'DRAFT' || isReworkStatus || isCopyMode;

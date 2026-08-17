@@ -179,12 +179,15 @@ public static class RequestStatusCalculator
 
         if (eligibleGroups.All(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPo))
         {
-            // QUOTATION_COMPLETED is a quotation-workflow-specific label. Only report it when
-            // this result came from the batch-driven path; a batchless group workflow (e.g. a
-            // PAYMENT-type request's single group) reaching WAITING_PO is handled inline by
-            // RegisterPo, not by this aggregator — preserve whatever status it already has.
+            // v2.229.1 (REQ-17/08/2026-232): zero of N required P.O.s registered is an ACTIVE
+            // Buyer stage, not a finished one — reporting QUOTATION_COMPLETED here presented a
+            // request waiting for its first P.O. as done and hid it from the Buyer's status
+            // filters. The batch-driven path now reports PO_REQUESTED ("Aguardando P.O.");
+            // QUOTATION_COMPLETED keeps only its zero-PO-group meaning above. A batchless group
+            // workflow (e.g. a PAYMENT-type request's single group) reaching WAITING_PO is
+            // handled inline by RegisterPo, not by this aggregator — preserve its status.
             return cameFromBatchPhase
-                ? RequestStatusCalculationResult.Clean(RequestConstants.Statuses.QuotationCompleted)
+                ? RequestStatusCalculationResult.Clean(RequestConstants.Statuses.PoRequested)
                 : RequestStatusCalculationResult.Clean(currentStatusCode);
         }
 

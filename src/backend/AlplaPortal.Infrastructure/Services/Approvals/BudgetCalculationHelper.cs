@@ -23,6 +23,7 @@ public static class BudgetCalculationHelper
         RequestConstants.Statuses.FinalApproved,
         RequestConstants.Statuses.WaitingCostCenter,
         RequestConstants.Statuses.QuotationCompleted,
+        RequestConstants.Statuses.PoRequested,
         RequestConstants.Statuses.PoIssued,
         RequestConstants.Statuses.PaymentRequestSent,
         RequestConstants.Statuses.PaymentScheduled,
