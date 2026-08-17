@@ -8,6 +8,28 @@ v2.228.4
 
 ## [Unreleased]
 
+### Release 4 Phase 4D — completion readiness UI + fiscal receipt UX
+
+Development state on top of Phase 4C; no version bump, no migration. TEST remains
+`Enabled=true, CompletionEnabled=false`.
+
+- **Completion-readiness read model**: `GET /requests/{id}/completion-readiness` — faithful
+  projection of the Phase 4A rulebook (ten booleans per group, ordered blocking reasons with
+  the approved ownership map, fiscal-receipt evidence, request-level readiness/completed facts
+  incl. the RC instant). Normal request visibility; honest under `CompletionEnabled=false`;
+  `CompletionCycleId` not exposed.
+- **"Conclusão do Pedido" section** in the request detail/Finance drawer: per-group checklist
+  (✓/○/—/⚠; no-separate-receipt = "Não aplicável"), "O que falta" with ownership phrases,
+  Phase 3 evidence badges reused, UNCLASSIFIED legacy blocker text, completed group/request
+  presentation, "N de M grupos concluídos". No manual "Concluir Pedido" — completion stays
+  automatic. Satisfied-but-inactive shows "Requisitos de conclusão satisfeitos" + note.
+- **Fiscal receipt UX**: Finance/SysAdmin-only "Registrar Recibo Fiscal" modal (upload as
+  `TYPE_FISCAL_RECEIPT` + bind via the Phase 4B endpoint + refresh), evidence display with
+  download and no replacement, Portuguese error mapping for the `FISCAL_RECEIPT_*` family,
+  new 409 `FISCAL_RECEIPT_CONCURRENCY` on RowVersion races with "Recarregar dados".
+- **WAITING_FISCAL_RECEIPT** presented as "Aguardando Recibo Fiscal" everywhere (seeded name
+  + responsible/next-action entry).
+
 ### Release 4 Phase 4C — parent completion + trigger matrix + writer consolidation (backend only)
 
 Development state on top of Phase 4B; no version bump, no migration, no frontend change. TEST

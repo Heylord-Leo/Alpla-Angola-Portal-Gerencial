@@ -417,6 +417,64 @@ reconciliation, never touches groupless requests.
 CompletionEnabled=false`), version bump (Phase 4 RC closure), migration (none needed),
 post-completion reopen workflow, Phase 5.
 
+### Phase 4D — completion readiness UI + fiscal receipt UX (implemented)
+
+**Read model** — `GET /api/v1/requests/{id}/completion-readiness`
+(`CompletionReadinessDto`): a SIBLING of the obligations endpoint by design (the obligations
+DTO is the coverage/allocation workspace; readiness answers "may this complete and what is
+missing" — merging would bury the lifecycle booleans in an already-large financial payload;
+the UI joins the two by group id). Normal request visibility (never Finance-only); 404-gated
+by `Enabled`; honest under `CompletionEnabled=false` with `completionLifecycleEnabled`
+carried in the payload. Request level: readiness/completed flags, RC-event instant, active
+reconciliation, group counts. Group level: the ten projection booleans, PO/supplier/plant
+identity, `CompletedAtUtc`, ordered `blockingReasons[{code, ownerCode}]` (ownership assigned
+by the new domain `GroupCompletionOwnership` map — approved: classification →
+Finance/Admin, PO family → Buyer, payment/reconciliation/invoice/fiscal receipt → Finance,
+receipt → Receiving), and the fiscal-receipt evidence summary (file, instant, uploader).
+`CompletionCycleId` is deliberately NOT exposed (internal idempotency identity).
+
+**UI** — new "Conclusão do Pedido" section (`RequestCompletionSection`) rendered directly
+below "Fatura Final — Cobertura" in the request detail (and therefore in the Finance drawer,
+which hosts the same detail). One compact card per group: checklist P.O. · Pagamento ·
+Recebimento · Fatura Final · Recibo Fiscal with states ✓/○/—/⚠ (no-separate-receipt groups
+show "Não aplicável", never "missing"); "O que falta" lines as Portuguese business phrases
+with ownership ("Aguardando pagamento — Financeiro"); Phase 3 evidence reused verbatim
+("Encerrado com Saldo Aceite" from the projection, "Divergência Aceite: +valor" from the
+obligations invariant helper); UNCLASSIFIED legacy groups show "Classificação pendente —
+Financeiro / Administração" with the explanatory sentence and NO fake fix (Release 5 owns
+classification). Completed groups show "Grupo Concluído" + instant with the checklist kept
+visible for audit; a completed request shows "Pedido Concluído" + the RC instant and no
+mutation actions. Multi-group headers summarize "N de M grupos concluídos"; readiness is
+always the SERVER's verdict, never a client-side card count. **There is deliberately no
+"Concluir Pedido" button** — completion is automatic through the backend engine.
+
+**CompletionEnabled=false presentation rule (approved)** — a fully satisfied request shows
+"Requisitos de conclusão satisfeitos" with the calm note "O ciclo automático de conclusão
+ainda não está ativo neste ambiente."; "Pronto para concluir" appears only when the read
+model says the lifecycle is active. After a fiscal-receipt upload with the lifecycle off,
+the dimension shows satisfied honestly and the modal says the group's closure follows the
+completion cycle — never "Grupo concluído" from UI booleans alone.
+
+**Fiscal receipt UX** — "Registrar Recibo Fiscal" CTA appears only for Finance/SysAdmin,
+only when the read model says the receipt is required, unsatisfied, and the ONLY remaining
+blocker (the backend deriver refuses anything else). `FiscalReceiptModal`: group context
+(supplier, P.O., plant, invoice/receipt state incl. short-close evidence), the explanatory
+sentence "O Recibo Fiscal confirma documentalmente o encerramento fiscal deste grupo.", file
+upload (stored as `TYPE_FISCAL_RECEIPT` via the standard attachment pipeline, group-linked),
+binding through the Phase 4B endpoint, then readiness refresh with the honest result state.
+Uploaded receipts show file/date/uploader with the standard download action and NO replace
+action. Structured errors mapped to Portuguese (`FISCAL_RECEIPT_*`, `COMPLETION_DISABLED`);
+the binding endpoint now returns 409 `FISCAL_RECEIPT_CONCURRENCY` on a RowVersion race,
+which the UI presents with "Recarregar dados" and never auto-resubmits.
+
+**WAITING_FISCAL_RECEIPT presentation** — the seeded lookup name "Aguardando Recibo Fiscal"
+(badge color included) feeds every list/badge that renders status names; `utils.ts` gains
+the responsible/next-action entry (Financeiro → registar o Recibo Fiscal). No raw enum
+reaches the user.
+
+**Not in 4D**: Phase 4E RC closure/bump, flag changes, migration (none), OCR, dedicated
+Finance workspace, manual completion, fiscal-receipt replacement.
+
 ## Phase 3A — Allocation, reconciliation & short-close (backend only, flag off)
 
 Backend activation of the dormant Phase 3 entities. **No UI (Phase 3B), no completion wiring
