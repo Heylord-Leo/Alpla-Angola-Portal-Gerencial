@@ -4,106 +4,79 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.228.4
+v2.229.0
 
-## [Unreleased]
+## [v2.229.0] - 2026-08-17
 
-### Release 4 Phase 4D — completion readiness UI + fiscal receipt UX
+### Release 4 — Post-Payment Completion lifecycle (Phases 4A–4D)
 
-Development state on top of Phase 4C; no version bump, no migration. TEST remains
-`Enabled=true, CompletionEnabled=false`.
+The complete post-payment completion workflow: deterministic group readiness, the
+operational/fiscal receipt dimensions, automatic parent completion, consolidated writers and
+the readiness UI. No migration. Committed defaults keep the lifecycle OFF
+(`PostPaymentCompletion.CompletionEnabled=false`); activation is a separate, explicit step.
 
-- **Completion-readiness read model**: `GET /requests/{id}/completion-readiness` — faithful
-  projection of the Phase 4A rulebook (ten booleans per group, ordered blocking reasons with
-  the approved ownership map, fiscal-receipt evidence, request-level readiness/completed facts
-  incl. the RC instant). Normal request visibility; honest under `CompletionEnabled=false`;
-  `CompletionCycleId` not exposed.
-- **"Conclusão do Pedido" section** in the request detail/Finance drawer: per-group checklist
-  (✓/○/—/⚠; no-separate-receipt = "Não aplicável"), "O que falta" with ownership phrases,
-  Phase 3 evidence badges reused, UNCLASSIFIED legacy blocker text, completed group/request
-  presentation, "N de M grupos concluídos". No manual "Concluir Pedido" — completion stays
-  automatic. Satisfied-but-inactive shows "Requisitos de conclusão satisfeitos" + note.
-- **Fiscal receipt UX**: Finance/SysAdmin-only "Registrar Recibo Fiscal" modal (upload as
-  `TYPE_FISCAL_RECEIPT` + bind via the Phase 4B endpoint + refresh), evidence display with
-  download and no replacement, Portuguese error mapping for the `FISCAL_RECEIPT_*` family,
-  new 409 `FISCAL_RECEIPT_CONCURRENCY` on RowVersion races with "Recarregar dados".
-- **WAITING_FISCAL_RECEIPT** presented as "Aguardando Recibo Fiscal" everywhere (seeded name
-  + responsible/next-action entry).
+#### Added
 
-### Release 4 Phase 4C — parent completion + trigger matrix + writer consolidation (backend only)
+- **Completion readiness projection** — `GroupCompletionProjector`, the single rulebook
+  (Classified · PoSatisfied · NoBlockingCorrection · PaymentSatisfied · ReceiptSatisfied ·
+  OperationInvoiceSatisfied · conditional FiscalReceiptRequired/Satisfied · Complete) with
+  ordered blocking reasons and the approved ownership map, exposed through
+  `GET /requests/{id}/completion-readiness` under normal request visibility.
+- **Operational receipt completion stamps** — ConfirmReceiving records the receipt fact
+  (`OR_DONE:{GroupId}`) when every group item is received (gated by `Enabled`, not
+  `CompletionEnabled`); the Phase-1 engine lazily derives the stamp for pre-activation
+  groups whose item records already prove full receipt.
+- **Fiscal receipt lifecycle** — `TYPE_FISCAL_RECEIPT` storage (Finance/SysAdmin) + atomic
+  binding endpoint `POST /requests/{id}/po-groups/{gid}/fiscal-receipt` with typed refusals
+  (`FISCAL_RECEIPT_NOT_REQUIRED`, `FISCAL_RECEIPT_LOCKED`, `FISCAL_RECEIPT_ALREADY_UPLOADED`,
+  `FISCAL_RECEIPT_ATTACHMENT_INVALID`, `FISCAL_RECEIPT_REQUEST_STATE`,
+  `FISCAL_RECEIPT_CONCURRENCY`), idempotent retries and `FR_UP` history.
+- **Automatic grouped request completion** — two-phase `RequestCompletionService`:
+  Phase 1 (in-transaction group transitions: `WAITING_FISCAL_RECEIPT` antechamber,
+  `GROUP_COMPLETED` keyed `GC:{GroupId}:{AttachmentId}` or `GC:{GroupId}:NOFR`) and Phase 2
+  (post-commit parent transition: `CompletionCycleId` exactly once, `REQUEST_COMPLETED`
+  keyed `RC:{RequestId}:{CycleId}`, RequestFinalized correlated by cycle, retry-once
+  RowVersion concurrency). Wired to receiving, fiscal receipt, invoice
+  Validate/Reject/Void/Replace, short-close approval, MarkAsPaid, ConfirmAdvancePayment,
+  ReconcileRequest and RegisterPo — all inert while the lifecycle flag is off.
+- **Readiness UI** — "Conclusão do Pedido" section in the request detail/Finance drawer:
+  per-group checklist (✓/○/—/⚠), "O que falta" with ownership, Phase 3 evidence badges,
+  legacy-UNCLASSIFIED blocker, completed group/request presentation, multi-group summary.
+  Deliberately no manual "Concluir Pedido".
+- **Fiscal receipt UI** — Finance/SysAdmin "Registrar Recibo Fiscal" modal (upload + bind +
+  refresh), receipt evidence with download, Portuguese error mapping, concurrency
+  "Recarregar dados".
+- **Parent completion recovery sweep** — `admin/release4/parent-completion-sweep`
+  preview/apply (SysAdmin apply, mandatory reason, fails closed while the lifecycle is off,
+  recovers exclusively through the authoritative service).
 
-Development state on top of Phase 4B; no version bump, no migration, no frontend change. TEST
-remains `Enabled=true, CompletionEnabled=false` — 4C makes activation SAFE, it does not activate.
+#### Changed
 
-- **Phase 2 is real**: `EvaluateParentCompletionAsync` is the single authoritative writer that
-  completes a grouped classified request — own post-commit transaction over reloaded state,
-  every blocker enforced (terminal/rejected/cancelled, groupless, all-cancelled, UNCLASSIFIED
-  fail-closed, incomplete groups, ANY active reconciliation incl. request-level null-group
-  rows), `CompletionCycleId` assigned exactly once, `REQUEST_COMPLETED` history
-  (`RC:{RequestId}:{CycleId}`) and `RequestFinalized` (CorrelationId = cycle) exactly once,
-  retry-once concurrency with AlreadyCompleted reusing the winner's identity and
-  `ConflictUnresolved` on a second loss. COMPLETED is terminal.
-- **Competing writers consolidated**: LineItems last-item shortcut suppressed for grouped
-  requests under completion (delegates to Phase 1/Phase 2; legacy byte-identical otherwise);
-  StatusAggregation defers a calculated COMPLETED (may reaffirm, never first);
-  `WAITING_FISCAL_RECEIPT` aggregation priority 95.
-- **Trigger matrix wired** (Phase 1 in-transaction, Phase 2 post-commit, inert while the flag
-  is off): ConfirmReceiving, fiscal receipt binding, invoice Validate/Reject/Void/Replace,
-  short-close APPROVE, MarkAsPaid, ConfirmAdvancePayment, ReconcileRequest, RegisterPo.
-  Short-close reject and allocation drafts deliberately not wired (no effective change).
-- **Recovery sweep**: `admin/release4/parent-completion-sweep` preview/apply — SysAdmin apply
-  with mandatory reason, fails closed while completion is disabled, recovers exclusively via
-  the authoritative service; idempotent.
+- Grouped request completion flows exclusively through `RequestCompletionService` when
+  `CompletionEnabled=true`; COMPLETED is terminal (no automatic reopening).
+- `WAITING_FISCAL_RECEIPT` becomes a live lifecycle stage: group antechamber status,
+  aggregation priority 95, presented everywhere as "Aguardando Recibo Fiscal".
+- Legacy completion writers are suppressed under the active lifecycle: the LineItems
+  last-item shortcut delegates to the completion engine for grouped requests, and status
+  aggregation defers a calculated COMPLETED (may reaffirm, never first). Byte-identical
+  legacy behavior while the flag is off.
+- The fiscal-receipt requirement honors `RequiresSeparateFiscalReceipt`: a
+  Factura-Recibo-class group derives `NOT_REQUIRED` and completes without a separate
+  receipt.
 
-### Release 4 Phase 4B — operational receipt stamping + fiscal receipt upload (backend only)
+#### Fixed
 
-Development state on top of Phase 4A; no version bump, no migration, no frontend change. TEST
-remains `Enabled=true, CompletionEnabled=false`.
-
-- **ConfirmReceiving stamps the operational receipt** when every group item is received: real
-  event time/actor, `OPERATIONAL_RECEIPT_COMPLETED` (`OR_DONE:{GroupId}`), normal-completion
-  wording. Approved flag rule: the stamp is a dimension fact gated by `Enabled` (not
-  `CompletionEnabled`); `Enabled=false` keeps legacy receiving byte-identical. Partial
-  receiving stamps nothing; retries preserve the original stamp. ConfirmReceiving is the one
-  approved Phase-1 trigger caller (same transaction, exact no-op while completion is off).
-- **Fiscal receipt upload lifecycle** (two-step, atomic): `TYPE_FISCAL_RECEIPT` storage via
-  the standard attachment path (Finance/SysAdmin only, completion-lifecycle window; label
-  "Recibo Fiscal") + `POST /requests/{id}/po-groups/{gid}/fiscal-receipt` binding endpoint
-  (Finance/SysAdmin; 404-gated by `Enabled`). Typed refusals:
-  `FISCAL_RECEIPT_NOT_REQUIRED`, `FISCAL_RECEIPT_LOCKED` (pending dimensions listed),
-  `FISCAL_RECEIPT_ALREADY_UPLOADED` (no replacement flow), `FISCAL_RECEIPT_ATTACHMENT_INVALID`,
-  `FISCAL_RECEIPT_REQUEST_STATE`. Exact retry is idempotent even after completion. One
-  SaveChanges persists binding + `FISCAL_RECEIPT_UPLOADED` (`FR_UP`) + Phase-1 evaluation —
-  a `WAITING_FISCAL_RECEIPT` group completes with `GC:{GroupId}:{AttachmentId}`. Parent
-  request untouched (Phase 2 stays 4C).
-
-### Release 4 Phase 4A — group completion projection + Phase 1 lifecycle (backend only)
-
-Development state on top of v2.228.4; no version bump, no migration, no frontend change, no
-production caller wired (`RequestCompletionService.EvaluateGroupCompletionAsync` is proven by
-tests only). TEST remains `Enabled=true, CompletionEnabled=false`; with the completion flag
-off the whole phase is an exact no-op.
-
-- **Group completion projection** (`GroupCompletionProjector`, pure): the single authoritative
-  predicate — Classified · PoSatisfied · NoBlockingCorrection · PaymentSatisfied (payment rows
-  + reconciliations, never request-level status; SCHEDULED is never paid; request-level owed
-  rows block every group) · ReceiptSatisfied (stamp or item records; services and materials
-  identical) · OperationInvoiceSatisfied (reuses `OperationInvoiceStatuses.IsSatisfied`) ·
-  conditional FiscalReceiptRequired/Satisfied — plus structured blocking-reason codes for the
-  future readiness UI.
-- **Conditional fiscal receipt (approved decision)**: `FiscalReceiptStateDeriver` now honors
-  `RequiresSeparateFiscalReceipt` — a Factura-Recibo-class group derives `NOT_REQUIRED` and is
-  completable without an attachment; unclassified groups stay LOCKED (the column default is
-  never read as "not owed").
-- **Phase 1 lifecycle** (`EvaluateGroupCompletionAsync`, inside the caller's transaction, no
-  SaveChanges/transaction of its own, change-tracker aware): lazy operational-receipt stamp
-  (evaluation timestamp, history explicitly states derivation from pre-existing receiving
-  records), `WAITING_FISCAL_RECEIPT` antechamber (`FISCAL_RECEIPT_UNLOCKED`,
-  `FR_UNLOCK:{GroupId}`), group completion (`GROUP_COMPLETED`,
-  `GC:{GroupId}:{FiscalReceiptAttachmentId}` or the approved `GC:{GroupId}:NOFR`), UNCLASSIFIED
-  skipped fail-closed, parent request untouched (Phase 2 dormant until 4C).
-- **Receiving rulebook unified**: `RequestWorkflowHelper.AreAllGroupItemsReceived` now
-  delegates to the domain `OperationalReceiptFacts` shared with the projection.
+- Conditional fiscal receipt: `FiscalReceiptStateDeriver`/completability no longer demand a
+  receipt from groups that do not owe one (previously such groups could never complete);
+  unclassified groups stay LOCKED.
+- Competing COMPLETED writers eliminated for the active lifecycle (LineItems shortcut,
+  aggregation back door) — one authoritative, audited completion path.
+- Parent completion concurrency/idempotency: exactly one CompletionCycleId, history row and
+  notification per completion; losers reuse the winner identity; a double conflict surfaces
+  `ConflictUnresolved` without rolling back the user action.
+- Fiscal receipt retry/concurrency: an exact same-attachment retry is an idempotent success
+  even after completion; RowVersion races return 409 `FISCAL_RECEIPT_CONCURRENCY` instead of
+  an unmapped 500.
 
 ## [v2.228.4] - 2026-08-13
 

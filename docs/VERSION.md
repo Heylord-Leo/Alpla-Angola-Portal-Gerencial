@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.228.4
+v2.229.0
+
+## [v2.229.0] - 2026-08-17
+
+### Release 4 — Post-Payment Completion lifecycle (Phases 4A–4D)
+
+- Deterministic group completion projection (P.O. · payment · operational receipt · Final
+  Invoice · conditional Fiscal Receipt) with fail-closed UNCLASSIFIED handling.
+- Operational receipt stamping on receiving completion; fiscal receipt storage + binding
+  lifecycle (`TYPE_FISCAL_RECEIPT`, Finance/SysAdmin).
+- Automatic grouped request completion through the authoritative `RequestCompletionService`
+  (two-phase, RowVersion-guarded, `CompletionCycleId` + `REQUEST_COMPLETED` exactly once) —
+  active only under `PostPaymentCompletion.CompletionEnabled=true`; legacy writers suppressed
+  or deferred while active. `WAITING_FISCAL_RECEIPT` antechamber in lifecycle + aggregation.
+- Completion readiness read model + "Conclusão do Pedido" UI (checklist, ownership,
+  evidence, fiscal receipt UX). SysAdmin parent-completion recovery sweep. No migration.
 
 ## [v2.228.4] - 2026-08-13
 

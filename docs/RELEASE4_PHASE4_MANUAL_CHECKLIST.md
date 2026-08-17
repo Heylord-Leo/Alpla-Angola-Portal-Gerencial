@@ -1,14 +1,24 @@
-# Release 4 — Phase 4 Manual Validation Checklist (4D UI + completion lifecycle)
+# Release 4 — Phase 4 Manual TEST Validation Checklist (AUTHORITATIVE)
 
-Manual validation of the completion readiness UI, the fiscal receipt UX and (when
-`CompletionEnabled=true` is authorized) the automatic completion lifecycle. Complements
-`RELEASE4_PHASE3B_MANUAL_CHECKLIST.md` (coverage workspace) — the Phase 3 checks are not
-repeated here.
+The authoritative manual validation record of the Release 4 completion lifecycle
+(v2.229.0). Complements `RELEASE4_PHASE3B_MANUAL_CHECKLIST.md` (coverage workspace) — the
+Phase 3 checks are not repeated here.
 
-**Environment states referenced below:**
-- **State 1 (current TEST)**: `Enabled=true, CompletionEnabled=false` — readiness visible,
-  dimension writes live (receipt stamp, fiscal receipt), automatic transitions dormant.
-- **State 2 (Phase 4E activation, future)**: both true — automatic group/parent completion.
+## The two validation states
+
+**STATE 1 — `Enabled=true, CompletionEnabled=false`** (the configuration v2.229.0 deploys
+with). Validates DORMANT-SAFE behavior: readiness/UX render honestly, dimension writes work
+(operational receipt stamp, fiscal receipt storage+binding), and NOTHING transitions
+automatically — no group leaves its status via the completion engine, no request completes,
+no "Pronto para concluir" appears.
+**State 1 sections: A, B (partial — no auto-completion), D, E, F, G, H, I, J, M.**
+Execute State 1 FIRST; activation is only authorized after it passes.
+
+**STATE 2 — `Enabled=true, CompletionEnabled=true`** (activation, separately authorized).
+Validates the ACTIVE lifecycle: `WAITING_FISCAL_RECEIPT` transitions, automatic group and
+parent completion, terminal COMPLETED presentation.
+**State 2 sections: B (full), C, K, L, plus re-running D to observe automatic completion.**
+**State 2 is NOT executed yet** — do not check its boxes before activation is authorized.
 
 Suggested synthetic data (from the approved Phase 4 manual plan): Request A (PAYMENT, 1 group,
 Proforma origin — normal completion), Request B (short-close completion), Request C

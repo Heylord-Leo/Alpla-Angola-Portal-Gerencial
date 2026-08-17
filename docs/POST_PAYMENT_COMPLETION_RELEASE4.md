@@ -218,7 +218,54 @@ short-close reopening workflow; Release 5 legacy classification. Phase 4 (comple
 operational/fiscal receipts, `CompletionEnabled=true`) started AFTER this closure — see the
 Phase 4 section below.
 
-## Phase 4 — Completion lifecycle (architecture approved; 4A implemented)
+## Phase 4 — Completion lifecycle (Phases 4A–4D CLOSED; 4E RC = v2.229.0)
+
+**Status: Phase 4A CLOSED · Phase 4B CLOSED · Phase 4C CLOSED · Phase 4D CLOSED · Phase 4E
+RC prepared as v2.229.0 (2026-08-17).** First TEST deployment ships with
+`Enabled=true, CompletionEnabled=false`; activation (`CompletionEnabled=true`) is a separate,
+explicitly authorized step after the State 1 manual checklist.
+
+### Final architecture (authoritative record)
+
+```
+GroupComplete =
+    Classified                       // OperationInvoiceStatus ≠ UNCLASSIFIED ∧ SourceDocumentType ≠ null
+    AND PoSatisfied                  // group left PENDING / WAITING_PO
+    AND NoBlockingCorrection         // group ≠ WAITING_PO_CORRECTION
+    AND PaymentSatisfied             // no owed PLANNED/SCHEDULED payment; no active reconciliation;
+                                     // regularization discharged when required; paid stage reached
+    AND ReceiptSatisfied             // operational receipt stamp, or item records prove full receipt
+    AND OperationInvoiceSatisfied    // aggregate NOT_REQUIRED | SATISFIED (incl. accepted
+                                     // divergence and approved short-close)
+    AND FiscalReceiptSatisfied
+
+FiscalReceiptSatisfied =
+    RequiresSeparateFiscalReceipt ? (attachment bound + upload stamp) : true
+
+RequestComplete =
+    every relevant (non-cancelled) group COMPLETED
+    AND no active request-level reconciliation
+```
+
+Invariants closed with Release 4:
+
+- **UNCLASSIFIED fails closed** — an unclassified group is skipped by Phase 1, blocks
+  Phase 2, and is only resolvable by the future Release 5 classification tool. No inference,
+  no backfill.
+- **COMPLETED is terminal** — no automatic reopening exists anywhere; post-completion
+  correction is a future explicit workflow. `CompletionCycleId` is assigned exactly once.
+- **One completion writer** — under `CompletionEnabled=true`, grouped classified requests
+  complete exclusively through `RequestCompletionService.EvaluateParentCompletionAsync`
+  (legacy exceptions: groupless `FinalizeRequest`; zero-group not-quoted auto-close). The
+  LineItems shortcut delegates; aggregation defers and may only reaffirm.
+- **No migration in the whole of Release 4 Phases 4A–4E** — the Release 1 schema foundation
+  carried the entire lifecycle.
+- **Recovery sweep** — `admin/release4/parent-completion-sweep` (preview Finance/SysAdmin;
+  apply SysAdmin + reason, fails closed while the lifecycle is off) re-invokes the
+  authoritative Phase 2 for requests whose groups all completed but whose parent transition
+  was lost; it never writes COMPLETED directly and never repairs facts.
+- **Phase 5 remains OCR/document intelligence** (`OperationInvoiceLine`, UPLOADED intake) —
+  untouched by Release 4.
 
 Architecture report approved on 2026-08-14 with all eight business decisions resolved:
 
