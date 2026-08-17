@@ -24,6 +24,18 @@ Suggested synthetic data (from the approved Phase 4 manual plan): Request A (PAY
 Proforma origin — normal completion), Request B (short-close completion), Request C
 (QUOTATION, 2 groups — blocked completion), plus one legacy UNCLASSIFIED request read-only.
 
+> **STATE 1 execution note (2026-08-17).** REQ-17/08/2026-232 exposed two defects during
+> STATE 1: (1) after Final Approval the request presented "Cotação Concluída" while actively
+> awaiting its first P.O. — invisible to Buyer status filters; (2) "ADIANTAMENTO NECESSÃ¡RIO"
+> mojibake from a migration-transport encoding defect. Both fixed in **v2.229.1** (data-only
+> migration `RepairWorkflowStatusNamesAndAwaitingPo` + pipeline UTF-8 hardening). **STATE 1
+> execution is PAUSED until v2.229.1 is deployed to TEST.** After deployment, re-check before
+> resuming: a) status after Final Approval reads "Aguardando P.O." and is Buyer-filterable;
+> b) awaiting-P.O. dashboard counts include it; c) "Adiantamento Necessário" renders with
+> correct accents (also "Ag. Entrega/Serviço" / "Ag. Reconciliação"); d) the REQ-232 R4-A
+> lifecycle continues normally from its registered P.O. (payment → receipt → Final Invoice →
+> readiness).
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

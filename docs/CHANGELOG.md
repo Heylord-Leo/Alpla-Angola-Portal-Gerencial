@@ -4,7 +4,44 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.0
+v2.229.1
+
+## [v2.229.1] - 2026-08-17
+
+### Release 4 TEST RC correction — awaiting-P.O. discoverability + status-name encoding
+
+Found by STATE 1 manual validation of REQ-17/08/2026-232. Workflow-status/discoverability and
+text correctness only — no Release 4 completion semantics touched; TEST flags unchanged
+(`Enabled=true, CompletionEnabled=false`). One DATA-ONLY migration
+(`RepairWorkflowStatusNamesAndAwaitingPo`); no schema change.
+
+#### Fixed
+
+- **Requests awaiting their first P.O. are actionable again**: after Final Approval with zero
+  of N required P.O.s registered, the request now projects `PO_REQUESTED` — displayed
+  "Aguardando P.O." (repurposed, previously orphaned lookup; active in the status filter) —
+  instead of the technically-true but done-looking, filter-invisible "Cotação Concluída"
+  (`IsActive=false`). Partial registration keeps `PO_PARTIALLY_UPLOADED`; all-registered keeps
+  the existing payment/advance aggregation; `WAITING_PO_CORRECTION` precedence unchanged;
+  `QUOTATION_COMPLETED` remains only for genuinely groupless settled quotations.
+- **Buyer filters/queues include the state**: awaiting-P.O. dashboard counts and navigation,
+  budget committed-status lists, approval-intelligence in-flight lists, operational stage maps
+  and action panels all recognize `PO_REQUESTED`; presentation is a pending/action style (sky,
+  clock icon) with "Comprador / Registrar P.O." as the next action. Legacy
+  `QUOTATION_COMPLETED` rows keep rendering safely everywhere during transition.
+- **Corrupted Portuguese workflow status names repaired** in every environment via
+  encoding-proof (NCHAR-constructed), idempotent data correction: "Adiantamento Necessário",
+  "Ag. Entrega/Serviço", "Ag. Reconciliação" (previously "NecessÃ¡rio"/"ServiÃ§o"/
+  "ReconciliaÃ§Ã£o" — double-encoded by the migration transport). History renders lookup names
+  dynamically, so no history rewrite is needed; correct free-text comments untouched.
+- **Migration SQL pipeline handles UTF-8 explicitly**: `apply-migrations.ps1` now writes the
+  generated script as UTF-8 WITH BOM (`[System.IO.File]::WriteAllText` + `UTF8Encoding(true)`,
+  identical on PS 5.1/7+) and executes with `sqlcmd -f 65001` — the BOM-less-UTF-8-read-as-ANSI
+  defect that originally corrupted the names cannot recur.
+- **Parked requests corrected**: existing `QUOTATION_COMPLETED` requests whose non-cancelled
+  groups all sit in `WAITING_PO` (the exact defect shape) move to `PO_REQUESTED` in the same
+  data migration; zero-group, partial-P.O., correction-state and later-stage requests are
+  explicitly untouched.
 
 ## [v2.229.0] - 2026-08-17
 

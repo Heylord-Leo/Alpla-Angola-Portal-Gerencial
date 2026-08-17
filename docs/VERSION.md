@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.229.0
+v2.229.1
+
+## [v2.229.1] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232)
+
+- Requests awaiting their first P.O. now project the actionable "Aguardando P.O." state
+  (repurposed PO_REQUESTED lookup) instead of the done-looking "Cotação Concluída"; Buyer
+  queues/filters/dashboards include it. Parked requests corrected by data migration.
+- Corrupted Portuguese status names repaired ("Adiantamento Necessário",
+  "Ag. Entrega/Serviço", "Ag. Reconciliação") and the migration SQL transport made
+  explicitly UTF-8 (BOM + sqlcmd -f 65001). One data-only migration; no schema change.
 
 ## [v2.229.0] - 2026-08-17
 
