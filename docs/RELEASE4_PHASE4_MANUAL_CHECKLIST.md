@@ -59,6 +59,20 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > shows Recebimento ✓ (Pagamento still ✓); d) continue with Final Invoice → fiscal receipt
 > readiness.
 
+> **STATE 1 execution note 4 (2026-08-17, after v2.229.3).** The live receiving confirmation
+> exposed a fourth finding: the modal presented the legacy "FINALIZAR PEDIDO … encerrado
+> permanentemente" wording and demanded a mandatory legacy RECEIPT attachment that cannot even
+> be uploaded in this state (Finance-only, WAITING_RECEIPT-only) — while the backend
+> ConfirmReceiving was already correct. Fixed in **v2.229.4** (frontend + taxonomy only):
+> "Confirmar Recebimento" with mandatory attestation checkbox, optional "Comprovativo de
+> recebimento/execução" (new RECEIVING_EVIDENCE type), no document required, no closure claims.
+> **STATE 1 remains PAUSED until v2.229.4 is deployed to TEST** (code-only, no migration).
+> Live re-check on REQ-232 (still 1/1 received, awaiting confirmation): a) modal title
+> "Confirmar Recebimento", attestation required, attachment optional; b) confirm WITHOUT a
+> file; c) readiness shows Recebimento ✓, Pagamento ✓, Recibo Fiscal still pending; d) history
+> carries the attestation statement; e) no automatic completion (CompletionEnabled=false);
+> f) then continue with Final Invoice → fiscal receipt readiness.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

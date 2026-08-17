@@ -4,7 +4,42 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.3
+v2.229.4
+
+## [v2.229.4] - 2026-08-17
+
+### Release 4 TEST RC correction — operational receiving attestation
+
+Found by STATE 1 manual validation of REQ-17/08/2026-232: the receiving confirmation modal
+presented itself as "Finalizar Pedido … encerrado permanentemente" and demanded a mandatory
+legacy `RECEIPT` attachment — wording borrowed from the Finance finalization concept, and a
+hard blocker in practice (that legacy type only uploads at WAITING_RECEIPT, Finance-only).
+The backend `ConfirmReceiving` lifecycle was always correct and is UNCHANGED. Frontend +
+attachment-taxonomy patch; no migration; TEST flags unchanged.
+
+#### Fixed
+
+- **Operational receiving no longer requires a fiscal/legacy receipt document**: the modal
+  (both entry points — Receiving workspace and request detail) is now "Confirmar Recebimento"
+  with the approved description; all "finalizar/encerrado permanentemente/recibo do
+  fornecedor" phrasing removed. Three concepts kept strictly apart: attestation (human
+  confirmation) · optional operational evidence · Finance-owned Recibo Fiscal.
+- **Explicit Receiving attestation**: mandatory checkbox "Atesto que os bens ou serviços
+  deste grupo foram efetivamente recebidos ou executados." gates the confirm button; the
+  uneditable statement is submitted verbatim into the CONFIRM_RECEIVING history (any user
+  comment appended after it), so actor + UTC + declaration ride the existing audit — no new
+  column.
+- **Optional supporting evidence** as the new `RECEIVING_EVIDENCE` attachment type
+  ("Comprovativo de Recebimento"): guia de entrega, relatório de serviço, termo de aceitação
+  or similar; receiving-phase window (PAYMENT_COMPLETED / WAITING_SUPPLIER_DELIVERY /
+  WAITING_RECEIPT / IN_FOLLOWUP, with the QUOTATION group-level fallback), actors matching
+  the operational receiving capability (Receiving/Buyer/SysAdmin), always group-linked.
+  Zero attachments remains a fully valid confirmation; services attest identically (no
+  delivery-note rule).
+- **Fiscal separation pinned**: evidence uploads never touch
+  `FiscalReceiptAttachmentId/UploadedAtUtc/UploadedByUserId`, and the fiscal binding endpoint
+  structurally rejects `RECEIVING_EVIDENCE` (it demands `TYPE_FISCAL_RECEIPT`). Legacy
+  `TYPE_RECEIPT` keeps its exact semantics untouched (rule R18).
 
 ## [v2.229.3] - 2026-08-17
 

@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.229.3
+v2.229.4
+
+## [v2.229.4] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, receiving attestation)
+
+- Operational receiving confirmation no longer demands a fiscal/legacy receipt document: the
+  Receiving user explicitly attests receipt/execution (mandatory checkbox, statement persisted
+  verbatim in history) with OPTIONAL supporting evidence stored as the new
+  `RECEIVING_EVIDENCE` type ("Comprovativo de Recebimento", group-linked, receiving-phase
+  window, Receiving/Buyer/SysAdmin). The modal no longer claims to permanently close the
+  request; fiscal-receipt facts remain exclusively Finance-owned. Frontend + attachment
+  taxonomy only; ConfirmReceiving backend lifecycle unchanged; no migration.
 
 ## [v2.229.3] - 2026-08-17
 
