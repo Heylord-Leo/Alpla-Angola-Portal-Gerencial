@@ -328,6 +328,54 @@ public class ConfirmReceivingOperationalReceiptTests
         Assert.Equal(completedStatus.Id, request.StatusId);
     }
 
+    // ── v2.229.4: attestation-in-history + service-item receiving (no document required) ──
+
+    [Fact]
+    public async Task Attestation_statement_lands_verbatim_in_the_receiving_history()
+    {
+        const string attestation =
+            "Atesto que os bens ou serviços deste grupo foram efetivamente recebidos ou executados.";
+
+        using var ctx = NewContext();
+        // A SERVICE-described item: services use the exact same attestation-based receipt —
+        // no delivery note, no separate rule (approved Release 4 semantics).
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" });
+        var item = await ctx.RequestLineItems.SingleAsync(li => li.RequestPoGroupId == seed.GroupId);
+        item.Description = "ZZTEST Serviço de manutenção industrial (execução)";
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: true, completion: false));
+        var result = await controller.ConfirmReceiving(seed.RequestId, new ConfirmReceivingDto
+        {
+            RequestPoGroupId = seed.GroupId,
+            Comment = attestation + " Comentário: serviço executado no local."
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+
+        // No attachment of any kind was needed; the attestation is the audited human act.
+        Assert.False(await ctx.RequestAttachments.AnyAsync());
+
+        var confirm = await ctx.RequestStatusHistories.SingleAsync(
+            h => h.ActionTaken == "CONFIRM_RECEIVING");
+        Assert.Contains(attestation, confirm.Comment);
+        Assert.Contains("serviço executado no local", confirm.Comment);
+
+        // The receipt facts and the single OR_DONE are unchanged by the wording.
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.NotNull(group.OperationalReceiptCompletedAtUtc);
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(
+            h => h.ActionTaken == WorkflowEventCodes.OperationalReceiptCompleted));
+
+        // Fiscal dimension untouched; no Phase-4 completion under CompletionEnabled=false.
+        Assert.Null(group.FiscalReceiptAttachmentId);
+        Assert.Null(group.CompletedAtUtc);
+        Assert.False(await ctx.RequestStatusHistories.AnyAsync(
+            h => h.ActionTaken == WorkflowEventCodes.GroupCompleted ||
+                 h.ActionTaken == "REQUEST_COMPLETED"));
+    }
+
     // ── F: Enabled=false — legacy behaviour byte-identical, no Phase-4 artifacts ──
 
     [Fact]

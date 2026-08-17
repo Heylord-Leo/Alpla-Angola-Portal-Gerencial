@@ -383,6 +383,24 @@ public class FiscalReceiptUploadTests
         Assert.Equal(FiscalReceiptsController.AttachmentInvalidCode, CodeOf(result));
     }
 
+    [Fact]
+    public async Task L2_receiving_evidence_can_never_be_bound_as_the_fiscal_receipt()
+    {
+        // v2.229.4 fiscal separation: operational receiving evidence is a different document
+        // class — the fiscal binding demands TYPE_FISCAL_RECEIPT, so RECEIVING_EVIDENCE is
+        // structurally unusable here.
+        using var ctx = new ApplicationDbContext(NewOptions());
+        var seed = await SeedAsync(ctx,
+            mutateAttachment: a => a.AttachmentTypeCode = RequestAttachment.TYPE_RECEIVING_EVIDENCE);
+        var controller = BuildController(ctx, seed.ActorId, RoleConstants.Finance);
+
+        var result = await UploadAsync(controller, seed);
+
+        Assert.Equal(FiscalReceiptsController.AttachmentInvalidCode, CodeOf(result));
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Null(group.FiscalReceiptAttachmentId);
+    }
+
     // ── M: attachment belongs to another request ──
 
     [Fact]

@@ -221,6 +221,46 @@ public class AttachmentsController : BaseController
                 detail = "O Recibo Fiscal só pode ser carregado depois da aprovação do pedido e " +
                          "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
                 break;
+            case RequestAttachment.TYPE_RECEIVING_EVIDENCE:
+                // v2.229.4: OPTIONAL operational receiving evidence. Window = the receiving
+                // phase (the same stages ConfirmReceiving/item receiving accept); actors = the
+                // operational receiving capability (Receiving confirms, Buyer may register item
+                // receipts, SysAdmin) — deliberately NOT Finance-gated and never mandatory.
+                isUploadable = new[]
+                {
+                    RequestConstants.Statuses.PaymentCompleted,
+                    RequestConstants.Statuses.WaitingSupplierDelivery,
+                    RequestConstants.Statuses.WaitingReceipt,
+                    RequestConstants.Statuses.InFollowup
+                }.Contains(statusCode);
+                // QUOTATION group-first fallback: the parent aggregate of a multi-group request
+                // may lag a specific group's receiving stage — mirror the PO/proof pattern.
+                if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var evidenceGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
+                    var receivingEligibleGroupStatuses = new[]
+                    {
+                        RequestConstants.Statuses.PaymentCompleted,
+                        RequestConstants.Statuses.WaitingSupplierDelivery,
+                        RequestConstants.Statuses.WaitingReceipt,
+                        RequestConstants.Statuses.InFollowup
+                    };
+                    if (evidenceGroup != null && receivingEligibleGroupStatuses.Contains(evidenceGroup.Status))
+                    {
+                        isUploadable = true;
+                    }
+                }
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Receiving) &&
+                    !CurrentUserRoles.Contains(RoleConstants.Buyer) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Recebimento, o Comprador ou o Administrador de Sistema podem carregar o comprovativo de recebimento.";
+                    break;
+                }
+                detail = "O Comprovativo de Recebimento só pode ser carregado durante a fase de recebimento.";
+                break;
             case AttachmentConstants.Types.Receipt:
                 isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);
                 if (isUploadable && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
@@ -422,6 +462,7 @@ public class AttachmentsController : BaseController
         else if (typeCode == AttachmentConstants.Types.Receipt) typeLabel = "Recibo";
         else if (typeCode == RequestAttachment.TYPE_OPERATION_INVOICE) typeLabel = "Fatura Final";
         else if (typeCode == RequestAttachment.TYPE_FISCAL_RECEIPT) typeLabel = "Recibo Fiscal";
+        else if (typeCode == RequestAttachment.TYPE_RECEIVING_EVIDENCE) typeLabel = "Comprovativo de Recebimento";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."

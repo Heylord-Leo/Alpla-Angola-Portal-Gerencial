@@ -47,6 +47,16 @@ public class RequestAttachment
     /// <summary>Fiscal receipt ("Recibo Fiscal") — terminal closing document, uploaded by Finance only.</summary>
     public const string TYPE_FISCAL_RECEIPT = "FISCAL_RECEIPT";
 
+    /// <summary>
+    /// v2.229.4: OPTIONAL operational receiving evidence ("Comprovativo de Recebimento") —
+    /// guia de entrega, relatório de serviço, termo de aceitação or similar, attached during the
+    /// Receiving confirmation. Deliberately distinct from the legacy ambiguous
+    /// <see cref="TYPE_RECEIPT"/> (rule R18 — never re-semanticized) and from the Finance-owned
+    /// <see cref="TYPE_FISCAL_RECEIPT"/>: operational evidence never satisfies the fiscal
+    /// dimension, and the receiving attestation itself needs no document at all.
+    /// </summary>
+    public const string TYPE_RECEIVING_EVIDENCE = "RECEIVING_EVIDENCE";
+
     // Buy-to-Pay
     public const string TYPE_ADVANCE_PAYMENT_PROOF = "ADVANCE_PAYMENT_PROOF";
     public const string TYPE_CREDIT_NOTE = "CREDIT_NOTE";
