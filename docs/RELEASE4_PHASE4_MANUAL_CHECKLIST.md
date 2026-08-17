@@ -73,6 +73,22 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > carries the attestation statement; e) no automatic completion (CompletionEnabled=false);
 > f) then continue with Final Invoice → fiscal receipt readiness.
 
+> **STATE 1 execution note 5 (2026-08-17, after v2.229.4).** The v2.229.4 attestation modal
+> PASSED live (title, mandatory attestation, no document, confirmation succeeded, statement in
+> history), but exposed a fifth finding: the group landed in "Em Acompanhamento" and readiness
+> stayed "Aguardando recebimento" despite 1/1 received. Root cause: the dual receiving-record
+> mismatch — the batch/candidate model keeps `SelectedQuotationItemId` as a compatibility
+> pointer, the receiving UI registers on the RequestLineItem, and the rulebook read only the
+> never-updated quotation item. Fixed in **v2.229.5** (Domain rulebook only: received = either
+> record RECEIVED; no frontend change, no migration). **STATE 1 remains PAUSED until v2.229.5
+> is deployed to TEST** (code-only). Live re-check on REQ-232 (currently IN_FOLLOWUP with 1/1
+> already received, no stamp): a) reopen "Confirmar Recebimento", attest, attach nothing,
+> confirm; b) group moves to WAITING_RECEIPT (never stays IN_FOLLOWUP); c) readiness shows
+> Recebimento ✓ and Pagamento still ✓, Fatura Final/Recibo Fiscal still pending;
+> d) OPERATIONAL_RECEIPT_COMPLETED history + operational receipt stamp present, OR_DONE once;
+> e) no automatic completion (CompletionEnabled=false); f) then continue with Final Invoice →
+> fiscal receipt readiness.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

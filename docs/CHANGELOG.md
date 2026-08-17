@@ -4,7 +4,46 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.4
+v2.229.5
+
+## [v2.229.5] - 2026-08-17
+
+### Release 4 TEST RC correction — batch-model operational receiving facts
+
+Found by STATE 1 manual validation of REQ-17/08/2026-232, immediately after the v2.229.4
+attestation modal passed: the receiving confirmation succeeded (attestation persisted, actor
+recorded) yet the group landed in "Em Acompanhamento" with completion readiness still
+"Aguardando recebimento — Recebimento / Operações", despite 1/1 received. Root cause: the
+receiving record legitimately lives on either side of the award pointer, but the rulebook read
+only one. The batch/candidate approval model stamps `SelectedQuotationItemId` on the request
+line item as a compatibility pointer while leaving `Request.SelectedQuotationId` null — so the
+receiving UI registers quantities on the **RequestLineItem**, while
+`OperationalReceiptFacts.AreAllGroupItemsReceived` read only the **winning QuotationItem**
+whenever the pointer existed. Nobody ever wrote that entity; full receipt evaluated false.
+Domain rulebook + tests only; no frontend change; no migration; TEST flags unchanged.
+
+#### Fixed
+
+- **Batch/candidate quotation receiving now recognizes the operational receipt recorded on the
+  request line item**: an item counts as received when its own `LineItemStatus` is RECEIVED
+  **or** its selected quotation item's status is RECEIVED — neither side alone is
+  authoritative. Legacy PAYMENT (no pointer, own record) and legacy QUOTATION (pointer +
+  quotation-item record) shapes are pinned unchanged.
+- **Full receipt no longer remains incorrectly in follow-up when the compatibility quotation
+  item was not updated**: ConfirmReceiving on the batch shape now moves the group to
+  WAITING_RECEIPT, stamps `OperationalReceiptCompletedAtUtc/ByUserId`, writes `OR_DONE` once,
+  and readiness reads Recebimento ✓ — including the healing path for groups already parked in
+  IN_FOLLOWUP by the defective evaluation (REQ-232: re-confirm receiving after this deploy).
+- **Fail-closed hardening**: a group whose line items are all soft-deleted no longer slips
+  past the empty-collection guard (`All()` over a filtered-empty set can never read true).
+- Partial receiving safety untouched: PARTIALLY_RECEIVED/PENDING on both sides still blocks
+  the stamp, keeps IN_FOLLOWUP and keeps `ReceiptSatisfied=false`.
+
+#### Technical debt (recorded, not implemented)
+
+- Dual receiving-state storage (RequestLineItem × QuotationItem quantities/statuses) should
+  eventually be unified into a single operational receiving record; the frontend writer
+  (`ReceivingOperation.tsx`) keeps its current batch-model behavior in this patch.
 
 ## [v2.229.4] - 2026-08-17
 

@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.229.4
+v2.229.5
+
+## [v2.229.5] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, batch-model receiving facts)
+
+- The operational receiving rulebook (`OperationalReceiptFacts`) now recognizes the receipt
+  record on EITHER side of the award pointer: the batch/candidate QUOTATION model registers
+  receiving on the request line item while `SelectedQuotationItemId` remains a compatibility
+  pointer to a never-updated quotation item — that shape previously evaluated "not received",
+  parking fully received groups in IN_FOLLOWUP with no operational receipt stamp and readiness
+  stuck on "Aguardando recebimento". Legacy PAYMENT and legacy QUOTATION semantics preserved;
+  partial receiving stays fail-closed; empty/all-deleted item collections stay fail-closed.
+  Domain rulebook + tests only; no migration; REQ-232 heals by re-confirming receiving.
 
 ## [v2.229.4] - 2026-08-17
 

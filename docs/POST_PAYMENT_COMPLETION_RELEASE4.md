@@ -256,6 +256,16 @@ Invariants closed with Release 4:
   the GROUP ≥ `TotalAmount` − standard tolerance. Null-group rows block when pending but are
   never counted as any group's money; partial advances stay pending even before their
   FINAL_BALANCE row exists; reconciliation/regularization blockers are unchanged.
+- **ReceiptSatisfied recognizes both receiving records (v2.229.5, REQ-17/08/2026-232)** —
+  the receiving record legitimately lives on either side of the award pointer. The legacy
+  QUOTATION flow registers on the winning `QuotationItem`; PAYMENT (no pointer) and the
+  batch/candidate QUOTATION model (pointer kept only for compatibility, request-level
+  `SelectedQuotationId` null, UI registers on the line item) both write the
+  `RequestLineItem`. `OperationalReceiptFacts.AreAllGroupItemsReceived` therefore accepts an
+  item as received when EITHER record reads RECEIVED — neither side alone is authoritative.
+  Empty or all-soft-deleted item collections fail closed; partial receiving on both sides
+  still blocks. (The dual receiving-record storage itself is recorded technical debt for a
+  future unification; the frontend writer keeps its batch-model behavior.)
 - **UNCLASSIFIED fails closed** — an unclassified group is skipped by Phase 1, blocks
   Phase 2, and is only resolvable by the future Release 5 classification tool. No inference,
   no backfill.
