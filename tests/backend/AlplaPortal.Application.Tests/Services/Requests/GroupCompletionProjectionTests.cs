@@ -450,6 +450,170 @@ public class GroupCompletionProjectionTests
         Assert.True(p.Complete);
     }
 
+    // ── v2.229.2: authoritative payment evidence (REQ-17/08/2026-232) ──
+    // The real post-ConfirmAdvancePayment shape: group parked in ADVANCE_PAYMENT_COMPLETED
+    // (never a ladder status), payment proven exclusively by COMPLETED owed-money rows.
+
+    private static RequestPayment CompletedPayment(Guid? groupId, string type, decimal actualPaid) => new()
+    {
+        RequestPoGroupId = groupId,
+        PaymentType = type,
+        PaymentStatus = RequestPayment.PaymentStatuses.Completed,
+        PlannedAmount = actualPaid,
+        ActualPaidAmount = actualPaid,
+        CurrencyCode = "AOA"
+    };
+
+    private static RequestPoGroup FullAdvanceGroup(
+        decimal totalAmount = 100_000m,
+        bool requiresAdvanceRegularization = false)
+    {
+        var group = SatisfiedGroup(
+            status: RequestConstants.PoGroupStatuses.AdvancePaymentCompleted,
+            operationInvoiceStatus: RequestConstants.OperationInvoiceStatuses.PendingUpload,
+            fiscalReceiptUploaded: false,
+            receiptStamped: false,
+            requiresAdvanceRegularization: requiresAdvanceRegularization,
+            itemStatuses: Pending);
+        group.TotalAmount = totalAmount;
+        return group;
+    }
+
+    [Fact]
+    public void Req232_full_advance_satisfies_payment_but_not_the_group()
+    {
+        // EXACT production shape: TotalAmount 100.000, ADVANCE_PAYMENT_COMPLETED, one COMPLETED
+        // ADVANCE row of 100.000, no PLANNED/SCHEDULED rows, no reconciliation, receipt and
+        // Final Invoice pending, separate fiscal receipt owed.
+        var group = FullAdvanceGroup();
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 100_000m) };
+
+        var p = Project(group, payments);
+
+        Assert.True(p.PaymentSatisfied);
+        Assert.False(p.Complete);
+        var codes = p.BlockingReasons.ToList();
+        Assert.DoesNotContain(GroupCompletionBlockingReasons.PaymentPending, codes);
+        Assert.Contains(GroupCompletionBlockingReasons.ReceiptPending, codes);
+        Assert.Contains(GroupCompletionBlockingReasons.OperationInvoicePending, codes);
+        Assert.Contains(GroupCompletionBlockingReasons.FiscalReceiptPending, codes);
+    }
+
+    [Fact]
+    public void Partial_advance_stays_payment_pending_even_before_the_final_balance_row_exists()
+    {
+        // CRITICAL: 30% paid, and the 70% FINAL_BALANCE row is not created until reconciliation —
+        // the absence of a PLANNED row must never read as fully paid.
+        var group = FullAdvanceGroup();
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 30_000m) };
+
+        var p = Project(group, payments);
+
+        Assert.False(p.PaymentSatisfied);
+        Assert.Contains(GroupCompletionBlockingReasons.PaymentPending,
+            p.BlockingReasons);
+    }
+
+    [Fact]
+    public void Planned_final_balance_keeps_a_partial_advance_blocked()
+    {
+        var group = FullAdvanceGroup();
+        var payments = new[]
+        {
+            CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 30_000m),
+            Payment(group.Id, RequestPayment.PaymentTypes.FinalBalance, RequestPayment.PaymentStatuses.Planned)
+        };
+
+        Assert.False(Project(group, payments).PaymentSatisfied);
+    }
+
+    [Fact]
+    public void Completed_final_balance_completes_the_payment_evidence()
+    {
+        var group = FullAdvanceGroup();
+        var payments = new[]
+        {
+            CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 30_000m),
+            CompletedPayment(group.Id, RequestPayment.PaymentTypes.FinalBalance, 70_000m)
+        };
+
+        var p = Project(group, payments);
+
+        Assert.True(p.PaymentSatisfied);
+        Assert.DoesNotContain(GroupCompletionBlockingReasons.PaymentPending,
+            p.BlockingReasons);
+    }
+
+    [Fact]
+    public void Paid_in_full_never_overrides_an_active_reconciliation()
+    {
+        var group = FullAdvanceGroup();
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 100_000m) };
+        var reconciliations = new[]
+        {
+            Reconciliation(null, RequestReconciliation.ReconciliationStatuses.InProgress)
+        };
+
+        Assert.False(Project(group, payments, reconciliations).PaymentSatisfied);
+    }
+
+    [Fact]
+    public void Paid_in_full_never_overrides_a_required_regularization()
+    {
+        var group = FullAdvanceGroup(requiresAdvanceRegularization: true);
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 100_000m) };
+
+        Assert.False(Project(group, payments).PaymentSatisfied);
+
+        var discharged = Project(group, payments, new[]
+        {
+            Reconciliation(group.Id, RequestReconciliation.ReconciliationStatuses.Completed)
+        });
+        Assert.True(discharged.PaymentSatisfied);
+    }
+
+    [Fact]
+    public void Overpayment_satisfies_without_requiring_exact_equality()
+    {
+        var group = FullAdvanceGroup();
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 103_000m) };
+
+        Assert.True(Project(group, payments).PaymentSatisfied);
+    }
+
+    [Fact]
+    public void Request_level_completed_rows_are_never_counted_as_this_groups_money()
+    {
+        // Asymmetric by design: a null-group row BLOCKS every group when pending, but is never
+        // SUMMED into any group's paid evidence — attributing it would fail open on multi-group
+        // requests. This group therefore stays pending (its ladder status is not a paid stage).
+        var group = FullAdvanceGroup();
+        var payments = new[] { CompletedPayment(null, RequestPayment.PaymentTypes.Advance, 100_000m) };
+
+        Assert.False(Project(group, payments).PaymentSatisfied);
+    }
+
+    [Fact]
+    public void Refunds_and_cancelled_rows_never_count_toward_paid_evidence()
+    {
+        var group = FullAdvanceGroup();
+        var payments = new[]
+        {
+            CompletedPayment(group.Id, RequestPayment.PaymentTypes.Refund, 100_000m),
+            new RequestPayment
+            {
+                RequestPoGroupId = group.Id,
+                PaymentType = RequestPayment.PaymentTypes.Advance,
+                PaymentStatus = RequestPayment.PaymentStatuses.Cancelled,
+                PlannedAmount = 100_000m,
+                ActualPaidAmount = 100_000m,
+                CurrencyCode = "AOA"
+            }
+        };
+
+        Assert.False(Project(group, payments).PaymentSatisfied);
+    }
+
     // ── Idempotency key shapes (approved identity rule) ──
 
     [Fact]

@@ -225,10 +225,34 @@ public static class GroupCompletionProjector
 
         var reachedPaidStage = PaidStageStatuses.Any(s => StatusIs(group.Status, s));
 
+        // ── v2.229.2 (REQ-17/08/2026-232): authoritative payment evidence ──
+        // The status ladder above covers only the STANDARD branch; a full advance leaves the
+        // group in ADVANCE_PAYMENT_COMPLETED / WAITING_SUPPLIER_DELIVERY and may never visit
+        // PAYMENT_COMPLETED at group level, so the ladder alone misread fully paid advances as
+        // unpaid. COMPLETED owed-money rows are the Finance domain's authoritative payment
+        // truth: when their sum covers the group total (standard tolerance), payment is proven
+        // regardless of the operational status. Amount-based on purpose — a PARTIAL advance
+        // (30%) stays unpaid even in the window before its FINAL_BALANCE row exists.
+        //
+        // Deliberately GROUP-SCOPED (asymmetric with the blocking predicate above): a
+        // request-level row with no group id blocks every group fail-closed, but is never
+        // COUNTED as any group's money — attributing it would fail open on multi-group
+        // requests. The ladder remains the fallback for legacy shapes whose evidence rows do
+        // not carry the full amounts.
+        var completedPaidTotal = payments
+            .Where(p => p.RequestPoGroupId == group.Id &&
+                        OwedMoneyPaymentTypes.Any(t => StatusIs(p.PaymentType, t)) &&
+                        StatusIs(p.PaymentStatus, RequestPayment.PaymentStatuses.Completed))
+            .Sum(p => p.ActualPaidAmount ?? 0m);
+
+        var paidInFull = group.TotalAmount > 0m &&
+            completedPaidTotal >= group.TotalAmount -
+                RequestConstants.FinancialIntegrity.CalculateTolerance(group.TotalAmount);
+
         var paymentSatisfied = !hasPendingOwedPayment
             && !hasActiveReconciliation
             && regularizationDischarged
-            && reachedPaidStage;
+            && (reachedPaidStage || paidInFull);
 
         // ── Operational receipt: the stamp, or the item records that already prove it ──
         var receiptSatisfied = group.OperationalReceiptCompletedAtUtc != null
@@ -255,7 +279,7 @@ public static class GroupCompletionProjector
         if (!classified) reasons.Add(GroupCompletionBlockingReasons.ClassificationPending);
         if (!poSatisfied) reasons.Add(GroupCompletionBlockingReasons.PoMissing);
         if (!noBlockingCorrection) reasons.Add(GroupCompletionBlockingReasons.PoCorrectionPending);
-        if (hasPendingOwedPayment || !reachedPaidStage)
+        if (hasPendingOwedPayment || !(reachedPaidStage || paidInFull))
             reasons.Add(GroupCompletionBlockingReasons.PaymentPending);
         if (hasActiveReconciliation || !regularizationDischarged)
             reasons.Add(GroupCompletionBlockingReasons.ReconciliationPending);

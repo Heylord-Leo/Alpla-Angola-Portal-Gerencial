@@ -361,6 +361,78 @@ public class RequestCompletionServicePhaseOneTests
         Assert.Equal(RequestConstants.PoGroupStatuses.WaitingReceipt, group.Status);
     }
 
+    // ── v2.229.2 (REQ-17/08/2026-232): full-advance evidence no longer blocks Phase 1 ──
+
+    [Fact]
+    public async Task Full_advance_group_completes_once_every_other_dimension_is_satisfied()
+    {
+        using var ctx = new ApplicationDbContext(NewOptions());
+        var seed = await SeedAsync(ctx, g =>
+        {
+            // The real post-ConfirmAdvancePayment shape: never a paid-stage ladder status.
+            g.Status = RequestConstants.PoGroupStatuses.AdvancePaymentCompleted;
+            g.TotalAmount = 100_000m;
+            g.PaymentConditionCode = RequestConstants.PaymentConditions.AdvanceFull;
+            g.RequiresSeparateFiscalReceipt = false; // NOFR so only payment could block
+        });
+        ctx.RequestPayments.Add(new RequestPayment
+        {
+            RequestId = seed.RequestId,
+            RequestPoGroupId = seed.GroupId,
+            PaymentType = RequestPayment.PaymentTypes.Advance,
+            PaymentStatus = RequestPayment.PaymentStatuses.Completed,
+            PlannedAmount = 100_000m,
+            ActualPaidAmount = 100_000m,
+            CurrencyCode = "AOA",
+            CreatedByUserId = seed.ActorId,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var result = await Service(ctx).EvaluateGroupCompletionAsync(seed.RequestId, seed.GroupId, seed.ActorId);
+        await ctx.SaveChangesAsync();
+
+        // PAYMENT_PENDING is gone, and with every other dimension satisfied the group completes.
+        Assert.True(result.AnyGroupCompleted);
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.Completed, group.Status);
+    }
+
+    [Fact]
+    public async Task Partial_advance_group_never_completes_on_evidence()
+    {
+        using var ctx = new ApplicationDbContext(NewOptions());
+        var seed = await SeedAsync(ctx, g =>
+        {
+            g.Status = RequestConstants.PoGroupStatuses.AdvancePaymentCompleted;
+            g.TotalAmount = 100_000m;
+            g.PaymentConditionCode = RequestConstants.PaymentConditions.AdvancePartial;
+            g.RequiresSeparateFiscalReceipt = false;
+        });
+        ctx.RequestPayments.Add(new RequestPayment
+        {
+            RequestId = seed.RequestId,
+            RequestPoGroupId = seed.GroupId,
+            PaymentType = RequestPayment.PaymentTypes.Advance,
+            PaymentStatus = RequestPayment.PaymentStatuses.Completed,
+            PlannedAmount = 30_000m,
+            ActualPaidAmount = 30_000m,
+            CurrencyCode = "AOA",
+            CreatedByUserId = seed.ActorId,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var result = await Service(ctx).EvaluateGroupCompletionAsync(seed.RequestId, seed.GroupId, seed.ActorId);
+        await ctx.SaveChangesAsync();
+
+        Assert.False(result.AnyGroupCompleted);
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.AdvancePaymentCompleted, group.Status);
+    }
+
     [Fact]
     public async Task Missing_request_reports_an_error_instead_of_throwing()
     {
