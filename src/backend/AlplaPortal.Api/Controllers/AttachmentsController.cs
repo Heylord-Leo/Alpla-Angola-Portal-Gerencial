@@ -160,18 +160,22 @@ public class AttachmentsController : BaseController
                 detail = "O Cronograma de Pagamento deve ser carregado nos estágios de emissão de P.O ou agendamento.";
                 break;
             case AttachmentConstants.Types.PaymentProof:
-                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted }.Contains(statusCode);
+                // v2.229.3: WAITING_SUPPLIER_DELIVERY joins both sets as compatibility
+                // preservation ONLY — a confirmed advance now lands there instead of parking in
+                // ADVANCE_PAYMENT_COMPLETED, and the proof re-upload Finance already had after
+                // confirmation must survive the handoff. Nothing broader was enabled.
+                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery }.Contains(statusCode);
                 // QUOTATION group-first: allow payment proof when the target group is in a finance-eligible status
                 if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
                 {
                     var targetPayGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
-                    var financeEligibleGroupStatuses = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted };
+                    var financeEligibleGroupStatuses = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery };
                     if (targetPayGroup != null && financeEligibleGroupStatuses.Contains(targetPayGroup.Status))
                     {
                         isUploadable = true;
                     }
                 }
-                if (isUploadable && statusCode == RequestConstants.Statuses.AdvancePaymentCompleted && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                if (isUploadable && (statusCode == RequestConstants.Statuses.AdvancePaymentCompleted || statusCode == RequestConstants.Statuses.WaitingSupplierDelivery) && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
                 {
                     isUploadable = false;
                     detail = "Apenas usuários do Financeiro podem carregar comprovativos após a conclusão do adiantamento.";

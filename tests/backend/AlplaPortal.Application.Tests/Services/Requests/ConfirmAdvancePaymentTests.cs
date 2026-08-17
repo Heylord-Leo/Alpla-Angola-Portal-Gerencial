@@ -105,7 +105,8 @@ public class ConfirmAdvancePaymentTests
         var advanceRequired = new RequestStatus { Id = 30, Code = RequestConstants.Statuses.AdvancePaymentRequired, Name = "Adiantamento Necessário", DisplayOrder = 23 };
         var poIssued = new RequestStatus { Id = 31, Code = RequestConstants.Statuses.PoIssued, Name = "P.O Emitida", DisplayOrder = 13 };
         var advanceCompleted = new RequestStatus { Id = 32, Code = RequestConstants.Statuses.AdvancePaymentCompleted, Name = "Adiantamento Concluído", DisplayOrder = 24 };
-        ctx.RequestStatuses.AddRange(advanceRequired, poIssued, advanceCompleted);
+        var waitingDelivery = new RequestStatus { Id = 33, Code = RequestConstants.Statuses.WaitingSupplierDelivery, Name = "Ag. Entrega/Serviço", DisplayOrder = 25 };
+        ctx.RequestStatuses.AddRange(advanceRequired, poIssued, advanceCompleted, waitingDelivery);
 
         var request = new Request
         {
@@ -179,10 +180,11 @@ public class ConfirmAdvancePaymentTests
     // Test matrix item 15: advance direct payment equal to PlannedAmount accepted.
     // Test matrix item 19 (advance side): sibling (NCR) remains unchanged.
     // Test matrix item 20 (advance side): parent status reflects the furthest-behind group via
-    // StatusAggregationService — NCR (PO_ISSUED, priority 30) is now behind ITEC's new
-    // ADVANCE_PAYMENT_COMPLETED (priority 26), so the parent becomes ADVANCE_PAYMENT_COMPLETED.
+    // StatusAggregationService — ITEC's confirmed advance now hands the group to
+    // WAITING_SUPPLIER_DELIVERY (v2.229.3, priority 27), which is behind NCR's PO_ISSUED (30),
+    // so the parent projects WAITING_SUPPLIER_DELIVERY ("Ag. Entrega/Serviço").
     [Fact]
-    public async Task ConfirmAdvancePayment_EqualToPlannedAmount_Accepted_ResultsInAdvancePaymentCompleted_SiblingUnaffected()
+    public async Task ConfirmAdvancePayment_EqualToPlannedAmount_Accepted_HandsGroupToSupplierDelivery_SiblingUnaffected()
     {
         var ctx = NewContext();
         var seed = await SeedMultiGroupQuotationAsync(ctx);
@@ -203,16 +205,17 @@ public class ConfirmAdvancePaymentTests
         var ncrGroup = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.NcrGroupId);
         var request = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
 
-        // Preserves the existing result — never labeled as a full/final payment, and never
-        // invents a transition to WAITING_SUPPLIER_DELIVERY (unreachable by any current code path).
-        Assert.Equal(RequestConstants.Statuses.AdvancePaymentCompleted, itecGroup.Status);
+        // v2.229.3 (REQ-17/08/2026-232): a confirmed advance hands the group to the
+        // supplier-delivery stage — the state every Receiving surface already speaks. Never
+        // labeled as a full/final payment.
+        Assert.Equal(RequestConstants.Statuses.WaitingSupplierDelivery, itecGroup.Status);
         Assert.NotEqual(RequestConstants.Statuses.PaymentCompleted, itecGroup.Status);
 
         // Sibling untouched.
         Assert.Equal(RequestConstants.Statuses.PoIssued, ncrGroup.Status);
 
         // Parent aggregation still ran (via StatusAggregationService) and picked the furthest-behind group.
-        Assert.Equal(RequestConstants.Statuses.AdvancePaymentCompleted, request.Status.Code);
+        Assert.Equal(RequestConstants.Statuses.WaitingSupplierDelivery, request.Status.Code);
 
         var payment = await ctx.RequestPayments.AsNoTracking().SingleAsync(p => p.RequestPoGroupId == seed.ItecGroupId);
         Assert.Equal(seed.PlannedAdvanceAmount, payment.ActualPaidAmount);
@@ -273,7 +276,7 @@ public class ConfirmAdvancePaymentTests
         Assert.IsType<OkObjectResult>(result);
 
         var itecGroup = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.ItecGroupId);
-        Assert.Equal(RequestConstants.Statuses.AdvancePaymentCompleted, itecGroup.Status);
+        Assert.Equal(RequestConstants.Statuses.WaitingSupplierDelivery, itecGroup.Status);
 
         var payment = await ctx.RequestPayments.AsNoTracking().SingleAsync(p => p.RequestPoGroupId == seed.ItecGroupId);
         Assert.Equal(overpaidAmount, payment.ActualPaidAmount);

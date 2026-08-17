@@ -594,6 +594,33 @@ public class GroupCompletionProjectionTests
     }
 
     [Fact]
+    public void Partial_evidence_overrides_the_ladder_even_at_a_paid_stage_status()
+    {
+        // v2.229.3: a partially paid advance group that reached WAITING_RECEIPT through
+        // receiving (delivery precedes the final balance by design) must NOT read as paid just
+        // because WAITING_RECEIPT sits in the ladder — the 30.000-of-100.000 evidence wins.
+        var group = FullAdvanceGroup();
+        group.Status = RequestConstants.PoGroupStatuses.WaitingReceipt;
+        var payments = new[] { CompletedPayment(group.Id, RequestPayment.PaymentTypes.Advance, 30_000m) };
+
+        var p = Project(group, payments);
+
+        Assert.False(p.PaymentSatisfied);
+        Assert.Contains(GroupCompletionBlockingReasons.PaymentPending, p.BlockingReasons);
+    }
+
+    [Fact]
+    public void Ladder_still_covers_legacy_groups_without_any_evidence_rows()
+    {
+        // No payment rows at all: the ladder remains the only truth (its original purpose) —
+        // a WAITING_RECEIPT group with zero evidence keeps reading as paid.
+        var group = FullAdvanceGroup();
+        group.Status = RequestConstants.PoGroupStatuses.WaitingReceipt;
+
+        Assert.True(Project(group).PaymentSatisfied);
+    }
+
+    [Fact]
     public void Refunds_and_cancelled_rows_never_count_toward_paid_evidence()
     {
         var group = FullAdvanceGroup();

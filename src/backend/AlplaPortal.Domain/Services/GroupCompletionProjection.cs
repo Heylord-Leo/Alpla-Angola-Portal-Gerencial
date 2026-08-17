@@ -249,10 +249,19 @@ public static class GroupCompletionProjector
             completedPaidTotal >= group.TotalAmount -
                 RequestConstants.FinancialIntegrity.CalculateTolerance(group.TotalAmount);
 
+        // v2.229.3: the ladder is a FALLBACK for shapes without amount evidence — it must never
+        // OVERRIDE evidence that contradicts it. A partial advance whose group later reaches
+        // WAITING_RECEIPT through receiving (delivery legitimately precedes the final balance)
+        // has completed rows proving LESS than the total: the ladder yields and payment stays
+        // honestly pending until the final balance/reconciliation discharges it. Groups with no
+        // evidence rows at all (legacy) keep the pure ladder reading.
+        var evidenceContradictsLadder = group.TotalAmount > 0m &&
+            completedPaidTotal > 0m && !paidInFull;
+
         var paymentSatisfied = !hasPendingOwedPayment
             && !hasActiveReconciliation
             && regularizationDischarged
-            && (reachedPaidStage || paidInFull);
+            && (paidInFull || (reachedPaidStage && !evidenceContradictsLadder));
 
         // ── Operational receipt: the stamp, or the item records that already prove it ──
         var receiptSatisfied = group.OperationalReceiptCompletedAtUtc != null
@@ -279,7 +288,7 @@ public static class GroupCompletionProjector
         if (!classified) reasons.Add(GroupCompletionBlockingReasons.ClassificationPending);
         if (!poSatisfied) reasons.Add(GroupCompletionBlockingReasons.PoMissing);
         if (!noBlockingCorrection) reasons.Add(GroupCompletionBlockingReasons.PoCorrectionPending);
-        if (hasPendingOwedPayment || !(reachedPaidStage || paidInFull))
+        if (hasPendingOwedPayment || !(paidInFull || (reachedPaidStage && !evidenceContradictsLadder)))
             reasons.Add(GroupCompletionBlockingReasons.PaymentPending);
         if (hasActiveReconciliation || !regularizationDischarged)
             reasons.Add(GroupCompletionBlockingReasons.ReconciliationPending);

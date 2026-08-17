@@ -7088,7 +7088,15 @@ public class RequestsController : BaseController
             advancePayment.DivergenceNotes = dto.Comment;
         }
 
-        group.Status = RequestConstants.Statuses.AdvancePaymentCompleted;
+        // v2.229.3 (REQ-17/08/2026-232): the confirmed advance hands the group DIRECTLY to the
+        // supplier-delivery stage. ADVANCE_PAYMENT_COMPLETED remains the FINANCIAL EVENT (the
+        // history row below), but parking the group there orphaned the whole B2P delivery
+        // chain — the Receiving workspace, ConfirmReceiving, item receiving and ConfirmDelivery
+        // all speak WAITING_SUPPLIER_DELIVERY, and nothing ever wrote it. Applies to FULL and
+        // PARTIAL advances alike: delivery precedes reconciliation/final balance by design, so
+        // receiving eligibility is intentionally independent of full payment (the completion
+        // readiness payment dimension stays honest on its own evidence).
+        group.Status = RequestConstants.Statuses.WaitingSupplierDelivery;
         group.UpdatedAtUtc = DateTime.UtcNow;
 
         var prevStatusId = request.StatusId;
@@ -7102,7 +7110,8 @@ public class RequestsController : BaseController
             PreviousStatusId = prevStatusId,
             NewStatusId = prevStatusId, // Keep parent request status id context — same convention as SchedulePayment/MarkAsPaid
             Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Montante", advancePayment.ActualPaidAmount!.Value)
-                + $" Adiantamento de {group.AdvancePaymentPercent:0.##}% realizado. Pago em {dto.PaidDate:dd/MM/yyyy}. " + (dto.Comment ?? ""),
+                + $" Adiantamento de {group.AdvancePaymentPercent:0.##}% realizado. Pago em {dto.PaidDate:dd/MM/yyyy}. "
+                + "Grupo encaminhado para Ag. Entrega/Serviço. " + (dto.Comment ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         });
         
