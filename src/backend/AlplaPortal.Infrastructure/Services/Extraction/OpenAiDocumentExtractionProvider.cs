@@ -861,8 +861,10 @@ CRITICAL PRECISION RULES:
   Types:
     * INVOICE_RECEIPT   — 'FACTURA-RECIBO' / 'FATURA-RECIBO'. Documents the operation AND its full payment.
     * ADVANCE_INVOICE   — 'FACTURA DE ADIANTAMENTO', 'FACTURA ADIANTAMENTO', 'ADIANTAMENTO'. Fiscal advance document.
-    * PROFORMA          — 'FACTURA PRÓ-FORMA', 'PRO-FORMA', 'PROFORMA'. NOT a legal Factura.
-    * ESTIMATE          — 'ORÇAMENTO', 'COTAÇÃO', 'PROPOSTA', 'QUOTATION'. NOT a legal Factura.
+    * PROFORMA          — 'FACTURA PRÓ-FORMA', 'PRO-FORMA', 'PROFORMA', and every commercial offer:
+                          'ORÇAMENTO', 'COTAÇÃO', 'PROPOSTA', 'PROPOSTA COMERCIAL', 'QUOTATION',
+                          'COMMERCIAL PROPOSAL', 'QUOTE', 'ESTIMATE'. NOT a legal Factura. All of
+                          these are the same payable origin; report the EXACT wording in titleFound.
     * INVOICE           — a plain 'FACTURA' / 'FATURA' documenting the actual supply.
     * OTHER             — a billing-related document that is none of the above.
 
@@ -878,7 +880,7 @@ CRITICAL PRECISION RULES:
        'Pago', 'Recibo n.º'.
     5. DOCUMENT-NUMBER PREFIXES — WEAKEST EVIDENCE, NEVER DECISIVE ON THEIR OWN.
        FT→INVOICE, FR→INVOICE_RECEIPT, FA→ADVANCE_INVOICE (ambiguous: also used for plain Factura),
-       PF/PRO→PROFORMA, ORC→ESTIMATE.
+       PF/PRO/ORC→PROFORMA.
        If a prefix is your ONLY evidence, you MUST set confidence to 0.50 or lower.
 
   CONFIDENCE: 0.90+ explicit unambiguous title. 0.70–0.89 clear title with minor ambiguity.
@@ -890,7 +892,7 @@ Output ONLY JSON with this structure:
 {
   ""header"": {
     ""documentClassification"": {
-      ""type"": ""ESTIMATE | PROFORMA | ADVANCE_INVOICE | INVOICE | INVOICE_RECEIPT | OTHER | null"",
+      ""type"": ""PROFORMA | ADVANCE_INVOICE | INVOICE | INVOICE_RECEIPT | OTHER | null"",
       ""confidence"": number (0.0-1.0),
       ""titleFound"": ""exact document title text, or null"",
       ""supportingEvidence"": [""verbatim strings supporting the type""],

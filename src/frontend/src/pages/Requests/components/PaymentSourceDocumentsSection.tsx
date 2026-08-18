@@ -86,6 +86,16 @@ export function PaymentSourceDocumentsSection({
         onDecision: (accepted: boolean) => void;
     } | null>(null);
 
+    /**
+     * The same file is an ACTIVE source document of another LIVE request — a debt already in
+     * flight (duplicate hierarchy LEVEL 1, cross-request). Hard block: no override exists for
+     * paying the same file twice.
+     */
+    const [crossRequestBlock, setCrossRequestBlock] = useState<{
+        fileName: string;
+        requestNumber: string | null;
+    } | null>(null);
+
     const isPayment = requestTypeCode === 'PAYMENT';
     const readOnly = !EDITABLE_STATUSES.includes(statusCode ?? '');
 
@@ -140,6 +150,17 @@ export function PaymentSourceDocumentsSection({
                     candidateFileName: file.name,
                     replacingDocumentId
                 });
+
+                if (verdict.outcome === 'BLOCK' && verdict.duplicateScope === 'OTHER_REQUEST') {
+                    // Registered as an active source document of another live request: a debt
+                    // already in flight. Nothing to acknowledge — the block is the answer.
+                    setCrossRequestBlock({
+                        fileName: file.name,
+                        requestNumber: verdict.requestNumber ?? null
+                    });
+                    resolve?.(null);
+                    return;
+                }
 
                 if (verdict.outcome === 'BLOCK') {
                     // Nothing is uploaded, nothing is read and nothing existing is disturbed —
@@ -300,6 +321,34 @@ export function PaymentSourceDocumentsSection({
                         });
                     }}
                     onCancel={() => setSameRequestDuplicate(null)}
+                />
+            )}
+
+            {/* The same file, already an active source document of another LIVE request. */}
+            {crossRequestBlock && (
+                <ConfirmationDialog
+                    title="Ficheiro já registado noutro pedido em curso"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                O ficheiro <strong>{crossRequestBlock.fileName}</strong> já está
+                                registado como documento de origem
+                                {crossRequestBlock.requestNumber
+                                    ? <> do pedido <strong>{crossRequestBlock.requestNumber}</strong></>
+                                    : ' de outro pedido'}{' '}
+                                ainda em curso e não pode originar dois pagamentos.
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Se o outro pedido estiver errado, cancele-o ou anule lá o documento
+                                antes de o registar aqui.
+                            </span>
+                        </div>
+                    }
+                    confirmText="Entendi"
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => setCrossRequestBlock(null)}
+                    onCancel={() => setCrossRequestBlock(null)}
                 />
             )}
 

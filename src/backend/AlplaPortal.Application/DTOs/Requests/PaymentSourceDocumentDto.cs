@@ -153,6 +153,17 @@ public class SavePaymentSourceDocumentDto
     /// creation is keyed: an ordinary field edit must stay repeatable.
     /// </summary>
     public string? CreationIdempotencyKey { get; set; }
+
+    // ── Duplicate hierarchy LEVEL 4 (v2.229.10) ──
+
+    /// <summary>
+    /// The user saw the ambiguous-duplicate refusal (same supplier reference, insufficient content
+    /// evidence to prove duplicate or distinct) and explicitly chose to proceed. Never implied.
+    /// </summary>
+    public bool? DuplicateOverrideAcknowledged { get; set; }
+
+    /// <summary>Mandatory written reason (≥ 20 chars) accompanying the acknowledgement. Audited.</summary>
+    public string? DuplicateOverrideReason { get; set; }
 }
 
 /// <summary>Everything the payment screen needs about a request's origin documents.</summary>

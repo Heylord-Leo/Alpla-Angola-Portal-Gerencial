@@ -156,6 +156,14 @@ export interface SavePaymentSourceDocumentDto {
 
     /** Required on update. Absent or stale is reported as a conflict, never merged. */
     rowVersion?: string | null;
+
+    /**
+     * Duplicate hierarchy LEVEL 4 (v2.229.10): the user saw the ambiguous-duplicate refusal
+     * (same supplier reference, insufficient content evidence) and explicitly chose to proceed,
+     * with a written reason (≥ 20 chars). The backend re-checks and audits both.
+     */
+    duplicateOverrideAcknowledged?: boolean | null;
+    duplicateOverrideReason?: string | null;
 }
 
 export interface VoidPaymentSourceDocumentDto {

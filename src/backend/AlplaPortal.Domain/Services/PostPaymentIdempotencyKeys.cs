@@ -269,6 +269,18 @@ public static class PostPaymentIdempotencyKeys
         => Build("PSD_REPL", paymentSourceDocumentId, newAttachmentId);
 
     /// <summary>
+    /// PAYMENT_SOURCE_DOCUMENT_DUPLICATE_OVERRIDE — PSD_DUP_OVR:{AttachmentId}:{ConflictingDocumentId}.
+    ///
+    /// <para>The user confirmed, with a written reason, that a document sharing another document's
+    /// supplier reference is genuinely distinct (duplicate hierarchy LEVEL 4). Keyed on the
+    /// candidate's attachment — stable across a retried create, where the document row id is not —
+    /// and on the specific document it was compared against: confirming against a different twin is
+    /// a different decision, while re-saving the same confirmed pair writes nothing new.</para>
+    /// </summary>
+    public static string PaymentSourceDocumentDuplicateOverride(Guid attachmentId, Guid conflictingDocumentId)
+        => Build("PSD_DUP_OVR", attachmentId, conflictingDocumentId);
+
+    /// <summary>
     /// PAYMENT_GROUPS_BUILT — PG_BUILD:{RequestId}.
     /// Request-scoped and fired once: re-running final approval must never produce a second set of
     /// PO groups.

@@ -79,7 +79,16 @@ export function usePaymentRequestCreation() {
          */
         materialiseAttachments?: (
             requestId: string, docs: TemporaryPaymentDocument[]
-        ) => Promise<TemporaryPaymentDocument[]>
+        ) => Promise<TemporaryPaymentDocument[]>,
+        /**
+         * Duplicate hierarchy LEVEL 4: the backend refused this document because another one
+         * shares its supplier reference and the content evidence cannot decide. Resolves with the
+         * user's written reason (≥ 20 chars) to retry once with the audited override, or null to
+         * leave the document failed with the backend's explanation.
+         */
+        onAmbiguousDuplicate?: (
+            document: TemporaryPaymentDocument, detail: string
+        ) => Promise<string | null>
     ): Promise<CreationRunResult> => {
         if (isRunningRef.current) {
             return { ok: false, requestId: requestIdRef.current, allDocumentsPersisted: false };
@@ -130,10 +139,37 @@ export function usePaymentRequestCreation() {
 
                     working = applyDocumentResult(working, document.tempId, { persisted });
                 } catch (e: any) {
-                    // Document 1 keeps its persisted id — a later failure never undoes earlier work.
-                    working = applyDocumentResult(working, document.tempId, {
-                        error: e?.message ?? 'Não foi possível guardar este documento.'
-                    });
+                    // LEVEL 4 ambiguous duplicate: ask the user once, retry once with the audited
+                    // override. Any other failure — including a declined override — records the
+                    // backend's explanation on the document.
+                    let resolved = false;
+                    if (e instanceof ApiError && e.errorCode === 'DUPLICATE_AMBIGUOUS' && onAmbiguousDuplicate) {
+                        const reason = await onAmbiguousDuplicate(document, e.message);
+                        if (reason) {
+                            try {
+                                const persisted: PaymentSourceDocumentDto =
+                                    await api.requests.createSourceDocument(requestId, {
+                                        ...toCreatePayload(document),
+                                        duplicateOverrideAcknowledged: true,
+                                        duplicateOverrideReason: reason
+                                    });
+                                working = applyDocumentResult(working, document.tempId, { persisted });
+                                resolved = true;
+                            } catch (retryError: any) {
+                                working = applyDocumentResult(working, document.tempId, {
+                                    error: retryError?.message ?? 'Não foi possível guardar este documento.'
+                                });
+                                resolved = true;
+                            }
+                        }
+                    }
+
+                    if (!resolved) {
+                        // Document 1 keeps its persisted id — a later failure never undoes earlier work.
+                        working = applyDocumentResult(working, document.tempId, {
+                            error: e?.message ?? 'Não foi possível guardar este documento.'
+                        });
+                    }
                 }
 
                 onDocumentsChanged(working);

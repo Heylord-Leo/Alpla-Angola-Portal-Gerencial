@@ -13,7 +13,6 @@
  */
 
 export const SOURCE_DOCUMENT_TYPES = {
-    ESTIMATE: 'ESTIMATE',
     PROFORMA: 'PROFORMA',
     ADVANCE_INVOICE: 'ADVANCE_INVOICE',
     INVOICE: 'INVOICE',
@@ -50,18 +49,11 @@ interface DocumentTypeDescription {
 }
 
 const ALL: Record<SourceDocumentType, Omit<DocumentTypeOption, 'value'> & DocumentTypeDescription> = {
-    ESTIMATE: {
-        label: 'Orçamento / Cotação',
-        isFiscal: false,
-        requiresReview: false,
-        whatItIs: 'Documento não fiscal com a proposta de preços do fornecedor.',
-        whatComesNext: 'Não autoriza pagamento. Se a proposta avançar, serão exigidas a factura da operação e o comprovativo/recibo de pagamento.'
-    },
     PROFORMA: {
         label: 'Factura Pró-forma',
         isFiscal: false,
         requiresReview: false,
-        whatItIs: 'Documento não fiscal usado antes do pagamento.',
+        whatItIs: 'Documento não fiscal usado antes do pagamento — inclui orçamentos, cotações e propostas comerciais do fornecedor.',
         whatComesNext: 'Depois será exigida a factura da operação e o comprovativo/recibo de pagamento.'
     },
     ADVANCE_INVOICE: {
@@ -104,10 +96,8 @@ const ALL: Record<SourceDocumentType, Omit<DocumentTypeOption, 'value'> & Docume
 /** Wording that changes with the context, because the same document plays a different role. */
 const CONTEXT_WORDING: Partial<Record<DocumentUsageContext, Partial<Record<SourceDocumentType, Partial<DocumentTypeDescription>>>>> = {
     QUOTATION_MANAGEMENT: {
-        ESTIMATE: {
-            whatComesNext: 'É o documento típico desta fase. Não autoriza pagamento por si só.'
-        },
         PROFORMA: {
+            whatItIs: 'Documento não fiscal com a proposta de preços do fornecedor — orçamento, cotação, proposta comercial ou factura pró-forma. É o documento típico desta fase.',
             whatComesNext: 'Se a cotação for escolhida e originar um pagamento, serão depois exigidas a factura da operação e o comprovativo/recibo de pagamento.'
         },
         ADVANCE_INVOICE: {
@@ -140,7 +130,6 @@ export function documentTypeOptionsFor(context: DocumentUsageContext): DocumentT
             ];
         case 'QUOTATION_MANAGEMENT':
             return [
-                option(SOURCE_DOCUMENT_TYPES.ESTIMATE),
                 option(SOURCE_DOCUMENT_TYPES.PROFORMA),
                 option(SOURCE_DOCUMENT_TYPES.INVOICE),
                 option(SOURCE_DOCUMENT_TYPES.ADVANCE_INVOICE, true),
@@ -210,13 +199,16 @@ export function isFiscalDocument(value?: string | null): boolean {
 }
 
 /**
- * Canonical form. Accepts the two superseded codes so a stale value renders instead of vanishing:
- * `FINAL_INVOICE` was the old binary code, and `FINAL` was the Quotation Wizard's local value.
+ * Canonical form. Accepts the superseded codes so a stale value renders instead of vanishing:
+ * `FINAL_INVOICE` was the old binary code, `FINAL` was the Quotation Wizard's local value, and
+ * `ESTIMATE` ("Orçamento / Cotação") was retired in v2.229.10 — every commercial offer is
+ * operationally a Factura Pró-forma. Mirrors `SourceDocumentTypes.Normalize` on the backend.
  */
 export function normalizeDocumentType(value?: string | null): SourceDocumentType | null {
     if (!value) return null;
     const upper = value.trim().toUpperCase();
     if (upper === 'FINAL_INVOICE' || upper === 'FINAL') return SOURCE_DOCUMENT_TYPES.INVOICE;
+    if (upper === 'ESTIMATE') return SOURCE_DOCUMENT_TYPES.PROFORMA;
     return (upper in ALL) ? (upper as SourceDocumentType) : null;
 }
 

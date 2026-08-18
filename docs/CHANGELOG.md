@@ -4,7 +4,57 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.9
+v2.229.10
+
+## [v2.229.10] - 2026-08-18
+
+### Document Intake Hardening
+
+The authenticated PROD walkthrough surfaced two intake defects: (A) OCR reading a supplier
+proposal as "Orçamento / Cotação" while the payment screen only offers "Factura Pró-forma"
+manufactured a false classification contradiction (checkbox + justification for agreeing with
+the document); (B) duplicate detection hard-blocked on supplier + document number alone, so
+CONSULTIT's legitimate reuse of the proposal reference `ONP_18910_v3` across four materially
+different proposals (Decoder, CCTV Viana01, CCTV Viana02, Reestruturação do Bastidor) could not
+be registered without falsifying real supplier references. No DB migration; Release 4 closure
+status unchanged; PROD untouched (Stage 2 remains pending).
+
+#### Fixed
+
+- **Canonical taxonomy — every commercial offer is a Factura Pró-forma**:
+  `SourceDocumentTypes.Normalize` (and the frontend mirror `normalizeDocumentType`) folds the
+  legacy `ESTIMATE` code into `PROFORMA`, exactly as `FINAL_INVOICE` → `INVOICE`. ESTIMATE left
+  `ValidValues` and every dropdown; `IsValid` judges the canonical form so stray legacy values
+  stay interpretable; the obligation resolver's separate Estimate branch is gone (a commercial
+  offer carries proforma obligations and may initiate payment). The OpenAI classification prompt
+  and `DocumentClassificationFallback` (ORÇAMENTO/COTAÇÃO/PROPOSTA COMERCIAL/QUOTATION keywords,
+  prefix ORC) now produce PROFORMA directly. Raw OCR titles and evidence JSON are preserved
+  verbatim. OCR-Orçamento + user-Pró-forma is agreement: no modal, no acknowledgement, no
+  override row (`OCR_CONFIRMED` path). INVOICE/ADVANCE_INVOICE/INVOICE_RECEIPT vs PROFORMA keep
+  the full conflict ritual, including the always-high-risk fiscal-understatement rule.
+- **Duplicate hierarchy (LEVELS 1–4)** in `PaymentSourceDocumentDuplicateHierarchy` +
+  `PaymentSourceDocumentFingerprint` (deterministic, order-independent SHA-256 item fingerprint;
+  reference normalization sees through `_`/`-`/`.`/space styling; no OCR calls, no fuzzy
+  matching): identical file hash blocks within-request AND — new — across live requests when the
+  file is already an active source document (`DUPLICATE_FILE_CROSS_REQUEST`, other request named
+  only when visible to the user); same reference + same company + same currency + totals within
+  the FinancialIntegrity tolerance + identical item fingerprint blocks as a proven semantic
+  duplicate (`DUPLICATE_SEMANTIC`, no override); materially different documents (company,
+  currency, gross, content) register silently; header equality without provable content evidence
+  refuses with `DUPLICATE_AMBIGUOUS` until the user explicitly confirms with a written reason
+  (≥ 20 chars) — audited in the request timeline (`DOCUMENTO_DUPLICADO_POTENCIAL_CONFIRMADO`,
+  idempotent per attachment/twin pair). Applies to create AND update, in the request-detail
+  composer and the creation wizard (shared `DuplicateOverrideDialog`). Cancelled/rejected
+  requests and voided documents are never blocking evidence.
+
+#### Unchanged by design
+
+- One request = one legal company: `Request.CompanyId` semantics, the Plant.CompanyId
+  validation and the plant-mismatch guard are untouched — a document can be documentary-distinct
+  because it targets another ALPLA company and still be refused in a request of a different
+  company.
+- RequestType QUOTATION, the Quotation entity and quotation management.
+- Release 4 Post-Payment Completion: no behavior change; `CompletionEnabled` stays false in PROD.
 
 ## [v2.229.9] - 2026-08-18
 

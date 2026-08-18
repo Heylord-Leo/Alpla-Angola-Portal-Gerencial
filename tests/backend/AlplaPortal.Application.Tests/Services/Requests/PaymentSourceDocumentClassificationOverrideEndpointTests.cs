@@ -110,18 +110,56 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
         return attachment;
     }
 
-    /// <summary>The reported scenario: OCR read Orçamento/Cotação, the user selects Pró-forma.</summary>
+    /// <summary>A genuine contradiction: OCR read a fiscal Factura, the user selects Pró-forma.</summary>
     private static SavePaymentSourceDocumentDto ConflictingCreateDto(
         Guid attachmentId, bool acknowledged, string? justification) => new()
     {
         AttachmentId = attachmentId,
         SourceDocumentType = Types.Proforma,
-        OcrSuggestion = Types.Estimate,
+        OcrSuggestion = Types.Invoice,
         OcrConfidence = 0.9m,
         ClassificationSuggestionSource = "OCR",
         ClassificationConflictAcknowledged = acknowledged,
         ClassificationJustification = justification
     };
+
+    // ── A0. The retired conflict: Orçamento/Cotação vs Pró-forma is agreement (v2.229.10) ──
+
+    [Fact]
+    public async Task Create_with_ocr_estimate_and_selected_proforma_is_agreement_not_a_conflict()
+    {
+        // The PROD walkthrough defect: OCR reads "Orçamento / Cotação", the payment screen only
+        // offers "Factura Pró-forma", and the system manufactured a contradiction between two names
+        // for the same payable origin. Canonicalized, the pair is agreement: no acknowledgement, no
+        // justification, no override row, no divergence history — the ordinary OCR-confirmed path.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var attachment = AddAttachment(ctx, seed);
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId).Create(seed.RequestId,
+            new SavePaymentSourceDocumentDto
+            {
+                AttachmentId = attachment.Id,
+                SourceDocumentType = Types.Proforma,
+                OcrSuggestion = Types.Estimate,
+                OcrConfidence = 0.9m,
+                OcrTitleFound = "PROPOSTA COMERCIAL",
+                ClassificationSuggestionSource = "OCR"
+                // Deliberately NO acknowledgement and NO justification — none is owed.
+            });
+
+        Assert.IsType<OkObjectResult>(result);
+
+        ctx.ChangeTracker.Clear();
+        var document = await ctx.PaymentSourceDocuments.SingleAsync(d => d.RequestId == seed.RequestId);
+        Assert.Equal(Types.Proforma, document.SourceDocumentType);
+        Assert.Equal(Types.Proforma, document.OcrSuggestion);            // canonicalized suggestion
+        Assert.Equal("PROPOSTA COMERCIAL", document.OcrTitleFound);      // raw evidence preserved
+        Assert.Equal(0, await ctx.DocumentClassificationOverrides.CountAsync());
+        Assert.False(await ctx.RequestStatusHistories
+            .AnyAsync(h => h.ActionTaken == "CLASSIFICACAO_DOCUMENTO_DIVERGENTE"));
+    }
 
     // ── A. Create-time override with complete evidence ──
 
@@ -141,12 +179,12 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
         ctx.ChangeTracker.Clear();
         var document = await ctx.PaymentSourceDocuments.SingleAsync(d => d.RequestId == seed.RequestId);
         Assert.Equal(Types.Proforma, document.SourceDocumentType);       // the user's decision
-        Assert.Equal(Types.Estimate, document.OcrSuggestion);            // the reading, preserved
+        Assert.Equal(Types.Invoice, document.OcrSuggestion);             // the reading, preserved
         Assert.True(document.ClassificationConflictAcknowledged);
 
         var overrideRow = await ctx.DocumentClassificationOverrides.SingleAsync();
         Assert.Equal(Types.Proforma, overrideRow.SelectedType);
-        Assert.Equal(Types.Estimate, overrideRow.SuggestedType);
+        Assert.Equal(Types.Invoice, overrideRow.SuggestedType);
         Assert.True(overrideRow.Acknowledged);
         Assert.Equal(ValidJustification, overrideRow.Justification);
         Assert.Equal(seed.ActorId, overrideRow.ActorUserId);
@@ -214,7 +252,7 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
         var dto = new SavePaymentSourceDocumentDto
         {
             AttachmentId = attachment.Id,
-            SourceDocumentType = Types.Estimate,
+            SourceDocumentType = Types.Estimate,   // stray legacy code — canonicalizes on write
             OcrSuggestion = Types.Estimate,
             OcrConfidence = 0.9m,
             ClassificationSuggestionSource = "OCR"
@@ -225,7 +263,8 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
 
         Assert.IsType<OkObjectResult>(result);
         ctx.ChangeTracker.Clear();
-        Assert.Equal(1, await ctx.PaymentSourceDocuments.CountAsync());
+        var document = await ctx.PaymentSourceDocuments.SingleAsync();
+        Assert.Equal(Types.Proforma, document.SourceDocumentType);   // ESTIMATE never persisted again
         Assert.Equal(0, await ctx.DocumentClassificationOverrides.CountAsync());
     }
 
@@ -241,8 +280,8 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
             Id = Guid.NewGuid(),
             RequestId = seed.RequestId,
             AttachmentId = Guid.NewGuid(),
-            SourceDocumentType = Types.Estimate,
-            OcrSuggestion = Types.Estimate,
+            SourceDocumentType = Types.Invoice,
+            OcrSuggestion = Types.Invoice,
             OcrConfidence = 0.9m,
             SequenceNumber = 1,
             CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
@@ -264,6 +303,37 @@ public class PaymentSourceDocumentClassificationOverrideEndpointTests
         Assert.Equal(Types.Proforma,
             (await ctx.PaymentSourceDocuments.SingleAsync(d => d.Id == document.Id)).SourceDocumentType);
         Assert.Equal(1, await ctx.DocumentClassificationOverrides.CountAsync());
+    }
+
+    /// <summary>A stray persisted ESTIMATE updated to Pró-forma is canonical agreement, not an override.</summary>
+    [Fact]
+    public async Task Update_from_stray_estimate_to_proforma_needs_no_acknowledgement()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+        var document = new PaymentSourceDocument
+        {
+            Id = Guid.NewGuid(),
+            RequestId = seed.RequestId,
+            AttachmentId = Guid.NewGuid(),
+            SourceDocumentType = Types.Estimate,   // legacy value persisted before v2.229.10
+            OcrSuggestion = Types.Estimate,
+            OcrConfidence = 0.9m,
+            SequenceNumber = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            CreatedByUserId = seed.ActorId
+        };
+        ctx.PaymentSourceDocuments.Add(document);
+        await ctx.SaveChangesAsync();
+
+        var result = await BuildController(ctx, seed.ActorId).Update(seed.RequestId, document.Id,
+            new SavePaymentSourceDocumentDto { SourceDocumentType = Types.Proforma });
+
+        Assert.IsType<OkObjectResult>(result);
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(Types.Proforma,
+            (await ctx.PaymentSourceDocuments.SingleAsync(d => d.Id == document.Id)).SourceDocumentType);
+        Assert.Equal(0, await ctx.DocumentClassificationOverrides.CountAsync());
     }
 
     // ── F. Override + grouping-key guard in one transaction ──

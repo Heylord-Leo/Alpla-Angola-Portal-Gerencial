@@ -254,8 +254,14 @@ public static class RequestConstants
     /// </summary>
     public static class SourceDocumentTypes
     {
-        /// <summary>Orçamento / Cotação. Non-fiscal. Named ESTIMATE because "QUOTATION" is already
-        /// the request type, the Quotation entity and QuotationLifecycleStatuses.</summary>
+        /// <summary>
+        /// Legacy code for "Orçamento / Cotação". v2.229.10 retired it as an operational
+        /// classification: every supplier commercial offer (orçamento, cotação, proposta) is the
+        /// same payable origin as a Factura Pró-forma, and keeping two codes for it manufactured
+        /// classification conflicts between OCR and the user. Accepted on READ and mapped to
+        /// <see cref="Proforma"/> by <see cref="Normalize"/>; never persisted again.
+        /// RequestType QUOTATION and the Quotation entity are unrelated and unaffected.
+        /// </summary>
         public const string Estimate = "ESTIMATE";
 
         /// <summary>Factura Pró-forma. Non-fiscal — legally not a Factura.</summary>
@@ -285,14 +291,18 @@ public static class RequestConstants
 
         /// <summary>Every classification a user may hold, excluding UNCLASSIFIED.</summary>
         public static readonly string[] ValidValues =
-            { Estimate, Proforma, AdvanceInvoice, Invoice, InvoiceReceipt, Other };
+            { Proforma, AdvanceInvoice, Invoice, InvoiceReceipt, Other };
 
-        /// <summary>Fiscal documents under Decree 71/25. Estimate and Proforma are NOT fiscal.</summary>
+        /// <summary>Fiscal documents under Decree 71/25. Proforma is NOT fiscal.</summary>
         public static readonly string[] FiscalValues =
             { AdvanceInvoice, Invoice, InvoiceReceipt };
 
-        public static bool IsValid(string? type) =>
-            ValidValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
+        /// <summary>Judged on the canonical form, so a stray legacy code stays interpretable.</summary>
+        public static bool IsValid(string? type)
+        {
+            var normalized = Normalize(type);
+            return ValidValues.Any(v => string.Equals(v, normalized, StringComparison.Ordinal));
+        }
 
         /// <summary>
         /// True only for documents with fiscal force. OTHER and UNCLASSIFIED are unknown, not
@@ -302,21 +312,28 @@ public static class RequestConstants
             FiscalValues.Any(v => string.Equals(v, type, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// Canonical form: trimmed, upper-cased, legacy alias resolved. Blank stays null — a blank
-        /// selection is never coerced into a type on the user's behalf.
+        /// Canonical form: trimmed, upper-cased, legacy aliases resolved. Blank stays null — a blank
+        /// selection is never coerced into a type on the user's behalf. ESTIMATE folds into PROFORMA
+        /// (v2.229.10): a commercial offer is operationally the proforma origin, whatever the
+        /// supplier titled it. Raw OCR evidence (title, evidence JSON) is preserved separately and
+        /// never passes through here.
         /// </summary>
         public static string? Normalize(string? type)
         {
             if (string.IsNullOrWhiteSpace(type)) return null;
 
             var upper = type.Trim().ToUpperInvariant();
-            return upper == LegacyFinalInvoice ? Invoice : upper;
+            return upper switch
+            {
+                LegacyFinalInvoice => Invoice,
+                Estimate => Proforma,
+                _ => upper
+            };
         }
 
         /// <summary>Portuguese label used in the UI, validation messages and history entries.</summary>
         public static string DisplayName(string? type) => Normalize(type) switch
         {
-            Estimate => "Orçamento / Cotação",
             Proforma => "Factura Pró-forma",
             AdvanceInvoice => "Factura de Adiantamento",
             Invoice => "Factura",

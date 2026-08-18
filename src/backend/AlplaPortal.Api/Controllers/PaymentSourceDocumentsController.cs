@@ -121,16 +121,25 @@ public class PaymentSourceDocumentsController : BaseController
             .ToListAsync();
 
         // ── Any other request ──
-        // Resolved here rather than inside the policy because the answer depends on what this user
-        // is allowed to see, which is not a domain rule.
+        // Resolved here rather than inside the policy because the answer depends on what exists in
+        // the store and on what this user is allowed to see, which is not a domain rule.
         var elsewhere = await _context.RequestAttachments
             .Include(a => a.Request)
             .Include(a => a.UploadedByUser)
             .Where(a => a.FileHash == hash && !a.IsDeleted && a.RequestId != requestId)
             .FirstOrDefaultAsync();
 
+        // The same file registered as an ACTIVE source document of a LIVE request elsewhere is a
+        // debt already in flight — LEVEL 1 cross-request, a hard block rather than a warning.
+        var activeElsewhere = elsewhere != null && await FindCrossRequestFileTwinAsync(requestId, hash) != null;
+
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            hash, siblings, dto.ReplacingDocumentId, existsOnAnotherRequest: elsewhere != null);
+            hash, siblings, dto.ReplacingDocumentId,
+            activeElsewhere
+                ? CrossRequestHashPresence.ActiveSourceDocumentOnLiveRequest
+                : elsewhere != null
+                    ? CrossRequestHashPresence.AttachmentOnly
+                    : CrossRequestHashPresence.None);
 
         var result = new SourceDocumentDuplicateResultDto
         {
@@ -223,6 +232,7 @@ public class PaymentSourceDocumentsController : BaseController
             return Ok(await ProjectAsync(existing));
         }
 
+        // ── LEVEL 1: exact file identity ──
         // The same FILE (by hash) already registered on this request is a genuine duplicate, not a
         // retry: the user picked the same invoice twice. Refused with the offending document named.
         var duplicate = await FindDuplicateByHashAsync(requestId, attachment);
@@ -236,6 +246,12 @@ public class PaymentSourceDocumentsController : BaseController
                 Status = 409
             });
         }
+
+        // The same file registered as an active source document of another LIVE request is a debt
+        // already in flight. Cross-request LEVEL 1 (v2.229.10): a hard block, with the other
+        // request named only when this user could open it anyway.
+        var crossFileProblem = await GuardCrossRequestFileTwinAsync(requestId, attachment.FileHash);
+        if (crossFileProblem != null) return Conflict(crossFileProblem);
 
         var supplierProblem = await GuardSupplierNotInternalAsync(dto.SupplierId);
         if (supplierProblem != null) return BadRequest(supplierProblem);
@@ -252,19 +268,13 @@ public class PaymentSourceDocumentsController : BaseController
 
         ApplyFields(document, dto);
 
-        // A renamed or re-scanned copy of an invoice already on this request has different bytes but
-        // is the same debt. Supplier + number + series is what identifies it.
-        var sameBusinessDocument = await FindDuplicateBusinessDocumentAsync(requestId, document.Id, document);
-        if (sameBusinessDocument != null)
-        {
-            return Conflict(new ProblemDetails
-            {
-                Title = "Documento duplicado",
-                Detail = $"O documento {document.DocumentNumber} deste fornecedor já está registado " +
-                         $"como Documento {sameBusinessDocument.SequenceNumber} neste pedido.",
-                Status = 409
-            });
-        }
+        // ── LEVELS 2–4: business identity ──
+        // Supplier + number + series alone is NOT a document identity — suppliers legitimately
+        // reuse a proposal reference across materially different proposals. The hierarchy blocks
+        // only proven semantic duplicates, allows proven differences, and demands an explicit
+        // audited confirmation when the evidence cannot decide.
+        var duplicateProblem = await GuardBusinessDuplicateAsync(request!, document, dto);
+        if (duplicateProblem != null) return Conflict(duplicateProblem);
 
         _context.PaymentSourceDocuments.Add(document);
         await RecordHistoryAsync(
@@ -356,6 +366,11 @@ public class PaymentSourceDocumentsController : BaseController
         ApplyFields(document, dto);
         document.UpdatedAtUtc = DateTime.UtcNow;
         document.UpdatedByUserId = CurrentUserId;
+
+        // The same LEVELS 2–4 rule as creation — otherwise an edit could type a twin's reference
+        // into an existing document and bypass the hierarchy entirely.
+        var duplicateProblem = await GuardBusinessDuplicateAsync(request!, document, dto);
+        if (duplicateProblem != null) return Conflict(duplicateProblem);
 
         var overrideProblem = await StageClassificationOverrideAsync(document, request!);
         if (overrideProblem != null) return BadRequest(overrideProblem);
@@ -535,31 +550,258 @@ public class PaymentSourceDocumentsController : BaseController
     }
 
     /// <summary>
-    /// The same business document already registered on this request, under a different file.
-    ///
-    /// <para>The hash check only catches the identical file. Renaming, re-scanning or re-exporting
-    /// the same invoice produces different bytes and would otherwise sail through — while being,
-    /// commercially, the same debt about to be paid twice. Supplier plus document number is what
-    /// identifies an invoice; the series distinguishes the legitimate case where two suppliers use
-    /// the same numbering.</para>
+    /// Requests whose source documents still guard against double payment. CANCELLED and REJECTED
+    /// requests can no longer lead to a payment, so a document registered on one is not a debt in
+    /// flight — blocking on it would be false double-payment protection around a dead request.
     /// </summary>
-    private async Task<PaymentSourceDocument?> FindDuplicateBusinessDocumentAsync(
-        Guid requestId, Guid documentId, PaymentSourceDocument candidate)
+    private static readonly string[] TerminalDeadRequestStatuses =
+        { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected };
+
+    /// <summary>
+    /// The identical file (by hash) registered as an ACTIVE source document of another LIVE
+    /// request, or null. Voided documents and dead requests are excluded by design.
+    /// </summary>
+    private async Task<(PaymentSourceDocument Document, Request Request)?> FindCrossRequestFileTwinCoreAsync(
+        Guid requestId, string? fileHash)
     {
-        var number = candidate.DocumentNumber?.Trim();
-        if (string.IsNullOrWhiteSpace(number) || candidate.SupplierId == null) return null;
+        if (string.IsNullOrWhiteSpace(fileHash)) return null;
 
-        var series = candidate.DocumentSeries?.Trim();
+        var twin = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId != requestId && !d.IsVoided)
+            .Join(_context.RequestAttachments.Where(a => !a.IsDeleted && a.FileHash == fileHash),
+                  d => d.AttachmentId, a => a.Id, (d, a) => d)
+            .Join(_context.Requests,
+                  d => d.RequestId, r => r.Id, (d, r) => new { d, r })
+            .Where(x => x.r.Status == null || !TerminalDeadRequestStatuses.Contains(x.r.Status.Code))
+            .FirstOrDefaultAsync();
 
-        var siblings = await _context.PaymentSourceDocuments
-            .Where(d => d.RequestId == requestId && !d.IsVoided && d.Id != documentId
-                        && d.SupplierId == candidate.SupplierId)
+        return twin == null ? null : (twin.d, twin.r);
+    }
+
+    private async Task<PaymentSourceDocument?> FindCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
+        => (await FindCrossRequestFileTwinCoreAsync(requestId, fileHash))?.Document;
+
+    /// <summary>
+    /// LEVEL 1 cross-request: refuses the candidate file when its hash is an active source document
+    /// of another live request. The other request is named only to a user who could open it anyway.
+    /// </summary>
+    private async Task<ProblemDetails?> GuardCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
+    {
+        var twin = await FindCrossRequestFileTwinCoreAsync(requestId, fileHash);
+        if (twin == null) return null;
+
+        var scoped = await GetScopedRequestsQuery();
+        var visible = await scoped.AnyAsync(r => r.Id == twin.Value.Request.Id);
+
+        var problem = new ProblemDetails
+        {
+            Title = "Documento duplicado",
+            Detail = visible
+                ? $"Este ficheiro já está registado como documento de origem do pedido " +
+                  $"{twin.Value.Request.RequestNumber} ainda em curso. O mesmo documento não pode " +
+                  "originar dois pagamentos."
+                : "Este ficheiro já está registado como documento de origem de outro pedido ainda " +
+                  "em curso. O mesmo documento não pode originar dois pagamentos.",
+            Status = 409
+        };
+        problem.Extensions["code"] = PaymentSourceDocumentDuplicateHierarchy.CrossRequestFileCode;
+        if (visible) problem.Extensions["conflictingRequestNumber"] = twin.Value.Request.RequestNumber;
+        return problem;
+    }
+
+    /// <summary>
+    /// LEVELS 2–4 of the duplicate hierarchy (v2.229.10), over this request's other active
+    /// documents AND active documents of other live requests.
+    ///
+    /// <para>The judgement itself is <see cref="PaymentSourceDocumentDuplicateHierarchy"/> — pure
+    /// and shared by create and update. This method only assembles the comparison material
+    /// (references, legal company via the owning request, content fingerprints from persisted
+    /// items) and, when an AMBIGUOUS twin was explicitly confirmed with a written reason, stages
+    /// the audit row in the same transaction as the save.</para>
+    /// </summary>
+    private async Task<ProblemDetails?> GuardBusinessDuplicateAsync(
+        Request request, PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)
+    {
+        if (document.SupplierId == null || string.IsNullOrWhiteSpace(document.DocumentNumber))
+            return null;
+
+        var candidateNumber = PaymentSourceDocumentFingerprint.NormalizeReference(document.DocumentNumber);
+        var candidateSeries = PaymentSourceDocumentFingerprint.NormalizeReference(document.DocumentSeries);
+
+        bool SameReference(string? number, string? series) =>
+            string.Equals(PaymentSourceDocumentFingerprint.NormalizeReference(number),
+                          candidateNumber, StringComparison.Ordinal) &&
+            string.Equals(PaymentSourceDocumentFingerprint.NormalizeReference(series),
+                          candidateSeries, StringComparison.Ordinal);
+
+        var sameRequest = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided && d.Id != document.Id
+                        && d.SupplierId == document.SupplierId && d.DocumentNumber != null)
+            .Select(d => new
+            {
+                d.Id, d.SequenceNumber, d.DocumentNumber, d.DocumentSeries, d.Currency, d.GrossAmount
+            })
             .ToListAsync();
 
-        return siblings.FirstOrDefault(d =>
-            string.Equals(d.DocumentNumber?.Trim(), number, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(d.DocumentSeries?.Trim() ?? string.Empty, series ?? string.Empty,
-                          StringComparison.OrdinalIgnoreCase));
+        var otherRequests = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId != request.Id && !d.IsVoided && d.Id != document.Id
+                        && d.SupplierId == document.SupplierId && d.DocumentNumber != null)
+            .Join(_context.Requests,
+                  d => d.RequestId, r => r.Id, (d, r) => new { d, r })
+            .Where(x => x.r.Status == null || !TerminalDeadRequestStatuses.Contains(x.r.Status.Code))
+            .Select(x => new
+            {
+                x.d.Id, x.d.SequenceNumber, x.d.DocumentNumber, x.d.DocumentSeries,
+                x.d.Currency, x.d.GrossAmount, x.r.CompanyId, x.r.RequestNumber, RequestId = x.r.Id
+            })
+            .ToListAsync();
+
+        var comparands = new List<BusinessDuplicateComparand>();
+
+        foreach (var d in sameRequest.Where(d => SameReference(d.DocumentNumber, d.DocumentSeries)))
+        {
+            comparands.Add(new BusinessDuplicateComparand
+            {
+                Id = d.Id,
+                SequenceNumber = d.SequenceNumber,
+                DocumentNumber = d.DocumentNumber,
+                DocumentSeries = d.DocumentSeries,
+                CompanyId = request.CompanyId,
+                Currency = d.Currency,
+                GrossAmount = d.GrossAmount,
+                ItemFingerprint = await ComputeItemFingerprintAsync(d.Id),
+                Scope = BusinessDuplicateScope.SameRequest
+            });
+        }
+
+        foreach (var d in otherRequests.Where(d => SameReference(d.DocumentNumber, d.DocumentSeries)))
+        {
+            comparands.Add(new BusinessDuplicateComparand
+            {
+                Id = d.Id,
+                SequenceNumber = d.SequenceNumber,
+                DocumentNumber = d.DocumentNumber,
+                DocumentSeries = d.DocumentSeries,
+                CompanyId = d.CompanyId,
+                Currency = d.Currency,
+                GrossAmount = d.GrossAmount,
+                ItemFingerprint = await ComputeItemFingerprintAsync(d.Id),
+                Scope = BusinessDuplicateScope.OtherRequest,
+                RequestNumber = d.RequestNumber,
+                RequestId = d.RequestId
+            });
+        }
+
+        if (comparands.Count == 0) return null;
+
+        var candidate = new BusinessDuplicateCandidate
+        {
+            DocumentNumber = document.DocumentNumber,
+            DocumentSeries = document.DocumentSeries,
+            CompanyId = request.CompanyId,
+            Currency = document.Currency,
+            GrossAmount = document.GrossAmount,
+            ItemFingerprint = await ComputeItemFingerprintAsync(document.Id)
+        };
+
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(candidate, comparands);
+
+        switch (decision.Verdict)
+        {
+            case BusinessDuplicateVerdict.Allow:
+                return null;
+
+            case BusinessDuplicateVerdict.Block:
+                return BuildDuplicateProblem(
+                    decision,
+                    PaymentSourceDocumentDuplicateHierarchy.SemanticDuplicateCode,
+                    prefix: "O documento é comercialmente idêntico a");
+
+            default:
+                return await ResolveAmbiguousDuplicateAsync(request, document, dto, decision);
+        }
+    }
+
+    /// <summary>
+    /// LEVEL 4: refused with a typed 409 until the user explicitly confirms with a written reason
+    /// (≥ 20 chars); a valid confirmation is allowed and audited in the request timeline —
+    /// user, timestamp, reason and the compared twin, idempotent per (attachment, twin) pair.
+    /// </summary>
+    private async Task<ProblemDetails?> ResolveAmbiguousDuplicateAsync(
+        Request request, PaymentSourceDocument document,
+        SavePaymentSourceDocumentDto dto, BusinessDuplicateDecision decision)
+    {
+        var reason = dto.DuplicateOverrideReason?.Trim();
+        var acknowledged = dto.DuplicateOverrideAcknowledged == true;
+
+        if (!acknowledged || reason == null ||
+            reason.Length < PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength)
+        {
+            var problem = BuildDuplicateProblem(
+                decision,
+                PaymentSourceDocumentDuplicateHierarchy.AmbiguousDuplicateCode,
+                prefix: "O documento partilha a referência de");
+            problem.Detail += " Não foi possível comparar o conteúdo comercial. Se se tratar de um " +
+                              "documento distinto, confirme explicitamente e justifique por escrito " +
+                              $"(mínimo {PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength} caracteres).";
+            return problem;
+        }
+
+        var match = decision.Match!;
+        await RecordHistoryAsync(
+            request, "DOCUMENTO_DUPLICADO_POTENCIAL_CONFIRMADO",
+            $"Documento de origem com a referência {document.DocumentNumber} confirmado como " +
+            $"distinto de {DescribeMatch(match)} ({decision.Reason}). Motivo: {reason}",
+            PostPaymentIdempotencyKeys.PaymentSourceDocumentDuplicateOverride(document.AttachmentId, match.Id));
+
+        return null;
+    }
+
+    private ProblemDetails BuildDuplicateProblem(
+        BusinessDuplicateDecision decision, string code, string prefix)
+    {
+        var match = decision.Match!;
+        var problem = new ProblemDetails
+        {
+            Title = "Documento duplicado",
+            Detail = $"{prefix} {DescribeMatch(match)} ({decision.Reason}).",
+            Status = 409
+        };
+        problem.Extensions["code"] = code;
+        problem.Extensions["conflictingDocumentNumber"] = match.DocumentNumber;
+        if (match.Scope == BusinessDuplicateScope.SameRequest)
+        {
+            problem.Extensions["conflictingSequenceNumber"] = match.SequenceNumber;
+        }
+        else if (match.RequestNumber != null)
+        {
+            problem.Extensions["conflictingRequestNumber"] = match.RequestNumber;
+        }
+        return problem;
+    }
+
+    private static string DescribeMatch(BusinessDuplicateComparand match) =>
+        match.Scope == BusinessDuplicateScope.SameRequest
+            ? $"Documento {match.SequenceNumber} deste pedido ({match.DocumentNumber ?? "sem número"})"
+            : match.RequestNumber != null
+                ? $"um documento do pedido {match.RequestNumber} ({match.DocumentNumber ?? "sem número"})"
+                : "um documento de outro pedido em curso";
+
+    /// <summary>
+    /// Content fingerprint of a document's active items, or null when it has none — the hierarchy
+    /// must see "no evidence", never a fabricated empty fingerprint.
+    /// </summary>
+    private async Task<string?> ComputeItemFingerprintAsync(Guid documentId)
+    {
+        var items = await _context.RequestLineItems
+            .AsNoTracking()
+            .Where(i => i.PaymentSourceDocumentId == documentId && !i.IsDeleted)
+            .Select(i => new { i.Description, i.Quantity, i.UnitPrice, i.TotalAmount })
+            .ToListAsync();
+
+        return PaymentSourceDocumentFingerprint.Compute(
+            items.Select(i => new DuplicateFingerprintItem(
+                i.Description, i.Quantity, i.UnitPrice, i.TotalAmount)));
     }
 
     private static void ApplyFields(PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)

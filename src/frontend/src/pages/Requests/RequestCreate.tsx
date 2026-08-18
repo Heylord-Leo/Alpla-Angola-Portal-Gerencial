@@ -23,6 +23,7 @@ import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
 import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
 import { PaymentDocumentComposer } from '../../components/requests/PaymentDocumentComposer';
+import { DuplicateOverrideDialog } from '../../components/requests/DuplicateOverrideDialog';
 import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
 import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
 import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
@@ -127,6 +128,23 @@ export function RequestCreate() {
     /** A ref, not state: the answer must be readable by the save that resumes on the same tick. */
     const activeDraftDecisionRef = useRef<'KEEP' | 'DISCARD' | null>(null);
     const creation = usePaymentRequestCreation();
+
+    /**
+     * Duplicate hierarchy LEVEL 4 during Stage C: another document shares this one's supplier
+     * reference and the content evidence cannot decide. The persistence loop awaits this promise;
+     * a written reason retries once with the audited override, null leaves the document failed.
+     */
+    const [duplicateOverridePrompt, setDuplicateOverridePrompt] = useState<{
+        detail: string;
+        resolve: (reason: string | null) => void;
+    } | null>(null);
+
+    const resolveAmbiguousDuplicate = useCallback(
+        (_document: TemporaryPaymentDocument, detail: string) =>
+            new Promise<string | null>(resolve => {
+                setDuplicateOverridePrompt({ detail, resolve });
+            }),
+        []);
 
     // Files chosen before the request exists. Keyed by a placeholder attachment id so the card can
     // show a filename immediately; the real upload happens in Stage C once there is a request to
@@ -1330,7 +1348,8 @@ export function RequestCreate() {
                     () => payload,
                     documentsForSave,
                     setTempDocuments,
-                    materialiseAttachments);
+                    materialiseAttachments,
+                    resolveAmbiguousDuplicate);
 
                 if (!run.requestId) {
                     // The result carries the reason directly — `creation.error` is this render's
@@ -2755,6 +2774,21 @@ export function RequestCreate() {
                     });
                 }}
             />
+
+            {/* Duplicate hierarchy LEVEL 4: proceed only with an explicit, audited justification. */}
+            {duplicateOverridePrompt && (
+                <DuplicateOverrideDialog
+                    detail={duplicateOverridePrompt.detail}
+                    onConfirm={reason => {
+                        duplicateOverridePrompt.resolve(reason);
+                        setDuplicateOverridePrompt(null);
+                    }}
+                    onCancel={() => {
+                        duplicateOverridePrompt.resolve(null);
+                        setDuplicateOverridePrompt(null);
+                    }}
+                />
+            )}
 
             {/* Reconciliation Warning Dialog */}
             {/* §15 — the document still open when the draft is saved. Never resolved silently. */}

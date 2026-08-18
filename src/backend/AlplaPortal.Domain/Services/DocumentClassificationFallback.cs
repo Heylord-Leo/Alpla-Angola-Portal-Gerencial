@@ -75,10 +75,16 @@ public static class DocumentClassificationFallback
         ("PRO-FORMA", RequestConstants.SourceDocumentTypes.Proforma),
         ("PROFORMA", RequestConstants.SourceDocumentTypes.Proforma),
 
-        ("ORÇAMENTO", RequestConstants.SourceDocumentTypes.Estimate),
-        ("ORCAMENTO", RequestConstants.SourceDocumentTypes.Estimate),
-        ("COTAÇÃO", RequestConstants.SourceDocumentTypes.Estimate),
-        ("COTACAO", RequestConstants.SourceDocumentTypes.Estimate),
+        // Commercial-offer wording. Canonically PROFORMA since v2.229.10: an orçamento, cotação or
+        // proposta is the same payable origin as a Factura Pró-forma, and suggesting a separate
+        // code manufactured conflicts with the only type the payment screen offers.
+        ("ORÇAMENTO", RequestConstants.SourceDocumentTypes.Proforma),
+        ("ORCAMENTO", RequestConstants.SourceDocumentTypes.Proforma),
+        ("COTAÇÃO", RequestConstants.SourceDocumentTypes.Proforma),
+        ("COTACAO", RequestConstants.SourceDocumentTypes.Proforma),
+        ("PROPOSTA COMERCIAL", RequestConstants.SourceDocumentTypes.Proforma),
+        ("COMMERCIAL PROPOSAL", RequestConstants.SourceDocumentTypes.Proforma),
+        ("QUOTATION", RequestConstants.SourceDocumentTypes.Proforma),
 
         ("FACTURA", RequestConstants.SourceDocumentTypes.Invoice),
         ("FATURA", RequestConstants.SourceDocumentTypes.Invoice)
@@ -91,7 +97,7 @@ public static class DocumentClassificationFallback
     /// </summary>
     private static readonly (string Prefix, string Type)[] NumberPrefixes =
     {
-        ("ORC", RequestConstants.SourceDocumentTypes.Estimate),
+        ("ORC", RequestConstants.SourceDocumentTypes.Proforma),
         ("PRO", RequestConstants.SourceDocumentTypes.Proforma),
         ("PF", RequestConstants.SourceDocumentTypes.Proforma),
         ("FR", RequestConstants.SourceDocumentTypes.InvoiceReceipt),

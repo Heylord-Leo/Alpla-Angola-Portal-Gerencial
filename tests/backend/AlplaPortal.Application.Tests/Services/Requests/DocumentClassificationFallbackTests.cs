@@ -47,7 +47,7 @@ public class DocumentClassificationFallbackTests
     [InlineData("FR2026/1", "INVOICE_RECEIPT")]
     [InlineData("PF2026/1", "PROFORMA")]
     [InlineData("PRO2026/1", "PROFORMA")]
-    [InlineData("ORC2026/1", "ESTIMATE")]
+    [InlineData("ORC2026/1", "PROFORMA")]   // v2.229.10: commercial offers are canonically PROFORMA
     public void Known_prefixes_map_to_their_document_type(string number, string expected)
     {
         Assert.Equal(expected, DocumentClassificationFallback.Derive(number, null).SuggestedType);
@@ -91,7 +91,9 @@ public class DocumentClassificationFallbackTests
     [InlineData("FACTURA-RECIBO N.º 12", "INVOICE_RECEIPT")]
     [InlineData("FACTURA DE ADIANTAMENTO", "ADVANCE_INVOICE")]
     [InlineData("FACTURA PRÓ-FORMA", "PROFORMA")]
-    [InlineData("ORÇAMENTO N.º 5", "ESTIMATE")]
+    [InlineData("ORÇAMENTO N.º 5", "PROFORMA")]        // v2.229.10 canonical commercial offer
+    [InlineData("COTAÇÃO N.º 7", "PROFORMA")]
+    [InlineData("PROPOSTA COMERCIAL 2026-01", "PROFORMA")]
     [InlineData("FACTURA N.º 900", "INVOICE")]
     public void Explicit_title_wording_is_decisive(string rawText, string expected)
     {

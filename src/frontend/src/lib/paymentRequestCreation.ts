@@ -2,6 +2,7 @@ import { PaymentSourceDocumentDto, SavePaymentSourceDocumentDto } from '../types
 import { OcrDraft } from '../types';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { ClassificationConflictState, EMPTY_CONFLICT, OcrDocumentClassification } from './documentClassificationDecision';
+import { normalizeDocumentType } from './sourceDocumentType';
 
 /**
  * Creating a PAYMENT request that carries several source documents takes more than one call: the
@@ -320,8 +321,12 @@ export function toCreatePayload(document: TemporaryPaymentDocument): SavePayment
         ocrEvidenceJson: document.classification ? JSON.stringify(document.classification) : null,
         ocrConflictingEvidenceJson: document.classification?.conflictingEvidence?.length
             ? JSON.stringify(document.classification.conflictingEvidence) : null,
+        // Compared in canonical form: an OCR "Orçamento/Cotação" reading confirmed as
+        // Factura Pró-forma is agreement, not a user override.
         classificationSource:
-            suggestion && suggestion === document.sourceDocumentType ? 'OCR_CONFIRMED' : 'USER_SELECTED',
+            suggestion && document.sourceDocumentType
+                && normalizeDocumentType(suggestion) === normalizeDocumentType(document.sourceDocumentType)
+                ? 'OCR_CONFIRMED' : 'USER_SELECTED',
         classificationSuggestionSource: document.classification
             ? (document.classification.isFallback ? 'FALLBACK' : 'OCR')
             : null,

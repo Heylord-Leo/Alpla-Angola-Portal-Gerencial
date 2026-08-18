@@ -48,12 +48,15 @@ public class PostPaymentDimensionDerivationTests
     // ── Taxonomy shape ──
 
     [Fact]
-    public void Six_selectable_document_types_are_in_scope()
+    public void Five_selectable_document_types_are_in_scope()
     {
-        Assert.Equal(6, RequestConstants.SourceDocumentTypes.ValidValues.Length);
-        foreach (var t in new[] { "ESTIMATE", "PROFORMA", "ADVANCE_INVOICE", "INVOICE", "INVOICE_RECEIPT", "OTHER" })
+        // v2.229.10: ESTIMATE left the selectable set — a commercial offer is canonically PROFORMA.
+        // The stray legacy code still VALIDATES, because IsValid judges the canonical form.
+        Assert.Equal(5, RequestConstants.SourceDocumentTypes.ValidValues.Length);
+        foreach (var t in new[] { "PROFORMA", "ADVANCE_INVOICE", "INVOICE", "INVOICE_RECEIPT", "OTHER", "ESTIMATE" })
             Assert.True(RequestConstants.SourceDocumentTypes.IsValid(t), t);
 
+        Assert.DoesNotContain("ESTIMATE", RequestConstants.SourceDocumentTypes.ValidValues);
         Assert.False(RequestConstants.SourceDocumentTypes.IsValid("UNCLASSIFIED"));
         Assert.False(RequestConstants.SourceDocumentTypes.IsValid(null));
     }

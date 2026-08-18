@@ -25,6 +25,23 @@ public enum DuplicateScope
     OtherRequest = 2
 }
 
+/// <summary>
+/// What the identical file is doing on another request. The distinction decides the outcome:
+/// registered as an ACTIVE source document of a LIVE request, it is a debt already in flight and
+/// registering it again is double payment — a hard block (v2.229.10 LEVEL 1 cross-request).
+/// Present merely as a loose attachment, it keeps the long-standing warn-and-decide behavior.
+/// </summary>
+public enum CrossRequestHashPresence
+{
+    None = 0,
+    /// <summary>The hash exists on another request only as an attachment (supporting evidence,
+    /// a cancelled request, a voided document). Legitimate cases exist; the user decides.</summary>
+    AttachmentOnly = 1,
+    /// <summary>The hash is an active (non-voided) source document of a live (non-terminal)
+    /// request. No reading of it makes paying the same file twice correct.</summary>
+    ActiveSourceDocumentOnLiveRequest = 2
+}
+
 public enum DuplicateOutcome
 {
     None = 0,
@@ -73,20 +90,20 @@ public static class PaymentSourceDocumentDuplicatePolicy
     /// — re-selecting a document's own current file is a no-op, not a duplicate, and treating it as
     /// one would make "Substituir anexo" fail whenever the user picked the file already there.
     /// </param>
-    /// <param name="existsOnAnotherRequest">
-    /// Whether the same hash is attached to some other request. Resolved by the caller, because it
-    /// depends on what the current user is allowed to see.
+    /// <param name="crossRequestPresence">
+    /// How the same hash appears on other requests, if at all. Resolved by the caller, because it
+    /// depends on what exists in the store and on what the current user is allowed to see.
     /// </param>
     public static DuplicateDecision Decide(
         string? candidateHash,
         IEnumerable<DuplicateCandidateDocument> sameRequestDocuments,
         Guid? replacingDocumentId,
-        bool existsOnAnotherRequest)
+        CrossRequestHashPresence crossRequestPresence)
     {
         // No hash, no comparison. Never guess from a filename: a renamed copy of the same invoice is
         // the same invoice, and two unrelated documents are often both "factura.pdf".
         if (string.IsNullOrWhiteSpace(candidateHash))
-            return existsOnAnotherRequest ? WarnOther() : DuplicateDecision.Clear;
+            return CrossRequest(crossRequestPresence);
 
         var conflict = sameRequestDocuments
             .Where(d => !d.IsVoided)                       // a withdrawn document is not in the request
@@ -107,12 +124,21 @@ public static class PaymentSourceDocumentDuplicatePolicy
             };
         }
 
-        return existsOnAnotherRequest ? WarnOther() : DuplicateDecision.Clear;
+        return CrossRequest(crossRequestPresence);
     }
 
-    private static DuplicateDecision WarnOther() => new()
+    private static DuplicateDecision CrossRequest(CrossRequestHashPresence presence) => presence switch
     {
-        Scope = DuplicateScope.OtherRequest,
-        Outcome = DuplicateOutcome.Warn
+        CrossRequestHashPresence.ActiveSourceDocumentOnLiveRequest => new DuplicateDecision
+        {
+            Scope = DuplicateScope.OtherRequest,
+            Outcome = DuplicateOutcome.Block
+        },
+        CrossRequestHashPresence.AttachmentOnly => new DuplicateDecision
+        {
+            Scope = DuplicateScope.OtherRequest,
+            Outcome = DuplicateOutcome.Warn
+        },
+        _ => DuplicateDecision.Clear
     };
 }

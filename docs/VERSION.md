@@ -2,7 +2,33 @@
 
 ## Current Version
 
-v2.229.9
+v2.229.10
+
+## [v2.229.10] - 2026-08-18
+
+### Document Intake Hardening (PROD walkthrough issues A/B)
+
+- **Commercial offers are canonically Factura Pró-forma.** The legacy `ESTIMATE`
+  ("Orçamento / Cotação") source-document classification is retired as an operational category:
+  `SourceDocumentTypes.Normalize` (backend) and `normalizeDocumentType` (frontend) fold
+  ESTIMATE → PROFORMA, the OCR prompt and the fallback keyword/prefix maps
+  (ORÇAMENTO/COTAÇÃO/PROPOSTA/QUOTATION, prefix ORC) now suggest PROFORMA, and ESTIMATE left the
+  selectable values. An OCR "Orçamento / Cotação" reading against a user "Factura Pró-forma"
+  selection is agreement — no contradiction modal, no justification, no override audit. Genuine
+  conflicts (INVOICE/ADVANCE_INVOICE/INVOICE_RECEIPT vs PROFORMA) and the fiscal-marker risk rule
+  are unchanged. Raw OCR title/evidence stays persisted verbatim. RequestType QUOTATION and
+  quotation management are untouched. No DB migration (PROD holds no persisted classifications;
+  stray legacy values canonicalize on read/write).
+- **Duplicate detection is now a deterministic 4-level hierarchy** replacing the
+  supplier+number+series hard block that rejected CONSULTIT's legitimate reuse of `ONP_18910_v3`
+  across four materially different proposals. LEVEL 1: identical file hash → hard block, now also
+  cross-request when the file is an active source document of a live request. LEVEL 2: same
+  supplier reference + same legal company + same currency + totals within tolerance + identical
+  item fingerprint → hard block. LEVEL 3: materially different (company, currency, gross outside
+  tolerance, different content) → allowed silently. LEVEL 4: header equality without provable
+  content evidence → explicit confirmation with written reason (≥ 20 chars), audited in the
+  request timeline. Cancelled/rejected requests and voided documents never block. The
+  one-request-one-company guard is unchanged.
 
 ## [v2.229.9] - 2026-08-18
 

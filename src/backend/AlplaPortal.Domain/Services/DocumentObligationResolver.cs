@@ -81,9 +81,6 @@ public sealed record DocumentObligations
 /// </summary>
 public static class DocumentObligationResolver
 {
-    private const string NonFiscalCannotPay =
-        "Documento não fiscal: não autoriza, por si só, o pagamento.";
-
     private const string AlreadyPaidCannotPayAgain =
         "A Factura-Recibo já documenta a operação e o respetivo pagamento integral. " +
         "Não pode originar um novo pedido de pagamento.";
@@ -105,7 +102,6 @@ public static class DocumentObligationResolver
 
         return type switch
         {
-            RequestConstants.SourceDocumentTypes.Estimate => Estimate(context),
             RequestConstants.SourceDocumentTypes.Proforma => Proforma(context),
             RequestConstants.SourceDocumentTypes.AdvanceInvoice => AdvanceInvoice(context),
             RequestConstants.SourceDocumentTypes.Invoice => Invoice(context),
@@ -123,29 +119,11 @@ public static class DocumentObligationResolver
     public static bool CanBeUsedInQuotation(string? sourceDocumentType) =>
         Resolve(sourceDocumentType, DocumentUsageContext.QuotationManagement).CanBeUsedInQuotation;
 
-    // ── Orçamento / Cotação — non-fiscal ─────────────────────────────────────
-    // Valid where purchases are being negotiated; never an authority to pay. An exceptional
-    // advance against an estimate would need justification, Finance review and explicit approval,
-    // which is a separate future workflow — not a silent allowance here.
-    private static DocumentObligations Estimate(DocumentUsageContext context) => new()
-    {
-        SourceDocumentType = RequestConstants.SourceDocumentTypes.Estimate,
-        Context = context,
-        IsFiscal = false,
-        CanInitiatePayment = false,
-        CanBeUsedInQuotation = true,
-        RequiresOperationInvoice = true,
-        RequiresSeparateFiscalReceipt = true,
-        RequiresAdvanceRegularization = false,
-        RequiresFinanceClassificationReview = context == DocumentUsageContext.PaymentRequest,
-        RequiresOperationalReceipt = true,
-        BlocksProgression = context == DocumentUsageContext.PaymentRequest,
-        BlockingReason = context == DocumentUsageContext.PaymentRequest ? NonFiscalCannotPay : null
-    };
-
     // ── Factura Pró-forma — non-fiscal, but the established payable origin ────
     // Legally not a Factura, yet it is how suppliers quote a payable amount. It always leaves an
-    // operation invoice owed.
+    // operation invoice owed. Since v2.229.10 this is also the canonical identity of every
+    // commercial offer (orçamento, cotação, proposta): SourceDocumentTypes.Normalize folds the
+    // legacy ESTIMATE code here, so no separate Estimate branch can be reached.
     private static DocumentObligations Proforma(DocumentUsageContext context) => new()
     {
         SourceDocumentType = RequestConstants.SourceDocumentTypes.Proforma,
