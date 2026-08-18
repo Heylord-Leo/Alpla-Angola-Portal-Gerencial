@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.229.8
+v2.229.9
+
+## [v2.229.9] - 2026-08-18
+
+### Release 4 timeline semantics + Fiscal Receipt modal polish (STATE 2, REQ-18/08/2026-233)
+
+- The request timeline now separates the OPERATIONAL receiving/execution of goods and
+  services ("Recebimento / Execução": WAITING_SUPPLIER_DELIVERY, IN_FOLLOWUP) from the
+  post-receiving fiscal-document lifecycle ("Documentação Fiscal": WAITING_RECEIPT,
+  WAITING_FISCAL_RECEIPT) — 8 stages in both flows, the duplicate QUOTATION "Agendamento"
+  stage removed, previously unmapped Release 4 statuses (WSD, WAITING_FISCAL_RECEIPT,
+  WAITING_RECONCILIATION, WAITING_PO_CORRECTION, PO_PARTIALLY_UPLOADED) mapped. The
+  completed "Recebimento / Execução" instant prefers the persisted operational receipt
+  stamp when every relevant group carries one. Timeline endpoint presentation only —
+  no workflow, completion or aggregation change; read-only; no migration.
+- "Registrar Recibo Fiscal" modal aligned with the Portal/Finance modal family: standard
+  dashed upload area (no native "Choose File"), filename + remove-before-submit, ✓ evidence
+  rows, shared label typography and primary-token CTA. Business semantics unchanged.
 
 ## [v2.229.8] - 2026-08-18
 

@@ -4,7 +4,48 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.8
+v2.229.9
+
+## [v2.229.9] - 2026-08-18
+
+### Release 4 timeline semantics + Fiscal Receipt modal polish
+
+STATE 2 A completed successfully on REQ-18/08/2026-233 (persisted "Grupo Concluído" and
+"Pedido Concluído" through the automatic lifecycle) and exposed two presentation issues:
+the timeline's "Recebimento" stage actually meant fiscal-document completion (the request
+sat in "Recebimento" long after the goods were received and attested), and the
+"Registrar Recibo Fiscal" modal used browser-native upload controls outside the Portal's
+visual standards. Timeline-endpoint presentation + frontend modal only; no completion,
+aggregation or workflow change; no migration.
+
+#### Fixed
+
+- **Timeline separates operational receiving/service execution from fiscal-document
+  completion** (authorized backend presentation change, `GetQuotationStages`/
+  `GetPaymentStages` + the timeline endpoint only): 8 stages in both flows — QUOTATION:
+  Rascunho · Cotação (now incl. QUOTATION_ADJUSTMENT) · Aprovações · P.O. / Contratação
+  (APPROVED, QUOTATION_COMPLETED, PO_REQUESTED, PO_PARTIALLY_UPLOADED, PO_ISSUED,
+  WAITING_PO_CORRECTION) · Pagamento (+ADVANCE family, +WAITING_RECONCILIATION) ·
+  **Recebimento / Execução** (WAITING_SUPPLIER_DELIVERY, IN_FOLLOWUP) · **Documentação
+  Fiscal** (WAITING_RECEIPT, WAITING_FISCAL_RECEIPT) · Concluído; PAYMENT keeps its
+  approval stages and standardizes the same tail ("Agendamento" became P.O. / Contratação).
+  The duplicate QUOTATION "Agendamento" stage (a second PO_ISSUED) and its dead
+  bypass post-processing are removed. Previously unmapped statuses no longer leave the
+  timeline without a current stage.
+- **Stage-6 timestamp prefers the persisted operational receipt**: when every relevant
+  (non-cancelled) group carries `OperationalReceiptCompletedAtUtc`, the LAST stamp is the
+  completed instant of "Recebimento / Execução" (furthest-behind, never fabricated — one
+  unstamped group keeps the status-history date). This also completes the stage honestly
+  for requests that reached fiscal documentation without a WSD/IN_FOLLOWUP history row.
+  Stage 7 and "Concluído" keep the existing history-based dates. The endpoint remains
+  read-only (pinned).
+- **"Registrar Recibo Fiscal" modal aligned with Portal visual standards**: the
+  OperationInvoiceRegisterModal upload pattern (dashed area, Upload→FileCheck icon,
+  filename with ellipsis, hidden native input) replaces the browser "Choose File" control;
+  "Remover ficheiro" before submission; ✓ evidence rows ("Fatura Final satisfeita",
+  "Recebimento operacional concluído", short-close variant preserved); shared label
+  typography and `var(--color-primary)` CTA ("Confirmar Registo"); success/error/
+  concurrency handling, endpoint, attachment type and gating unchanged.
 
 ## [v2.229.8] - 2026-08-18
 

@@ -134,6 +134,22 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > d) payment/reconciliation/quotation money fields behave identically; e) then resume
 > STATE 2: fiscal receipt on REQ-233 → sections C/K/L automatic completions.
 
+> **STATE 2 execution note 3 (2026-08-18, STATE 2 A closed + presentation polish).**
+> REQ-233 completed the FULL automatic lifecycle: fiscal receipt bound → group persisted
+> COMPLETED ("Grupo Concluído") → request persisted COMPLETED ("Pedido Concluído" /
+> Finalizado). Sections C, K and L are functionally PROVEN. Two presentation findings fixed
+> in **v2.229.9**: (1) the timeline now separates "Recebimento / Execução" (WSD/IN_FOLLOWUP —
+> operational receipt/attestation) from "Documentação Fiscal" (WAITING_RECEIPT/
+> WAITING_FISCAL_RECEIPT — Fatura Final/Recibo Fiscal), 8 stages, no duplicate "Agendamento",
+> stage-6 date = operational receipt stamp; (2) "Registrar Recibo Fiscal" modal aligned with
+> the Portal upload/typography standards. Live re-check after v2.229.9 reaches TEST:
+> a) REQ-233 timeline renders Rascunho → Cotação → Aprovações → P.O. / Contratação →
+> Pagamento → Recebimento / Execução → Documentação Fiscal → Concluído, all completed, no
+> mutation on open; b) stage 6 date = the operational receipt instant; c) a WSD request
+> shows "Recebimento / Execução" as current; d) the fiscal receipt modal (on a future
+> request) shows the Portal upload area, remove-file and ✓ evidence rows. Remaining STATE 2
+> items: sweep preview/validation with REQ-232, then PROD planning.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —
