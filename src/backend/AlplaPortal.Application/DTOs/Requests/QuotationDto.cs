@@ -9,6 +9,34 @@ public class SaveQuotationRequestDto
     public string SupplierNameSnapshot { get; set; } = string.Empty;
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>
+    /// Post-Payment Completion (Release 2 corrected): IDENTITY of the document the supplier issued
+    /// for this quotation — see RequestConstants.SourceDocumentTypes. No default; the Buyer must
+    /// select explicitly. Only the WINNING quotation's value propagates to the PO group.
+    /// </summary>
+    public string? DocumentType { get; set; }
+
+    // ── Classification evidence (how the identity was decided) ──
+    /// <summary>USER_SELECTED, OCR_CONFIRMED or FINANCE_REVIEW.</summary>
+    public string? DocumentTypeSource { get; set; }
+    /// <summary>What document extraction proposed. Never auto-applied to the selection.</summary>
+    public string? DocumentTypeOcrSuggestion { get; set; }
+    /// <summary>Extraction confidence for the suggestion (0.0–1.0).</summary>
+    public decimal? DocumentTypeOcrConfidence { get; set; }
+    /// <summary>Serialized supporting evidence behind the suggestion.</summary>
+    public string? DocumentTypeEvidenceJson { get; set; }
+    /// <summary>Verbatim document title the suggestion was drawn from.</summary>
+    public string? DocumentTypeTitleFound { get; set; }
+    /// <summary>Serialized evidence that pointed away from the suggestion.</summary>
+    public string? DocumentTypeConflictingEvidenceJson { get; set; }
+    /// <summary>OCR or FALLBACK — how the suggestion was reached.</summary>
+    public string? DocumentTypeSuggestionSource { get; set; }
+    /// <summary>The Buyer was warned that the selection conflicts with the evidence and proceeded.</summary>
+    public bool? ClassificationConflictAcknowledged { get; set; }
+    /// <summary>Mandatory written reason when a high-risk conflict was overridden.</summary>
+    public string? ClassificationJustification { get; set; }
+
     public string Currency { get; set; } = string.Empty;
     public decimal TotalGrossAmount { get; set; }
     public decimal DiscountAmount { get; set; }
@@ -108,6 +136,10 @@ public class QuotationReconciliationDto
     public decimal FinalConsideredTotal { get; set; }
     public decimal ManualAdditionsTotal { get; set; }
 
+    /// <summary>Summary-level document IVA recognized by reconciliation inference (v2.226.1) —
+    /// an automatically recognized component, never a buyer-entered justification.</summary>
+    public decimal DocumentSummaryIvaCredit { get; set; }
+
     public decimal IgnoredImpact { get; set; }
     public decimal QuantityImpact { get; set; }
     public decimal UnitPriceImpact { get; set; }
@@ -117,7 +149,8 @@ public class QuotationReconciliationDto
     public decimal ManualAdditionsImpact { get; set; }
     public decimal ExplainedLineAdjustments { get; set; }
 
-    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal).</summary>
+    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments −
+    /// FinalConsideredTotal − DocumentSummaryIvaCredit).</summary>
     public decimal ResidualVariance { get; set; }
     public decimal ToleranceApplied { get; set; }
     public bool ResidualExceedsTolerance { get; set; }
@@ -133,6 +166,17 @@ public class SavedQuotationDto
     public string SupplierNameSnapshot { get; set; } = string.Empty;
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+
+    /// <summary>Post-Payment Completion (Release 2 corrected): document identity, null when unclassified.</summary>
+    public string? DocumentType { get; set; }
+
+    // Returned so reopening a quotation restores the reading its classification was judged against.
+    public string? DocumentTypeOcrSuggestion { get; set; }
+    public decimal? DocumentTypeOcrConfidence { get; set; }
+    public string? DocumentTypeEvidenceJson { get; set; }
+    public bool ClassificationConflictAcknowledged { get; set; }
+    public string? ClassificationJustification { get; set; }
+
     public string Currency { get; set; } = string.Empty;
     public decimal TotalGrossAmount { get; set; }
     public decimal DiscountAmount { get; set; }

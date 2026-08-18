@@ -19,10 +19,43 @@ public class RequestAttachment
     
     // Constants for Type Codes
     public const string TYPE_PROFORMA = "PROFORMA";
+    /// <summary>Supplier quotation/orçamento document (Buyer quotation flow). Distinct from the
+    /// payment-workflow Proforma; historical quotation documents stamped PROFORMA stay untouched.</summary>
+    public const string TYPE_QUOTATION = "QUOTATION";
     public const string TYPE_PO = "PO";
     public const string TYPE_PAYMENT_PROOF = "PAYMENT_PROOF";
     public const string TYPE_PAYMENT_SCHEDULE = "PAYMENT_SCHEDULE";
+    /// <summary>
+    /// Legacy supplier receipt. Semantically ambiguous (fiscal receipt vs. delivery note) and
+    /// therefore NEVER renamed or reclassified automatically — historical rows keep this code
+    /// exactly as recorded (rule R18). New fiscal receipts use <see cref="TYPE_FISCAL_RECEIPT"/>.
+    /// </summary>
     public const string TYPE_RECEIPT = "RECEIPT";
+
+    // ── Post-Payment Completion Workflow ──
+    /// <summary>
+    /// Operation Invoice ("Factura da operação") uploaded post-approval by Buyer or Finance
+    /// (Release 4 Phase 2 approved rule: Requester and Receiving are read-only). Renamed from
+    /// FINAL_INVOICE in Release 3: "final" wrongly implied terminality, when a Factura is simply
+    /// the operation document and other obligations may still be open. The old code was never
+    /// written to any row, so nothing carries it.
+    /// </summary>
+    public const string TYPE_OPERATION_INVOICE = "OPERATION_INVOICE";
+
+    /// <summary>A document that ORIGINATES a PAYMENT request. Never an operation invoice.</summary>
+    public const string TYPE_PAYMENT_SOURCE_DOCUMENT = "PAYMENT_SOURCE_DOCUMENT";
+    /// <summary>Fiscal receipt ("Recibo Fiscal") — terminal closing document, uploaded by Finance only.</summary>
+    public const string TYPE_FISCAL_RECEIPT = "FISCAL_RECEIPT";
+
+    /// <summary>
+    /// v2.229.4: OPTIONAL operational receiving evidence ("Comprovativo de Recebimento") —
+    /// guia de entrega, relatório de serviço, termo de aceitação or similar, attached during the
+    /// Receiving confirmation. Deliberately distinct from the legacy ambiguous
+    /// <see cref="TYPE_RECEIPT"/> (rule R18 — never re-semanticized) and from the Finance-owned
+    /// <see cref="TYPE_FISCAL_RECEIPT"/>: operational evidence never satisfies the fiscal
+    /// dimension, and the receiving attestation itself needs no document at all.
+    /// </summary>
+    public const string TYPE_RECEIVING_EVIDENCE = "RECEIVING_EVIDENCE";
 
     // Buy-to-Pay
     public const string TYPE_ADVANCE_PAYMENT_PROOF = "ADVANCE_PAYMENT_PROOF";

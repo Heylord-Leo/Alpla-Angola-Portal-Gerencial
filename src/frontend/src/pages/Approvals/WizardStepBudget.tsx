@@ -66,6 +66,12 @@ export interface AllocationReassignmentDto {
 
 interface WizardStepBudgetProps {
     requestId: string;
+    /** Active ApprovalBatch id — scopes the preview to that batch's items (backend authority). */
+    batchId?: string | null;
+    /** Candidate model: the Area Approver's TENTATIVE winner selections. Identity only — the
+     * backend values them from the frozen candidate snapshots; partial selections preview only
+     * the selected subset. */
+    batchSelections?: { approvalBatchItemId: string; selectedCandidateId: string }[];
     itemAwards: Record<string, string>;
     itemAssignments: Record<string, ItemAssignment>;
     itemAllocations?: Record<string, any[]>;
@@ -82,6 +88,8 @@ interface WizardStepBudgetProps {
 
 export const WizardStepBudget: React.FC<WizardStepBudgetProps> = ({
     requestId,
+    batchId,
+    batchSelections,
     itemAwards,
     itemAssignments,
     itemAllocations,
@@ -168,7 +176,11 @@ export const WizardStepBudget: React.FC<WizardStepBudgetProps> = ({
         setReassignmentModal({ isOpen: false, targetAllocation: null, alternative: null, reason: '' });
     };
 
-    const payloadCacheKey = JSON.stringify({ itemAwards, itemAssignments, itemAllocations, extraItemDecisions });
+    const payloadCacheKey = JSON.stringify({
+        itemAwards, itemAssignments, itemAllocations, extraItemDecisions,
+        batchId: batchId ?? undefined,
+        selections: batchSelections && batchSelections.length > 0 ? batchSelections : undefined
+    });
 
     useEffect(() => {
         const fetchPreview = async () => {

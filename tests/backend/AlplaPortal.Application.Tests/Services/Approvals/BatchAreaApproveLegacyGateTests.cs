@@ -285,7 +285,19 @@ public class BatchAreaApproveLegacyGateTests
         Assert.True(applyResult.Success);
         await s.Ctx.SaveChangesAsync();
 
-        var result = await ApproveAsync(s);
+        // Candidate model: the included extra is a candidate-based item (no pre-set winner), so
+        // area approval must carry its winner selection; the legacy main item needs none.
+        var includedItem = s.Batch.Items.Single(bi => bi.RequestLineItemId != s.RequestedItem.Id);
+        var candidate = await s.Ctx.ApprovalBatchItemCandidates
+            .SingleAsync(c => c.ApprovalBatchItemId == includedItem.Id);
+
+        var result = await ApproveAsync(s, new BatchApprovalActionDto
+        {
+            Selections = new List<BatchWinnerSelectionDto>
+            {
+                new() { ApprovalBatchItemId = includedItem.Id, SelectedCandidateId = candidate.Id }
+            }
+        });
 
         AssertPassedGateReachingAllocationValidation(result);
     }

@@ -333,8 +333,21 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<Guid>("RequestLineItemId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("SelectedQuotationItemId")
+                    b.Property<Guid?>("SelectedCandidateId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SelectedQuotationItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("WinnerSelectedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("WinnerSelectedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("WinnerSelectionJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
 
@@ -344,9 +357,125 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("RequestLineItemId")
                         .HasDatabaseName("IX_ApprovalBatchItem_LineItemId");
 
+                    b.HasIndex("SelectedCandidateId");
+
                     b.HasIndex("SelectedQuotationItemId");
 
                     b.ToTable("ApprovalBatchItems");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItemCandidate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApprovalBatchItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BuyerNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("GrossSubtotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("HasReconciliationWarnings")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("IvaAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("IvaRatePercent")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("LineAdjustmentJustificationSnapshot")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("QuotationDocumentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("QuotationDocumentNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("QuotationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("QuotationItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("QuotedDescription")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("QuotedQuantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ReconciliationJustificationSnapshot")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ReconciliationStatusSnapshot")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupplierNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("SupplierNifSnapshot")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("UnitId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("UnitTextSnapshot")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalBatchItemId")
+                        .HasDatabaseName("IX_ApprovalBatchItemCandidate_BatchItemId");
+
+                    b.HasIndex("QuotationId");
+
+                    b.HasIndex("QuotationItemId")
+                        .HasDatabaseName("IX_ApprovalBatchItemCandidate_QuotationItemId");
+
+                    b.HasIndex("ApprovalBatchItemId", "QuotationItemId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovalBatchItemCandidate_Item_QuotationItem");
+
+                    b.ToTable("ApprovalBatchItemCandidates");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
@@ -1460,6 +1589,87 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("DepartmentMasters");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.DocumentClassificationOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Acknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Confidence")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("ConflictingEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Context")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Justification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("QuotationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SelectedType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SuggestedType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SuggestionSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TitleFound")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_DocumentClassificationOverride_IdempotencyKey");
+
+                    b.HasIndex("QuotationId")
+                        .HasDatabaseName("IX_DocumentClassificationOverride_QuotationId");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("IX_DocumentClassificationOverride_RequestId");
+
+                    b.ToTable("DocumentClassificationOverrides");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.DocumentExtractionSettings", b =>
@@ -4828,6 +5038,545 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AmountsEnteredManually")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("AttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BilledCompanyNameRead")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("DocumentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DocumentSeries")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("GrossAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("NetAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("SupersededByOperationInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupplierTaxIdSnapshot")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("TaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UploadedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UploadedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ValidatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ValidatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("VoidedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("VoidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttachmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationInvoice_AttachmentId");
+
+                    b.HasIndex("RequestId", "Status")
+                        .HasDatabaseName("IX_OperationInvoice_RequestStatus");
+
+                    b.HasIndex("SupplierId", "DocumentNumber", "DocumentSeries")
+                        .HasDatabaseName("IX_OperationInvoice_SupplierDocument");
+
+                    b.ToTable("OperationInvoices");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AllocatedGrossAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("AllocatedNetAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("AllocatedTaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("OperationInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SequenceNumber")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationInvoiceId", "RequestPoGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationInvoiceAllocation_InvoiceGroup");
+
+                    b.HasIndex("RequestPoGroupId", "SequenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationInvoiceAllocation_GroupSequence");
+
+                    b.ToTable("OperationInvoiceAllocations");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BaselineLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BaselineLineType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("MatchStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("OperationInvoiceAllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperationInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid?>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BaselineLineId")
+                        .HasDatabaseName("IX_OperationInvoiceLine_BaselineLineId");
+
+                    b.HasIndex("OperationInvoiceAllocationId")
+                        .HasDatabaseName("IX_OperationInvoiceLine_AllocationId");
+
+                    b.HasIndex("OperationInvoiceId");
+
+                    b.ToTable("OperationInvoiceLines");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceReconciliation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AllocatedTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("BaselineTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ClassificationWarning")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("CompanyMatched")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("CumulativeValidatedTotalBefore")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("CurrencyMatched")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("DivergenceAccepted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("DivergenceDetected")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("DivergenceJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal>("ExpectedTotalAtComparison")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("InvoiceTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("NifMatched")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("OperationInvoiceAllocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperationInvoiceAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("OperationInvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReconciliationDataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ResidualVariance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("SupplierMatched")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("ToleranceApplied")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationInvoiceAllocationId")
+                        .HasDatabaseName("IX_OperationInvoiceReconciliation_AllocationId");
+
+                    b.HasIndex("OperationInvoiceAttachmentId")
+                        .HasDatabaseName("IX_OperationInvoiceReconciliation_AttachmentId");
+
+                    b.HasIndex("RequestPoGroupId")
+                        .HasDatabaseName("IX_OperationInvoiceReconciliation_PoGroupId");
+
+                    b.ToTable("OperationInvoiceReconciliations");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceShortClose", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DecidedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("EvidenceAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProposalJustification")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("ProposedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ProposedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("RemainingAmountAtProposal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestPoGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationInvoiceShortClose_ActivePerGroup")
+                        .HasFilter("[Status] IN ('PROPOSED', 'APPROVED')");
+
+                    b.ToTable("OperationInvoiceShortCloses");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ClassificationConflictAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ClassificationJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("ClassificationReviewedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("ClassificationReviewedByFinance")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ClassificationReviewedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClassificationSource")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ClassificationSuggestionSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("DocumentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DocumentSeries")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("GrossAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsVoided")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("NetAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("OcrConfidence")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("OcrConflictingEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OcrEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OcrSuggestion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("OcrTitleFound")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int?>("PlantId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SequenceNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupplierNameSnapshot")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("SupplierTaxIdSnapshot")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("TaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("VoidedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("VoidedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttachmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentSourceDocument_AttachmentId");
+
+                    b.HasIndex("PlantId");
+
+                    b.HasIndex("RequestId", "IsVoided")
+                        .HasDatabaseName("IX_PaymentSourceDocument_RequestActive");
+
+                    b.HasIndex("RequestId", "SequenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentSourceDocument_RequestSequence");
+
+                    b.HasIndex("SupplierId", "DocumentNumber", "DocumentSeries")
+                        .HasDatabaseName("IX_PaymentSourceDocument_SupplierDocument");
+
+                    b.ToTable("PaymentSourceDocuments");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Plant", b =>
                 {
                     b.Property<int>("Id")
@@ -4929,6 +5678,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("ClassificationConflictAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ClassificationJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -4949,6 +5705,24 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("DocumentNumber")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DocumentTypeEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("DocumentTypeOcrConfidence")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("DocumentTypeOcrSuggestion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DocumentTypeSource")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<bool>("IsSelected")
                         .HasColumnType("bit");
@@ -5298,8 +6072,18 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<int?>("CapexOpexClassificationId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("ClassificationConflictAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ClassificationJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<int>("CompanyId")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("CompletionCycleId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ContractId")
                         .HasColumnType("uniqueidentifier");
@@ -5375,11 +6159,35 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<Guid>("RequesterId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTime?>("ScheduledDateUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<Guid?>("SelectedQuotationId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SourceDocumentTypeEvidenceJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("SourceDocumentTypeOcrConfidence")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("SourceDocumentTypeOcrSuggestion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SourceDocumentTypeSource")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<int>("StatusId")
                         .HasColumnType("int");
@@ -5400,6 +6208,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("UpdatedByUserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("UsesMultiSourceDocuments")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -5647,6 +6458,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("PaymentSourceDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int?>("PlantId")
                         .HasColumnType("int");
 
@@ -5703,6 +6517,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("IvaRateId");
 
                     b.HasIndex("LineItemStatusId");
+
+                    b.HasIndex("PaymentSourceDocumentId")
+                        .HasDatabaseName("IX_RequestLineItem_PaymentSourceDocumentId");
 
                     b.HasIndex("PlantId");
 
@@ -5891,6 +6708,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<Guid?>("ApprovalBatchId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -5904,9 +6724,51 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<int?>("CurrencyId")
                         .HasColumnType("int");
 
+                    b.Property<string>("ExpectedOperationInvoiceCurrency")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal?>("ExpectedOperationInvoiceTotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ExpectedTotalJustification")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("ExpectedTotalSetAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExpectedTotalSetByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("FiscalReceiptAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("FiscalReceiptUploadedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FiscalReceiptUploadedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OperationInvoiceStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("UNCLASSIFIED");
+
+                    b.Property<DateTime?>("OperationalReceiptCompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("OperationalReceiptCompletedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("PaymentConditionCode")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("PlantId")
+                        .HasColumnType("int");
 
                     b.Property<string>("PurchaseOrderNumber")
                         .HasMaxLength(100)
@@ -5914,6 +6776,28 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("RequestId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RequiresAdvanceRegularization")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequiresFinanceClassificationReview")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequiresOperationInvoice")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequiresSeparateFiscalReceipt")
+                        .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SourceDocumentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -5945,6 +6829,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("ApprovalBatchId");
 
                     b.HasIndex("CurrencyId");
+
+                    b.HasIndex("OperationInvoiceStatus")
+                        .HasDatabaseName("IX_RequestPoGroup_OperationInvoiceStatus");
+
+                    b.HasIndex("PlantId");
 
                     b.HasIndex("RequestId");
 
@@ -6219,7 +7108,7 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                             Code = "PO_REQUESTED",
                             DisplayOrder = 12,
                             IsActive = true,
-                            Name = "Solicitado P.O"
+                            Name = "Aguardando P.O."
                         },
                         new
                         {
@@ -6364,6 +7253,15 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                             DisplayOrder = 28,
                             IsActive = true,
                             Name = "Adiantamento Agendado"
+                        },
+                        new
+                        {
+                            Id = 29,
+                            BadgeColor = "#8b5cf6",
+                            Code = "WAITING_FISCAL_RECEIPT",
+                            DisplayOrder = 29,
+                            IsActive = true,
+                            Name = "Aguardando Recibo Fiscal"
                         });
                 });
 
@@ -6386,6 +7284,10 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<int>("NewStatusId")
                         .HasColumnType("int");
 
@@ -6398,6 +7300,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ActorUserId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RequestStatusHistory_IdempotencyKey")
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
 
                     b.HasIndex("NewStatusId");
 
@@ -7255,17 +8162,50 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalBatchItemCandidate", "SelectedCandidate")
+                        .WithMany()
+                        .HasForeignKey("SelectedCandidateId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("AlplaPortal.Domain.Entities.QuotationItem", "SelectedQuotationItem")
                         .WithMany()
                         .HasForeignKey("SelectedQuotationItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("ApprovalBatch");
 
                     b.Navigation("RequestLineItem");
 
+                    b.Navigation("SelectedCandidate");
+
                     b.Navigation("SelectedQuotationItem");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItemCandidate", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalBatchItem", "ApprovalBatchItem")
+                        .WithMany("Candidates")
+                        .HasForeignKey("ApprovalBatchItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Quotation", "Quotation")
+                        .WithMany()
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.QuotationItem", "QuotationItem")
+                        .WithMany()
+                        .HasForeignKey("QuotationItemId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("ApprovalBatchItem");
+
+                    b.Navigation("Quotation");
+
+                    b.Navigation("QuotationItem");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
@@ -7549,6 +8489,32 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Plant");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.DocumentClassificationOverride", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Quotation", "Quotation")
+                        .WithMany()
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("Quotation");
+
+                    b.Navigation("Request");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.HREmployee", b =>
@@ -8067,6 +9033,124 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("ResolvedUnit");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoice", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestAttachment", "Attachment")
+                        .WithMany()
+                        .HasForeignKey("AttachmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Attachment");
+
+                    b.Navigation("Request");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceAllocation", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.OperationInvoice", "OperationInvoice")
+                        .WithMany("Allocations")
+                        .HasForeignKey("OperationInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroup", "RequestPoGroup")
+                        .WithMany()
+                        .HasForeignKey("RequestPoGroupId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("OperationInvoice");
+
+                    b.Navigation("RequestPoGroup");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceLine", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.OperationInvoiceAllocation", "OperationInvoiceAllocation")
+                        .WithMany("Lines")
+                        .HasForeignKey("OperationInvoiceAllocationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("AlplaPortal.Domain.Entities.OperationInvoice", "OperationInvoice")
+                        .WithMany("Lines")
+                        .HasForeignKey("OperationInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OperationInvoice");
+
+                    b.Navigation("OperationInvoiceAllocation");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceReconciliation", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroup", "RequestPoGroup")
+                        .WithMany()
+                        .HasForeignKey("RequestPoGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RequestPoGroup");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceShortClose", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroup", "RequestPoGroup")
+                        .WithMany()
+                        .HasForeignKey("RequestPoGroupId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("RequestPoGroup");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestAttachment", "Attachment")
+                        .WithMany()
+                        .HasForeignKey("AttachmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Plant", "Plant")
+                        .WithMany()
+                        .HasForeignKey("PlantId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Attachment");
+
+                    b.Navigation("Plant");
+
+                    b.Navigation("Request");
+
+                    b.Navigation("Supplier");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Plant", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.Company", "Company")
@@ -8423,6 +9507,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasForeignKey("LineItemStatusId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("AlplaPortal.Domain.Entities.PaymentSourceDocument", "PaymentSourceDocument")
+                        .WithMany("LineItems")
+                        .HasForeignKey("PaymentSourceDocumentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("AlplaPortal.Domain.Entities.Plant", "Plant")
                         .WithMany()
                         .HasForeignKey("PlantId");
@@ -8461,6 +9550,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("IvaRate");
 
                     b.Navigation("LineItemStatus");
+
+                    b.Navigation("PaymentSourceDocument");
 
                     b.Navigation("Plant");
 
@@ -8561,6 +9652,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasForeignKey("CurrencyId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("AlplaPortal.Domain.Entities.Plant", "Plant")
+                        .WithMany()
+                        .HasForeignKey("PlantId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
                         .WithMany("PoGroups")
                         .HasForeignKey("RequestId")
@@ -8575,6 +9671,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("ApprovalBatch");
 
                     b.Navigation("Currency");
+
+                    b.Navigation("Plant");
 
                     b.Navigation("Request");
 
@@ -8797,6 +9895,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("PoGroups");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItem", b =>
+                {
+                    b.Navigation("Candidates");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>
                 {
                     b.Navigation("ReprintEvents");
@@ -8877,6 +9980,23 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Logs");
 
                     b.Navigation("Snapshots");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoice", b =>
+                {
+                    b.Navigation("Allocations");
+
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationInvoiceAllocation", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>
+                {
+                    b.Navigation("LineItems");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Quotation", b =>

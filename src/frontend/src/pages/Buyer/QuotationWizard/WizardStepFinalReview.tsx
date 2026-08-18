@@ -63,6 +63,19 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
         }
     });
 
+    // ── Single source of truth (v2.226.2) ──
+    // When the AUTHORITATIVE backend reconciliation preview exists and is CURRENT, the RESUMO
+    // shows ITS final considered total — the exact number Save will validate against — so this
+    // screen can never present two different "Total Final Considerado" values at once. The
+    // Σ item.totalPrice fallback remains only for the genuinely manual/non-OCR path (no preview)
+    // and for the stale state, where the existing stale banner + save block already tell the
+    // user the numbers are pending recalculation — equality is never faked.
+    const hasAuthoritativeTotal =
+        !!reconciliation && !reconciliationLoading && !reconciliationError && !reconciliationStale;
+    const finalConsideredDisplay = hasAuthoritativeTotal
+        ? reconciliation!.finalConsideredTotal
+        : totalExcludingIgnored;
+
     const displayCurrency = draft.currency || 'AOA';
     const formatter = new Intl.NumberFormat('pt-AO', { style: 'currency', currency: displayCurrency });
 
@@ -136,9 +149,12 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         <div style={{ height: '1px', backgroundColor: '#bfdbfe', margin: '4px 0' }}></div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.875rem', color: '#1e3a8a' }}>
                             <span style={{ fontWeight: 700 }}>Total Final Considerado:</span>
-                            <span style={{ fontWeight: 700, fontSize: '1.25rem' }}>{formatter.format(totalExcludingIgnored)}</span>
+                            <span style={{ fontWeight: 700, fontSize: '1.25rem' }}>{formatter.format(finalConsideredDisplay)}</span>
                         </div>
-                        <p style={{ fontSize: '0.75rem', color: '#3b82f6', margin: '4px 0 0 0' }}>* Excluindo valores de itens marcados como ignorados e não cotados.</p>
+                        <p style={{ fontSize: '0.75rem', color: '#3b82f6', margin: '4px 0 0 0' }}>
+                            * Excluindo valores de itens marcados como ignorados e não cotados.
+                            {hasAuthoritativeTotal && ' Valor autoritativo do resumo de reconciliação.'}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -205,6 +221,11 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                     <Row label="IVA" value={reconciliation.ivaImpact} />
                                     <Row label="Adições manuais" value={reconciliation.manualAdditionsImpact} />
                                     <Row label="Desconto global" value={reconciliation.globalDiscountImpact} />
+                                    {/* Recognized automatically from the document summary (v2.226.1) —
+                                        distinguishes the document's own tax from buyer adjustments. */}
+                                    {reconciliation.documentSummaryIvaCredit !== 0 && (
+                                        <Row label="IVA de resumo reconhecido" value={reconciliation.documentSummaryIvaCredit} />
+                                    )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--color-border)', margin: '4px 0' }} />
                                     <Row label="Total final considerado" value={reconciliation.finalConsideredTotal} strong />
                                 </div>
@@ -214,7 +235,7 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         {/* Residual verdict */}
                         {!reconciliationLoading && !reconciliationError && reconciliation && !reconciliationStale && !residualBlocks && (
                             <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#166534' }}>
-                                <CheckCircle2 size={16} /> Diferença residual de {money(reconciliation.residualVariance)} dentro da tolerância ({money(reconciliation.toleranceApplied)}). Nenhuma justificativa de diferença é necessária.
+                                <CheckCircle2 size={16} /> Documento reconciliado dentro da tolerância — diferença residual de {money(reconciliation.residualVariance)} (tolerância {money(reconciliation.toleranceApplied)}). Nenhuma justificativa de diferença é necessária.
                             </div>
                         )}
 

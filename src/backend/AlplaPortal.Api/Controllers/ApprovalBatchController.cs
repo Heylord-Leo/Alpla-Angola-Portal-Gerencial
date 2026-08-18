@@ -2,10 +2,12 @@ namespace AlplaPortal.Api.Controllers;
 
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Application.Validation;
 using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Approvals;
 using Microsoft.AspNetCore.Authorization;
@@ -136,6 +138,143 @@ public class ApprovalBatchController : BaseController
         return await _approvalRouting.IsAreaManagerAsync(actorId, request.DepartmentId, request.PlantId);
     }
 
+    /// <summary>One validated winner decision: the batch item plus either its Area-selected
+    /// candidate (candidate model) or nothing (legacy item whose buyer-selected winner stands).</summary>
+    private sealed record ResolvedWinner(ApprovalBatchItem Item, ApprovalBatchItemCandidate? Candidate, string? Justification)
+    {
+        public Guid WinningQuotationItemId => Candidate?.QuotationItemId ?? Item.SelectedQuotationItemId!.Value;
+    }
+
+    /// <summary>
+    /// Validates the Area Approver's winner selections against the batch (candidate model).
+    /// Pure validation — mutates nothing. Enforces, per batch item with candidates:
+    /// exactly one selection, candidate belongs to that item, and a meaningful justification when
+    /// the choice is more expensive than the cheapest same-currency candidate beyond the
+    /// FinancialIntegrity tolerance. Legacy items (zero candidates) must carry their historical
+    /// buyer-selected winner and accept no selection. ALL-OR-RETURN: any gap fails the whole call.
+    /// </summary>
+    private static IActionResult? ResolveWinnerSelections(
+        ApprovalBatch batch,
+        List<BatchWinnerSelectionDto>? selections,
+        out List<ResolvedWinner> resolvedWinners)
+    {
+        resolvedWinners = new List<ResolvedWinner>();
+        var provided = selections ?? new List<BatchWinnerSelectionDto>();
+
+        var duplicated = provided.GroupBy(s => s.ApprovalBatchItemId).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (duplicated.Any())
+        {
+            return new BadRequestObjectResult(new ProblemDetails
+            {
+                Title = "Seleção de Vencedores Inválida",
+                Detail = "Existe mais de uma seleção de vencedor para o mesmo item do lote.",
+                Status = 400
+            });
+        }
+
+        var itemIds = batch.Items.Select(i => i.Id).ToHashSet();
+        var unknown = provided.Where(s => !itemIds.Contains(s.ApprovalBatchItemId)).ToList();
+        if (unknown.Any())
+        {
+            return new BadRequestObjectResult(new ProblemDetails
+            {
+                Title = "Seleção de Vencedores Inválida",
+                Detail = "Uma ou mais seleções referem itens que não pertencem a este lote.",
+                Status = 400
+            });
+        }
+
+        var selectionByItem = provided.ToDictionary(s => s.ApprovalBatchItemId);
+        var missing = new List<int>();
+
+        foreach (var item in batch.Items)
+        {
+            selectionByItem.TryGetValue(item.Id, out var selection);
+
+            if (item.Candidates.Count == 0)
+            {
+                // Legacy buyer-selected item — its winner already exists and cannot be re-decided.
+                if (selection != null)
+                {
+                    return new BadRequestObjectResult(new ProblemDetails
+                    {
+                        Title = "Seleção de Vencedores Inválida",
+                        Detail = $"O item #{item.RequestLineItem?.LineNumber ?? 0} pertence a um lote do modelo anterior (vencedor definido pelo comprador) e não aceita seleção de vencedor.",
+                        Status = 400
+                    });
+                }
+
+                if (!item.SelectedQuotationItemId.HasValue)
+                {
+                    return new BadRequestObjectResult(new ProblemDetails
+                    {
+                        Title = "Estado do Lote Inválido",
+                        Detail = $"O item #{item.RequestLineItem?.LineNumber ?? 0} não possui opções de cotação nem vencedor definido. Devolva o lote ao comprador para correção.",
+                        Status = 400
+                    });
+                }
+
+                resolvedWinners.Add(new ResolvedWinner(item, null, null));
+                continue;
+            }
+
+            // Candidate-based item: ALL-OR-RETURN — a selection is mandatory.
+            if (selection == null)
+            {
+                missing.Add(item.RequestLineItem?.LineNumber ?? 0);
+                continue;
+            }
+
+            var candidate = item.Candidates.FirstOrDefault(c => c.Id == selection.SelectedCandidateId);
+            if (candidate == null)
+            {
+                return new BadRequestObjectResult(new ProblemDetails
+                {
+                    Title = "Seleção de Vencedores Inválida",
+                    Detail = $"A opção selecionada para o item #{item.RequestLineItem?.LineNumber ?? 0} não pertence a este item do lote.",
+                    Status = 400
+                });
+            }
+
+            // Non-cheapest rule: compare against the cheapest SAME-CURRENCY candidate of this
+            // item using the existing FinancialIntegrity tolerance. Ties within tolerance need no
+            // justification; a supplied justification is persisted either way.
+            var justification = string.IsNullOrWhiteSpace(selection.WinnerSelectionJustification)
+                ? null
+                : selection.WinnerSelectionJustification.Trim();
+
+            var cheapestSameCurrency = item.Candidates
+                .Where(c => c.Currency == candidate.Currency)
+                .Min(c => c.LineTotal);
+            var tolerance = RequestConstants.FinancialIntegrity.CalculateTolerance(cheapestSameCurrency);
+            var isMoreExpensive = candidate.LineTotal > cheapestSameCurrency + tolerance;
+
+            if (isMoreExpensive && !ReconciliationJustificationValidator.IsValid(justification, out var justError))
+            {
+                return new BadRequestObjectResult(new ProblemDetails
+                {
+                    Title = "Justificativa de Escolha Obrigatória",
+                    Detail = $"A opção selecionada para o item #{item.RequestLineItem?.LineNumber ?? 0} ({candidate.SupplierNameSnapshot} — {candidate.LineTotal:N2} {candidate.Currency}) não é a de menor valor ({cheapestSameCurrency:N2} {candidate.Currency}). {justError}",
+                    Status = 400
+                });
+            }
+
+            resolvedWinners.Add(new ResolvedWinner(item, candidate, justification));
+        }
+
+        if (missing.Any())
+        {
+            return new BadRequestObjectResult(new ProblemDetails
+            {
+                Title = "Seleção de Vencedores Incompleta",
+                Detail = $"Todos os itens do lote devem ter exatamente um vencedor selecionado. Itens sem seleção: #{string.Join(", #", missing.OrderBy(n => n))}. Se algum item não puder ser decidido, devolva o lote para reajuste.",
+                Status = 400
+            });
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Creates a new ApprovalBatch with buyer-selected winners for the specified request.
     /// Sets included items to BATCH_ASSIGNED and creates a RequestStatusHistory entry.
@@ -189,7 +328,11 @@ public class ApprovalBatchController : BaseController
         // ── 5. Validate each item ──
         var errors = new List<string>();
         var lineItemIds = dto.Items.Select(i => i.RequestLineItemId).ToList();
-        var quotationItemIds = dto.Items.Select(i => i.SelectedQuotationItemId).ToList();
+        var quotationItemIds = dto.Items
+            .SelectMany(i => i.Candidates ?? new List<BatchCandidateInputDto>())
+            .Select(c => c.QuotationItemId)
+            .Distinct()
+            .ToList();
 
         // Check for duplicates within the request
         var duplicateLineItems = lineItemIds.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
@@ -208,10 +351,12 @@ public class ApprovalBatchController : BaseController
             .Where(li => !li.IsDeleted)
             .ToDictionary(li => li.Id);
 
-        // Load quotation items that belong to quotations of this request
+        // Load quotation items that belong to quotations of this request (Unit included so the
+        // candidate snapshot can freeze the unit text server-side)
         var quotationItems = await _context.Set<QuotationItem>()
             .Include(qi => qi.Quotation)
                 .ThenInclude(q => q.Supplier)
+            .Include(qi => qi.Unit)
             .Where(qi => qi.Quotation.RequestId == requestId
                          && quotationItemIds.Contains(qi.Id))
             .ToListAsync();
@@ -237,7 +382,7 @@ public class ApprovalBatchController : BaseController
 
         var itemsInActiveBatchSet = new HashSet<Guid>(itemsInActiveBatches);
 
-        // Validate each item
+        // Validate each item and its candidate options
         foreach (var item in dto.Items)
         {
             // 5a. RequestLineItemId must belong to request and not be deleted
@@ -262,25 +407,48 @@ public class ApprovalBatchController : BaseController
                 continue;
             }
 
-            // 5d. SelectedQuotationItemId must belong to a quotation of this request
-            if (!quotationItemMap.TryGetValue(item.SelectedQuotationItemId, out var quotationItem))
+            // 5d. At least one candidate option per included item (candidate model — the Buyer
+            // submits options; there is no winner at creation time)
+            if (item.Candidates == null || item.Candidates.Count == 0)
             {
-                errors.Add($"Item de cotação {item.SelectedQuotationItemId} não pertence a uma cotação deste pedido.");
+                errors.Add($"Item '{lineItem.Description}' (Linha {lineItem.LineNumber}) não possui nenhuma opção de cotação para envio à aprovação.");
                 continue;
             }
 
-            // 5e. QuotationItem must be MAPPED or SUBSTITUTE for this RequestLineItem
-            var allowedStatuses = new[] { "MAPPED", "SUBSTITUTE" };
-            if (!allowedStatuses.Contains(quotationItem.ReconciliationStatus))
+            // 5e. No duplicate candidate within the same item
+            var duplicateCandidates = item.Candidates
+                .GroupBy(c => c.QuotationItemId)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            if (duplicateCandidates.Any())
             {
-                errors.Add($"Item de cotação '{quotationItem.Description}' tem status '{quotationItem.ReconciliationStatus}' e não pode ser selecionado como vencedor. Apenas itens MAPPED ou SUBSTITUTE são permitidos.");
+                errors.Add($"Item '{lineItem.Description}' (Linha {lineItem.LineNumber}) possui opções de cotação duplicadas.");
                 continue;
             }
 
-            // 5f. QuotationItem must be mapped to this specific RequestLineItem
-            if (quotationItem.MappedRequestLineItemId != item.RequestLineItemId)
+            foreach (var candidate in item.Candidates)
             {
-                errors.Add($"Item de cotação '{quotationItem.Description}' não está mapeado para o item '{lineItem.Description}' (Linha {lineItem.LineNumber}).");
+                // 5f. Candidate must belong to a quotation of this request
+                if (!quotationItemMap.TryGetValue(candidate.QuotationItemId, out var quotationItem))
+                {
+                    errors.Add($"Item de cotação {candidate.QuotationItemId} não pertence a uma cotação deste pedido.");
+                    continue;
+                }
+
+                // 5g. Candidate must be MAPPED or SUBSTITUTE
+                var allowedStatuses = new[] { "MAPPED", "SUBSTITUTE" };
+                if (!allowedStatuses.Contains(quotationItem.ReconciliationStatus))
+                {
+                    errors.Add($"Item de cotação '{quotationItem.Description}' tem status '{quotationItem.ReconciliationStatus}' e não pode ser enviado como opção. Apenas itens MAPPED ou SUBSTITUTE são permitidos.");
+                    continue;
+                }
+
+                // 5h. Candidate must be mapped to this specific RequestLineItem
+                if (quotationItem.MappedRequestLineItemId != item.RequestLineItemId)
+                {
+                    errors.Add($"Item de cotação '{quotationItem.Description}' não está mapeado para o item '{lineItem.Description}' (Linha {lineItem.LineNumber}).");
+                }
             }
         }
 
@@ -334,7 +502,9 @@ public class ApprovalBatchController : BaseController
 
         _context.ApprovalBatches.Add(batch);
 
-        // ── 7. Create ApprovalBatchItems and update lifecycle status ──
+        // ── 7. Create ApprovalBatchItems with frozen candidate snapshots. The winner fields stay
+        // NULL by construction — the Buyer endpoint carries no winner-selection input at all
+        // (structural authorization guarantee: only area approval writes them). ──
         foreach (var item in dto.Items)
         {
             var batchItem = new ApprovalBatchItem
@@ -342,10 +512,17 @@ public class ApprovalBatchController : BaseController
                 Id = Guid.NewGuid(),
                 ApprovalBatchId = batch.Id,
                 RequestLineItemId = item.RequestLineItemId,
-                SelectedQuotationItemId = item.SelectedQuotationItemId,
+                SelectedQuotationItemId = null,
                 CreatedAtUtc = DateTime.UtcNow
             };
             _context.ApprovalBatchItems.Add(batchItem);
+
+            foreach (var candidate in item.Candidates)
+            {
+                _context.ApprovalBatchItemCandidates.Add(ApprovalBatchCandidateSnapshotFactory.Create(
+                    quotationItemMap[candidate.QuotationItemId], batchItem.Id, candidate.BuyerNote,
+                    actorId, DateTime.UtcNow));
+            }
 
             // Update lifecycle status to BATCH_ASSIGNED
             var lineItem = requestLineItems[item.RequestLineItemId];
@@ -353,14 +530,32 @@ public class ApprovalBatchController : BaseController
             lineItem.UpdatedAtUtc = DateTime.UtcNow;
             lineItem.UpdatedByUserId = actorId;
             _context.Entry(lineItem).State = EntityState.Modified;
+
+            // Candidate-submission audit: which options the Buyer put forward for this item.
+            var candidateSummary = string.Join("; ", item.Candidates.Select(c =>
+            {
+                var qi = quotationItemMap[c.QuotationItemId];
+                return $"'{qi.Description}' ({qi.Quotation.SupplierNameSnapshot} — {qi.LineTotal:N2} {qi.Quotation.Currency})";
+            }));
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = requestId,
+                ActorUserId = actorId,
+                ActionTaken = "BATCH_CANDIDATES_SUBMITTED",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = $"[Lote #{batch.BatchNumber}] Item #{lineItem.LineNumber} — {item.Candidates.Count} opção(ões) enviadas para aprovação: {candidateSummary}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
         }
 
         // ── 7.05. Buyer batch-composition decision for genuine EXTRA_ITEM lines belonging to the
-        // quotation(s) contributing a winner to this batch (shared service — identical rule for
-        // CreateBatch and UpdateBatch). Nothing has been SaveChanges'd yet, so a failure here
-        // aborts cleanly with no persistence. ──
+        // quotation(s) contributing at least one CANDIDATE to this batch (shared service —
+        // identical rule for CreateBatch and UpdateBatch). Nothing has been SaveChanges'd yet, so
+        // a failure here aborts cleanly with no persistence. ──
         var extraItemResult = await _extraItemDecisionService.ApplyAsync(
-            request, batch, dto.Items.Select(i => i.SelectedQuotationItemId), dto.ExtraItemDecisions, actorId);
+            request, batch, quotationItemIds, dto.ExtraItemDecisions, actorId);
         if (!extraItemResult.Success)
         {
             return ExtraItemDecisionErrorResult(extraItemResult);
@@ -388,7 +583,9 @@ public class ApprovalBatchController : BaseController
 
                 var elig = reuseAuthorized.First(a => a.ReuseAuthorizationId == auth.Id);
                 quotationItemMap.TryGetValue(auth.QuotationItemId, out var qi);
-                var lineItemId = dto.Items.First(i => i.SelectedQuotationItemId == auth.QuotationItemId).RequestLineItemId;
+                var lineItemId = dto.Items
+                    .First(i => i.Candidates.Any(c => c.QuotationItemId == auth.QuotationItemId))
+                    .RequestLineItemId;
                 var authorizer = authorizerNames.TryGetValue(auth.AuthorizedByUserId, out var n) ? n : auth.AuthorizedByUserId.ToString();
 
                 _context.RequestStatusHistories.Add(new RequestStatusHistory
@@ -417,7 +614,7 @@ public class ApprovalBatchController : BaseController
             ActionTaken = "BATCH_CREATED",
             PreviousStatusId = request.StatusId,
             NewStatusId = request.StatusId,
-            Comment = $"Lote #{batch.BatchNumber} criado com {dto.Items.Count} item(ns).",
+            Comment = $"Lote #{batch.BatchNumber} criado com {dto.Items.Count} item(ns) e {dto.Items.Sum(i => i.Candidates.Count)} opção(ões) de cotação. Vencedores a definir pelo Aprovador de Área.",
             CreatedAtUtc = DateTime.UtcNow
         });
 
@@ -544,6 +741,9 @@ public class ApprovalBatchController : BaseController
         var batch = await _context.ApprovalBatches
             .Include(b => b.Items)
                 .ThenInclude(bi => bi.RequestLineItem)
+            .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == batchId && b.RequestId == requestId);
 
         if (batch == null)
@@ -551,6 +751,15 @@ public class ApprovalBatchController : BaseController
 
         if (batch.Status != RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O lote não está em fase de aprovação da área (status atual: {batch.Status}).", Status = 400 });
+
+        // ── 5.1. Resolve the winner for every batch item (candidate model). ALL-OR-RETURN: a
+        // candidate-based item without a valid selection fails the whole call before anything is
+        // mutated. Legacy items (zero candidates, buyer-selected winner already populated) need —
+        // and accept — no selection. The client contributes only candidate IDENTITY and an
+        // optional justification; every commercial value comes from the frozen snapshot. ──
+        var selectionError = ResolveWinnerSelections(batch, dto.Selections, out var resolvedWinners);
+        if (selectionError != null)
+            return selectionError;
 
         // ── 6. Extra-item decisions are no longer made here. By the time a batch reaches
         // WAITING_AREA_APPROVAL, every genuine EXTRA_ITEM line's INCLUDE/EXCLUDE decision was
@@ -562,8 +771,14 @@ public class ApprovalBatchController : BaseController
         // all. Approving over them would silently drop supplier-document lines from the process,
         // so the batch must go back to the Buyer for rework instead. Runs before any allocation
         // processing or other mutation — nothing is persisted when this returns.
+        var contributingQuotationItemIds = batch.Items
+            .SelectMany(bi => bi.Candidates.Select(c => c.QuotationItemId))
+            .Concat(batch.Items.Where(bi => bi.SelectedQuotationItemId.HasValue)
+                .Select(bi => bi.SelectedQuotationItemId!.Value))
+            .Distinct()
+            .ToList();
         var unresolvedCheck = await _extraItemDecisionService.GetInformationalLinesAsync(
-            batchId, batch.Items.Select(bi => bi.SelectedQuotationItemId).ToList());
+            batchId, contributingQuotationItemIds);
         if (unresolvedCheck.UnresolvedLegacyLines.Count > 0)
         {
             var pd = new ProblemDetails
@@ -586,11 +801,12 @@ public class ApprovalBatchController : BaseController
         var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
         var batchItemRliIds = batch.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
 
-        // ── 7. Build itemAwards from batch items (winners from ApprovalBatchItem) ──
+        // ── 7. Build itemAwards from the RESOLVED winners (Area selections for candidate items,
+        // the historical buyer-selected pointer for legacy items) ──
         var itemAwards = new Dictionary<Guid, Guid>();
-        foreach (var bi in batch.Items)
+        foreach (var rw in resolvedWinners)
         {
-            itemAwards[bi.RequestLineItemId] = bi.SelectedQuotationItemId;
+            itemAwards[rw.Item.RequestLineItemId] = rw.WinningQuotationItemId;
         }
 
         // ── 8. Apply 3-tier allocation fallback (batch items only) ──
@@ -732,12 +948,23 @@ public class ApprovalBatchController : BaseController
             }
         }
 
-        // ── 11. Set RequestLineItem.SelectedQuotationItemId for legacy compatibility ──
-        foreach (var bi in batch.Items)
+        // ── 11. Stamp the winner decision on each batch item and the line-level compatibility
+        // pointer — all in this same transaction (single SaveChanges below, §atomicity) ──
+        var winnerStampUtc = DateTime.UtcNow;
+        foreach (var rw in resolvedWinners)
         {
-            var lineItem = activeItems.FirstOrDefault(li => li.Id == bi.RequestLineItemId);
+            if (rw.Candidate != null)
+            {
+                rw.Item.SelectedCandidateId = rw.Candidate.Id;
+                rw.Item.SelectedQuotationItemId = rw.Candidate.QuotationItemId;
+                rw.Item.WinnerSelectedByUserId = actorId;
+                rw.Item.WinnerSelectedAtUtc = winnerStampUtc;
+                rw.Item.WinnerSelectionJustification = rw.Justification;
+            }
+
+            var lineItem = activeItems.FirstOrDefault(li => li.Id == rw.Item.RequestLineItemId);
             if (lineItem != null)
-                lineItem.SelectedQuotationItemId = bi.SelectedQuotationItemId;
+                lineItem.SelectedQuotationItemId = rw.WinningQuotationItemId;
         }
 
         // ── 12. Update batch state ──
@@ -767,9 +994,15 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        // Individual award history per batch item
-        foreach (var bi in batch.Items)
+        // Individual award history per batch item — the Area Approver is the deciding actor.
+        foreach (var rw in resolvedWinners)
         {
+            var lineNumber = rw.Item.RequestLineItem?.LineNumber ?? 0;
+            var comment = rw.Candidate != null
+                ? $"[Lote #{batch.BatchNumber}] Item #{lineNumber} - Vencedor selecionado pelo Aprovador de Área: '{rw.Candidate.QuotedDescription}' ({rw.Candidate.SupplierNameSnapshot} — {rw.Candidate.LineTotal:N2} {rw.Candidate.Currency})"
+                  + (string.IsNullOrWhiteSpace(rw.Justification) ? string.Empty : $". Justificativa da escolha: {rw.Justification}")
+                : $"[Lote #{batch.BatchNumber}] Item #{lineNumber} - Vencedor: {rw.WinningQuotationItemId} (lote legado — seleção do comprador)";
+
             _context.RequestStatusHistories.Add(new RequestStatusHistory
             {
                 Id = Guid.NewGuid(),
@@ -778,14 +1011,15 @@ public class ApprovalBatchController : BaseController
                 ActionTaken = WorkflowEventCodes.QuotationItemAwarded,
                 PreviousStatusId = request.StatusId,
                 NewStatusId = request.StatusId,
-                Comment = $"[Lote #{batch.BatchNumber}] Item #{batch.Items.FirstOrDefault(x => x.Id == bi.Id)?.RequestLineItem?.LineNumber ?? 0} - Vencedor: {bi.SelectedQuotationItemId}",
+                Comment = comment,
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
 
-        await _context.SaveChangesAsync();
-
-        // ── 14. Build PO groups for this batch ──
+        // ── 14. Build PO groups for this batch. Deliberately NO SaveChanges before this call:
+        // the group builder shares this scoped DbContext, sees the stamped (tracked) winners, and
+        // its single SaveChanges persists winner decisions + line pointers + history + status +
+        // groups together — a selection failure or group-build failure persists nothing. ──
         await _groupBuilderService.BuildGroupsForBatchAsync(batchId);
 
         // ── 15. Sync request status ──
@@ -963,6 +1197,7 @@ public class ApprovalBatchController : BaseController
             .Include(r => r.LineItems)
             .Include(r => r.ApprovalBatches)
                 .ThenInclude(b => b.Items)
+                    .ThenInclude(i => i.Candidates)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
@@ -985,13 +1220,20 @@ public class ApprovalBatchController : BaseController
         if (!allowedStatuses.Contains(batch.Status))
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O lote só pode ser editado em AREA_ADJUSTMENT ou FINAL_ADJUSTMENT (status atual: {batch.Status}).", Status = 400 });
 
-        // ── 3. Validate items ──
+        // ── 3. Validate items and candidate options ──
         if (dto.Items == null || !dto.Items.Any())
             return BadRequest(new ProblemDetails { Title = "Lote Vazio", Detail = "O lote deve conter pelo menos um item.", Status = 400 });
 
-        // Load quotation items for validation
-        var allQuotationItemIds = dto.Items.Select(i => i.SelectedQuotationItemId).Distinct().ToList();
+        // Load quotation items for validation and snapshot creation (Unit for the frozen unit text)
+        var allQuotationItemIds = dto.Items
+            .SelectMany(i => i.Candidates ?? new List<BatchCandidateInputDto>())
+            .Select(c => c.QuotationItemId)
+            .Distinct()
+            .ToList();
         var quotationItemMap = await _context.QuotationItems
+            .Include(qi => qi.Quotation)
+                .ThenInclude(q => q.Supplier)
+            .Include(qi => qi.Unit)
             .Where(qi => allQuotationItemIds.Contains(qi.Id) && qi.Quotation.RequestId == requestId)
             .ToDictionaryAsync(qi => qi.Id);
 
@@ -1000,11 +1242,63 @@ public class ApprovalBatchController : BaseController
 
         foreach (var item in dto.Items)
         {
-            if (!request.LineItems.Any(li => li.Id == item.RequestLineItemId && !li.IsDeleted))
+            var lineItem = request.LineItems.FirstOrDefault(li => li.Id == item.RequestLineItemId && !li.IsDeleted);
+            if (lineItem == null)
+            {
                 errors.Add($"Item {item.RequestLineItemId} não pertence a este pedido ou está removido.");
+                continue;
+            }
 
-            if (!quotationItemMap.ContainsKey(item.SelectedQuotationItemId))
-                errors.Add($"Item de cotação {item.SelectedQuotationItemId} não pertence a uma cotação deste pedido.");
+            if (item.Candidates == null || item.Candidates.Count == 0)
+            {
+                errors.Add($"Item {item.RequestLineItemId} não possui nenhuma opção de cotação para envio à aprovação.");
+                continue;
+            }
+
+            if (item.Candidates.GroupBy(c => c.QuotationItemId).Any(g => g.Count() > 1))
+            {
+                errors.Add($"Item {item.RequestLineItemId} possui opções de cotação duplicadas.");
+                continue;
+            }
+
+            // A buyer-included EXTRA_ITEM line was GENERATED from its quotation line, so that
+            // line legitimately has no MappedRequestLineItemId and carries EXTRA_ITEM status —
+            // it re-enters a rework payload as its own single fixed candidate.
+            var isGeneratedExtraLine = lineItem.CreationOrigin == LineItemCreationOrigins.BuyerExtraItemIncluded;
+            if (isGeneratedExtraLine && item.Candidates.Count > 1)
+            {
+                errors.Add($"O item adicional '{lineItem.Description}' aceita apenas a própria linha da cotação como opção.");
+                continue;
+            }
+
+            foreach (var candidate in item.Candidates)
+            {
+                if (!quotationItemMap.TryGetValue(candidate.QuotationItemId, out var quotationItem))
+                {
+                    errors.Add($"Item de cotação {candidate.QuotationItemId} não pertence a uma cotação deste pedido.");
+                    continue;
+                }
+
+                if (isGeneratedExtraLine)
+                {
+                    if (quotationItem.ReconciliationStatus != RequestConstants.ReconciliationStatuses.ExtraItem)
+                    {
+                        errors.Add($"O item adicional '{lineItem.Description}' só pode referenciar a linha EXTRA_ITEM que o originou.");
+                    }
+                    continue;
+                }
+
+                if (quotationItem.ReconciliationStatus != "MAPPED" && quotationItem.ReconciliationStatus != "SUBSTITUTE")
+                {
+                    errors.Add($"Item de cotação '{quotationItem.Description}' tem status '{quotationItem.ReconciliationStatus}' e não pode ser enviado como opção.");
+                    continue;
+                }
+
+                if (quotationItem.MappedRequestLineItemId != item.RequestLineItemId)
+                {
+                    errors.Add($"Item de cotação '{quotationItem.Description}' não está mapeado para o item {item.RequestLineItemId}.");
+                }
+            }
         }
 
         if (errors.Any())
@@ -1046,7 +1340,7 @@ public class ApprovalBatchController : BaseController
         }
 
         // ── 4. Apply changes ──
-        // Remove items no longer in the batch
+        // Remove items no longer in the batch (their candidate snapshots cascade away with them)
         var removedIds = currentBatchRliIds.Except(requestLineItemIds).ToHashSet();
         foreach (var removedId in removedIds)
         {
@@ -1057,36 +1351,74 @@ public class ApprovalBatchController : BaseController
             lineItem.QuotationLifecycleStatus = null; // Return to pending pool
         }
 
-        // Update existing items (winner may change)
+        // Reconcile candidate membership per item. Retained candidates keep their FROZEN snapshot
+        // (only the BuyerNote may change in place); removed ones are deleted; newly added ones are
+        // snapshotted NOW. Winner-decision fields are cleared on every edited item — a returned
+        // batch re-enters area approval with no pre-decided winner (a legacy buyer-selected item
+        // edited through this contract is thereby converted to the candidate model).
         foreach (var item in dto.Items)
         {
             var existingBatchItem = batch.Items.FirstOrDefault(bi => bi.RequestLineItemId == item.RequestLineItemId);
-            if (existingBatchItem != null)
+            if (existingBatchItem == null)
             {
-                existingBatchItem.SelectedQuotationItemId = item.SelectedQuotationItemId;
-            }
-            else
-            {
-                // New item added to batch
-                var newBatchItem = new ApprovalBatchItem
+                existingBatchItem = new ApprovalBatchItem
                 {
+                    Id = Guid.NewGuid(),
                     ApprovalBatchId = batchId,
                     RequestLineItemId = item.RequestLineItemId,
-                    SelectedQuotationItemId = item.SelectedQuotationItemId,
+                    SelectedQuotationItemId = null,
                     CreatedAtUtc = DateTime.UtcNow
                 };
-                _context.Set<ApprovalBatchItem>().Add(newBatchItem);
+                _context.Set<ApprovalBatchItem>().Add(existingBatchItem);
 
                 var lineItem = request.LineItems.First(li => li.Id == item.RequestLineItemId);
                 lineItem.QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.BatchAssigned;
             }
+
+            // Clear any prior winner decision (returned-batch semantics; also strips the legacy
+            // buyer-selected pointer when an old batch is edited through the candidate contract).
+            existingBatchItem.SelectedQuotationItemId = null;
+            existingBatchItem.SelectedCandidateId = null;
+            existingBatchItem.WinnerSelectedByUserId = null;
+            existingBatchItem.WinnerSelectedAtUtc = null;
+            existingBatchItem.WinnerSelectionJustification = null;
+
+            var wantedByQuotationItem = item.Candidates.ToDictionary(c => c.QuotationItemId);
+
+            var toRemove = existingBatchItem.Candidates
+                .Where(c => !wantedByQuotationItem.ContainsKey(c.QuotationItemId))
+                .ToList();
+            foreach (var stale in toRemove)
+            {
+                existingBatchItem.Candidates.Remove(stale);
+                _context.ApprovalBatchItemCandidates.Remove(stale);
+            }
+
+            foreach (var candidate in item.Candidates)
+            {
+                var existingCandidate = existingBatchItem.Candidates
+                    .FirstOrDefault(c => c.QuotationItemId == candidate.QuotationItemId);
+                if (existingCandidate != null)
+                {
+                    // Snapshot stays frozen; only the informational note follows the edit.
+                    var trimmedNote = string.IsNullOrWhiteSpace(candidate.BuyerNote) ? null : candidate.BuyerNote.Trim();
+                    if (existingCandidate.BuyerNote != trimmedNote)
+                        existingCandidate.BuyerNote = trimmedNote;
+                }
+                else
+                {
+                    _context.ApprovalBatchItemCandidates.Add(ApprovalBatchCandidateSnapshotFactory.Create(
+                        quotationItemMap[candidate.QuotationItemId], existingBatchItem.Id, candidate.BuyerNote,
+                        actorId, DateTime.UtcNow));
+                }
+            }
         }
 
         // ── 4.05. Buyer batch-composition decision for genuine EXTRA_ITEM lines belonging to the
-        // quotation(s) contributing a winner to this batch (shared service — identical rule as
-        // CreateBatch, including safe INCLUDE→EXCLUDE reversal during this rework).
+        // quotation(s) contributing at least one CANDIDATE to this batch (shared service — identical
+        // rule as CreateBatch, including safe INCLUDE→EXCLUDE reversal during this rework).
         var extraItemResult = await _extraItemDecisionService.ApplyAsync(
-            request, batch, dto.Items.Select(i => i.SelectedQuotationItemId), dto.ExtraItemDecisions, actorId);
+            request, batch, allQuotationItemIds, dto.ExtraItemDecisions, actorId);
         if (!extraItemResult.Success)
         {
             return ExtraItemDecisionErrorResult(extraItemResult);
@@ -1172,9 +1504,15 @@ public class ApprovalBatchController : BaseController
         var (request, batch, error) = await LoadAndValidateBatchForRework(requestId, batchId);
         if (error != null) return error;
 
-        // Defensive Option C check: the batch's winners must still be legitimate at resubmission
-        // (its own consumed authorizations pass via consumingBatchId; anything else blocked → 409).
-        var resubmitQuotationItemIds = batch!.Items.Select(bi => bi.SelectedQuotationItemId).ToList();
+        // Defensive Option C check: everything the batch puts forward must still be legitimate at
+        // resubmission — every candidate option plus any legacy buyer-selected winner (its own
+        // consumed authorizations pass via consumingBatchId; anything else blocked → 409).
+        var resubmitQuotationItemIds = batch!.Items
+            .SelectMany(bi => bi.Candidates.Select(c => c.QuotationItemId))
+            .Concat(batch.Items.Where(bi => bi.SelectedQuotationItemId.HasValue)
+                .Select(bi => bi.SelectedQuotationItemId!.Value))
+            .Distinct()
+            .ToList();
         var (resubmitBlocked, _) = await _quotationEligibility.ValidateSelectionAsync(
             requestId, resubmitQuotationItemIds, consumingBatchId: batchId);
         if (resubmitBlocked.Count > 0)
@@ -1246,13 +1584,29 @@ public class ApprovalBatchController : BaseController
         // Primary: sum of PO group TotalAmount
         var batchApprovedAmount = pendingGroups.Sum(g => g.TotalAmount);
 
-        // Defensive fallback: if PO group totals are zero/negative, recalculate from batch items
+        // Defensive fallback: if PO group totals are zero/negative, recalculate from the winners —
+        // frozen candidate snapshots first (candidate model), live quotation items only for legacy
+        // buyer-selected items that have no snapshot.
         if (batchApprovedAmount <= 0)
         {
-            var batchQiIds = batch.Items.Select(bi => bi.SelectedQuotationItemId).Distinct().ToList();
-            batchApprovedAmount = await _context.QuotationItems
-                .Where(qi => batchQiIds.Contains(qi.Id))
-                .SumAsync(qi => qi.LineTotal);
+            var candidateSum = batch.Items
+                .Where(bi => bi.SelectedCandidateId.HasValue)
+                .Select(bi => bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId!.Value))
+                .Where(c => c != null)
+                .Sum(c => c!.LineTotal);
+
+            var legacyQiIds = batch.Items
+                .Where(bi => !bi.SelectedCandidateId.HasValue && bi.SelectedQuotationItemId.HasValue)
+                .Select(bi => bi.SelectedQuotationItemId!.Value)
+                .Distinct()
+                .ToList();
+            var legacySum = legacyQiIds.Count == 0
+                ? 0m
+                : await _context.QuotationItems
+                    .Where(qi => legacyQiIds.Contains(qi.Id))
+                    .SumAsync(qi => qi.LineTotal);
+
+            batchApprovedAmount = candidateSum + legacySum;
 
             _logger.LogWarning(
                 "BatchFinalApprove: PO group total was {GroupTotal}, recalculated from batch items: {AwardedTotal} for batch {BatchId}",
@@ -1468,7 +1822,7 @@ public class ApprovalBatchController : BaseController
         foreach (var item in batchLineItems)
         {
             // Items stay BATCH_ASSIGNED
-            item.SelectedQuotationItemId = null; // Clear legacy field (audit preserved in ApprovalBatchItem)
+            item.SelectedQuotationItemId = null; // Clear legacy field (audit preserved in history)
 
             if (item.Allocations != null && item.Allocations.Any())
             {
@@ -1477,6 +1831,18 @@ public class ApprovalBatchController : BaseController
             }
 
             item.RequestPoGroupId = null;
+        }
+
+        // ── Revoke the Area winner decision on candidate-based items (returned-batch semantics:
+        // candidates persist; the decision itself survives only in history). Legacy items keep
+        // their buyer-selected pointer — it is their only winner information. ──
+        foreach (var bi in batch.Items.Where(bi => bi.Candidates.Count > 0))
+        {
+            bi.SelectedCandidateId = null;
+            bi.SelectedQuotationItemId = null;
+            bi.WinnerSelectedByUserId = null;
+            bi.WinnerSelectedAtUtc = null;
+            bi.WinnerSelectionJustification = null;
         }
 
         // ── Remove PENDING PO groups for this batch ──
@@ -1525,8 +1891,10 @@ public class ApprovalBatchController : BaseController
                 .ThenInclude(bi => bi.RequestLineItem)
             .Include(b => b.Items)
                 .ThenInclude(bi => bi.SelectedQuotationItem)
-                    .ThenInclude(qi => qi.Quotation)
+                    .ThenInclude(qi => qi!.Quotation)
                         .ThenInclude(q => q!.Supplier)
+            .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
             .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == batchId);
 
@@ -1537,6 +1905,85 @@ public class ApprovalBatchController : BaseController
             .Where(u => u.Id == batch.CreatedByUserId)
             .Select(u => u.FullName)
             .FirstOrDefaultAsync();
+
+        var itemDtos = batch.Items.Select(bi =>
+        {
+            var winnerCandidate = bi.SelectedCandidateId.HasValue
+                ? bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId.Value)
+                : null;
+
+            // "MENOR VALOR" badge per currency within this item (informational only).
+            var lowestByCurrency = bi.Candidates
+                .GroupBy(c => c.Currency)
+                .ToDictionary(g => g.Key, g => g.Min(c => c.LineTotal));
+
+            return new ApprovalBatchItemDto
+            {
+                Id = bi.Id,
+                RequestLineItemId = bi.RequestLineItemId,
+                RequestLineItemDescription = bi.RequestLineItem?.Description,
+                RequestLineItemLineNumber = bi.RequestLineItem?.LineNumber,
+                RequestLineItemQuantity = bi.RequestLineItem?.Quantity,
+
+                SelectedQuotationItemId = bi.SelectedQuotationItemId,
+                // Winner display: frozen snapshot when Area-decided; live lookup only for legacy items.
+                SelectedQuotationItemDescription = winnerCandidate?.QuotedDescription ?? bi.SelectedQuotationItem?.Description,
+                SelectedQuotationItemUnitPrice = winnerCandidate?.UnitPrice ?? bi.SelectedQuotationItem?.UnitPrice,
+                SelectedQuotationItemLineTotal = winnerCandidate?.LineTotal ?? bi.SelectedQuotationItem?.LineTotal,
+                SupplierName = winnerCandidate?.SupplierNameSnapshot
+                    ?? bi.SelectedQuotationItem?.Quotation?.Supplier?.Name
+                    ?? bi.SelectedQuotationItem?.Quotation?.SupplierNameSnapshot,
+
+                SelectedCandidateId = bi.SelectedCandidateId,
+                WinnerSelectedByUserId = bi.WinnerSelectedByUserId,
+                WinnerSelectedAtUtc = bi.WinnerSelectedAtUtc,
+                WinnerSelectionJustification = bi.WinnerSelectionJustification,
+                IsLegacyBuyerSelectedWinner = bi.Candidates.Count == 0 && bi.SelectedQuotationItemId.HasValue,
+
+                Candidates = bi.Candidates
+                    .OrderBy(c => c.LineTotal)
+                    .Select(c => new ApprovalBatchItemCandidateDto
+                    {
+                        Id = c.Id,
+                        QuotationItemId = c.QuotationItemId,
+                        QuotationId = c.QuotationId,
+                        SupplierId = c.SupplierId,
+                        SupplierName = c.SupplierNameSnapshot,
+                        SupplierNif = c.SupplierNifSnapshot,
+                        Description = c.QuotedDescription,
+                        Quantity = c.QuotedQuantity,
+                        UnitText = c.UnitTextSnapshot,
+                        UnitPrice = c.UnitPrice,
+                        DiscountAmount = c.DiscountAmount,
+                        IvaRatePercent = c.IvaRatePercent,
+                        IvaAmount = c.IvaAmount,
+                        GrossSubtotal = c.GrossSubtotal,
+                        LineTotal = c.LineTotal,
+                        Currency = c.Currency,
+                        QuotationDocumentNumber = c.QuotationDocumentNumber,
+                        QuotationDocumentDate = c.QuotationDocumentDate,
+                        HasReconciliationWarnings = c.HasReconciliationWarnings,
+                        ReconciliationStatus = c.ReconciliationStatusSnapshot,
+                        ReconciliationJustification = c.ReconciliationJustificationSnapshot,
+                        LineAdjustmentJustification = c.LineAdjustmentJustificationSnapshot,
+                        BuyerNote = c.BuyerNote,
+                        IsWinner = bi.SelectedCandidateId.HasValue && c.Id == bi.SelectedCandidateId.Value,
+                        IsLowestTotal = lowestByCurrency.TryGetValue(c.Currency, out var lowest) && c.LineTotal == lowest
+                    }).ToList()
+            };
+        }).ToList();
+
+        // Pre-decision candidate summary (decision 5): combination bounds only when every item
+        // carries candidates in one shared currency — otherwise null, never a guess.
+        var allCandidates = batch.Items.SelectMany(bi => bi.Candidates).ToList();
+        decimal? minCombination = null;
+        decimal? maxCombination = null;
+        var currencies = allCandidates.Select(c => c.Currency).Distinct().ToList();
+        if (batch.Items.Any() && batch.Items.All(bi => bi.Candidates.Count > 0) && currencies.Count == 1)
+        {
+            minCombination = batch.Items.Sum(bi => bi.Candidates.Min(c => c.LineTotal));
+            maxCombination = batch.Items.Sum(bi => bi.Candidates.Max(c => c.LineTotal));
+        }
 
         return new ApprovalBatchDto
         {
@@ -1552,20 +1999,14 @@ public class ApprovalBatchController : BaseController
             CreatedByUserName = creatorName,
             UpdatedAtUtc = batch.UpdatedAtUtc,
             UpdatedByUserId = batch.UpdatedByUserId,
-            Items = batch.Items.Select(bi => new ApprovalBatchItemDto
-            {
-                Id = bi.Id,
-                RequestLineItemId = bi.RequestLineItemId,
-                RequestLineItemDescription = bi.RequestLineItem?.Description,
-                RequestLineItemLineNumber = bi.RequestLineItem?.LineNumber,
-                RequestLineItemQuantity = bi.RequestLineItem?.Quantity,
-                SelectedQuotationItemId = bi.SelectedQuotationItemId,
-                SelectedQuotationItemDescription = bi.SelectedQuotationItem?.Description,
-                SelectedQuotationItemUnitPrice = bi.SelectedQuotationItem?.UnitPrice,
-                SelectedQuotationItemLineTotal = bi.SelectedQuotationItem?.LineTotal,
-                SupplierName = bi.SelectedQuotationItem?.Quotation?.Supplier?.Name
-                    ?? bi.SelectedQuotationItem?.Quotation?.SupplierNameSnapshot
-            }).ToList()
+            Items = itemDtos,
+            CandidateOptionCount = allCandidates.Count,
+            CandidateSupplierCount = allCandidates
+                .Select(c => c.SupplierId?.ToString() ?? c.SupplierNameSnapshot)
+                .Distinct()
+                .Count(),
+            MinCandidateCombinationTotal = minCombination,
+            MaxCandidateCombinationTotal = maxCombination
         };
     }
 
@@ -1702,6 +2143,9 @@ public class ApprovalBatchController : BaseController
         var batch = await _context.ApprovalBatches
             .Include(b => b.Items)
                 .ThenInclude(bi => bi.RequestLineItem)
+            .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == batchId && b.RequestId == requestId);
 
         if (batch == null)
@@ -1736,6 +2180,7 @@ public class ApprovalBatchController : BaseController
 
         var batch = await _context.ApprovalBatches
             .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
             .FirstOrDefaultAsync(b => b.Id == batchId && b.RequestId == requestId);
 
         if (batch == null)

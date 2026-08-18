@@ -71,15 +71,31 @@ public class QuotationItemEligibilityService : IQuotationItemEligibilityService
 
     private async Task<List<CancelledUse>> LoadCancelledUsesAsync(Guid requestId)
     {
-        return await _context.ApprovalBatchItems.AsNoTracking()
+        // Candidate model: a cancelled batch "used" every candidate option it put forward (the
+        // batch may have been cancelled before any winner existed). Legacy batch items have no
+        // candidate rows, so their buyer-selected winner remains the derived use.
+        var candidateUses = await _context.ApprovalBatchItemCandidates.AsNoTracking()
+            .Where(c => c.ApprovalBatchItem.ApprovalBatch.RequestId == requestId
+                     && c.ApprovalBatchItem.ApprovalBatch.Status == RequestConstants.ApprovalBatchStatuses.Cancelled)
+            .Select(c => new CancelledUse(
+                c.QuotationItemId,
+                c.ApprovalBatchItem.ApprovalBatchId,
+                c.ApprovalBatchItem.ApprovalBatch.BatchNumber,
+                c.ApprovalBatchItem.ApprovalBatch.CreatedAtUtc))
+            .ToListAsync();
+
+        var winnerUses = await _context.ApprovalBatchItems.AsNoTracking()
             .Where(abi => abi.ApprovalBatch.RequestId == requestId
-                       && abi.ApprovalBatch.Status == RequestConstants.ApprovalBatchStatuses.Cancelled)
+                       && abi.ApprovalBatch.Status == RequestConstants.ApprovalBatchStatuses.Cancelled
+                       && abi.SelectedQuotationItemId != null)
             .Select(abi => new CancelledUse(
-                abi.SelectedQuotationItemId,
+                abi.SelectedQuotationItemId!.Value,
                 abi.ApprovalBatchId,
                 abi.ApprovalBatch.BatchNumber,
                 abi.ApprovalBatch.CreatedAtUtc))
             .ToListAsync();
+
+        return candidateUses.Concat(winnerUses).Distinct().ToList();
     }
 
     private async Task<List<Domain.Entities.QuotationReuseAuthorization>> LoadAuthorizationsAsync(Guid requestId)

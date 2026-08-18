@@ -6,6 +6,7 @@ using AlplaPortal.Application.Interfaces.Extraction;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Models.Configuration;
 using AlplaPortal.Application.Versioning;
+using AlplaPortal.Api.Helpers;
 using AlplaPortal.Api.Services;
 using AlplaPortal.Api.Middleware;
 using AlplaPortal.Infrastructure.Data;
@@ -19,7 +20,9 @@ using AlplaPortal.Infrastructure.Services.Approvals;
 using AlplaPortal.Infrastructure.Services.Requests;
 using AlplaPortal.Infrastructure.Services.Suppliers;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Application.Interfaces.Finance;
+using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Application.Interfaces.MonthlyChanges;
 using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Infrastructure.Services.MonthlyChanges;
@@ -130,7 +133,21 @@ builder.Services.AddScoped<ILineItemFactory, LineItemFactory>();
 builder.Services.AddScoped<IRequestLineItemSubmissionValidator, RequestLineItemSubmissionValidator>();
 
 // Phase 3 — shared supplier matching + DRAFT creation (general admin + contextual payment-OCR endpoints)
+builder.Services.AddScoped<IInternalCompanyGuard, InternalCompanyGuard>();
 builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
+
+// Post-Payment Completion Workflow — Release 1 foundation.
+// The options bind to a section that ships with Enabled=false in every environment; when the
+// section is absent the class defaults (Enabled=false, EffectiveDateUtc=MaxValue) apply, so an
+// unconfigured environment can never switch the workflow on by accident.
+// The service is a two-phase skeleton and is a no-op while disabled — nothing calls it yet.
+builder.Services.AddPostPaymentCompletionOptions(builder.Configuration);
+builder.Services.AddScoped<IRequestCompletionService, RequestCompletionService>();
+
+// Release 4 Phase 3A — single aggregate re-derivation policy for operation-invoice coverage.
+// Called inside the writers' transactions only; functionally inert while groups stay UNCLASSIFIED
+// (PostPaymentCompletion.Enabled=false keeps classification off).
+builder.Services.AddScoped<IOperationInvoiceCoverageService, OperationInvoiceCoverageService>();
 
 // Department Manager redesign — single source of truth for area-approval routing
 builder.Services.AddScoped<IApprovalRoutingService, ApprovalRoutingService>();

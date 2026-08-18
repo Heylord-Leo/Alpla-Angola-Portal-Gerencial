@@ -77,10 +77,35 @@ public static class ApprovalQueueProjection
                 BatchNumber = x.b.BatchNumber,
                 BatchStatus = x.b.Status,
                 BatchSnapshot = x.b.ApprovedTotalAmount,
-                BatchItemSum = (decimal?)x.b.Items.Sum(i => i.SelectedQuotationItem.LineTotal),
+                // Candidate model: before the Area winner decision there IS no batch amount —
+                // null (rendered "a definir"), never a partial/zero sum. Decided items are valued
+                // from the winning candidate's FROZEN snapshot; legacy buyer-selected items keep
+                // the live quotation item value they always had.
+                BatchItemSum = x.b.Items.Any(i => i.SelectedQuotationItemId == null)
+                    ? (decimal?)null
+                    : x.b.Items.Sum(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.LineTotal
+                        : i.SelectedQuotationItem!.LineTotal),
                 BatchItemCount = x.b.Items.Count,
-                BatchSupplier = x.b.Items.Select(i => i.SelectedQuotationItem.Quotation.SupplierNameSnapshot).FirstOrDefault(),
-                BatchCurrency = x.b.Items.Select(i => i.SelectedQuotationItem.Quotation.Currency).FirstOrDefault(),
+                BatchSupplier = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.SupplierNameSnapshot
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.SupplierNameSnapshot : null))
+                    .FirstOrDefault(s => s != null),
+                // Candidate model: a mixed-winner batch must never be represented by its first
+                // winner's supplier — the distinct count drives "N fornecedores selecionados".
+                BatchSupplierCount = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.SupplierNameSnapshot
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.SupplierNameSnapshot : null))
+                    .Where(s => s != null)
+                    .Distinct()
+                    .Count(),
+                BatchCurrency = x.b.Items
+                    .Select(i => i.SelectedCandidate != null
+                        ? i.SelectedCandidate.Currency
+                        : (i.SelectedQuotationItem != null ? i.SelectedQuotationItem.Quotation.Currency : null))
+                    .FirstOrDefault(c => c != null),
             })
             .ToListAsync();
 
@@ -167,7 +192,9 @@ public static class ApprovalQueueProjection
                 CompanyName = x.CompanyName,
                 PlantId = x.PlantId,
                 PlantName = x.PlantName,
-                SupplierDisplay = string.IsNullOrWhiteSpace(x.BatchSupplier) ? null : x.BatchSupplier,
+                SupplierDisplay = x.BatchSupplierCount > 1
+                    ? $"{x.BatchSupplierCount} fornecedores selecionados"
+                    : (string.IsNullOrWhiteSpace(x.BatchSupplier) ? null : x.BatchSupplier),
                 CostCenterCode = x.CostCenterCode,
                 CostCenterName = x.CostCenterName,
                 CurrencyCode = string.IsNullOrWhiteSpace(x.BatchCurrency) ? null : x.BatchCurrency,
@@ -306,6 +333,7 @@ public static class ApprovalQueueProjection
         public decimal? BatchItemSum { get; set; }
         public int BatchItemCount { get; set; }
         public string? BatchSupplier { get; set; }
+        public int BatchSupplierCount { get; set; }
         public string? BatchCurrency { get; set; }
     }
 

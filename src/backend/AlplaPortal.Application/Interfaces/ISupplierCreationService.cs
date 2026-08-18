@@ -43,6 +43,22 @@ public sealed class SupplierCreationResult
     public int? InternalCompanyId { get; init; }
     public string? InternalCompanyName { get; init; }
     public string? InternalCompanyTaxId { get; init; }
+
+    /// <summary>
+    /// The entity ITSELF is internal — it was recognised by name, not merely by a NIF that happened
+    /// to appear on the document.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>The two cases need opposite handling and must not be confused. A document billed TO an
+    /// ALPLA company legitimately carries ALPLA's NIF next to a genuine third-party supplier: the
+    /// right response is to drop the NIF and let the user continue by name.</para>
+    ///
+    /// <para>When the NAME is ALPLA's, there is nothing to continue with — the counterparty cannot
+    /// be a supplier at all, and offering "confirm the name and save" would loop the user through a
+    /// refusal that can never succeed.</para>
+    /// </remarks>
+    public bool InternalCompanyMatchedByName { get; init; }
 }
 
 /// <summary>Data allowed for a DRAFT supplier creation. Administrative fields are intentionally excluded.</summary>

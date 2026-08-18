@@ -2,7 +2,495 @@
 
 ## Current Version
 
-v2.218.0
+v2.229.9
+
+## [v2.229.9] - 2026-08-18
+
+### Release 4 timeline semantics + Fiscal Receipt modal polish (STATE 2, REQ-18/08/2026-233)
+
+- The request timeline now separates the OPERATIONAL receiving/execution of goods and
+  services ("Recebimento / Execução": WAITING_SUPPLIER_DELIVERY, IN_FOLLOWUP) from the
+  post-receiving fiscal-document lifecycle ("Documentação Fiscal": WAITING_RECEIPT,
+  WAITING_FISCAL_RECEIPT) — 8 stages in both flows, the duplicate QUOTATION "Agendamento"
+  stage removed, previously unmapped Release 4 statuses (WSD, WAITING_FISCAL_RECEIPT,
+  WAITING_RECONCILIATION, WAITING_PO_CORRECTION, PO_PARTIALLY_UPLOADED) mapped. The
+  completed "Recebimento / Execução" instant prefers the persisted operational receipt
+  stamp when every relevant group carries one. Timeline endpoint presentation only —
+  no workflow, completion or aggregation change; read-only; no migration.
+- "Registrar Recibo Fiscal" modal aligned with the Portal/Finance modal family: standard
+  dashed upload area (no native "Choose File"), filename + remove-before-submit, ✓ evidence
+  rows, shared label typography and primary-token CTA. Business semantics unchanged.
+
+## [v2.229.8] - 2026-08-18
+
+### Monetary input hardening (REQ-18/08/2026-233)
+
+- Editable currency fields no longer depend on the Windows/browser decimal locale: the new
+  shared `MoneyInput` (text-based, no browser spinners) accepts "." or "," as the decimal
+  separator, normalizes pasted values ("120 000,00" / "120,000.00" / "120.000,00"), applies
+  the Portal's pt-AO presentation ("120 000,00") on blur, and always submits the same
+  canonical decimal values the APIs already receive. Migrated: Final Invoice
+  (líquido/imposto/bruto), invoice allocations, reconciliation amounts, payment source
+  document amounts, document item unit price/discount, request global discount, quotation
+  unit price/commercial discount; the legacy `CurrencyInput` (payments, line items,
+  contracts) now shares the same engine. Frontend-only; no migration.
+
+## [v2.229.7] - 2026-08-18
+
+### Release 4 STATE 2 TEST RC correction (REQ-18/08/2026-233, legacy finalize suppression)
+
+- The legacy manual "FINALIZAR PEDIDO (Recibo Fiscal)" action and the "Anexar recibo do
+  fornecedor e finalizar pedido" header guidance are no longer offered for grouped/classified
+  requests governed by the ACTIVE completion lifecycle (the backend already refused the action
+  with "Fluxo Atualizado" — Phase 4C guard, unchanged). The WAITING_RECEIPT header now derives
+  its responsible/next action from the completion-readiness read model (Fatura Final →
+  Recibo Fiscal → automatic completion). Legacy/groupless requests and the Phase 3B window
+  (CompletionEnabled=false) keep the legacy action unchanged. Frontend-only; no migration.
+
+## [v2.229.6] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, readiness vs persisted completion)
+
+- Group cards in "Conclusão do Pedido" no longer present "Grupo Concluído" from the readiness
+  projection alone: only a group whose PERSISTED status is COMPLETED shows the completed badge
+  and timestamp. A readiness-complete group now reads "Requisitos Satisfeitos" while the
+  completion lifecycle is disabled, or "Pronto para Concluir" during the transient window when
+  the lifecycle is active but the backend transition has not yet been projected. The "N de M
+  grupos concluídos" header count now counts persisted COMPLETED groups. Frontend-only;
+  no backend/rulebook change; no migration.
+
+## [v2.229.5] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, batch-model receiving facts)
+
+- The operational receiving rulebook (`OperationalReceiptFacts`) now recognizes the receipt
+  record on EITHER side of the award pointer: the batch/candidate QUOTATION model registers
+  receiving on the request line item while `SelectedQuotationItemId` remains a compatibility
+  pointer to a never-updated quotation item — that shape previously evaluated "not received",
+  parking fully received groups in IN_FOLLOWUP with no operational receipt stamp and readiness
+  stuck on "Aguardando recebimento". Legacy PAYMENT and legacy QUOTATION semantics preserved;
+  partial receiving stays fail-closed; empty/all-deleted item collections stay fail-closed.
+  Domain rulebook + tests only; no migration; REQ-232 heals by re-confirming receiving.
+
+## [v2.229.4] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, receiving attestation)
+
+- Operational receiving confirmation no longer demands a fiscal/legacy receipt document: the
+  Receiving user explicitly attests receipt/execution (mandatory checkbox, statement persisted
+  verbatim in history) with OPTIONAL supporting evidence stored as the new
+  `RECEIVING_EVIDENCE` type ("Comprovativo de Recebimento", group-linked, receiving-phase
+  window, Receiving/Buyer/SysAdmin). The modal no longer claims to permanently close the
+  request; fiscal-receipt facts remain exclusively Finance-owned. Frontend + attachment
+  taxonomy only; ConfirmReceiving backend lifecycle unchanged; no migration.
+
+## [v2.229.3] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, Receiving handoff)
+
+- Confirmed advance payments now hand groups to "Ag. Entrega/Serviço"
+  (WAITING_SUPPLIER_DELIVERY) — the state the Receiving workspace and every receiving
+  endpoint already speak — instead of parking in ADVANCE_PAYMENT_COMPLETED, a state no code
+  ever left. Partial advances proceed to delivery by design while outstanding payment remains
+  a completion blocker (evidence contradicting the status ladder now wins). Parked
+  groups/requests repaired by data-only migration; payment-proof re-upload preserved.
+
+## [v2.229.2] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, payment readiness)
+
+- Full advance payments now satisfy the Release 4 payment dimension: completion readiness
+  recognizes COMPLETED owed-money payment evidence covering the group total (standard
+  tolerance), instead of requiring the standard-branch status ladder a full-advance group
+  never walks. Partial advances, outstanding final balances, active reconciliations and
+  required regularizations remain fail-closed. Projection-only; no migration.
+
+## [v2.229.1] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232)
+
+- Requests awaiting their first P.O. now project the actionable "Aguardando P.O." state
+  (repurposed PO_REQUESTED lookup) instead of the done-looking "Cotação Concluída"; Buyer
+  queues/filters/dashboards include it. Parked requests corrected by data migration.
+- Corrupted Portuguese status names repaired ("Adiantamento Necessário",
+  "Ag. Entrega/Serviço", "Ag. Reconciliação") and the migration SQL transport made
+  explicitly UTF-8 (BOM + sqlcmd -f 65001). One data-only migration; no schema change.
+
+## [v2.229.0] - 2026-08-17
+
+### Release 4 — Post-Payment Completion lifecycle (Phases 4A–4D)
+
+- Deterministic group completion projection (P.O. · payment · operational receipt · Final
+  Invoice · conditional Fiscal Receipt) with fail-closed UNCLASSIFIED handling.
+- Operational receipt stamping on receiving completion; fiscal receipt storage + binding
+  lifecycle (`TYPE_FISCAL_RECEIPT`, Finance/SysAdmin).
+- Automatic grouped request completion through the authoritative `RequestCompletionService`
+  (two-phase, RowVersion-guarded, `CompletionCycleId` + `REQUEST_COMPLETED` exactly once) —
+  active only under `PostPaymentCompletion.CompletionEnabled=true`; legacy writers suppressed
+  or deferred while active. `WAITING_FISCAL_RECEIPT` antechamber in lifecycle + aggregation.
+- Completion readiness read model + "Conclusão do Pedido" UI (checklist, ownership,
+  evidence, fiscal receipt UX). SysAdmin parent-completion recovery sweep. No migration.
+
+## [v2.228.4] - 2026-08-13
+
+### Release 4 Phase 3 closure patch
+
+- Invoice supplier restricted to the request's obligation-bearing group suppliers
+  (`OPERATION_INVOICE_SUPPLIER_NOT_IN_REQUEST`; modal offers only those suppliers).
+- Phase 3B API module: repository-standard 401 session handling + friendly 403.
+- Coverage section stays a pre-Final read-only preview; all Phase 3 actions gated by the
+  operation-invoice lifecycle window.
+- Short-close hidden while a pending invoice covers the remaining; validated=0 proposals keep
+  the explicit full-balance warning. "Divergência Aceite: +valor" badge on accepted
+  over-coverage. Code-only, no migration.
+
+## [v2.228.3] - 2026-08-13
+
+### Fixed — SATISFIED-group divergence flow and ClosedShort blocker
+
+- Allocation eligibility no longer treats SATISFIED as structural: Finance/SysAdmin may create
+  the approved over-coverage divergence candidate on a fully covered group (Buyer gets the
+  precise `OI_ALLOC_GROUP_OVER`); short-closed groups refuse all new allocations with
+  `OI_ALLOC_GROUP_CLOSED_SHORT` until an explicit reopening workflow exists. Wizard Step 2
+  mirrors the rules (disabled reasons / Finance warning) and Step 3 enforces the divergence
+  justification. Code-only, no migration.
+
+## [v2.228.2] - 2026-08-13
+
+### Fixed — drawer menu layering and calendar-date display
+
+- OperationInvoice kebab menu now renders above the Request Drawer (KebabMenu `zIndex` prop,
+  MODAL token; page-context menus unchanged).
+- OperationInvoice document/due dates render as entered (string-based calendar formatter;
+  UTC timestamps normalized before parsing). Frontend-only; no migration.
+
+## [v2.228.1] - 2026-08-13
+
+### Fixed — obligation-driven Final Invoice registration
+
+- OperationInvoice Create no longer restricted to PAYMENT: any request (PAYMENT or QUOTATION)
+  with at least one classified group requiring a Final Invoice may register one; requests
+  without such a group get 409 `OPERATION_INVOICE_NO_OBLIGATION` (approved tightening for
+  legacy unclassified PAYMENT requests included). Code-only, no migration.
+
+## [v2.228.0] - 2026-08-12
+
+### Release 4 financial coverage capability (Phases 3A + 3B)
+
+- Final Invoice (OperationInvoice) registration/edit/void/reject/replace UI; atomic allocation
+  replace-set against RequestPoGroups; Finance validation turning allocations into effective
+  coverage with immutable reconciliation snapshots; explicit divergence candidate + acceptance;
+  short-close proposal/decision with separation of duties; authoritative group coverage read
+  model (obligations endpoint + "Fatura Final — Cobertura" section).
+- Validation now requires full allocation of the invoice gross; Supplier/Currency integrity
+  enforced at allocation, header edit and validation.
+- Feature-flag split: `Enabled` = intake/classification/coverage; new `CompletionEnabled` =
+  Phase 4 completion lifecycle only. Committed defaults both false; Phase 3B TEST runs
+  Enabled=true / CompletionEnabled=false.
+- Migration `AddOperationInvoiceAllocationAudit` (allocation Notes + audit columns) must run
+  before the backend deploys. Deferred: Phase 4 completion (operational/fiscal receipt,
+  completion gating), Phase 5 OCR, per-allocation Net/Tax UI, admin activation panel.
+
+## [v2.227.1] - 2026-08-11
+
+### Fixed — candidate-based approval read models/UI + quotation attachment classification
+
+- Lot footers valued from frozen winning-candidate snapshots (never Quotation.TotalAmount);
+  quotation-level MELHOR PREÇO suppressed for candidate batches; Approval Center shows
+  "N fornecedores selecionados" for mixed-winner batches.
+- New `QUOTATION` attachment type for Buyer quotation uploads (label "Cotação"); PROFORMA stays
+  payment-only; historical rows untouched with contextual display.
+- Step 2 allocation selects always show bound Plant/CC (render-only fallback + visible lookup
+  warning); "Orçamento OK" replaced by allocation-completeness semantics (budget verdict = Step 4).
+- Read/UI corrections only — no migration, no workflow or persisted-data change.
+
+## [v2.227.0] - 2026-08-11
+
+### Candidate-based quotation approval (Buyer submits options, Area selects the winner)
+
+- New responsibility model for QUOTATION batches: Buyer submits multiple frozen-snapshot
+  candidates per item (`ApprovalBatchItemCandidate`, optional BuyerNote); the Area Approver
+  selects exactly one winner per item (all-or-return, mandatory justification above the lowest
+  same-currency value, tentative totals + candidate-based budget preview); the Final Approver
+  reviews the outcome read-only with expandable losing candidates and can only return the batch.
+- Groups consume only Area-selected winners and are valued from the frozen snapshots;
+  pre-decision amounts display "A definir pelo Aprovador de Área"; legacy batches keep their
+  buyer-selected semantics. Migration `AddCandidateBasedApprovalModel` (no backfill).
+- Workflow reference: `docs/modules/candidate-approval-workflow.md`.
+
+## [v2.226.2] - 2026-08-11
+
+### Fixed — wizard item totals losing IVA on auto-mapping (two conflicting Step 5 totals)
+
+- IVA-rate context is now a required parameter for every wizard updater that recomputes item
+  totals (the `[]` default silently recalculated at 0% IVA); the auto-suggest mapping call and
+  23 further omitting call sites fixed, including the global-discount input.
+- Final-review RESUMO now shows the authoritative reconciliation `finalConsideredTotal` when the
+  preview is current — one financial truth per screen; stale behaviour unchanged.
+- Backend persistence pinned by tests: values computed from components only; the save DTO cannot
+  even carry a client total. No migration; no persisted-semantics change.
+
+## [v2.226.1] - 2026-08-11
+
+### Fixed — quotation reconciliation summary-IVA false blocker
+
+- Document-level/global IVA that was correctly recognized for the final item values no longer
+  remains classified as an unexplained OCR header-vs-lines difference: the calculator credits a
+  `DocumentSummaryIvaCredit` (inference: null per-line OCR rate + confirmed rate must IMPROVE
+  header consistency; extracted rates and tax-free documents never gain credit).
+- The structural difference stays visible as a diagnostic; only the true residual after
+  recognized components requires justification.
+- Backend-authoritative across save/update/preview; UI adds the recognized-IVA row and a
+  reconciled-within-tolerance state. No migration; line-level rules unchanged.
+
+## [v2.226.0] - 2026-08-11
+
+### Release 4 Phase 2 — Operation Invoice document lifecycle
+
+- Complete manual lifecycle for final/fiscal invoices on
+  `/api/v1/requests/{id}/operation-invoices`: Create/Read, Update, pre-validation Void,
+  Finance-only Validate/Reject, Finance-only replacement of validated invoices.
+- Global duplicate protection on both dimensions (fiscal identity and file hash), advisory
+  preflight, idempotent exact retries, RowVersion concurrency, full audit events.
+- One small migration (`AddOperationInvoicePhase2Fields`: DueDate, Notes, Updated*/Voided*).
+- VALIDATED is immutable; REJECTED/VOIDED release duplicate ownership; registration allowed
+  after PAID; WAITING_PO_CORRECTION stays mutation-blocked.
+- No allocation/UI/OCR yet; a validated unallocated invoice produces no Phase 1 coverage.
+- TEST deployment order: apply migrations first, then deploy.
+
+## [v2.225.2] - 2026-08-11
+
+### Fixed — request-create validation feedback
+
+- Título/Descrição validated up front (native `required` never ran — creation is programmatic);
+  invalid fields are marked, explained inline, and scrolled into view; the toast names them.
+- Backend `ValidationProblemDetails.errors` are surfaced on the PAYMENT creation path (the run
+  result now carries error + fieldErrors; hook state was read one render too early, collapsing
+  every failure into "Não foi possível criar o pedido.").
+- Generic toast remains only as fallback for unstructured failures; document draft preserved.
+
+## [v2.225.1] - 2026-08-11
+
+### Fixed — classification override lost while composing a new PAYMENT document
+
+- The conflict confirmation (acknowledgement + justification) was erased client-side by the
+  type commit that followed it — a stale-array lost update in `PaymentDocumentComposer`. All
+  composer mutations now build on the latest document array, so both land together.
+- Backend was already authoritative and correct; its contract is now pinned by endpoint tests,
+  including atomicity with the Phase 1c/1d grouping-key guard.
+- Persisted-document editing was unaffected.
+
+## [v2.225.0] - 2026-08-10
+
+### Release 4 Phase 1 — Operation Invoice foundation
+
+- Obligation projection per PO group + request rollup + drift diagnostics, derived on read
+  (pure Domain, no persistence).
+- Read-only endpoint `GET /api/v1/requests/{id}/operation-invoice-obligations`, gated on
+  `PostPaymentCompletion.Enabled` (committed default stays false).
+- Transactional obligation re-stamping on classification corrections; full grouping-key integrity
+  guard (Supplier+Currency+PaymentCondition+Plant+SourceDocumentType) with typed refusals.
+- QUOTATION groups now capture `ExpectedOperationInvoiceTotal` at creation (PAYMENT convention).
+- `ExpectedOperationInvoiceTotal` remains a snapshot — never recalculated, cleared or backfilled.
+- No OperationInvoice CRUD/UI/OCR/allocations yet; Finance decisions for Phases 2/3 remain open.
+  See `docs/POST_PAYMENT_COMPLETION_RELEASE4.md`.
+
+## [v2.224.3] - 2026-08-10
+
+### Fixed — invoice document dates no longer inverted by browser locale
+
+- `10/08/2026` displayed as `08/10/2026`. The stored value was correct ISO throughout; a raw
+  `<input type="date">` rendered it through the browser's en-US locale.
+- The payment source-document card now uses `DateInput` (ISO value, `dd/MM/yyyy` display,
+  locale- and timezone-independent).
+- The extraction schema demands strictly `YYYY-MM-DD` and a day-first reading, with worked examples;
+  an undecidable date returns null.
+- `dueDate` is no longer dropped between the prompt and the DTO.
+- Invoice prompt version `v2.2-party-roles` → `v2.3-iso-dates`.
+
+### Known limitation — line-item units
+
+`SV`, `KIT` and `H` display as `UN` because the unit catalogue holds only `UN`, `EA`, `KG`, `L`, `M`,
+`CX`. Configuration gap, not a code defect — units are editable in Master Data and are matched
+directly once added. Pending a business decision checked against Primavera article units.
+
+## [v2.224.2] - 2026-08-10
+
+### Fixed — invoice OCR now binds each fiscal number to the party it belongs to
+
+- Supplier and customer identified as parties before any field is read; the `Encomenda` inversion is
+  preserved.
+- `supplierTaxId` comes only from the supplier/issuer block. The label on a fiscal number never
+  determines its owner; a customer-side `NIF` / `Nº Contribuinte` must not populate it, nor may a
+  positional heuristic.
+- `billedCompanyTaxId` captures the customer's fiscal number separately — the schema previously had
+  one slot for a two-party document. Optional, so existing payloads map unchanged.
+- An ambiguous supplier fiscal number is left null rather than borrowed from the customer.
+- Invoice prompt version `v2.1-hardened` → `v2.2-party-roles`.
+- `InternalCompanyPolicy` unchanged, retained as defensive enforcement — extraction is a model
+  judgement and is never guaranteed correct.
+
+## [v2.224.1] - 2026-08-10
+
+### Fixed — Catalogue reconciliation restored for multi-document PAYMENT
+
+- `RequestCreate` selected reconcilable items via `paymentDraft`, which is null under the
+  multi-document model, so the guardrail inspected an empty array and never fired.
+- `Gerar Pedido` now matches and reconciles the items of all confirmed source documents in one
+  session, before the request is created, reusing the existing warning, modal, `Vincular`,
+  `Criar Novo` and `Pendente de Validação` behaviour.
+- Automatic catalogue matching extended to hand-typed lines, which had never been matched.
+- Unresolved rows name their source document; the column is multi-document PAYMENT only.
+- One answer settles equivalent lines across documents, using the existing matching rule — no
+  duplicate catalogue entries; request lines stay separate and keep `PaymentSourceDocumentId`.
+- Cancelling loses no work; nothing is created until every line is resolved.
+- Saved multi-document drafts reconcile on Submit; already-linked lines are not re-asked.
+- New `PUT /requests/{id}/line-items/{itemId}/catalog-link` changes only the catalogue link.
+- `CatalogItemReconciliationPolicy` extracted as a pure, tested rule; controller delegates to it.
+- Legacy PAYMENT, QUOTATION and Buyer quotation management unchanged.
+
+### Fixed — an ALPLA company can no longer be the payable supplier of a PAYMENT request
+
+- OCR offered `ALPLA ANGOLA PLASTICOS LDA.` (the document's issuer) as the supplier. An ALPLA legal
+  entity can never be the counterparty a payment request pays.
+- New shared `InternalCompanyPolicy`, keyed on the existing `Companies` table — NIF first, registered
+  name and Angolan trade names as fallback. Other ALPLA group companies remain usable suppliers.
+- Root cause: the internal check ran on the NIF alone, so a document naming the entity without a
+  readable fiscal number passed straight through.
+- Internal supplier rows (e.g. the Primavera-synced `ALPLA ANGOLA SOPRO, LDA`) no longer auto-select
+  and are excluded from the PAYMENT supplier picker — excluded at point of use, never deleted.
+- Quick creation refused by NIF or name; the NIF-only case still lets a genuine supplier through.
+- Backend authority at source-document create/update and at submission, typed
+  `PAYMENT_INTERNAL_COMPANY_AS_SUPPLIER`, with no administrator bypass.
+- Rejects AlplaPLASTICO ↔ AlplaSOPRO in both directions, not merely `Supplier != Request.Company`.
+- Document classification unchanged; no historical row rewritten.
+
+## [v2.224.0] - 2026-08-06
+
+### Added — Post-Payment Completion — Release 3: multiple source documents per PAYMENT request
+
+- **Feature remains disabled** in every committed configuration.
+- A PAYMENT request may carry several `PaymentSourceDocument` rows, each with its own attachment,
+  supplier, plant, classification, dates, amounts and items.
+- Per-document OCR and classification, keyed by document identity — reading one document cannot
+  disturb another's reading or conflict answer.
+- Progressive composition: import or type one document, review it, confirm it, add the next. A
+  blocking loading view while the file is read; confirmation refused until every document rule holds.
+- Supplier registration from the document, one view and one Save, creating a DRAFT supplier in the
+  single authoritative supplier table.
+- Items belong to a document (`RequestLineItem.PaymentSourceDocumentId`); grouping key extended to
+  Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
+- RequestEdit becomes a read-only review for these requests, with one explicit entry to the document
+  composer; Request Type is immutable in UI and API.
+- Duplicate protection by content hash **before** OCR, plus supplier + number + series for renamed
+  copies; cross-request warning retained.
+- Resizable request drawer with a remembered, clamped width.
+- `Request.SupplierId` / `Request.SourceDocumentType` are compatibility echoes and no longer gate
+  submission; the legacy PROFORMA slot is not required for multi-document requests.
+- **Operation Invoice workflow is modelled but NOT implemented** (no controller, service or UI).
+- Legacy PAYMENT, flag-off behaviour and Quotation Management unchanged.
+
+## [v2.223.0] - 2026-08-03
+
+### Changed/Added — Post-Payment Completion — Release 2 corrective: icons + modals, audited overrides
+
+- **Feature remains disabled** in every committed configuration.
+- **No contextual message is rendered inline.** OCR suggestion, evidence, classification conflict,
+  expired document and auto-identified company are now severity icons beside the field label, each
+  opening a modal. A warning can no longer change the height of the page. Concise validation errors
+  stay inline.
+- **New `InfoModal`** — blurred backdrop, focus trap, Escape, focus returned to the trigger,
+  internal scrolling, dark-mode tokens. Built alongside `ModalWrapper`, which is unchanged.
+- **A conflicting selection is pending, not applied**: the conflict modal opens automatically, the
+  field keeps its previous value until confirmed, and cancelling restores it.
+- **All four flows share one component**: new Payment, Payment edit, Register New Quotation,
+  quotation reopen. The wizard previously had a bare select with no suggestion, conflict or audit.
+- **New `DocumentClassificationOverrides` table** + readable `RequestStatusHistory` entry, keyed by
+  `DC_OVERRIDE:{Context}:{ScopeId}:{AttachmentId}:{SelectedType}` so a repeated save writes nothing
+  and a changed decision is a new event. Duplicate handling is transaction-safe: the audit row is
+  detached and the save retried, never at the cost of the classification change.
+- **Migration `DocumentClassificationOverrideAudit`** — one new table, additive only, applied to the
+  local development clone. No configuration or workflow change.
+
+**Guided Tour impact: existing tour updated.**
+
+## [v2.222.0] - 2026-08-03
+
+### Fixed/Changed — Post-Payment Completion — Release 2 corrective
+
+- **Feature remains disabled** in every committed configuration.
+- **OCR classification now reaches the screen**: `mapOcrResultToDraft` never copied
+  `documentClassification`, so the suggestion, conflict warning and justification prompt were
+  correct but unreachable.
+- **Fallback classification** when the provider returns no classification block — title 0.85,
+  number prefix capped at 0.50, filename at 0.35, nothing recognisable yields no suggestion.
+  `FA` deliberately excluded as ambiguous at ALPLA.
+- **Option labels name the document only**; review requirements stay in the resolver and the
+  Finance queue.
+- **Always-visible helper block removed**; explanation moved to a new `DocumentTypeInfoModal`
+  behind an ⓘ icon (hover = one-line tooltip, click = modal, Escape closes, focus returns).
+  Selecting a type no longer changes the form's height.
+- **Field repositioned in Registrar Nova Cotação**: Fornecedor · Nº Documento · Tipo de documento
+  anexado · Data Documento · Data de vencimento da cotação.
+- **Live guide corrected** — the step still described the superseded binary model.
+- No migration. No configuration or workflow change.
+
+**Guided Tour impact: existing tour updated.**
+
+## [v2.221.0] - 2026-07-31
+
+### Changed — Post-Payment Completion — Release 2 corrected: Angolan document taxonomy
+
+- **Feature remains disabled** in every committed configuration.
+- **Seven-value taxonomy** (`ESTIMATE`, `PROFORMA`, `ADVANCE_INVOICE`, `INVOICE`,
+  `INVOICE_RECEIPT`, `OTHER`, `UNCLASSIFIED`) replacing the binary model.
+- **Identity split from obligations**: `SourceDocumentType` records what the document is;
+  `DocumentObligationResolver` derives what remains owed, per usage context.
+- **Factura-Recibo can no longer originate a payment**; **Orçamento cannot initiate a payment**.
+- **`ADVANCE_INVOICE`** (provisional rule) requires operation invoice + Credit Note regularization +
+  payment evidence + Finance validation, reusing the existing `RequestReconciliation` flow.
+- **OCR classifies the document** with confidence and evidence; prefixes alone never decide.
+  Conflicts require acknowledgement, and a high-risk conflict requires a written justification.
+- **Renames**: `BillingDocumentType` → `SourceDocumentType`, `FinalInvoiceStatus` →
+  `OperationInvoiceStatus`, `FINAL_INVOICE` → `INVOICE` (read-time alias retained).
+- **Migration `CorrectDocumentTaxonomy`**: 3 renames + additive columns, no data change.
+
+**Guided Tour impact: existing tour updated.**
+
+## [v2.220.0] - 2026-07-31
+
+### Added — Post-Payment Completion — Release 2: Document Classification
+
+- **Feature remains disabled** in every committed configuration; nothing below is visible until an
+  environment is explicitly switched on.
+- **"Tipo de Documento de Faturação"** on PAYMENT requests — no default, optional on a draft,
+  mandatory at submission, read-only once submitted.
+- **`Quotation.DocumentType` now persists** — the wizard already collected it, but the value never
+  reached the API.
+- **Obligation propagation**: `PROFORMA` → `PENDING_UPLOAD`, `FINAL_INVOICE` → `NOT_APPLICABLE`,
+  missing or ambiguous → `UNCLASSIFIED`. Only winning quotations contribute.
+- **New endpoint** `GET /api/v1/config/features` (booleans only).
+- **No migration, no schema change, no historical data change.**
+
+**Guided Tour impact: existing tour updated.**
+
+## [v2.219.0] - 2026-07-30
+
+### Added — Post-Payment Completion — Release 1: Domain Foundation
+
+- **Feature remains disabled**: `PostPaymentCompletion.Enabled = false` in every committed
+  configuration. No user-facing behaviour changed and no frontend file was touched.
+- **Domain foundation**: post-payment dimension fields on `RequestPoGroup`;
+  `Request.BillingDocumentType` and `Request.CompletionCycleId`; `Quotation.DocumentType`;
+  `RequestStatusHistory.IdempotencyKey`; `rowversion` concurrency tokens on `Requests` and
+  `RequestPoGroups`; the `FinalInvoiceReconciliations` table.
+- **Migration `AddPostPaymentDimensions`** — additive only (20 columns, 1 table, 3 indexes,
+  1 new lookup row). No historical data was updated and no `RECEIPT` value was renamed.
+- **Two-phase completion service** declared but inactive; automatic completion is not enabled.
+- **`UNCLASSIFIED`** is the persisted default for the Final Invoice obligation.
+- Releases 2–5 are not part of this delivery.
+
+**Guided Tour impact: not applicable.**
 
 ## [v2.218.0] - 2026-07-29
 
@@ -97,7 +585,7 @@ v2.218.0
 - **Manually validated**: REQ-132 shows two Area Approval cards; Lote #1 opens Lote #1 and Lote #2 opens Lote #2; card and drawer values and suppliers match; search by request returns both lots; counts and KPI behavior are coherent.
 - **No migration and no database change.**
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.215.0] - 2026-07-28
 
@@ -111,7 +599,7 @@ v2.218.0
 - **No migration and no database change.**
 - **Known limitation (pending follow-up)**: a request with multiple simultaneously actionable `ApprovalBatch` records is still collapsed into a single request-level queue card, so the amount/lot shown on the card and the lot opened in the drawer can diverge (e.g. REQ-21/07/2026-132 with Lote #1 and Lote #2 both WAITING_AREA_APPROVAL). Redesigning the queue to one card per actionable batch is a separate, not-yet-started task.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.214.0] - 2026-07-28
 
@@ -141,7 +629,7 @@ v2.218.0
 - **Approval Batch Review cleanup**: the "other quotations" comparison area (already collapsed by default) now only lists quotations that actually have a matching item for that specific request line — quotations present on the request but never quoting that line no longer appear as "Não Cotado" placeholders. Updated labels and added an explicit consultation-only disclaimer.
 - Removed the unfinished, unreachable legacy duplicate-supplier replacement modal (dead since the July 14 rewrite; its confirm action was a no-op).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.212.0] - 2026-07-23
 
@@ -166,7 +654,7 @@ v2.218.0
 - `CANCELLED` groups excluded from the frontend's operational-group count (`resolveOperationalGroups`/`hasMultipleOperationalGroups` in `financePaymentsView.ts`) so they can never suppress a valid single-group action or get auto-selected; legacy `PENDING` groups remain resolvable.
 - PREVIEW/APPLY remediation + rollback scripts added for the confirmed 12-row legacy cohort — **not executed** as part of this release.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.210.1] - 2026-07-22
 
@@ -261,7 +749,7 @@ v2.218.0
 
 - Linhas **IGNORED** agora são enviadas e persistidas (com justificativa própria obrigatória quando têm valor); o Integrity Check compara escopos equivalentes (`comparableDocumentTotal = OCR − ignoradas`); totais da cotação incluem apenas linhas consideradas; statuses de reconciliação normalizados no boundary; ciclo de vida do `saveError` corrigido (voltar/editar/trocar documento/reabrir/tentar/sucesso).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.3] - 2026-07-18
 
@@ -271,7 +759,7 @@ v2.218.0
 - **Resposta 409 estruturada** (`APPROVAL_CONCURRENCY_CONFLICT`) para conflitos reais de concorrência na aprovação, sem stack trace; frontend mostra mensagem amigável, encerra "Processando..." e recarrega os dados (sem retry automático).
 - **Testes de regressão SQL** para o padrão de substituição de alocações (antigas `Deleted`, novas `Added`, persistência via INSERT) incluindo guard que reproduz o bug original.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.207.2] - 2026-07-17
 
@@ -306,7 +794,7 @@ v2.218.0
 - **Bloqueio de NIF interno + fallback de decisão**: o fluxo contextual nunca cadastra NIF de empresa interna (`INTERNAL_COMPANY_TAX_ID`); o modal descarta o NIF, refaz o matching por nome e oferece um fluxo de decisão claro (usar cadastro existente / alternativas / criar sem NIF com confirmação explícita).
 - **Endurecimento de auditoria**: metadados de proveniência (NIF interno descartado, fornecedor sugerido recusado) são resolvidos server-side contra o banco — o texto do cliente nunca é gravado como verdade.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.206.0] - 2026-07-16
 
@@ -319,7 +807,7 @@ v2.218.0
 - **Dados Mestres → Departamentos**: grade de managers por planta/global com auto-criação de escopos de visibilidade (D3); **Cadastro de Usuários**: seção somente leitura de responsabilidades derivadas.
 - **Relatório administrativo** `GET /api/admin/reports/area-approver-reconciliation` (JSON/CSV) com classificações e `LegacyPendingRequests` (gate para remover a compatibilidade temporária `IsLegacyNamedAreaApprover`).
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.205.0] - 2026-07-14
 
@@ -374,7 +862,7 @@ v2.218.0
 - **PDF Responsibilities Term Update**: Restructured the "Termo de Responsabilidade" PDF table to support 10 columns using a compact 6.5pt font layout. The PDF now accurately displays equipment values, purchase dates, and purchase document numbers, explicitly rendering "Indisponível" for legacy records without values.
 - **Form UI Update**: Added an always-visible "Compra / Rastreabilidade" section to the Equipment Form modal with validation for mandatory purchase fields or justified absence.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 
 - **HR Sync Logging & Robustness**: Refined the HR Employee Directory Synchronization to handle SQL connection timeouts gracefully without crashing the frontend. Added `EXTERNAL_DB_TIMEOUT` structured backend error. 
@@ -397,7 +885,7 @@ v2.218.0
 - **P.O. Payment Condition Control**: Removed silent POST_PAID default; enforced explicit Buyer selection with OCR auto-detection. Persists detection source (`PaymentConditionSource`) for auditability.
 - **Duplicate Document UX Safety**: Added a 5-second countdown safety delay to the confirmation button on duplicate document warning modals to prevent instinctive overrides.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.199.0] - 2026-06-23
 
@@ -490,7 +978,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 - Fixed a z-index issue that caused the drawer to appear behind the top header and TEST environment banner.
 - Removed the direct "Atribuir" and "Devolver" buttons to enforce the Delivery Terms workflow.
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 ## [v2.194.0] - 2026-06-15
 
@@ -545,7 +1033,7 @@ The Portal Gerencial frontend had structural layout issues that caused horizonta
 **Operational Script:**
 - `scripts/maintenance/ResetITEquipmentData.sql` — controlled purge of IT asset operational data, preserving all master data/catalogs
 
-**Guided Tour impact: existing tour reviewed, no changes needed.**
+**Guided Tour impact: existing tour updated.**
 
 **Files Created:**
 - `src/backend/.../Migrations/20260615104001_AddITAssetCodeAutoGeneration.cs` — Schema migration

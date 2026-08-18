@@ -160,6 +160,12 @@ export interface CardAmount {
  */
 export function resolveCardAmount(req: ApprovalQueueItemDto): CardAmount {
     if (req.actionableAmount == null) {
+        // Candidate model: a batch row awaiting AREA approval legitimately has no amount yet —
+        // the Buyer sent OPTIONS and the Area Approver still has to pick the winners. That is
+        // the expected business state, not an anomaly, so no warning icon.
+        if (req.approvalStage === 'AREA' && req.lotNumber != null) {
+            return { display: 'A definir pelo Aprovador de Área', state: 'undefined', warning: false };
+        }
         return { display: 'Valor ainda não definido', state: 'undefined', warning: true };
     }
     const display = formatCurrencyAO(req.actionableAmount, req.currencyCode || 'AOA');

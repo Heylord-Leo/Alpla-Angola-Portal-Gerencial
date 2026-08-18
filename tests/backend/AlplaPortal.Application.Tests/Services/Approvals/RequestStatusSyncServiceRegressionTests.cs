@@ -33,6 +33,7 @@ public class RequestStatusSyncServiceRegressionTests
             new() { Id = 2, Code = RequestConstants.Statuses.QuotationCompleted, DisplayOrder = 21 },
             new() { Id = 3, Code = RequestConstants.Statuses.PoPartiallyUploaded, DisplayOrder = 22 },
             new() { Id = 4, Code = RequestConstants.Statuses.PoIssued, DisplayOrder = 13 },
+            new() { Id = 5, Code = RequestConstants.Statuses.PoRequested, DisplayOrder = 12 },
         });
         context.SaveChanges();
 
@@ -78,12 +79,13 @@ public class RequestStatusSyncServiceRegressionTests
         context.RequestPoGroups.AddRange(group1, group2);
         await context.SaveChangesAsync();
 
-        // Step 1: final approval settles → QUOTATION_COMPLETED.
+        // Step 1: final approval settles → PO_REQUESTED (v2.229.1: zero of N P.O.s registered
+        // is the actionable awaiting-P.O. state, no longer QUOTATION_COMPLETED).
         await service.SyncStatusAsync(request.Id, Guid.NewGuid());
         await context.SaveChangesAsync();
 
         var afterFirstSync = await context.Requests.Include(r => r.Status).FirstAsync(r => r.Id == request.Id);
-        Assert.Equal(RequestConstants.Statuses.QuotationCompleted, afterFirstSync.Status.Code);
+        Assert.Equal(RequestConstants.Statuses.PoRequested, afterFirstSync.Status.Code);
 
         // Step 2: Buyer registers the PO on group1 (simulating RegisterPo's own persistence,
         // which does not go through SyncStatusAsync). One group is now PO_ISSUED, the other is

@@ -62,6 +62,15 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
     const activeItems = [...baseItems, ...extraItems];
     const allAssigned = assignedCount === totalCount && totalCount > 0;
 
+    // A bound allocation value must never silently render as "Selecione..." — when a bound
+    // plant/cost-center id is absent from the company-scoped lookup lists (failed fetch, or a
+    // value outside the request-company scope), the selects below inject a render-only fallback
+    // option and this flag raises a visible warning instead of a console-only error.
+    const hasMissingLookupValues = activeItems.some((item: any) =>
+        (itemAllocations[item.id] || []).some(a =>
+            (a.plantId != null && !plants.some(p => p.id === a.plantId)) ||
+            (a.costCenterId != null && !costCenters.some(cc => cc.id === a.costCenterId))));
+
     const { isAssigned } = useWizardValidation(
         activeItems,
         itemAllocations,
@@ -162,6 +171,21 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
                     Defina para cada item a Planta, o Centro de Custo e o percentual de alocação. Cada item deve totalizar exatamente 100%.
                 </div>
             </div>
+
+            {hasMissingLookupValues && (
+                <div style={{
+                    backgroundColor: '#FFFBEB', border: '1px solid #FCD34D',
+                    borderRadius: '8px', padding: '12px 16px', color: '#92400E',
+                    fontSize: '0.8125rem', display: 'flex', gap: '10px', alignItems: 'flex-start'
+                }}>
+                    <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+                    <div>
+                        <strong>Atenção:</strong> uma ou mais atribuições possuem Planta/Centro de Custo que não constam
+                        na lista da empresa deste pedido (lista indisponível ou valor fora do escopo da empresa).
+                        Os valores atribuídos permanecem válidos e são exibidos abaixo — nada foi descartado.
+                    </div>
+                </div>
+            )}
 
             {/* Header */}
             <div>
@@ -513,7 +537,22 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
                                         {allocations.map((alloc) => {
                                             const budgetStatus = getBudgetStatusForLine(alloc.plantId, alloc.costCenterId);
                                             const isBudgetWarning = budgetStatus && budgetStatus.annualBudget > 0 && (budgetStatus.alreadyConsumed / budgetStatus.annualBudget >= 0.9);
-                                            const isBudgetOk = budgetStatus && !isBudgetWarning;
+                                            // Step 2 asserts ALLOCATION COMPLETENESS only — the budget
+                                            // verdict (incl. "Sem Orçamento Configurado") belongs to Step 4.
+                                            const allocationLineComplete = !!(alloc.plantId && alloc.costCenterId && (alloc.percentage || 0) > 0);
+
+                                            // Render-only fallbacks: a bound id absent from the company-scoped
+                                            // lookup list stays visible/auditable and can never silently read
+                                            // as "Selecione...". Disabled = it is not newly selectable.
+                                            const plantOptionMissing = alloc.plantId != null && !plants.some(p => p.id === alloc.plantId);
+                                            const plantFallbackLabel = (request as any).plantId === alloc.plantId && (request as any).plantName
+                                                ? `${(request as any).plantName} (fora da lista da empresa)`
+                                                : `Planta #${alloc.plantId} (fora da lista da empresa)`;
+                                            const ccVisibleOptions = costCenters.filter(cc => cc.plantId === alloc.plantId);
+                                            const ccOptionMissing = alloc.costCenterId != null && !ccVisibleOptions.some(cc => cc.id === alloc.costCenterId);
+                                            const ccFallbackLabel = (item as any).costCenterId === alloc.costCenterId && ((item as any).costCenterCode || (item as any).costCenterName)
+                                                ? `${(item as any).costCenterCode ? `[${(item as any).costCenterCode}] ` : ''}${(item as any).costCenterName || ''} (fora da lista da empresa)`.trim()
+                                                : `Centro de custo #${alloc.costCenterId} (fora da lista da empresa)`;
 
                                             return (
                                                 <div key={alloc.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: allocations.length > 1 ? '1px solid #F3F4F6' : 'none', paddingBottom: allocations.length > 1 ? '12px' : '0' }}>
@@ -532,6 +571,9 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
                                                                 }}
                                                             >
                                                                 <option value="">Selecione...</option>
+                                                                {plantOptionMissing && (
+                                                                    <option value={alloc.plantId!} disabled>{plantFallbackLabel}</option>
+                                                                )}
                                                                 {plants.map(p => (
                                                                     <option key={p.id} value={p.id}>{p.name}</option>
                                                                 ))}
@@ -552,12 +594,12 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
                                                                 }}
                                                             >
                                                                 <option value="">{!alloc.plantId ? 'Selecione a Planta primeiro' : 'Selecione...'}</option>
-                                                                {costCenters
-                                                                    .filter(cc => cc.plantId === alloc.plantId)
-                                                                    .map(cc => (
-                                                                        <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
-                                                                    ))
-                                                                }
+                                                                {ccOptionMissing && (
+                                                                    <option value={alloc.costCenterId!} disabled>{ccFallbackLabel}</option>
+                                                                )}
+                                                                {ccVisibleOptions.map(cc => (
+                                                                    <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
+                                                                ))}
                                                             </select>
                                                         </div>
                                                         <div style={{ width: '100px' }}>
@@ -594,10 +636,16 @@ export const WizardStepAllocation: React.FC<WizardStepAllocationProps> = ({
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* Budget Pre-check Indicator */}
-                                                    {isBudgetOk && (
+                                                    {/* Allocation completeness only — never a budget verdict.
+                                                        NO_BUDGET/critical states are Step 4's responsibility and
+                                                        must never surface here as a positive indicator. */}
+                                                    {allocationLineComplete ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#10B981', fontWeight: 600, paddingLeft: '2px', marginTop: '4px' }}>
-                                                            <CheckCircle2 size={14} /> ✓ Orçamento OK
+                                                            <CheckCircle2 size={14} /> Alocação completa
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#B45309', fontWeight: 600, paddingLeft: '2px', marginTop: '4px' }}>
+                                                            <AlertCircle size={14} /> Alocação incompleta
                                                         </div>
                                                     )}
                                                     {isBudgetWarning && (

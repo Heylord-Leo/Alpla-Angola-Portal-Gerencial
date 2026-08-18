@@ -5,7 +5,9 @@ namespace AlplaPortal.Application.DTOs.Requests;
 /// </summary>
 public class CreateApprovalBatchDto
 {
-    /// <summary>Items to include in the batch, each with a buyer-selected winner.</summary>
+    /// <summary>Items to include in the batch, each with the candidate options the Area Approver
+    /// will choose from. The Buyer never selects a winner — there is deliberately no winner field
+    /// anywhere in this contract.</summary>
     public List<BatchItemDto> Items { get; set; } = new();
 
     /// <summary>Optional buyer comment describing the batch.</summary>
@@ -21,15 +23,26 @@ public class CreateApprovalBatchDto
 }
 
 /// <summary>
-/// Single item within a batch creation request.
+/// Single item within a batch create/update request. Candidate model: the client only IDENTIFIES
+/// quotation lines (plus an optional note); every commercial value is snapshotted server-side.
 /// </summary>
 public class BatchItemDto
 {
     /// <summary>The request line item to include in the batch.</summary>
     public Guid RequestLineItemId { get; set; }
 
-    /// <summary>The quotation item selected as the winner for this line item.</summary>
-    public Guid SelectedQuotationItemId { get; set; }
+    /// <summary>The candidate quotation options for this item (at least one required).</summary>
+    public List<BatchCandidateInputDto> Candidates { get; set; } = new();
+}
+
+/// <summary>One candidate option the Buyer submits for a requested item.</summary>
+public class BatchCandidateInputDto
+{
+    public Guid QuotationItemId { get; set; }
+
+    /// <summary>Optional informational note, frozen with the snapshot. Never implies winner or
+    /// preference semantics.</summary>
+    public string? BuyerNote { get; set; }
 }
 
 /// <summary>
@@ -53,6 +66,23 @@ public class ApprovalBatchDto
     public Guid? UpdatedByUserId { get; set; }
 
     public List<ApprovalBatchItemDto> Items { get; set; } = new();
+
+    // ── Pre-decision candidate summary (decision 5) ──
+    // Never persisted; computed from candidate snapshots. All null for legacy batches.
+
+    /// <summary>Total number of candidate options across all items.</summary>
+    public int CandidateOptionCount { get; set; }
+
+    /// <summary>Distinct suppliers across all candidate options.</summary>
+    public int CandidateSupplierCount { get; set; }
+
+    /// <summary>Cheapest possible combination (sum of each item's lowest candidate LineTotal).
+    /// Null unless every item has candidates in a single shared currency. Informational only —
+    /// NEVER a persisted approved amount.</summary>
+    public decimal? MinCandidateCombinationTotal { get; set; }
+
+    /// <summary>Most expensive possible combination, same conditions as the minimum.</summary>
+    public decimal? MaxCandidateCombinationTotal { get; set; }
 }
 
 /// <summary>
@@ -66,11 +96,64 @@ public class ApprovalBatchItemDto
     public int? RequestLineItemLineNumber { get; set; }
     public decimal? RequestLineItemQuantity { get; set; }
 
-    public Guid SelectedQuotationItemId { get; set; }
+    /// <summary>Winning quotation item. Candidate model: null until the Area decision.
+    /// Legacy batches: the buyer-selected winner from the old flow.</summary>
+    public Guid? SelectedQuotationItemId { get; set; }
     public string? SelectedQuotationItemDescription { get; set; }
     public decimal? SelectedQuotationItemUnitPrice { get; set; }
     public decimal? SelectedQuotationItemLineTotal { get; set; }
     public string? SupplierName { get; set; }
+
+    // ── Candidate model (empty candidates + non-null winner ⇒ legacy item) ──
+    public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
+    public Guid? SelectedCandidateId { get; set; }
+    public Guid? WinnerSelectedByUserId { get; set; }
+    public DateTime? WinnerSelectedAtUtc { get; set; }
+    public string? WinnerSelectionJustification { get; set; }
+
+    /// <summary>True for historical items decided by the Buyer under the pre-candidate model
+    /// (zero candidate rows, winner already populated). No snapshot exists for them.</summary>
+    public bool IsLegacyBuyerSelectedWinner { get; set; }
+}
+
+/// <summary>Frozen snapshot of one candidate option, as submitted by the Buyer.</summary>
+public class ApprovalBatchItemCandidateDto
+{
+    public Guid Id { get; set; }
+    public Guid QuotationItemId { get; set; }
+    public Guid QuotationId { get; set; }
+
+    public int? SupplierId { get; set; }
+    public string SupplierName { get; set; } = string.Empty;
+    public string? SupplierNif { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+    public decimal Quantity { get; set; }
+    public string? UnitText { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal IvaRatePercent { get; set; }
+    public decimal IvaAmount { get; set; }
+    public decimal GrossSubtotal { get; set; }
+    public decimal LineTotal { get; set; }
+    public string Currency { get; set; } = string.Empty;
+
+    public string? QuotationDocumentNumber { get; set; }
+    public DateTime? QuotationDocumentDate { get; set; }
+
+    public bool HasReconciliationWarnings { get; set; }
+    public string? ReconciliationStatus { get; set; }
+    public string? ReconciliationJustification { get; set; }
+    public string? LineAdjustmentJustification { get; set; }
+
+    public string? BuyerNote { get; set; }
+
+    /// <summary>True when this candidate is the Area-selected winner of its item.</summary>
+    public bool IsWinner { get; set; }
+
+    /// <summary>"MENOR VALOR" badge: lowest LineTotal among this item's candidates in the same
+    /// currency. Informational only — never auto-selects anything.</summary>
+    public bool IsLowestTotal { get; set; }
 }
 
 /// <summary>
@@ -93,7 +176,8 @@ public class ApprovalBatchListItemDto
 /// <summary>
 /// DTO for batch-level area approval actions (approve / reject / request-adjustment).
 /// Mirrors ApprovalActionDto but omits ItemAwards, SelectedQuotationId, and FinancialIntegrityOverride.
-/// Winners are read from ApprovalBatchItem.SelectedQuotationItemId.
+/// Candidate model: winners come from <see cref="Selections"/> (approve only); legacy batches
+/// keep reading ApprovalBatchItem.SelectedQuotationItemId.
 /// </summary>
 public class BatchApprovalActionDto
 {
@@ -113,15 +197,37 @@ public class BatchApprovalActionDto
 
     /// <summary>Extra item decisions (APPROVE / REJECT). Keys are QuotationItemIds.</summary>
     public Dictionary<Guid, ExtraItemDecisionDto>? ExtraItemDecisions { get; set; }
+
+    /// <summary>
+    /// Area winner selections (candidate model, approve action only): exactly one entry per
+    /// ApprovalBatchItem that carries candidates. Required for candidate-based batches; omitted
+    /// for legacy batches whose winners were buyer-selected. Carries NO commercial values —
+    /// only the chosen candidate identity and an optional/mandatory justification.
+    /// </summary>
+    public List<BatchWinnerSelectionDto>? Selections { get; set; }
+}
+
+/// <summary>The Area Approver's winner choice for one batch item.</summary>
+public class BatchWinnerSelectionDto
+{
+    public Guid ApprovalBatchItemId { get; set; }
+    public Guid SelectedCandidateId { get; set; }
+
+    /// <summary>Mandatory (min. 20 meaningful characters) when the chosen candidate is more
+    /// expensive than the cheapest same-currency candidate beyond the FinancialIntegrity
+    /// tolerance; optional otherwise (persisted whenever supplied).</summary>
+    public string? WinnerSelectionJustification { get; set; }
 }
 
 /// <summary>
 /// DTO for editing a batch during rework (AREA_ADJUSTMENT or FINAL_ADJUSTMENT).
-/// Allows changing items and their selected winners.
+/// Allows changing item membership, candidate membership, and BuyerNotes — never winners.
 /// </summary>
 public class UpdateApprovalBatchDto
 {
-    /// <summary>Updated list of items. Allows adding/removing items and changing SelectedQuotationItemId.</summary>
+    /// <summary>Updated list of items with their candidate options. Newly added candidates are
+    /// snapshotted at update time; retained candidates keep their frozen snapshot (only the
+    /// BuyerNote may change in place).</summary>
     public List<BatchItemDto> Items { get; set; } = new();
 
     /// <summary>Optional updated comment.</summary>

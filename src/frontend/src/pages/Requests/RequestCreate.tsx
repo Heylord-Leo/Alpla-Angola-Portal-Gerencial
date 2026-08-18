@@ -21,10 +21,46 @@ import { ReconcilableItem, ItemResolution } from '../../types';
 import { LiveGuideLauncher } from '../../features/guided-tour/live-guide/LiveGuideLauncher';
 import { useLiveGuideRegistration } from '../../features/guided-tour/live-guide/LiveGuideProvider';
 import { createRequestCreationGuide, type RequestFormValues } from '../../features/guided-tour/live-guide/guides/requestCreation.liveGuide';
+import { SourceDocumentTypeField } from '../../components/requests/SourceDocumentTypeField';
+import { PaymentDocumentComposer } from '../../components/requests/PaymentDocumentComposer';
+import { usePaymentRequestCreation } from '../../hooks/usePaymentRequestCreation';
+import { usePaymentDocumentOcr } from '../../hooks/usePaymentDocumentOcr';
+import { PHASE_LABEL, TemporaryPaymentDocument } from '../../lib/paymentRequestCreation';
+import {
+    activeDraftDisposition,
+    confirmedTotals,
+    invalidConfirmedDocuments
+} from '../../lib/paymentDocumentComposition';
+import {
+    DocumentScopedItem,
+    applyAutoMatches,
+    applyResolutionsToDocuments,
+    descriptionsNeedingMatch,
+    documentLabelsByIndex,
+    equivalentUnresolvedIndexes,
+    flattenConfirmedDocumentItems,
+    propagateEquivalentResolutions,
+    unresolvedItems
+} from '../../lib/multiDocumentCatalogReconciliation';
+import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
+import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
+import { useAuth } from '../../features/auth/AuthContext';
+import {
+    CONFLICT_JUSTIFICATION_MIN_LENGTH,
+    buildClassificationPayload,
+    evaluateClassificationConflict,
+    type ClassificationConflictState
+} from '../../lib/documentClassificationDecision';
+import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+import { FieldMessageIcon } from '../../components/ui/FieldMessageIcon';
 
 
 export function RequestCreate() {
     const navigate = useNavigate();
+    // Post-Payment Completion (Release 2). Flags start off, so the form renders exactly as before
+    // until the server confirms the feature is enabled.
+    const { flags: featureFlags } = useFeatureFlags();
+    const { user } = useAuth();
     const [searchParams] = useSearchParams();
     const location = useLocation() as { state: { fromList?: string } | null };
     
@@ -60,7 +96,7 @@ export function RequestCreate() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [isOcrLoading, setIsOcrLoading] = useState(false);
-    const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
+    const [duplicateWarning, setDuplicateWarning] = useState<{ isOpen: boolean; requestNumber: string; uploadCallback: () => void; cancelCallback?: () => void; uploadedBy?: string; createdAtUtc?: string } | null>(null);
     const [dupCountdown, setDupCountdown] = useState(0);
 
     // Countdown timer for duplicate warning confirm button safety delay
@@ -78,6 +114,165 @@ export function RequestCreate() {
 
     const [paymentDraft, setPaymentDraft] = useState<OcrDraft | null>(null);
     const [ocrFile, setOcrFile] = useState<File | null>(null);
+
+    // Release 3: when multi-document is on, a PAYMENT request is composed as a COLLECTION of source
+    // documents held client-side (each keyed by a temporary id) and flushed to the server in one
+    // controlled pass after the draft exists. See usePaymentRequestCreation for the staging.
+    const [tempDocuments, setTempDocuments] = useState<TemporaryPaymentDocument[]>([]);
+    /** The one document open in the composer's editor, or null when all are confirmed. */
+    const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+    /** Asked once, when a draft is saved while a document is still being typed. */
+    const [activeDraftPrompt, setActiveDraftPrompt] =
+        useState<'INCOMPLETE' | 'UNPERSISTABLE' | null>(null);
+    /** A ref, not state: the answer must be readable by the save that resumes on the same tick. */
+    const activeDraftDecisionRef = useRef<'KEEP' | 'DISCARD' | null>(null);
+    const creation = usePaymentRequestCreation();
+
+    // Files chosen before the request exists. Keyed by a placeholder attachment id so the card can
+    // show a filename immediately; the real upload happens in Stage C once there is a request to
+    // upload against. The map is also what stops the same file being uploaded twice on a retry.
+    const pendingFilesRef = useRef<Map<string, File>>(new Map());
+    const uploadedIdsRef = useRef<Map<string, string>>(new Map());
+
+    /**
+     * Content hash of every file already in this composition, by placeholder id.
+     *
+     * <p>Compared by BYTES, not by name: a renamed copy of the same invoice is the same invoice, and
+     * two genuinely different documents may well share a filename like "factura.pdf".</p>
+     */
+    const fileHashesRef = useRef<Map<string, string>>(new Map());
+    /** The live documents, for a picker that must not close over a stale array. */
+    const tempDocumentsRef = useRef<TemporaryPaymentDocument[]>([]);
+    tempDocumentsRef.current = tempDocuments;
+
+    /** The same file, already in this request. A hard block: no override, no justification. */
+    const [sameRequestDuplicate, setSameRequestDuplicate] = useState<{
+        fileName: string;
+        sequence: number;
+        documentNumber: string | null;
+        supplierName: string | null;
+    } | null>(null);
+    const sourceFileInputRef = useRef<HTMLInputElement>(null);
+    const sourceFileResolverRef = useRef<((f: File | null) => void) | null>(null);
+
+    /**
+     * Opens the picker and resolves with a placeholder id the card can render straight away, plus
+     * the File itself so OCR can read it immediately — before any request exists.
+     */
+    const pickSourceDocumentFile = useCallback(async () => {
+        const file = await new Promise<File | null>(resolve => {
+            sourceFileResolverRef.current = resolve;
+            sourceFileInputRef.current?.click();
+        });
+
+        if (!file) return null;
+
+        // ── Everything below happens BEFORE the file is read ──
+        // The duplicate used to surface during persistence: the user had already waited for OCR,
+        // corrected every extracted field and confirmed the document before being told the file was
+        // already Documento 1. Checking here costs one hash and saves all of that work.
+        let hash: string | null = null;
+
+        try {
+            hash = await computeFileHash(file);
+
+            // ── Same request: a hard block ──
+            // Not a warning. There is no reading of this file that would make paying the same
+            // invoice twice within one request correct, so there is nothing to acknowledge.
+            // Only hashes still owned by a live document count. A placeholder whose document was
+            // removed, or whose attachment was replaced, no longer matches anything — so the map
+            // self-heals and a legitimately re-added file is never falsely blocked.
+            const ownerPlaceholder = [...fileHashesRef.current.entries()]
+                .filter(([placeholder]) =>
+                    tempDocumentsRef.current.some(d => d.attachmentId === placeholder))
+                .find(([, h]) => h === hash)?.[0];
+
+            if (ownerPlaceholder) {
+                const owner = tempDocumentsRef.current.find(d => d.attachmentId === ownerPlaceholder);
+                setSameRequestDuplicate({
+                    fileName: file.name,
+                    sequence: owner?.localSequence ?? 1,
+                    documentNumber: owner?.documentNumber ?? null,
+                    supplierName: owner?.supplierNameSnapshot ?? null
+                });
+                // No OCR, no temporary document, no upload — and no empty card left behind.
+                return null;
+            }
+
+            // ── Another request: the existing warning, with its acknowledgement and countdown ──
+            const dupCheck = await api.attachments.checkDuplicate(hash);
+
+            if (dupCheck.isDuplicate) {
+                const accepted = await new Promise<boolean>(resolve => {
+                    setDuplicateWarning({
+                        isOpen: true,
+                        requestNumber: dupCheck.requestNumber || 'Desconhecido',
+                        uploadedBy: dupCheck.uploadedBy,
+                        createdAtUtc: dupCheck.createdAtUtc,
+                        uploadCallback: () => { setDuplicateWarning(null); resolve(true); },
+                        cancelCallback: () => { setDuplicateWarning(null); resolve(false); }
+                    });
+                });
+
+                if (!accepted) return null;
+            }
+        } catch {
+            // The cross-request check is a safeguard, not a gate: if the endpoint cannot answer, the
+            // user is not stopped from working. The same-request block above needs no server, and
+            // the backend refuses both cases again at persistence regardless.
+        }
+
+        const placeholderId = `pending:${Date.now().toString(36)}:${file.name}`;
+        pendingFilesRef.current.set(placeholderId, file);
+        if (hash) fileHashesRef.current.set(placeholderId, hash);
+        return { id: placeholderId, fileName: file.name, file };
+    }, []);
+
+    const handleSourceFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] ?? null;
+        e.target.value = '';
+        const resolve = sourceFileResolverRef.current;
+        sourceFileResolverRef.current = null;
+        resolve?.(file);
+    };
+
+    /**
+     * Stage C.0 — turn placeholder ids into real attachments, once the request exists.
+     * An id already uploaded is reused rather than sent again, so a retry after a partial failure
+     * never uploads the same invoice twice.
+     */
+    const materialiseAttachments = useCallback(async (
+        requestId: string,
+        documents: TemporaryPaymentDocument[]
+    ): Promise<TemporaryPaymentDocument[]> => {
+        const out: TemporaryPaymentDocument[] = [];
+
+        for (const d of documents) {
+            if (!d.attachmentId || !d.attachmentId.startsWith('pending:')) { out.push(d); continue; }
+
+            const already = uploadedIdsRef.current.get(d.attachmentId);
+            if (already) { out.push({ ...d, attachmentId: already }); continue; }
+
+            const file = pendingFilesRef.current.get(d.attachmentId);
+            if (!file) { out.push({ ...d, error: 'O ficheiro deste documento já não está disponível. Volte a anexá-lo.' }); continue; }
+
+            try {
+                const uploaded = await api.attachments.upload(requestId, [file], 'PAYMENT_SOURCE_DOCUMENT');
+                const realId = Array.isArray(uploaded)
+                    ? (uploaded[0]?.id ?? uploaded[0]?.attachmentId)
+                    : (uploaded?.id ?? uploaded?.attachmentId);
+
+                if (!realId) { out.push({ ...d, error: 'O anexo foi carregado mas o servidor não devolveu a sua identificação.' }); continue; }
+
+                uploadedIdsRef.current.set(d.attachmentId, realId as string);
+                out.push({ ...d, attachmentId: realId as string });
+            } catch (err: any) {
+                out.push({ ...d, error: err?.message ?? 'Não foi possível carregar o ficheiro deste documento.' });
+            }
+        }
+
+        return out;
+    }, []);
     const [isManualOcr, setIsManualOcr] = useState(false);
     const [quickSupplierModal, setQuickSupplierModal] = useState<{ show: boolean; initialName: string; initialTaxId: string }>({ show: false, initialName: '', initialTaxId: '' });
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +282,48 @@ export function RequestCreate() {
     const [requesterItems, setRequesterItems] = useState<RequesterItem[]>([]);
 
     const { mapOcrResultToDraft, calculateItemTotal, calculateDraftTotal } = useOcrProcessor(ivaRates, units, currencies, companies);
+
+    // Per-document OCR, reading through the SAME mapper the single-document editor uses: unit
+    // aliases, IVA matching, discount cross-validation and the backend-authoritative supplier match
+    // all apply unchanged to a document inside a collection.
+    const documentOcr = usePaymentDocumentOcr(mapOcrResultToDraft);
+
+    /**
+     * Reads one document through POST /requests/direct-ocr, which needs no RequestId — so a
+     * document can be read before anything is persisted, with no early attachment to reconcile
+     * later. The result is stored under the document's own tempId.
+     */
+    const runDocumentOcr = useCallback(async (doc: TemporaryPaymentDocument) => {
+        const placeholder = doc.attachmentId;
+        const file = placeholder ? pendingFilesRef.current.get(placeholder) : undefined;
+        if (file) documentOcr.registerFile(doc.tempId, file);
+
+        const result = await documentOcr.run(doc);
+
+        // A failed reading leaves the document in PENDING_OCR, which is what keeps the failure view
+        // on screen instead of handing the user an empty editor that looks like a fresh start.
+        if (!result) return;
+
+        // Merge back by tempId — never by position, and never touching another card. The values and
+        // the switch out of the loading state land in the SAME update, so the editor's first render
+        // is already populated: there is no empty-editor frame in between.
+        setTempDocuments(prev => prev.map(d => {
+            if (d.tempId !== doc.tempId) return d;
+
+            // `result.document` was merged onto the snapshot taken when the read began. Anything the
+            // persistence stage wrote in the meantime belongs to the CURRENT document and must not
+            // be undone by a reading that started before it — a reinstated null persistedId would
+            // create the same source document twice.
+            return {
+                ...result.document,
+                entryMode: 'REVIEW' as const,
+                persistedId: d.persistedId,
+                sequenceNumber: d.sequenceNumber,
+                confirmed: d.confirmed,
+                error: d.error
+            };
+        }));
+    }, [documentOcr]);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -101,15 +338,112 @@ export function RequestCreate() {
         plantId: '',
         buyerId: '',
         areaApproverId: '',
-        finalApproverId: ''
+        finalApproverId: '',
+        // Post-Payment Completion (Release 2 corrected): identity of the attached document.
+        sourceDocumentType: ''
+    });
+
+    // Conflict between the user's classification and what the document extraction read.
+    // Held separately from formData because it is evidence about the choice, not the choice.
+    const [classificationConflict, setClassificationConflict] = useState<ClassificationConflictState>({
+        hasConflict: false, isHighRisk: false, acknowledged: false, justification: ''
     });
 
     // Reconciliation Engine — unified for both payment and requester items
     const [showReconciliationWarning, setShowReconciliationWarning] = useState(false);
-    const activeItems: ReconcilableItem[] = Number(formData.requestTypeId) === 2 && paymentDraft
-        ? paymentDraft.items as any[]
-        : requesterItems as any[];
+
+    /**
+     * Whether this request is being composed as a collection of source documents.
+     *
+     * <p>Declared here, next to the reconciliation wiring, because it is what decides <b>where the
+     * items are</b>. Under the multi-document model <c>paymentDraft</c> is null — the legacy editor
+     * never renders — so the old expression below fell through to <c>requesterItems</c>, which a
+     * PAYMENT request leaves empty. That is precisely how catalogue reconciliation disappeared: the
+     * guardrail was still there, looking at an empty array.</p>
+     */
+    const isMultiDocumentComposition =
+        featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
+
+    /** Every line of every confirmed document, each carrying the document it belongs to. */
+    const multiDocumentItems: DocumentScopedItem[] = React.useMemo(
+        () => isMultiDocumentComposition ? flattenConfirmedDocumentItems(tempDocuments) : [],
+        [isMultiDocumentComposition, tempDocuments]);
+
+    const activeItems: ReconcilableItem[] = isMultiDocumentComposition
+        ? multiDocumentItems
+        : Number(formData.requestTypeId) === 2 && paymentDraft
+            ? paymentDraft.items as any[]
+            : requesterItems as any[];
     const reconciliation = useCatalogItemReconciliation(activeItems);
+
+    /** Index → "Documento 2 — FT-002", so a row in the modal says which invoice it came from. */
+    const multiDocumentLabels = React.useMemo(
+        () => documentLabelsByIndex(multiDocumentItems), [multiDocumentItems]);
+
+    /**
+     * Catalogue reconciliation across every confirmed source document, before the request exists.
+     *
+     * <p>The same two steps the single-document flow has always taken — match what the catalogue
+     * already knows, then stop and ask about what it does not — applied to the lines of all the
+     * documents at once, so the user answers for the whole request in one sitting rather than being
+     * interrupted per invoice.</p>
+     *
+     * <p>Automatic matching runs here rather than during composition because a line typed by hand
+     * never passed through the matcher the OCR lines did. Skipping it would show "sem
+     * correspondência" for items the Portal has known for years, which is the fastest way to teach
+     * people to click straight past the warning.</p>
+     *
+     * <p>Returns the documents it worked on: the caller must persist <b>these</b>, not the ones it
+     * came in with, or the catalogue links just established would be dropped on the way to the
+     * server.</p>
+     */
+    const reconcileDocumentCatalog = useCallback(async (
+        documents: TemporaryPaymentDocument[]
+    ): Promise<{ proceed: boolean; documents: TemporaryPaymentDocument[] }> => {
+        let working = documents;
+
+        const flat = flattenConfirmedDocumentItems(working);
+        const pending = descriptionsNeedingMatch(flat);
+
+        if (pending.length > 0) {
+            try {
+                const raw = await api.catalogItems.batchMatch(pending.map(p => p.description));
+
+                const matches: Record<number, { id: number; code: string } | null> = {};
+                pending.forEach((p, position) => {
+                    const match = raw[position];
+                    matches[p.index] = match ? { id: match.id, code: match.code } : null;
+                });
+
+                const matched = applyAutoMatches(flat, matches);
+
+                working = applyResolutionsToDocuments(working, matched, matched.flatMap(
+                    (item, index) => item.itemCatalogId && !flat[index].itemCatalogId
+                        ? [{
+                            itemIndex: index,
+                            status: 'MATCHED' as const,
+                            linkedCatalogId: item.itemCatalogId,
+                            linkedCatalogCode: item.itemCatalogCode ?? null
+                        }]
+                        : []));
+
+                setTempDocuments(working);
+            } catch {
+                // The matcher being unavailable must not create items or wave lines through: every
+                // line simply stays unmatched and the user is asked about it explicitly.
+            }
+        }
+
+        const unresolved = unresolvedItems(flattenConfirmedDocumentItems(working));
+
+        if (unresolved.length > 0) {
+            setShowReconciliationWarning(true);
+            return { proceed: false, documents: working };
+        }
+
+        setShowReconciliationWarning(false);
+        return { proceed: true, documents: working };
+    }, []);
 
     const initialFormDataRef = useRef(formData);
 
@@ -239,6 +573,13 @@ export function RequestCreate() {
     }, [isCopyMode, copyFromId, isScopeLoading, plants.length]);
 
     // Derived filtered data based on user scope
+    // Mirrors LookupsController.CanCreateSupplierContextuallyAsync, so the create action is never
+    // offered to someone the server would refuse.
+    const canCreateSupplier = canCreateSupplierContextually(user?.roles, {
+        hasPlantScope: allowedPlantCodes.length > 0,
+        hasDepartmentScope: allowedDepartmentCodes.length > 0
+    });
+
     const filteredPlants = plants.filter(p => allowedPlantCodes.includes(p.code));
     const filteredCompanies = companies.filter(c => 
         filteredPlants.some(p => p.companyId === c.id)
@@ -663,11 +1004,34 @@ export function RequestCreate() {
         e.preventDefault();
 
         const newErrors: Record<string, string[]> = {};
+        // Title/Description carry the HTML `required` attribute, but creation is triggered
+        // programmatically (no native form submission), so the browser never enforces it —
+        // they must be validated here like every other mandatory field.
+        if (!formData.title?.trim()) newErrors['Title'] = ['O título é obrigatório.'];
+        if (!formData.description?.trim()) newErrors['Description'] = ['A descrição é obrigatória.'];
         if (!formData.requestTypeId) newErrors['RequestTypeId'] = ['O Tipo de Pedido é obrigatório.'];
         if (!formData.needLevelId) newErrors['NeedLevelId'] = ['O grau de necessidade é obrigatório.'];
         if (!formData.departmentId) newErrors['DepartmentId'] = ['O departamento é obrigatório.'];
         if (!formData.companyId) newErrors['CompanyId'] = ['A empresa é obrigatória.'];
         if (!formData.plantId) newErrors['PlantId'] = ['A planta é obrigatória.'];
+
+        // Post-Payment Completion (Release 2 corrected): when the classification contradicts what
+        // the document extraction read, the user must acknowledge it — and for a high-risk conflict
+        // (they chose a non-fiscal type for a document the evidence reads as fiscal, or the
+        // extraction was confident) they must also write down why. A draft may still be saved
+        // unclassified; this only guards a classification that disagrees with the evidence.
+        if (Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled && formData.sourceDocumentType) {
+            const evaluation = evaluateClassificationConflict(
+                formData.sourceDocumentType, paymentDraft?.documentClassification ?? null);
+
+            if (evaluation.hasConflict && !classificationConflict.acknowledged) {
+                newErrors['sourceDocumentType'] = ['Confirme a classificação: ela difere da leitura do documento.'];
+            } else if (evaluation.isHighRisk &&
+                       classificationConflict.justification.trim().length < CONFLICT_JUSTIFICATION_MIN_LENGTH) {
+                newErrors['sourceDocumentType'] = [
+                    `Justifique a classificação (mínimo ${CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres).`];
+            }
+        }
 
         if (Number(formData.requestTypeId) === 1 || Number(formData.requestTypeId) === 2) {
             const isPayment = Number(formData.requestTypeId) === 2;
@@ -711,7 +1075,29 @@ export function RequestCreate() {
 
         if (Object.keys(newErrors).length > 0) {
             setFieldErrors(newErrors);
-            setFeedback({ type: 'error', message: 'Preencha todos os campos obrigatórios antes de continuar.' });
+            // The toast NAMES the offending fields; the precise reason sits inline next to each
+            // one. A generic "fill the required fields" on a page this long tells the user nothing.
+            const fieldLabels: Record<string, string> = {
+                Title: 'Título',
+                Description: 'Descrição',
+                RequestTypeId: 'Tipo de Pedido',
+                NeedLevelId: 'Grau de Necessidade',
+                DepartmentId: 'Departamento',
+                CompanyId: 'Empresa',
+                PlantId: 'Planta',
+                NeedByDateUtc: Number(formData.requestTypeId) === 2 ? 'Data de Vencimento' : 'Necessário Até',
+                sourceDocumentType: 'Tipo de documento anexado',
+                LineItems: 'Itens'
+            };
+            const named = Object.keys(newErrors)
+                .map(k => fieldLabels[k])
+                .filter((label): label is string => !!label);
+            setFeedback({
+                type: 'error',
+                message: named.length > 0
+                    ? `Não foi possível criar o pedido. Verifique os campos assinalados: ${named.join(', ')}.`
+                    : 'Preencha todos os campos obrigatórios antes de continuar.'
+            });
             scrollToFirstError(newErrors);
             // Items section: pulse for ~5s then leave a discreet error border; focus the first fixable field.
             if (newErrors['LineItems']) {
@@ -733,16 +1119,94 @@ export function RequestCreate() {
         setFeedback({ type: 'error', message: null });
         setFieldErrors({});
 
-        // Reconciliation guardrail: check for unresolved catalog items before submission
-        if (reconciliation.hasUnresolved && !showReconciliationWarning) {
+        // Reconciliation guardrail: check for unresolved catalog items before submission.
+        // Multi-document PAYMENT is handled further down, once the open document has been settled
+        // and the confirmed set is known — its items live in the documents, not in this array.
+        if (!isMultiDocumentComposition && reconciliation.hasUnresolved && !showReconciliationWarning) {
             setShowReconciliationWarning(true);
             setLoading(false);
             return;
         }
-        setShowReconciliationWarning(false);
+        if (!isMultiDocumentComposition) setShowReconciliationWarning(false);
+
+        // ── §15: the document still open must never disappear quietly ──
+        // A document the user was in the middle of typing is work they can see on screen; saving
+        // the draft without it, or silently including it half-filled, are both ways of losing it.
+        // Complete enough to stand on its own → keep it. Anything less → the user decides.
+        let documentsForSave = tempDocuments;
+
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2 &&
+            activeDocumentId) {
+            const active = tempDocuments.find(d => d.tempId === activeDocumentId) ?? null;
+            const disposition = activeDraftDisposition(active);
+
+            if (disposition === 'PERSISTABLE') {
+                documentsForSave = tempDocuments.map(d =>
+                    d.tempId === activeDocumentId ? { ...d, confirmed: true } : d);
+                setTempDocuments(documentsForSave);
+                setActiveDocumentId(null);
+            } else if (activeDraftDecisionRef.current === null && disposition !== 'NONE') {
+                setActiveDraftPrompt(disposition);
+                setLoading(false);
+                return;
+            } else if (activeDraftDecisionRef.current === 'DISCARD') {
+                documentsForSave = tempDocuments.filter(d => d.tempId !== activeDocumentId);
+                setTempDocuments(documentsForSave);
+                setActiveDocumentId(null);
+                documentOcr.forget(activeDocumentId);
+            }
+        }
 
         const safeCurrencyId = Number(formData.currencyId) || 1;
         const safePlantId = Number(formData.plantId) || 0;
+
+        // Multi-document: the request's headline figures are the CONSOLIDATED value of the documents,
+        // not a separate number the user typed. `paymentDraft` is null here because the legacy editor
+        // does not render, so every branch below that keys off it falls through to the form values —
+        // which for a payment would be zero. These override that.
+        // ── Confirmed-document integrity, BEFORE anything is created ──
+        // Stage B creates the request first, so a document that is invalid in ways the client
+        // already knows about produced a real request that then failed halfway through saving its
+        // documents. Partial-failure recovery exists for networks and servers, not for a missing
+        // field sitting on screen.
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2) {
+            const invalid = invalidConfirmedDocuments(documentsForSave);
+
+            if (invalid.length > 0) {
+                const first = invalid[0];
+                setFeedback({
+                    type: 'error',
+                    message: `Documento ${first.document.localSequence}: ${first.blockers[0]} ` +
+                             'Corrija o documento antes de gerar o pedido.'
+                });
+                setActiveDocumentId(first.document.tempId);
+                setLoading(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
+
+        // ── Catalogue reconciliation, BEFORE the request is created ──
+        // The stage this restores. Documents are complete and validated; now the items they carry
+        // are checked against the Portal catalogue exactly as every request's items were before
+        // Release 3. Nothing is created until every line has an answer, so a cancelled
+        // reconciliation leaves the user on this screen with all their documents, readings and
+        // corrections intact rather than owning half a request.
+        if (featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2) {
+            const catalogue = await reconcileDocumentCatalog(documentsForSave);
+            documentsForSave = catalogue.documents;
+
+            if (!catalogue.proceed) {
+                setLoading(false);
+                return;
+            }
+        }
+
+        const multiDocTotals = confirmedTotals(documentsForSave);
+        const multiDocFirst = documentsForSave.find(d => d.confirmed) ?? documentsForSave[0] ?? null;
+
+        const isMultiDocumentPayment =
+            featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2;
 
         const payload = {
             title: formData.title,
@@ -751,12 +1215,16 @@ export function RequestCreate() {
                 : formData.description,
             requestTypeId: Number(formData.requestTypeId),
             needLevelId: Number(formData.needLevelId),
-            currencyId: paymentDraft && Number(formData.requestTypeId) === 2 
-                ? (currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId)
-                : safeCurrencyId,
-            estimatedTotalAmount: paymentDraft && Number(formData.requestTypeId) === 2 
-                ? paymentDraft.totalAmount 
-                : (Number(formData.estimatedTotalAmount) || 0),
+            currencyId: isMultiDocumentPayment
+                ? (currencies.find(c => c.code === multiDocTotals.currency)?.id || safeCurrencyId)
+                : paymentDraft && Number(formData.requestTypeId) === 2
+                    ? (currencies.find(c => c.code === paymentDraft.currency)?.id || safeCurrencyId)
+                    : safeCurrencyId,
+            estimatedTotalAmount: isMultiDocumentPayment
+                ? multiDocTotals.gross
+                : paymentDraft && Number(formData.requestTypeId) === 2
+                    ? paymentDraft.totalAmount
+                    : (Number(formData.estimatedTotalAmount) || 0),
             discountAmount: paymentDraft && Number(formData.requestTypeId) === 2 
                 ? (paymentDraft.discountAmount || 0) 
                 : 0,
@@ -764,16 +1232,51 @@ export function RequestCreate() {
             companyId: Number(formData.companyId),
             plantId: safePlantId,
             capexOpexClassificationId: (formData as any).capexOpexClassificationId ? Number((formData as any).capexOpexClassificationId) : null,
-            supplierId: Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId 
-                ? paymentDraft.supplierId 
-                : ((formData as any).supplierId ? Number((formData as any).supplierId) : null),
+            // The header supplier is a compatibility echo of the first document. It is not the
+            // authority — each document carries its own supplier, and the backend groups by it.
+            supplierId: isMultiDocumentPayment
+                ? (multiDocFirst?.supplierId ?? null)
+                : Number(formData.requestTypeId) === 2 && paymentDraft?.supplierId
+                    ? paymentDraft.supplierId
+                    : ((formData as any).supplierId ? Number((formData as any).supplierId) : null),
             needByDateUtc: formData.needByDateUtc && !isNaN(new Date(formData.needByDateUtc).getTime()) 
                 ? new Date(formData.needByDateUtc).toISOString() 
                 : null,
             buyerId: formData.buyerId || null,
             // areaApproverId removido (Fase B): o backend resolve o roteamento de área
             finalApproverId: formData.finalApproverId || null,
-            lineItems: Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
+            // Post-Payment Completion (Release 2). PAYMENT only, and only when the feature is on.
+            // A PAYMENT request is created as a DRAFT, so an empty value is legitimate here — the
+            // mandatory rule applies at submission.
+            sourceDocumentType: Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled
+                ? (formData.sourceDocumentType || null)
+                : null,
+            // Classification evidence: what the extraction proposed, whether the user overrode it,
+            // and why. Persisted so a disputed classification can always be explained afterwards.
+            ...(Number(formData.requestTypeId) === 2 && featureFlags.postPaymentCompletionEnabled && formData.sourceDocumentType
+                ? (() => {
+                    const c = buildClassificationPayload(
+                        formData.sourceDocumentType,
+                        paymentDraft?.documentClassification,
+                        classificationConflict);
+                    return {
+                        sourceDocumentTypeSource: c.source,
+                        sourceDocumentTypeOcrSuggestion: c.suggestion,
+                        sourceDocumentTypeOcrConfidence: c.confidence,
+                        sourceDocumentTypeEvidenceJson: c.evidenceJson,
+                        sourceDocumentTypeTitleFound: c.titleFound,
+                        sourceDocumentTypeConflictingEvidenceJson: c.conflictingEvidenceJson,
+                        sourceDocumentTypeSuggestionSource: c.suggestionSource,
+                        sourceDocumentAttachmentId: paymentDraft?.proformaAttachmentId ?? null,
+                        classificationConflictAcknowledged: c.acknowledged,
+                        classificationJustification: c.justification
+                    };
+                })()
+                : {}),
+            // Multi-document: items belong to their document and are created in Stage C.2, each
+            // naming its own PaymentSourceDocumentId. Sending them here would produce a second,
+            // ownerless copy of every line.
+            lineItems: isMultiDocumentPayment ? [] : Number(formData.requestTypeId) === 2 && paymentDraft ? paymentDraft.items.map((item, index) => ({
                 lineNumber: index + 1,
                 description: item.description,
                 quantity: item.quantity,
@@ -817,15 +1320,69 @@ export function RequestCreate() {
         };
 
         try {
-            const result = await api.requests.create(payload);
+            let createdRequestId: string;
+
+            if (isMultiDocumentPayment) {
+                // ── Stages B→C: create the draft once, then persist each document and its items.
+                // Never the other way round: a request must not reach an approver describing
+                // documents that were never saved.
+                const run = await creation.persist(
+                    () => payload,
+                    documentsForSave,
+                    setTempDocuments,
+                    materialiseAttachments);
+
+                if (!run.requestId) {
+                    // The result carries the reason directly — `creation.error` is this render's
+                    // stale state and always read null here, which is how every failure used to
+                    // collapse into the generic toast. The document draft is untouched on purpose.
+                    if (run.fieldErrors) {
+                        setFieldErrors(run.fieldErrors);
+                        setFeedback({
+                            type: 'error',
+                            message: 'Não foi possível criar o pedido. Corrija os campos assinalados.'
+                        });
+                        scrollToFirstError(run.fieldErrors);
+                    } else {
+                        setFeedback({
+                            type: 'error',
+                            message: run.error ?? creation.error ?? 'Não foi possível criar o pedido.'
+                        });
+                    }
+                    setLoading(false);
+                    return;
+                }
+
+                createdRequestId = run.requestId;
+
+                if (!run.allDocumentsPersisted) {
+                    // The request exists and some documents are saved. Say so plainly rather than
+                    // navigating away and letting the user believe everything went through.
+                    setFeedback({
+                        type: 'error',
+                        message: 'O pedido foi criado, mas nem todos os documentos foram guardados. ' +
+                                 'Corrija os documentos assinalados e tente novamente — os que já foram ' +
+                                 'guardados não serão duplicados.'
+                    });
+                    setLoading(false);
+                    return;
+                }
+            } else {
+                const result = await api.requests.create(payload);
+                createdRequestId = result.id;
+            }
+
+            const result = { id: createdRequestId };
 
             // 1. Upload generic supporting documents
             if (attachments.length > 0) {
                 await api.attachments.upload(result.id, attachments, 'SUPPORTING');
             }
 
-            // 2. Upload OCR file correctly classified (Proforma for Payment requests)
-            if (ocrFile) {
+            // 2. Upload OCR file correctly classified (Proforma for Payment requests).
+            //    Skipped for multi-document payments: the source documents own their own
+            //    attachments, and re-uploading here would duplicate the same file.
+            if (ocrFile && !isMultiDocumentPayment) {
                 const targetType = Number(formData.requestTypeId) === 2 ? 'PROFORMA' : 'SUPPORTING';
                 await api.attachments.upload(result.id, [ocrFile], targetType);
             }
@@ -1083,6 +1640,15 @@ export function RequestCreate() {
                 </div>
             )}
 
+            {/* Picker for source-document files, held until the request exists (Stage C). */}
+            <input
+                ref={sourceFileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleSourceFileChosen}
+                style={{ display: 'none' }}
+            />
+
             <form 
                 data-guide="request-form"
                 onSubmit={handleSubmit} 
@@ -1335,13 +1901,17 @@ export function RequestCreate() {
                              )}
                          </AnimatePresence>
 
+                         {/* The single-document editor. Hidden entirely when multi-document is on:
+                             the same invoice must never be askable for twice, and this block and
+                             the composer below are two answers to the same question. */}
                          <AnimatePresence>
-                             {Number(formData.requestTypeId) === 2 && (
+                             {Number(formData.requestTypeId) === 2 &&
+                              !featureFlags.paymentMultiDocumentEnabled && (
                                  <motion.div
                                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                                      style={{ position: 'relative' }}
                                  >
-                                     <div data-guide="request-payment-document-section" style={{ 
+                                     <div data-guide="request-payment-document-section" style={{
                                          marginBottom: '32px', padding: '24px', backgroundColor: 'var(--color-bg-surface)', 
                                          border: '1px solid var(--color-border)',  borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)',
                                          position: 'relative'
@@ -1805,7 +2375,83 @@ export function RequestCreate() {
                              )}
                          </AnimatePresence>
 
+                        {/* Release 3: PAYMENT composed progressively — import or type one document,
+                            review it, confirm it, then add the next. The editor is the SAME card the
+                            edit screen uses; creation and editing must not grow two visual
+                            implementations that drift apart. */}
+                        {featureFlags.paymentMultiDocumentEnabled && Number(formData.requestTypeId) === 2 && (
+                            <div style={{ marginBottom: '24px' }}>
+                                <PaymentDocumentComposer
+                                    documents={tempDocuments}
+                                    onChange={setTempDocuments}
+                                    activeTempId={activeDocumentId}
+                                    onActiveChange={setActiveDocumentId}
+                                    plants={filteredPlants.map(p => ({ id: p.id, name: p.name }))}
+                                    currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
+                                    units={units}
+                                    ivaRates={ivaRates}
+                                    disabled={creation.phase === 'CREATING_REQUEST' ||
+                                              creation.phase === 'SAVING_DOCUMENTS' ||
+                                              creation.phase === 'SAVING_ITEMS'}
+                                    canCreateSupplier={canCreateSupplier}
+                                    onPickFile={pickSourceDocumentFile}
+                                    ocrStateFor={documentOcr.stateFor}
+                                    discrepanciesFor={documentOcr.discrepanciesFor}
+                                    onRunOcr={runDocumentOcr}
+                                    onResetOcr={documentOcr.forget}
+                                />
+
+                                {creation.phase !== 'NOT_STARTED' && (
+                                    <p style={{
+                                        marginTop: '10px', fontSize: '0.8rem', fontWeight: 600,
+                                        color: creation.phase === 'PARTIAL_FAILURE'
+                                            ? '#b91c1c' : 'var(--color-text-muted)'
+                                    }}>
+                                        {PHASE_LABEL[creation.phase]}
+                                    </p>
+                                )}
+
+                                {creation.failures.length > 0 && (
+                                    <ul role="alert" style={{
+                                        margin: '8px 0 0', paddingLeft: '18px',
+                                        fontSize: '0.78rem', color: '#b91c1c', fontWeight: 600
+                                    }}>
+                                        {creation.failures.map(f => (
+                                            <li key={f.tempId}>{f.label}: {f.message}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
+
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                            {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
+                                Sits beside the other header fields so the classification is made
+                                while the requester still has the document in front of them. */}
+                            {/* Multi-document OFF: the single classification field, unchanged. When
+                                the flag is ON the classification belongs to each document card
+                                below, so this field would be a second, contradictory source. */}
+                            {featureFlags.postPaymentCompletionEnabled &&
+                             !featureFlags.paymentMultiDocumentEnabled &&
+                             Number(formData.requestTypeId) === 2 && (
+                                <SourceDocumentTypeField
+                                    data-guide="request-source-document-type"
+                                    context="PAYMENT_REQUEST"
+                                    value={formData.sourceDocumentType}
+                                    onChange={(val) => {
+                                        setFormData(prev => ({ ...prev, sourceDocumentType: val }));
+                                        clearFieldError('sourceDocumentType');
+                                    }}
+                                    ocr={paymentDraft?.documentClassification ?? null}
+                                    conflict={classificationConflict}
+                                    onConflictChange={setClassificationConflict}
+                                    required={featureFlags.sourceDocumentTypeRequired}
+                                    error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
+                                    labelStyle={labelStyle}
+                                    inputStyle={getInputStyle('sourceDocumentType')}
+                                />
+                            )}
+
                             <label data-guide="request-need-level" style={labelStyle}>
                                 Grau de Necessidade <span style={{ color: 'red' }}>*</span>
                                 <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} style={getInputStyle('NeedLevelId')}>
@@ -1824,7 +2470,29 @@ export function RequestCreate() {
                                         style={{ overflow: 'hidden' }}
                                     >
                                         <label data-guide="request-needed-by" style={labelStyle}>
-                                            {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                {Number(formData.requestTypeId) === 2 ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                                {/* Contextual, not corrective: the date is legal, it is simply already past.
+                                                    An icon keeps the field's height fixed while the user edits the date. */}
+                                                {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                    <FieldMessageIcon
+                                                        severity="warning"
+                                                        tooltip={Number(formData.requestTypeId) === 2
+                                                            ? 'O documento está vencido. Clique para saber o que isso significa.'
+                                                            : 'A data selecionada está no passado. Clique para saber mais.'}
+                                                        title={Number(formData.requestTypeId) === 2
+                                                            ? 'O documento está vencido'
+                                                            : 'A data selecionada está no passado'}
+                                                        maxWidth={520}
+                                                    >
+                                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                            {Number(formData.requestTypeId) === 2
+                                                                ? 'A data de vencimento indicada já passou, pelo que o documento anexado está vencido. O pedido pode continuar a ser criado e submetido, mas poderá ser necessário obter um documento atualizado junto do fornecedor, e o pagamento pode implicar juros ou penalizações. Verifique a data no documento antes de prosseguir.'
+                                                                : 'A data limite indicada já passou. O pedido pode continuar a ser criado, mas o prazo pedido não é realizável — confirme se a data está correta.'}
+                                                        </p>
+                                                    </FieldMessageIcon>
+                                                )}
+                                            </span>
                                             <DateInput
                                                 required name="needByDateUtc" value={formData.needByDateUtc}
                                                 min={minNeedByDate ?? undefined}
@@ -1854,12 +2522,6 @@ export function RequestCreate() {
                                                     {getMinNeedByHint(selectedNeedLevel.name, minNeedByDate, minNeedByLeadDays)}
                                                 </div>
                                             )}
-                                            {!getFieldErrors('NeedByDateUtc') && !isBelowMinNeedByDate && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                                <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                                                    <AlertTriangle size={12} />
-                                                    {Number(formData.requestTypeId) === 2 ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
-                                                </div>
-                                            )}
                                         </label>
                                     </motion.div>
                                 )}
@@ -1877,8 +2539,29 @@ export function RequestCreate() {
                             </label>
 
                              <label data-guide="request-company" style={labelStyle}>
-                                Empresa <span style={{ color: 'red' }}>*</span>
-                                <select 
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    Empresa <span style={{ color: 'red' }}>*</span>
+                                    {/* Provenance, not a warning — and provenance never justifies moving the form. */}
+                                    {paymentDraft?.isCompanyOcrAutoFilled && (
+                                        <FieldMessageIcon
+                                            severity="success"
+                                            tooltip="Preenchido automaticamente a partir do documento. Clique para ver a origem."
+                                            title="Empresa identificada automaticamente"
+                                            maxWidth={520}
+                                        >
+                                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                A empresa foi preenchida automaticamente a partir do documento anexado, onde
+                                                foi identificada como <strong>{paymentDraft.extractedCompanyName}</strong>.
+                                            </p>
+                                            <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                                                Trata-se de uma sugestão da leitura do documento, não de uma confirmação.
+                                                Pode alterá-la se a empresa faturada for outra — o valor que ficar
+                                                selecionado é o que será usado no pedido.
+                                            </p>
+                                        </FieldMessageIcon>
+                                    )}
+                                </span>
+                                <select
                                     name="companyId" value={formData.companyId} onChange={handleChange} style={getInputStyle('CompanyId')}
                                     disabled={filteredCompanies.length <= 1}
                                 >
@@ -1886,15 +2569,6 @@ export function RequestCreate() {
                                     {filteredCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                                 {renderFieldError('CompanyId')}
-                                {paymentDraft?.isCompanyOcrAutoFilled && (
-                                    <motion.div 
-                                        initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
-                                        style={{ color: '#059669', fontSize: '0.75rem', marginTop: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                    >
-                                        <CheckCircle2 size={14} />
-                                        Preenchido automaticamente conforme identificado ({paymentDraft.extractedCompanyName})
-                                    </motion.div>
-                                )}
                             </label>
 
                             <label data-guide="request-plant" style={labelStyle}>
@@ -1961,7 +2635,16 @@ export function RequestCreate() {
                                 <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
                                     <button
                                         type="button"
-                                        onClick={() => setDuplicateWarning(null)}
+                                        onClick={() => {
+                                            // The multi-document picker awaits an answer, so
+                                            // cancelling must resolve it — otherwise the promise
+                                            // never settles and the picker hangs forever.
+                                            if (duplicateWarning?.cancelCallback) {
+                                                duplicateWarning.cancelCallback();
+                                            } else {
+                                                setDuplicateWarning(null);
+                                            }
+                                        }}
                                         style={{ flex: 1, padding: '8px 16px', fontSize: '0.875rem', fontWeight: 500, color: '#374151', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', cursor: 'pointer' }}
                                     >
                                         Cancelar Envio
@@ -1985,12 +2668,68 @@ export function RequestCreate() {
                 )}
             </AnimatePresence>
 
+            {/* The same file, already in this request. Nothing to weigh up, so nothing to confirm. */}
+            {sameRequestDuplicate && (
+                <ConfirmationDialog
+                    title="Ficheiro já incluído neste pedido"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                Este ficheiro já está associado ao{' '}
+                                <strong>Documento {sameRequestDuplicate.sequence}</strong> deste
+                                pedido e não pode ser adicionado novamente.
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Ficheiro: <strong>{sameRequestDuplicate.fileName}</strong>
+                                {sameRequestDuplicate.documentNumber
+                                    ? <> · Nº <strong>{sameRequestDuplicate.documentNumber}</strong></>
+                                    : null}
+                                {sameRequestDuplicate.supplierName
+                                    ? <> · <strong>{sameRequestDuplicate.supplierName}</strong></>
+                                    : null}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                Se este é realmente outro documento, verifique se não anexou o ficheiro
+                                errado.
+                            </span>
+                        </div>
+                    }
+                    confirmText={`Ver Documento ${sameRequestDuplicate.sequence}`}
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => {
+                        const target = tempDocumentsRef.current
+                            .find(d => d.localSequence === sameRequestDuplicate.sequence);
+                        setSameRequestDuplicate(null);
+                        if (target) setActiveDocumentId(target.tempId);
+                    }}
+                    onCancel={() => setSameRequestDuplicate(null)}
+                />
+            )}
+
             {/* Reconciliation Modal */}
             <CatalogItemReconciliationModal
                 isOpen={reconciliation.isModalOpen}
                 onClose={reconciliation.closeModal}
                 classifiedItems={reconciliation.classifiedItems}
+                documentLabels={isMultiDocumentComposition ? multiDocumentLabels : undefined}
+                equivalentIndexesOf={isMultiDocumentComposition
+                    ? (index: number) => equivalentUnresolvedIndexes(multiDocumentItems, index)
+                    : undefined}
                 onResolveAll={(resolutions: ItemResolution[]) => {
+                    // ── Multi-document: the answer belongs to a line of a specific document ──
+                    if (isMultiDocumentComposition) {
+                        // One answer settles every equivalent line. Two invoices both billing
+                        // "TRANSPORTE LOCAL" must not walk the user through registering the same
+                        // catalogue item twice; only the catalogue reference is shared, and the two
+                        // financial lines stay separate.
+                        const effective = propagateEquivalentResolutions(multiDocumentItems, resolutions);
+                        reconciliation.resolveAll(effective);
+                        setTempDocuments(prev =>
+                            applyResolutionsToDocuments(prev, multiDocumentItems, effective));
+                        return;
+                    }
+
                     reconciliation.resolveAll(resolutions);
                     // Apply resolutions back to source items
                     resolutions.forEach(r => {
@@ -2018,6 +2757,60 @@ export function RequestCreate() {
             />
 
             {/* Reconciliation Warning Dialog */}
+            {/* §15 — the document still open when the draft is saved. Never resolved silently. */}
+            {activeDraftPrompt && (
+                <ConfirmationDialog
+                    title={activeDraftPrompt === 'UNPERSISTABLE'
+                        ? 'O documento em revisão não tem ficheiro'
+                        : 'O documento em revisão está incompleto'}
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                {activeDraftPrompt === 'UNPERSISTABLE'
+                                    ? 'Sem ficheiro anexado, este documento não pode ser gravado. Pode ' +
+                                      'descartá-lo e guardar o rascunho com os restantes, ou voltar e ' +
+                                      'anexar o ficheiro.'
+                                    : 'Faltam dados neste documento. Pode guardá-lo assim mesmo — o ' +
+                                      'rascunho aceita documentos incompletos e poderá terminá-lo no ' +
+                                      'pedido — ou descartá-lo.'}
+                            </span>
+                            {activeDraftPrompt === 'INCOMPLETE' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setActiveDraftPrompt(null);
+                                        activeDraftDecisionRef.current = 'DISCARD';
+                                        void handleSubmit({ preventDefault: () => { } } as React.FormEvent);
+                                    }}
+                                    style={{
+                                        alignSelf: 'flex-start', background: 'none', border: 'none',
+                                        padding: 0, cursor: 'pointer', color: '#b91c1c',
+                                        fontWeight: 700, fontSize: '0.78rem', textDecoration: 'underline'
+                                    }}
+                                >
+                                    Descartar este documento e guardar sem ele
+                                </button>
+                            )}
+                        </div>
+                    }
+                    confirmText={activeDraftPrompt === 'UNPERSISTABLE'
+                        ? 'Descartar e guardar' : 'Guardar assim mesmo'}
+                    cancelText="Continuar a editar"
+                    variant="warning"
+                    onConfirm={() => {
+                        setActiveDraftPrompt(null);
+                        activeDraftDecisionRef.current =
+                            activeDraftPrompt === 'UNPERSISTABLE' ? 'DISCARD' : 'KEEP';
+                        void handleSubmit({ preventDefault: () => { } } as React.FormEvent);
+                    }}
+                    onCancel={() => {
+                        setActiveDraftPrompt(null);
+                        activeDraftDecisionRef.current = null;
+                        setLoading(false);
+                    }}
+                />
+            )}
+
             <ReconciliationWarningDialog
                 isOpen={showReconciliationWarning}
                 unresolvedCount={reconciliation.unresolvedCount}

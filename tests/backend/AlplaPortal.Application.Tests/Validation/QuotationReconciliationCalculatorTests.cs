@@ -62,6 +62,166 @@ public class QuotationReconciliationCalculatorTests
         Assert.True(r.Lines.Single(l => l.LineNumber == 1).RequiresAdjustmentReason);
     }
 
+    // ════ v2.226.1 — Document-summary IVA credit (summary-only tax must not read as unexplained) ════
+
+    /// <summary>A line whose OCR baseline has NO extracted IVA rate (null, not 0) — the
+    /// summary-only-tax document shape. The final rate is the buyer-confirmed one.</summary>
+    private static ReconciliationLineInput SummaryIvaLine(
+        int line, decimal oQty, decimal oUp, decimal? oLineTotal, decimal fIva,
+        decimal? fQty = null, decimal? fUp = null)
+        => new()
+        {
+            LineNumber = line, ReconciliationStatus = "MAPPED", HasOcrBaseline = true,
+            OcrQuantity = oQty, OcrUnitPrice = oUp, OcrDiscount = 0m, OcrIvaPercent = null,
+            OcrLineTotal = oLineTotal,
+            FinalQuantity = fQty ?? oQty, FinalUnitPrice = fUp ?? oUp, FinalDiscount = 0m,
+            FinalIvaPercent = fIva
+        };
+
+    [Fact] // Reproduction A: net lines 1,323,000; summary IVA 14%; header 1,508,220 → residual 0
+    public void SummaryIva_A_FullyExplainedDocument_ResidualZero_NoBlocker()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, oQty: 1, oUp: 1_323_000m, oLineTotal: 1_323_000m, fIva: 14m)
+        };
+        var final = PreGlobal(lines); // 1,508,220
+        var r = QuotationReconciliationCalculator.Compute(1_508_220m, lines, final, 0m, Tol);
+
+        // The structural diagnostic stays visible and non-zero — it is not the blocker.
+        Assert.Equal(185_220m, r.StructuralHeaderDifference);
+        Assert.Equal(0m, r.OcrLineComponentDifference);
+        Assert.Equal(185_220m, r.IvaImpact);                    // buyer-side explanation, unchanged
+        Assert.Equal(185_220m, r.DocumentSummaryIvaCredit);     // the document's own summary tax
+        Assert.Equal(0m, r.ResidualVariance);
+        Assert.False(r.ResidualExceedsTolerance);               // no justification required
+    }
+
+    [Fact] // Regression B: same document but header 1,510,000 → credit granted, residual 1,780 blocks
+    public void SummaryIva_B_HeaderExceedsReconstruction_TrueResidualStillBlocks()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, 1, 1_323_000m, 1_323_000m, fIva: 14m)
+        };
+        var r = QuotationReconciliationCalculator.Compute(1_510_000m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(185_220m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(1_780m, r.ResidualVariance);
+        Assert.True(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression C: per-line IVA WAS extracted → reconstruction already carries it, credit 0
+    public void SummaryIva_C_ExtractedPerLineIva_NoCredit_NoDoubleCount()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            OcrLine(1, "MAPPED", 1, 1_323_000m, 0, oIva: 14m, oLineTotal: 1_508_220m,
+                fQty: 1, fUp: 1_323_000m, fDisc: 0, fIva: 14m)
+        };
+        var r = QuotationReconciliationCalculator.Compute(1_508_220m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(0m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(0m, r.StructuralHeaderDifference);
+        Assert.Equal(0m, r.ResidualVariance);
+        Assert.False(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression D (mandatory false-positive guard): tax-free document, null line rates,
+           // no final rate either → no artificial credit, residual 0
+    public void SummaryIva_D_GenuinelyTaxFreeDocument_NoArtificialCredit()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, 1, 1_323_000m, 1_323_000m, fIva: 0m)
+        };
+        var r = QuotationReconciliationCalculator.Compute(1_323_000m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(0m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(0m, r.ResidualVariance);
+        Assert.False(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression E: tax-free document (header == net lines) but the buyer selects 14% —
+           // the rate is a BUYER adjustment, never claimed as document summary tax
+    public void SummaryIva_E_BuyerAddedRateOnTaxFreeDocument_IsNotDocumentTax()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, 1, 1_323_000m, 1_323_000m, fIva: 14m)
+        };
+        // Header equals the net lines: crediting 185,220 would WORSEN consistency, so the
+        // improvement guard refuses it.
+        var r = QuotationReconciliationCalculator.Compute(1_323_000m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(0m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(185_220m, r.IvaImpact);        // still visible as a buyer-side adjustment
+        Assert.Equal(0m, r.ResidualVariance);       // header ↔ final reconcile through the bucket
+        Assert.False(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression F: buyer removes the inferred 14% → credit gone, residual returns, blocker
+    public void SummaryIva_F_RemovedInferredRate_ResidualReturns()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, 1, 1_323_000m, 1_323_000m, fIva: 0m)
+        };
+        var r = QuotationReconciliationCalculator.Compute(1_508_220m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(0m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(185_220m, r.ResidualVariance);
+        Assert.True(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression G: buyer changes the rate to 10% → partial defensible credit, the document
+           // does not falsely reconcile, the remaining residual blocks
+    public void SummaryIva_G_WrongRate_PartialCredit_RemainingResidualBlocks()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            SummaryIvaLine(1, 1, 1_323_000m, 1_323_000m, fIva: 10m)
+        };
+        var r = QuotationReconciliationCalculator.Compute(1_508_220m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(132_300m, r.DocumentSummaryIvaCredit);   // 10% of the original net
+        Assert.Equal(52_920m, r.ResidualVariance);            // the unreconciled remainder
+        Assert.True(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // Regression H: mixed document — one line with extracted IVA, one summary-only line;
+           // only the missing-baseline line participates in the credit
+    public void SummaryIva_H_MixedLines_CreditOnlyForMissingBaseline()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            OcrLine(1, "MAPPED", 1, 100m, 0, oIva: 14m, oLineTotal: 114m,
+                fQty: 1, fUp: 100m, fDisc: 0, fIva: 14m),           // extracted → contributes 0
+            SummaryIvaLine(2, 1, 100m, 100m, fIva: 14m)              // summary-only → credited 14
+        };
+        var r = QuotationReconciliationCalculator.Compute(228m, lines, PreGlobal(lines), 0m, Tol);
+
+        Assert.Equal(14m, r.DocumentSummaryIvaCredit);
+        Assert.Equal(0m, r.ResidualVariance);
+        Assert.False(r.ResidualExceedsTolerance);
+    }
+
+    [Fact] // The credit survives buyer quantity edits: it is computed on ORIGINAL components
+    public void SummaryIva_CreditUsesOriginalComponents_NotBuyerEditedOnes()
+    {
+        var lines = new List<ReconciliationLineInput>
+        {
+            // Buyer halves the quantity; the document's own tax is still 14% of the ORIGINAL net.
+            SummaryIvaLine(1, oQty: 2, oUp: 661_500m, oLineTotal: 1_323_000m, fIva: 14m, fQty: 1)
+        };
+        var final = PreGlobal(lines); // 1 × 661,500 × 1.14 = 754,110
+        var r = QuotationReconciliationCalculator.Compute(1_508_220m, lines, final, 0m, Tol);
+
+        Assert.Equal(185_220m, r.DocumentSummaryIvaCredit);   // 14% of 1,323,000, not of 661,500
+        Assert.Equal(0m, r.ResidualVariance);
+        Assert.False(r.ResidualExceedsTolerance);
+    }
+
     [Fact] // Example B: header exceeds line sum by 50, no explanation; signed residual 50
     public void ExampleB_StructuralDifference_ResidualFifty()
     {

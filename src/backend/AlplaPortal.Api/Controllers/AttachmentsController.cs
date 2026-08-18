@@ -125,6 +125,11 @@ public class AttachmentsController : BaseController
                 isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
                 detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
+            case AttachmentConstants.Types.Quotation:
+                // Quotation/orçamento documents follow the same window as the quotation flow itself.
+                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
+                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded }.Contains(statusCode);
                 // QUOTATION group-first: allow PO upload when the target group is WAITING_PO/WAITING_PO_CORRECTION
@@ -155,24 +160,106 @@ public class AttachmentsController : BaseController
                 detail = "O Cronograma de Pagamento deve ser carregado nos estágios de emissão de P.O ou agendamento.";
                 break;
             case AttachmentConstants.Types.PaymentProof:
-                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted }.Contains(statusCode);
+                // v2.229.3: WAITING_SUPPLIER_DELIVERY joins both sets as compatibility
+                // preservation ONLY — a confirmed advance now lands there instead of parking in
+                // ADVANCE_PAYMENT_COMPLETED, and the proof re-upload Finance already had after
+                // confirmation must survive the handoff. Nothing broader was enabled.
+                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery }.Contains(statusCode);
                 // QUOTATION group-first: allow payment proof when the target group is in a finance-eligible status
                 if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
                 {
                     var targetPayGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
-                    var financeEligibleGroupStatuses = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted };
+                    var financeEligibleGroupStatuses = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery };
                     if (targetPayGroup != null && financeEligibleGroupStatuses.Contains(targetPayGroup.Status))
                     {
                         isUploadable = true;
                     }
                 }
-                if (isUploadable && statusCode == RequestConstants.Statuses.AdvancePaymentCompleted && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                if (isUploadable && (statusCode == RequestConstants.Statuses.AdvancePaymentCompleted || statusCode == RequestConstants.Statuses.WaitingSupplierDelivery) && !CurrentUserRoles.Contains(RoleConstants.Finance) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
                 {
                     isUploadable = false;
                     detail = "Apenas usuários do Financeiro podem carregar comprovativos após a conclusão do adiantamento.";
                     break;
                 }
                 detail = "O Comprovante de Pagamento deve ser carregado nos estágios de emissão de P.O, agendamento, adiantamento ou conclusão.";
+                break;
+            case RequestAttachment.TYPE_OPERATION_INVOICE:
+                // Release 4 Phase 3B: the Final Invoice evidence rides the SAME window as the
+                // invoice registration it exists for — post-approval, pre-completion, never in
+                // WAITING_PO_CORRECTION (OperationInvoiceLifecyclePolicy, the one rulebook).
+                // Roles mirror the OperationInvoicesController mutation guard.
+                isUploadable = AlplaPortal.Domain.Services.OperationInvoiceLifecyclePolicy
+                    .CanCreateInRequestStatus(statusCode);
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Finance) &&
+                    !CurrentUserRoles.Contains(RoleConstants.Buyer) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Financeiro e o Comprador podem carregar a Fatura Final.";
+                    break;
+                }
+                detail = "A Fatura Final só pode ser carregada depois da aprovação do pedido e " +
+                         "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
+                break;
+            case RequestAttachment.TYPE_FISCAL_RECEIPT:
+                // Release 4 Phase 4B: the Recibo Fiscal is the terminal closing evidence. It rides
+                // the same post-approval/pre-completion window as the completion lifecycle, and
+                // only the roles that may BIND it to a group may store it (rules R5/R6). Binding
+                // itself is the separate, audited FiscalReceiptsController step — this case only
+                // stores the file. Never TYPE_RECEIPT: that legacy code stays untouched (rule R18).
+                isUploadable = AlplaPortal.Domain.Services.OperationInvoiceLifecyclePolicy
+                    .CanCreateInRequestStatus(statusCode);
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Finance) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Financeiro pode carregar o Recibo Fiscal.";
+                    break;
+                }
+                detail = "O Recibo Fiscal só pode ser carregado depois da aprovação do pedido e " +
+                         "enquanto o pedido não estiver concluído, rejeitado ou cancelado.";
+                break;
+            case RequestAttachment.TYPE_RECEIVING_EVIDENCE:
+                // v2.229.4: OPTIONAL operational receiving evidence. Window = the receiving
+                // phase (the same stages ConfirmReceiving/item receiving accept); actors = the
+                // operational receiving capability (Receiving confirms, Buyer may register item
+                // receipts, SysAdmin) — deliberately NOT Finance-gated and never mandatory.
+                isUploadable = new[]
+                {
+                    RequestConstants.Statuses.PaymentCompleted,
+                    RequestConstants.Statuses.WaitingSupplierDelivery,
+                    RequestConstants.Statuses.WaitingReceipt,
+                    RequestConstants.Statuses.InFollowup
+                }.Contains(statusCode);
+                // QUOTATION group-first fallback: the parent aggregate of a multi-group request
+                // may lag a specific group's receiving stage — mirror the PO/proof pattern.
+                if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var evidenceGroup = await _context.RequestPoGroups.FirstOrDefaultAsync(g => g.Id == poGroupId.Value && g.RequestId == requestId);
+                    var receivingEligibleGroupStatuses = new[]
+                    {
+                        RequestConstants.Statuses.PaymentCompleted,
+                        RequestConstants.Statuses.WaitingSupplierDelivery,
+                        RequestConstants.Statuses.WaitingReceipt,
+                        RequestConstants.Statuses.InFollowup
+                    };
+                    if (evidenceGroup != null && receivingEligibleGroupStatuses.Contains(evidenceGroup.Status))
+                    {
+                        isUploadable = true;
+                    }
+                }
+                if (isUploadable &&
+                    !CurrentUserRoles.Contains(RoleConstants.Receiving) &&
+                    !CurrentUserRoles.Contains(RoleConstants.Buyer) &&
+                    !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+                {
+                    isUploadable = false;
+                    detail = "Apenas o Recebimento, o Comprador ou o Administrador de Sistema podem carregar o comprovativo de recebimento.";
+                    break;
+                }
+                detail = "O Comprovativo de Recebimento só pode ser carregado durante a fase de recebimento.";
                 break;
             case AttachmentConstants.Types.Receipt:
                 isUploadable = new[] { "WAITING_RECEIPT" }.Contains(statusCode);
@@ -368,10 +455,14 @@ public class AttachmentsController : BaseController
         // 3. Add Aggregated History Entry
         string typeLabel = typeCode;
         if (typeCode == AttachmentConstants.Types.Proforma) typeLabel = "Proforma";
+        else if (typeCode == AttachmentConstants.Types.Quotation) typeLabel = "Cotação";
         else if (typeCode == AttachmentConstants.Types.PurchaseOrder) typeLabel = "P.O";
         else if (typeCode == AttachmentConstants.Types.PaymentSchedule) typeLabel = "Cronograma de Pagamento";
         else if (typeCode == AttachmentConstants.Types.PaymentProof) typeLabel = "Comprovante de Pagamento";
         else if (typeCode == AttachmentConstants.Types.Receipt) typeLabel = "Recibo";
+        else if (typeCode == RequestAttachment.TYPE_OPERATION_INVOICE) typeLabel = "Fatura Final";
+        else if (typeCode == RequestAttachment.TYPE_FISCAL_RECEIPT) typeLabel = "Recibo Fiscal";
+        else if (typeCode == RequestAttachment.TYPE_RECEIVING_EVIDENCE) typeLabel = "Comprovativo de Recebimento";
 
         string comment = filesToProcess.Count == 1 
             ? $"Documento \"{filesToProcess[0].FileName}\" ({typeLabel}) adicionado ao pedido por {user.FullName}."
@@ -490,6 +581,10 @@ public class AttachmentsController : BaseController
             case AttachmentConstants.Types.Proforma:
                 isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
                 detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                break;
+            case AttachmentConstants.Types.Quotation:
+                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
+                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isDeletable = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }.Contains(attachment.Request.Status!.Code);

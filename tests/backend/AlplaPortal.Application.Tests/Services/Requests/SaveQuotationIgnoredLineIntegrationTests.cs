@@ -61,7 +61,9 @@ public class SaveQuotationIgnoredLineIntegrationTests
             new Mock<ILineItemFactory>().Object,
             new Mock<IRequestLineItemSubmissionValidator>().Object,
             new AlplaPortal.Infrastructure.Services.Purchasing.QuotationItemEligibilityService(ctx),
-            new AlplaPortal.Infrastructure.Services.Approvals.BatchExtraItemDecisionService(ctx));
+            new AlplaPortal.Infrastructure.Services.Approvals.BatchExtraItemDecisionService(ctx),
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
+            Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var identity = new ClaimsIdentity(new[]
         {

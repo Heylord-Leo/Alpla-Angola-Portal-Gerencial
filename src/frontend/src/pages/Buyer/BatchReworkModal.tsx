@@ -4,37 +4,48 @@ import { formatCurrencyAO } from '../../lib/utils';
 import { api } from '../../lib/api';
 import {
     RequestLineItemDto, SavedQuotationDto, ExtraItemDecisionState, ExtraItemDecisionPayload,
-    ApprovalBatchSummary
+    ApprovalBatchSummary, ApprovalBatchItemCandidate, BatchItemInput
 } from '../../types';
 import { computeRelevantExtraLines, parseExtraItemDecisionError } from './batchExtraItemsLogic';
 import { BatchExtraItemsDecisionPanel } from './BatchExtraItemsDecisionPanel';
 import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
 
-interface Candidate {
+/** One selectable option row in the rework screen. `frozen` = values come from the batch's
+ * persisted candidate SNAPSHOT (never refreshed from the live quotation); otherwise the option is
+ * not yet in the batch and shows current quotation values (the backend snapshots it on save). */
+interface ReworkOption {
     quotationItemId: string;
     quotationId: string;
     supplierName: string;
     description: string;
-    unitPrice: number;
+    lineTotal: number;
+    currency: string;
     reconciliationStatus: string;
+    frozen: boolean;
 }
 
-interface BatchLineItem {
+interface ReworkItem {
     reqItem: RequestLineItemDto;
-    candidates: Candidate[];
-    selectedCandidateId: string | null;
+    options: ReworkOption[];
+    kept: boolean;
+    checkedIds: string[];
+    buyerNotes: Record<string, string>;
+    /** Pre-candidate-model item (no candidate rows, buyer-selected winner). Saving converts it. */
+    isLegacy: boolean;
 }
 
 // Batch statuses that "hold" a quotation item — mirrors batchEligibility.ts's
 // ACTIVE_OR_APPROVED_BATCH_STATUSES, but the batch currently being reworked is deliberately
-// excluded from this check (its own current winners must remain selectable candidates).
+// excluded from this check (its own current candidates must remain selectable).
 const ACTIVE_OR_APPROVED_BATCH_STATUSES = ['WAITING_AREA_APPROVAL', 'AREA_ADJUSTMENT', 'WAITING_FINAL_APPROVAL', 'FINAL_ADJUSTMENT', 'APPROVED'];
 
 function isSelectableExcludingOwnBatch(quotationItemId: string, group: any, ownBatchId: string): boolean {
     const referencedElsewhere = (group?.approvalBatches || []).some((b: any) =>
         b.id !== ownBatchId &&
         ACTIVE_OR_APPROVED_BATCH_STATUSES.includes(b.status) &&
-        (b.items || []).some((bi: any) => bi.selectedQuotationItemId === quotationItemId)
+        (b.items || []).some((bi: any) =>
+            bi.selectedQuotationItemId === quotationItemId ||
+            (bi.candidates || []).some((c: any) => c.quotationItemId === quotationItemId))
     );
     return !referencedElsewhere;
 }
@@ -54,13 +65,14 @@ type SubmitPhase = 'idle' | 'submitting' | 'savedNotResubmitted' | 'resubmitOnly
 
 /**
  * Buyer's rework screen for a batch the Area or Final Approver returned (AREA_ADJUSTMENT /
- * FINAL_ADJUSTMENT). Did not exist before Phase 3 — UpdateBatch/ResubmitBatch had zero frontend
- * callers (confirmed in Phase 1's investigation). Reuses the same winner-selection UI and the
- * shared BatchExtraItemsDecisionPanel as batch creation, pre-populated from the batch's current,
- * persisted state — never starts from a blank slate.
+ * FINAL_ADJUSTMENT). Candidate model: the buyer edits the OPTION set (add/remove candidates,
+ * BuyerNotes, keep/drop items) — never a winner; a returned batch re-enters area approval with no
+ * pre-decided winner. Persisted candidates display their FROZEN snapshot values; newly added
+ * options are snapshotted server-side on save. Editing a legacy (pre-candidate) batch explicitly
+ * converts it to the candidate model.
  */
 export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onClose, group, batch, onSuccess }) => {
-    const [lineItems, setLineItems] = useState<BatchLineItem[]>([]);
+    const [reworkItems, setReworkItems] = useState<ReworkItem[]>([]);
     const [extraItemDecisions, setExtraItemDecisions] = useState<Record<string, ExtraItemDecisionState>>({});
     const [phase, setPhase] = useState<SubmitPhase>('idle');
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -69,11 +81,10 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
     const [lockedReason, setLockedReason] = useState<string | null>(null);
     const [fieldErrorItemId, setFieldErrorItemId] = useState<string | null>(null);
     const [fieldErrorMessage, setFieldErrorMessage] = useState<string | null>(null);
+    const [showValidation, setShowValidation] = useState(false);
 
-    // Pre-population — structural, per the reviewed plan: a currently-included extra is
-    // identified primarily via ApprovalBatchItem.SelectedQuotationItemId → the originating
-    // QuotationItem, confirmed by RequestLineItem.CreationOrigin === BUYER_EXTRA_ITEM_INCLUDED.
-    // excludedExtraItems / unresolvedLegacyLines come straight from the batch DTO.
+    const hasLegacyItems = reworkItems.some(i => i.isLegacy);
+
     useEffect(() => {
         if (!isOpen || !group || !batch) return;
 
@@ -81,59 +92,102 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         const quotations: SavedQuotationDto[] = group.quotations || [];
         const allQuotationItems = quotations.flatMap(q => (q.items || []).map(qi => ({ ...qi, quotationId: q.id, supplierName: q.supplierNameSnapshot })));
 
-        const newLineItems: BatchLineItem[] = [];
+        const newItems: ReworkItem[] = [];
 
         batch.items.forEach(batchItem => {
             const reqItem = allLineItems.find(li => li.id === batchItem.requestLineItemId);
             if (!reqItem) return; // defensive — should always be found
 
-            const candidates: Candidate[] = [];
+            // Buyer-included EXTRA_ITEM lines are governed by the extra-items panel below (their
+            // single fixed option re-enters the payload automatically) — not candidate-editable.
+            if (reqItem.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED') return;
+
+            const snapshotCandidates: ApprovalBatchItemCandidate[] = batchItem.candidates || [];
+            const isLegacy = snapshotCandidates.length === 0 && !!batchItem.selectedQuotationItemId;
+
+            const options: ReworkOption[] = [];
+
+            // Persisted candidates first — FROZEN snapshot values, never live ones.
+            snapshotCandidates.forEach(c => {
+                options.push({
+                    quotationItemId: c.quotationItemId,
+                    quotationId: c.quotationId,
+                    supplierName: c.supplierName,
+                    description: c.description,
+                    lineTotal: c.lineTotal,
+                    currency: c.currency,
+                    reconciliationStatus: c.reconciliationStatus || 'MAPPED',
+                    frozen: true
+                });
+            });
+
+            // Legacy item: its historical buyer-selected winner becomes the seed option (live
+            // lookup — no snapshot exists; NEVER fabricate additional candidates for it).
+            if (isLegacy) {
+                const currentQi = allQuotationItems.find(qi => qi.id === batchItem.selectedQuotationItemId);
+                if (currentQi) {
+                    options.push({
+                        quotationItemId: currentQi.id,
+                        quotationId: currentQi.quotationId,
+                        supplierName: currentQi.supplierName || 'Fornecedor',
+                        description: currentQi.description,
+                        lineTotal: currentQi.lineTotal || 0,
+                        currency: currentQi.currencyCode || 'AOA',
+                        reconciliationStatus: currentQi.reconciliationStatus || 'MAPPED',
+                        frozen: false
+                    });
+                }
+            }
+
+            // Other eligible quotation lines mapped to this item — addable options (snapshotted
+            // by the backend if the buyer checks them and saves).
             quotations.forEach(quotation => {
                 (quotation.items || []).forEach(qi => {
                     if (qi.mappedRequestLineItemId === reqItem.id &&
                         (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE') &&
-                        isSelectableExcludingOwnBatch(qi.id, group, batch.id)) {
-                        candidates.push({
+                        isSelectableExcludingOwnBatch(qi.id, group, batch.id) &&
+                        !options.some(o => o.quotationItemId === qi.id)) {
+                        options.push({
                             quotationItemId: qi.id,
                             quotationId: quotation.id,
                             supplierName: quotation.supplierNameSnapshot || 'Fornecedor',
                             description: qi.description,
-                            unitPrice: qi.unitPrice || 0,
-                            reconciliationStatus: qi.reconciliationStatus
+                            lineTotal: qi.lineTotal || 0,
+                            currency: qi.currencyCode || quotation.currency || 'AOA',
+                            reconciliationStatus: qi.reconciliationStatus,
+                            frozen: false
                         });
                     }
                 });
             });
 
-            // The batch's current winner must always be present as a candidate, even in the rare
-            // case reconciliation data changed since the batch was created.
-            if (!candidates.some(c => c.quotationItemId === batchItem.selectedQuotationItemId)) {
-                const currentQi = allQuotationItems.find(qi => qi.id === batchItem.selectedQuotationItemId);
-                if (currentQi) {
-                    candidates.push({
-                        quotationItemId: currentQi.id,
-                        quotationId: currentQi.quotationId,
-                        supplierName: currentQi.supplierName || 'Fornecedor',
-                        description: currentQi.description,
-                        unitPrice: currentQi.unitPrice || 0,
-                        reconciliationStatus: currentQi.reconciliationStatus || 'MAPPED'
-                    });
-                }
-            }
+            const buyerNotes: Record<string, string> = {};
+            snapshotCandidates.forEach(c => { if (c.buyerNote) buyerNotes[c.quotationItemId] = c.buyerNote; });
 
-            newLineItems.push({ reqItem, candidates, selectedCandidateId: batchItem.selectedQuotationItemId });
+            newItems.push({
+                reqItem,
+                options,
+                kept: true,
+                checkedIds: isLegacy
+                    ? (batchItem.selectedQuotationItemId ? [batchItem.selectedQuotationItemId] : [])
+                    : snapshotCandidates.map(c => c.quotationItemId),
+                buyerNotes,
+                isLegacy
+            });
         });
 
-        setLineItems(newLineItems);
+        setReworkItems(newItems);
 
-        // Structural pre-population of extra-item decisions.
+        // Structural pre-population of extra-item decisions: an included extra is a batch item
+        // whose generated line has CreationOrigin BUYER_EXTRA_ITEM_INCLUDED; its quotation line is
+        // the single candidate (candidate model) or the legacy winner pointer.
         const decisions: Record<string, ExtraItemDecisionState> = {};
         batch.items.forEach(batchItem => {
-            const qi = allQuotationItems.find(q => q.id === batchItem.selectedQuotationItemId);
-            if (qi?.reconciliationStatus !== 'EXTRA_ITEM') return;
             const generatedLineItem = allLineItems.find(li => li.id === batchItem.requestLineItemId);
-            if (generatedLineItem?.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED') {
-                decisions[qi.id] = { decision: 'INCLUDE', comment: '' };
+            if (generatedLineItem?.creationOrigin !== 'BUYER_EXTRA_ITEM_INCLUDED') return;
+            const extraQuotationItemId = batchItem.candidates?.[0]?.quotationItemId ?? batchItem.selectedQuotationItemId;
+            if (extraQuotationItemId) {
+                decisions[extraQuotationItemId] = { decision: 'INCLUDE', comment: '' };
             }
         });
         (batch.excludedExtraItems || []).forEach(item => {
@@ -151,22 +205,21 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         setLockedReason(null);
         setFieldErrorItemId(null);
         setFieldErrorMessage(null);
+        setShowValidation(false);
     }, [isOpen, group, batch]);
 
+    // Contributing quotations = every quotation carrying at least one CHECKED option of a KEPT item.
     const relevantExtraLines = useMemo(() => {
         if (!group) return [];
-        const selections = lineItems.map(item => {
-            const candidate = item.candidates.find(c => c.quotationItemId === item.selectedCandidateId);
-            return { quotationItemId: item.selectedCandidateId, quotationId: candidate?.quotationId || null };
-        });
+        const selections = reworkItems
+            .filter(item => item.kept)
+            .flatMap(item => item.options
+                .filter(o => item.checkedIds.includes(o.quotationItemId))
+                .map(o => ({ quotationItemId: o.quotationItemId, quotationId: o.quotationId })));
         return computeRelevantExtraLines(selections, group.quotations || []);
-    }, [lineItems, group]);
+    }, [reworkItems, group]);
     const relevantExtraLineIds = useMemo(() => relevantExtraLines.map(l => l.quotationItemId).sort().join('|'), [relevantExtraLines]);
 
-    // Same reconciliation rule as batch creation: preserve decisions for lines still relevant
-    // (including the structural pre-population from persisted state, set above), default any
-    // newly-relevant EXTRA_ITEM line to INCLUDE (review-first — a valid default always exists),
-    // drop stale decisions for lines that no longer contribute.
     useEffect(() => {
         setExtraItemDecisions(prev => {
             const next: Record<string, ExtraItemDecisionState> = {};
@@ -178,8 +231,29 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [relevantExtraLineIds]);
 
-    const handleSelectCandidate = (reqItemId: string, candidateId: string) => {
-        setLineItems(prev => prev.map(item => item.reqItem.id === reqItemId ? { ...item, selectedCandidateId: candidateId } : item));
+    const handleToggleOption = (reqItemId: string, quotationItemId: string) => {
+        setReworkItems(prev => prev.map(item => {
+            if (item.reqItem.id !== reqItemId) return item;
+            const checked = item.checkedIds.includes(quotationItemId);
+            return {
+                ...item,
+                checkedIds: checked
+                    ? item.checkedIds.filter(id => id !== quotationItemId)
+                    : [...item.checkedIds, quotationItemId]
+            };
+        }));
+    };
+
+    const handleToggleKept = (reqItemId: string) => {
+        setReworkItems(prev => prev.map(item => item.reqItem.id === reqItemId ? { ...item, kept: !item.kept } : item));
+    };
+
+    const handleBuyerNoteChange = (reqItemId: string, quotationItemId: string, note: string) => {
+        setReworkItems(prev => prev.map(item =>
+            item.reqItem.id === reqItemId
+                ? { ...item, buyerNotes: { ...item.buyerNotes, [quotationItemId]: note } }
+                : item
+        ));
     };
 
     const handleChangeExtraItemDecision = (quotationItemId: string, decision: ExtraItemDecisionState) => {
@@ -197,13 +271,38 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         if (state.decision === 'EXCLUDE') return validateReconciliationJustification(state.comment).isValid;
         return true;
     });
-    const isValid = lineItems.every(item => item.selectedCandidateId !== null) && isExtraItemsValid;
+
+    const keptItems = reworkItems.filter(i => i.kept);
+    const invalidItems = keptItems.filter(i => i.checkedIds.length === 0);
+    const isValid = keptItems.length > 0 && invalidItems.length === 0 && isExtraItemsValid;
 
     const buildPayload = () => {
-        const items = lineItems.map(item => ({
+        const items: BatchItemInput[] = keptItems.map(item => ({
             requestLineItemId: String(item.reqItem.id),
-            selectedQuotationItemId: String(item.selectedCandidateId)
+            candidates: item.checkedIds.map(quotationItemId => {
+                const note = (item.buyerNotes[quotationItemId] || '').trim();
+                return note
+                    ? { quotationItemId: String(quotationItemId), buyerNote: note }
+                    : { quotationItemId: String(quotationItemId) };
+            })
         }));
+
+        // Included EXTRA_ITEM lines re-enter the payload as their own single fixed candidate —
+        // they are governed by the panel decisions, not by the candidate-edit UI above.
+        const allLineItems: RequestLineItemDto[] = group?.items || group?.lineItems || group?.requestLineItems || [];
+        (batch?.items || []).forEach(batchItem => {
+            const generatedLineItem = allLineItems.find(li => li.id === batchItem.requestLineItemId);
+            if (generatedLineItem?.creationOrigin !== 'BUYER_EXTRA_ITEM_INCLUDED') return;
+            const extraQuotationItemId = batchItem.candidates?.[0]?.quotationItemId ?? batchItem.selectedQuotationItemId;
+            if (!extraQuotationItemId) return;
+            const state = extraItemDecisions[extraQuotationItemId];
+            if (state?.decision === 'EXCLUDE') return; // reversal handled server-side by the decision
+            items.push({
+                requestLineItemId: String(batchItem.requestLineItemId),
+                candidates: [{ quotationItemId: String(extraQuotationItemId) }]
+            });
+        });
+
         const extraItemDecisionsPayload: Record<string, ExtraItemDecisionPayload> = {};
         relevantExtraLines.forEach(line => {
             const state = extraItemDecisions[line.quotationItemId];
@@ -245,8 +344,13 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         setFieldErrorItemId(null);
         setFieldErrorMessage(null);
 
-        if (!lineItems.every(item => item.selectedCandidateId !== null)) {
-            setSubmitError('Por favor, selecione uma cotação vencedora para cada item.');
+        if (keptItems.length === 0) {
+            setSubmitError('O lote deve manter pelo menos um item.');
+            return;
+        }
+        if (invalidItems.length > 0) {
+            setShowValidation(true);
+            setSubmitError('Selecione pelo menos uma opção de cotação para cada item mantido no lote.');
             return;
         }
         if (!isExtraItemsValid) {
@@ -307,7 +411,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    backgroundColor: '#FFFFFF', borderRadius: '12px', width: '100%', maxWidth: '740px',
+                    backgroundColor: '#FFFFFF', borderRadius: '12px', width: '100%', maxWidth: '760px',
                     boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
                     display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 80px)'
                 }}
@@ -322,7 +426,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                                 Corrigir Lote #{batch.batchNumber}
                             </h2>
                             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                                Revise os vencedores e os itens adicionais antes de reenviar para aprovação
+                                Revise as opções de cotação e os itens adicionais antes de reenviar. O vencedor será escolhido pelo Aprovador de Área.
                             </p>
                         </div>
                     </div>
@@ -341,6 +445,15 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                         </div>
                     )}
 
+                    {hasLegacyItems && (
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px' }}>
+                            <Info size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#92400e', lineHeight: 1.5 }}>
+                                <strong>Lote do modelo anterior:</strong> o vencedor foi definido pelo comprador na criação. Ao salvar correções, o lote será convertido para o novo modelo de opções — a(s) cotação(ões) marcadas passam a ser opções e o <strong>Aprovador de Área</strong> fará a escolha do vencedor.
+                            </p>
+                        </div>
+                    )}
+
                     {batch.comment && (
                         <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px', fontSize: '0.8125rem', color: '#92400e' }}>
                             <strong>Motivo do reajuste:</strong> {batch.comment}
@@ -349,39 +462,77 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
 
                     <div>
                         <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                            Itens do Lote ({lineItems.length})
+                            Itens do Lote ({reworkItems.length})
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {lineItems.map(item => (
-                                <div key={item.reqItem.id} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--color-bg-surface)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                        <div>
-                                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
-                                                Linha {item.reqItem.lineNumber} &mdash; Qtd: {item.reqItem.quantity} {item.reqItem.unit}
-                                            </div>
-                                            <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                                                {item.reqItem.description}
-                                            </div>
-                                        </div>
-                                        {item.selectedCandidateId ? <CheckCircle size={20} color="#059669" style={{ flexShrink: 0 }} /> : <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        {item.candidates.map(candidate => (
-                                            <label key={candidate.quotationItemId} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', border: item.selectedCandidateId === candidate.quotationItemId ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: item.selectedCandidateId === candidate.quotationItemId ? '#eff6ff' : 'transparent', cursor: 'pointer' }}>
-                                                <input type="radio" name={`rework-candidate-${item.reqItem.id}`} checked={item.selectedCandidateId === candidate.quotationItemId} onChange={() => handleSelectCandidate(item.reqItem.id, candidate.quotationItemId)} style={{ cursor: 'pointer', marginTop: '4px' }} />
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                                                        {candidate.description}
-                                                        {candidate.reconciliationStatus === 'SUBSTITUTE' && <span style={{ padding: '2px 6px', backgroundColor: '#fef9c3', color: '#854d0e', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px' }}>Substituto</span>}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>Fornecedor: <strong>{candidate.supplierName}</strong></div>
+                            {reworkItems.map(item => {
+                                const itemInvalid = showValidation && item.kept && item.checkedIds.length === 0;
+                                return (
+                                    <div key={item.reqItem.id} style={{ border: itemInvalid ? '1px solid #dc2626' : '1px solid var(--color-border)', borderRadius: '8px', padding: '16px', backgroundColor: item.kept ? 'var(--color-bg-surface)' : '#f9fafb', opacity: item.kept ? 1 : 0.75 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                            <div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                                                    Linha {item.reqItem.lineNumber} &mdash; Qtd: {item.reqItem.quantity} {item.reqItem.unit}
                                                 </div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>{formatCurrencyAO(candidate.unitPrice)}</div>
+                                                <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                                                    {item.reqItem.description}
+                                                </div>
+                                            </div>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0, fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                                                <input type="checkbox" checked={item.kept} onChange={() => handleToggleKept(item.reqItem.id)} style={{ cursor: 'pointer' }} />
+                                                Manter no lote
                                             </label>
-                                        ))}
+                                        </div>
+                                        {item.kept ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                                    Opções a Enviar para Aprovação
+                                                </div>
+                                                {itemInvalid && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px', fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
+                                                        <AlertTriangle size={14} /> Selecione pelo menos uma opção de cotação para este item (ou remova-o do lote).
+                                                    </div>
+                                                )}
+                                                {item.options.map(option => {
+                                                    const checked = item.checkedIds.includes(option.quotationItemId);
+                                                    return (
+                                                        <div key={option.quotationItemId} style={{ border: checked ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: checked ? '#eff6ff' : 'transparent' }}>
+                                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', cursor: 'pointer' }}>
+                                                                <input type="checkbox" checked={checked} onChange={() => handleToggleOption(item.reqItem.id, option.quotationItemId)} style={{ cursor: 'pointer', marginTop: '4px' }} />
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                                                        {option.description}
+                                                                        {option.reconciliationStatus === 'SUBSTITUTE' && <span style={{ padding: '2px 6px', backgroundColor: '#fef9c3', color: '#854d0e', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px' }}>Substituto</span>}
+                                                                        {option.frozen && <span style={{ padding: '2px 6px', backgroundColor: '#f0f9ff', color: '#0369a1', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #bae6fd' }}>Valores congelados no envio</span>}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>Fornecedor: <strong>{option.supplierName}</strong></div>
+                                                                </div>
+                                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>{formatCurrencyAO(option.lineTotal)}</div>
+                                                            </label>
+                                                            {checked && (
+                                                                <div style={{ padding: '0 12px 12px 40px' }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={item.buyerNotes[option.quotationItemId] || ''}
+                                                                        onChange={(e) => handleBuyerNoteChange(item.reqItem.id, option.quotationItemId, e.target.value)}
+                                                                        placeholder="Observação do Comprador (opcional)"
+                                                                        maxLength={1000}
+                                                                        style={{ width: '100%', padding: '6px 10px', fontSize: '0.8rem', border: '1px solid var(--color-border)', borderRadius: '4px', backgroundColor: '#fff' }}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                Será removido do lote ao salvar — o item volta para a sua fila de cotação.
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 

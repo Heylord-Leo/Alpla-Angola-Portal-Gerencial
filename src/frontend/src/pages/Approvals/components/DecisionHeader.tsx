@@ -9,6 +9,9 @@ export interface DecisionHeaderProps {
     statusName: string;
     statusBadgeColor: string;
     totalAmount: number;
+    /** Candidate model: when set, the hero shows this label instead of a monetary amount —
+     * a pre-decision candidate batch has NO commercial truth yet (never the request estimate). */
+    totalAmountOverrideLabel?: string | null;
     currencyCode: string;
     approvalStage: 'AREA' | 'FINAL';
     onClose: () => void;
@@ -26,6 +29,7 @@ export function DecisionHeader({
     statusName,
     statusBadgeColor,
     totalAmount,
+    totalAmountOverrideLabel,
     currencyCode,
     onClose,
     onOpenRequest,
@@ -117,12 +121,21 @@ export function DecisionHeader({
                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {requestTypeCode}
                 </span>
-                <h1 style={{
-                    fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)', 
-                    letterSpacing: '-0.02em', margin: 0, lineHeight: 1.1
-                }}>
-                    {currencyCode} {formatCurrencyAO(totalAmount)}
-                </h1>
+                {totalAmountOverrideLabel ? (
+                    <h1 style={{
+                        fontSize: '1.375rem', fontWeight: 800, color: 'var(--color-text-muted)',
+                        letterSpacing: '-0.01em', margin: 0, lineHeight: 1.2, textAlign: 'center'
+                    }}>
+                        {totalAmountOverrideLabel}
+                    </h1>
+                ) : (
+                    <h1 style={{
+                        fontSize: '2.5rem', fontWeight: 900, color: 'var(--color-primary)',
+                        letterSpacing: '-0.02em', margin: 0, lineHeight: 1.1
+                    }}>
+                        {currencyCode} {formatCurrencyAO(totalAmount)}
+                    </h1>
+                )}
             </div>
         </div>
     );

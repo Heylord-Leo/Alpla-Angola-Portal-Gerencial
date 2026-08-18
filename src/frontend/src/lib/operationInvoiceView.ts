@@ -1,0 +1,458 @@
+import { ApiError } from './api';
+import type {
+    OperationInvoiceDto,
+    OperationInvoiceObligationDto
+} from '../types/operationInvoice';
+
+/**
+ * Release 4 Phase 3B — pure derivations for the Operation Invoice UI.
+ *
+ * Everything here is a function of its arguments: no React, no fetch. Business labels live in one
+ * place so the group card, the Finance drawer and the allocation wizard can never disagree. Raw
+ * enum strings are never shown to users.
+ */
+
+// ── Group aggregate status labels ───────────────────────────────────────────────────────────
+
+interface StatusPresentation {
+    label: string;
+    severity: 'success' | 'warning' | 'error' | 'info' | 'muted';
+}
+
+const AGGREGATE_STATUS_LABELS: Record<string, StatusPresentation> = {
+    UNCLASSIFIED: { label: 'Classificação Pendente', severity: 'muted' },
+    NOT_REQUIRED: { label: 'Fatura Final Não Obrigatória', severity: 'muted' },
+    PENDING_UPLOAD: { label: 'Aguardando Fatura Final', severity: 'warning' },
+    PENDING_VALIDATION: { label: 'Fatura em Validação', severity: 'info' },
+    PARTIALLY_INVOICED: { label: 'Parcialmente Faturado', severity: 'warning' },
+    SATISFIED: { label: 'Fatura Final Completa', severity: 'success' },
+    DIVERGENCE_DETECTED: { label: 'Divergência em Análise', severity: 'error' }
+};
+
+/**
+ * The group aggregate as the user reads it. ClosedShort overrides the SATISFIED wording: a group
+ * closed below its expected total is complete BY DECISION, and must never present as 100% invoiced.
+ */
+export function aggregateStatusPresentation(
+    status: string | null | undefined, closedShort: boolean
+): StatusPresentation {
+    if (closedShort && status === 'SATISFIED') {
+        return { label: 'Encerrado com Saldo Aceite', severity: 'success' };
+    }
+    return AGGREGATE_STATUS_LABELS[status ?? ''] ?? { label: status || '—', severity: 'muted' };
+}
+
+// ── Document status labels ──────────────────────────────────────────────────────────────────
+
+const DOCUMENT_STATUS_LABELS: Record<string, StatusPresentation> = {
+    UPLOADED: { label: 'Registada', severity: 'info' },
+    PENDING_VALIDATION: { label: 'Aguarda Validação', severity: 'info' },
+    VALIDATED: { label: 'Validada', severity: 'success' },
+    REJECTED: { label: 'Rejeitada', severity: 'error' },
+    VOIDED: { label: 'Anulada', severity: 'muted' },
+    REPLACEMENT_REQUESTED: { label: 'Substituída', severity: 'muted' },
+    DIVERGENCE_DETECTED: { label: 'Divergência Detetada', severity: 'error' }
+};
+
+export function documentStatusPresentation(status: string | null | undefined): StatusPresentation {
+    return DOCUMENT_STATUS_LABELS[status ?? ''] ?? { label: status || '—', severity: 'muted' };
+}
+
+/** The document statuses whose allocations may still be edited (backend drafting window). */
+export function isInvoiceAwaitingDecision(status: string | null | undefined): boolean {
+    return status === 'UPLOADED' || status === 'PENDING_VALIDATION';
+}
+
+/** Header fields editable — mirrors OperationInvoiceLifecyclePolicy.IsEditable. */
+export function isInvoiceEditable(status: string | null | undefined): boolean {
+    return isInvoiceAwaitingDecision(status);
+}
+
+/**
+ * REQUEST statuses in which operation-invoice mutations are possible — a UX mirror of
+ * OperationInvoiceLifecyclePolicy.CreateAllowedRequestStatuses (v2.228.4). The coverage section
+ * stays visible as a read-only preview outside this window (pre-Final groups are honest
+ * information), but no action the backend would reject is offered. Backend stays authoritative.
+ */
+const LIFECYCLE_OPEN_STATUSES = new Set([
+    'APPROVED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED',
+    'PAYMENT_REQUEST_SENT', 'PAYMENT_SCHEDULED', 'PAID', 'PAYMENT_COMPLETED',
+    'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECEIPT', 'WAITING_RECONCILIATION',
+    'IN_FOLLOWUP', 'WAITING_FISCAL_RECEIPT',
+    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_COMPLETED'
+]);
+
+export function isOperationInvoiceLifecycleOpen(requestStatusCode: string | null | undefined): boolean {
+    return !!requestStatusCode && LIFECYCLE_OPEN_STATUSES.has(requestStatusCode.toUpperCase());
+}
+
+/**
+ * Accepted over-coverage indicator (v2.228.4). Effective coverage above expected + tolerance is
+ * IMPOSSIBLE without an explicitly accepted divergence — the validation gate refuses it
+ * otherwise — so this derivation is an invariant of the domain, not a >100% heuristic. The
+ * variance shown is validated − expected, exactly what the reconciliation snapshot froze.
+ */
+export function acceptedDivergence(
+    obligation: OperationInvoiceObligationDto
+): { variance: number } | null {
+    if (obligation.expectedAmount == null || obligation.expectedAmount <= 0) return null;
+    const variance = obligation.validatedCoveredAmount - obligation.expectedAmount;
+    return variance > obligation.appliedTolerance ? { variance } : null;
+}
+
+// ── Dates (v2.228.2) ────────────────────────────────────────────────────────────────────────
+
+/**
+ * CALENDAR date formatter for DateOnly-like business fields (DocumentDate, DueDate).
+ *
+ * <p>The API serializes these as offsetless strings ("2026-08-12T00:00:00"); `new Date(...)`
+ * would parse that as browser-LOCAL time, and any UTC-based re-formatting then shifts the date
+ * by one day on a UTC+ browser (12/08 → 11/08 — the exact TEST defect). A calendar date is not
+ * an instant, so no Date object is involved at all: pure string slicing, timezone-proof.</p>
+ */
+export function formatDateOnly(value: string | null | undefined): string {
+    if (!value) return '—';
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (!match) return value;
+    return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+/**
+ * INSTANT formatter for UTC audit timestamps (UploadedAtUtc, ValidatedAtUtc, ProposedAtUtc, …).
+ *
+ * <p>These ARE instants and are parsed with Date — but the backend serializes them without an
+ * offset after an EF round-trip (Kind=Unspecified), so the value is normalized to its true UTC
+ * meaning (trailing "Z") BEFORE parsing; display then follows the Portal convention of the
+ * browser-local date. Never use this for DateOnly-like business dates.</p>
+ */
+export function formatUtcTimestampDate(value: string | null | undefined): string {
+    if (!value) return '—';
+    const normalized = /(Z|[+-]\d{2}:?\d{2})$/.test(value)
+        ? value
+        : /T/.test(value) ? `${value}Z` : value;
+    const parsed = new Date(normalized);
+    return isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('pt-BR');
+}
+
+// ── Money ───────────────────────────────────────────────────────────────────────────────────
+
+export function formatMoney(amount: number | null | undefined, currency: string | null | undefined): string {
+    if (amount == null) return '—';
+    try {
+        return new Intl.NumberFormat('pt-AO', { style: 'currency', currency: currency || 'AOA' }).format(amount);
+    } catch {
+        return `${new Intl.NumberFormat('pt-AO').format(amount)} ${currency ?? ''}`.trim();
+    }
+}
+
+// ── Coverage presentation ───────────────────────────────────────────────────────────────────
+
+export interface CoverageView {
+    /** "Valor esperado ainda não definido" when the finish line was never captured. */
+    expectedLabel: string;
+    validatedLabel: string;
+    pendingLabel: string;
+    remainingLabel: string;
+    /** Null when no percentage is honest (unknown expected). */
+    percent: number | null;
+    hasExpected: boolean;
+}
+
+/**
+ * The five numbers of a group's coverage, formatted once for every screen.
+ * An unknown expected total is stated as unknown — NEVER as "0 AOA".
+ */
+export function coverageView(obligation: OperationInvoiceObligationDto): CoverageView {
+    const currency = obligation.expectedCurrency ?? obligation.currency;
+    const hasExpected = obligation.expectedAmount != null && obligation.expectedAmount > 0;
+
+    return {
+        expectedLabel: hasExpected
+            ? formatMoney(obligation.expectedAmount, currency)
+            : 'Valor esperado ainda não definido',
+        validatedLabel: formatMoney(obligation.validatedCoveredAmount, currency),
+        pendingLabel: formatMoney(obligation.pendingCoveredAmount, currency),
+        remainingLabel: obligation.remainingAmount != null
+            ? formatMoney(obligation.remainingAmount, currency)
+            : '—',
+        percent: obligation.coveragePercent ?? null,
+        hasExpected
+    };
+}
+
+/** Groups the allocation wizard may target: backend obligation eligibility, mirrored for UX only. */
+export function isGroupAllocatable(obligation: OperationInvoiceObligationDto): boolean {
+    return obligation.requiresOperationInvoice &&
+        obligation.derivedStatus !== 'NOT_REQUIRED' &&
+        obligation.derivedStatus !== 'UNCLASSIFIED';
+}
+
+/** Structural short-close eligibility: real remaining beyond tolerance, not already closed. */
+function isShortCloseStructurallyProposable(obligation: OperationInvoiceObligationDto): boolean {
+    return isGroupAllocatable(obligation) &&
+        !obligation.closedShort &&
+        obligation.expectedAmount != null && obligation.expectedAmount > 0 &&
+        obligation.remainingAmount != null &&
+        obligation.remainingAmount > obligation.appliedTolerance;
+}
+
+/**
+ * v2.228.4 visibility refinement (approved): while a pending Final Invoice allocation is
+ * contributing toward the remaining amount, proposing a short-close is premature — Finance
+ * should decide the invoice first. UX only; the backend proposal policy is deliberately NOT
+ * hardened (a validated=0 full-balance short-close remains a legitimate business case,
+ * flagged with an explicit warning in the proposal modal instead).
+ */
+export function isShortCloseProposable(obligation: OperationInvoiceObligationDto): boolean {
+    return isShortCloseStructurallyProposable(obligation) &&
+        obligation.pendingCoveredAmount <= 0;
+}
+
+/** The explanatory state for a group whose ONLY short-close impediment is a pending invoice. */
+export function shortCloseBlockedByPending(obligation: OperationInvoiceObligationDto): boolean {
+    return isShortCloseStructurallyProposable(obligation) &&
+        obligation.pendingCoveredAmount > 0;
+}
+
+// ── Structured backend error mapping ────────────────────────────────────────────────────────
+
+/**
+ * Phase 3A business codes → precise Portuguese messages. Anything unknown falls back to the
+ * backend's own detail text (which is already user-worded) — never a generic "Erro inesperado"
+ * unless there is genuinely nothing better.
+ */
+const ERROR_MESSAGES: Record<string, string> = {
+    OI_ALLOC_NOT_EDITABLE:
+        'A distribuição desta fatura já não pode ser alterada — a fatura já foi decidida.',
+    OI_ALLOC_GROUP_INVALID:
+        'Um dos grupos selecionados não está elegível para receber esta fatura.',
+    OI_ALLOC_SUPPLIER_MISMATCH:
+        'O fornecedor da fatura não corresponde ao fornecedor do grupo selecionado.',
+    OI_ALLOC_CURRENCY_MISMATCH:
+        'A moeda da fatura não corresponde à moeda do grupo selecionado.',
+    OI_ALLOC_INVOICE_OVER:
+        'A soma das distribuições ultrapassa o total da própria fatura.',
+    OI_ALLOC_GROUP_OVER:
+        'A distribuição excede o valor esperado deste grupo.',
+    OI_ALLOC_GROUP_CLOSED_SHORT:
+        'Este grupo foi encerrado com saldo aceite e não pode receber novas Faturas Finais sem reabertura explícita.',
+    OI_VALIDATE_ALLOCATION_INCOMPLETE:
+        'A soma das distribuições não corresponde ao total da fatura. Distribua o valor completo antes de validar.',
+    OI_VALIDATE_DIVERGENCE_REQUIRED:
+        'Existe um grupo acima do valor esperado — a validação exige a aceitação explícita da divergência.',
+    OPERATION_INVOICE_NO_OBLIGATION:
+        'Este pedido ainda não possui um grupo classificado que exija Fatura Final.',
+    OPERATION_INVOICE_DUPLICATE:
+        'Já existe uma fatura registada com este fornecedor, número e série.',
+    OPERATION_INVOICE_FILE_DUPLICATE:
+        'Este ficheiro já corresponde a uma fatura final registada no Portal.',
+    OPERATION_INVOICE_NOT_EDITABLE:
+        'Esta fatura já não pode ser alterada.',
+    OPERATION_INVOICE_NOT_VOIDABLE:
+        'Só uma fatura ainda não validada pode ser anulada.',
+    OPERATION_INVOICE_NOT_REPLACEABLE:
+        'Esta fatura não pode ser substituída.',
+    OPERATION_INVOICE_EVIDENCE_EXISTS:
+        'A fatura já tem distribuições ou reconciliações associadas e não pode ser substituída.',
+    OI_SHORTCLOSE_NOT_ELIGIBLE:
+        'Este grupo não está num estado que permita encerramento com saldo.',
+    OI_SHORTCLOSE_NOTHING_REMAINING:
+        'A cobertura validada já satisfaz o valor esperado — não existe saldo a encerrar.',
+    OI_SHORTCLOSE_ACTIVE_EXISTS:
+        'Já existe uma proposta de encerramento ativa para este grupo.',
+    OI_SHORTCLOSE_NOT_DECIDABLE:
+        'Esta proposta de encerramento já foi decidida.',
+    OI_SHORTCLOSE_SELF_APPROVAL:
+        'Quem propôs o encerramento não pode aprová-lo — é necessária uma segunda pessoa.',
+    // ── Phase 4B/4D: fiscal receipt binding ──
+    FISCAL_RECEIPT_REQUEST_STATE:
+        'O estado atual do pedido ou do grupo não permite registar o Recibo Fiscal.',
+    FISCAL_RECEIPT_NOT_REQUIRED:
+        'Este grupo não exige Recibo Fiscal separado — o documento classificado já comprova o pagamento.',
+    FISCAL_RECEIPT_LOCKED:
+        'O Recibo Fiscal só pode ser registado depois de satisfeitos o recebimento operacional e a Fatura Final deste grupo.',
+    FISCAL_RECEIPT_ALREADY_UPLOADED:
+        'Este grupo já tem um Recibo Fiscal registado. A substituição não está disponível.',
+    FISCAL_RECEIPT_ATTACHMENT_INVALID:
+        'O documento indicado não é um Recibo Fiscal válido deste pedido.',
+    COMPLETION_DISABLED:
+        'O ciclo automático de conclusão ainda não está ativo neste ambiente.'
+};
+
+/** Concurrency codes — every 409 of this family gets the reload guidance. */
+const CONCURRENCY_CODES = new Set([
+    'OPERATION_INVOICE_CONCURRENCY',
+    'OI_SHORTCLOSE_CONCURRENCY',
+    'FISCAL_RECEIPT_CONCURRENCY'
+]);
+
+export interface MappedApiError {
+    message: string;
+    /** The backend's structured code, when present. */
+    code: string | null;
+    /** True → offer "Recarregar dados" and never resubmit stale values. */
+    isConcurrency: boolean;
+    /** ProblemDetails extensions (expectedTotal, tolerance, requestPoGroupId, …) when present. */
+    extensions: Record<string, unknown>;
+}
+
+export function mapOperationInvoiceError(error: unknown): MappedApiError {
+    if (error instanceof ApiError) {
+        const code = error.errorCode ?? null;
+        const backendDetail: string | undefined = error.details?.detail || error.details?.title;
+        const isConcurrency = !!code && CONCURRENCY_CODES.has(code);
+
+        return {
+            message: isConcurrency
+                ? 'Os dados desta fatura ou grupo foram alterados por outro utilizador.'
+                : (code && ERROR_MESSAGES[code]) || backendDetail || error.message,
+            code,
+            isConcurrency,
+            extensions: extractExtensions(error.details)
+        };
+    }
+
+    return {
+        message: error instanceof Error ? error.message : 'Erro de comunicação.',
+        code: null,
+        isConcurrency: false,
+        extensions: {}
+    };
+}
+
+function extractExtensions(details: any): Record<string, unknown> {
+    if (!details || typeof details !== 'object') return {};
+    // ProblemDetails extensions are serialized flat next to the standard members.
+    const { type, title, status, detail, instance, errors, ...rest } = details;
+    return rest;
+}
+
+// ── Release 4 Phase 4D — completion readiness presentation ──────────────────────────────────
+// Presentation ONLY: every fact comes from the readiness read model (GroupCompletionProjector,
+// server-side). These helpers translate codes to Portuguese business language — they never
+// re-derive a completion predicate.
+
+import type {
+    CompletionReadinessDto,
+    CompletionReadinessGroupDto,
+    CompletionBlockingReasonDto
+} from '../types/operationInvoice';
+
+/** GroupCompletionOwnership codes → user-facing Portuguese ownership labels. */
+export const COMPLETION_OWNER_LABELS: Record<string, string> = {
+    BUYER: 'Compras',
+    FINANCE: 'Financeiro',
+    FINANCE_ADMIN: 'Financeiro / Administração',
+    RECEIVING: 'Recebimento / Operações'
+};
+
+/** GroupCompletionBlockingReasons codes → "O que falta" Portuguese phrases. */
+export const COMPLETION_BLOCKING_LABELS: Record<string, string> = {
+    CLASSIFICATION_PENDING: 'Classificação pendente',
+    PO_MISSING: 'Aguardando registo da P.O.',
+    PO_CORRECTION_PENDING: 'P.O. em correção',
+    PAYMENT_PENDING: 'Aguardando pagamento',
+    RECONCILIATION_PENDING: 'Reconciliação em curso',
+    RECEIPT_PENDING: 'Aguardando recebimento',
+    OPERATION_INVOICE_PENDING: 'Aguardando Fatura Final',
+    FISCAL_RECEIPT_PENDING: 'Aguardando Recibo Fiscal'
+};
+
+/** "Aguardando pagamento — Financeiro" — the §5 presentation of one blocking reason. */
+export function blockingReasonText(reason: CompletionBlockingReasonDto): string {
+    const label = COMPLETION_BLOCKING_LABELS[reason.code] ?? 'Obrigação pendente';
+    const owner = COMPLETION_OWNER_LABELS[reason.ownerCode] ?? 'Financeiro';
+    return `${label} — ${owner}`;
+}
+
+export type CompletionChecklistState = 'done' | 'pending' | 'not-applicable' | 'blocked';
+
+export interface CompletionChecklistItem {
+    key: string;
+    label: string;
+    state: CompletionChecklistState;
+}
+
+/**
+ * The §4 compact checklist of one group card. States mirror the projection booleans exactly:
+ * ✓ Concluído · ○ Pendente · — Não aplicável (no separate fiscal receipt owed) ·
+ * ⚠ Correção/Bloqueio (P.O. correction / unclassified).
+ */
+export function completionChecklist(group: CompletionReadinessGroupDto): CompletionChecklistItem[] {
+    const poState: CompletionChecklistState = !group.noBlockingCorrection
+        ? 'blocked'
+        : group.poSatisfied ? 'done' : 'pending';
+
+    return [
+        { key: 'po', label: 'P.O.', state: poState },
+        { key: 'payment', label: 'Pagamento', state: group.paymentSatisfied ? 'done' : 'pending' },
+        { key: 'receipt', label: 'Recebimento', state: group.receiptSatisfied ? 'done' : 'pending' },
+        {
+            key: 'invoice', label: 'Fatura Final',
+            state: !group.classified ? 'blocked' : group.operationInvoiceSatisfied ? 'done' : 'pending'
+        },
+        {
+            key: 'fiscalReceipt', label: 'Recibo Fiscal',
+            state: !group.fiscalReceiptRequired
+                ? 'not-applicable'
+                : group.fiscalReceiptSatisfied ? 'done' : 'pending'
+        }
+    ];
+}
+
+/**
+ * The Finance CTA gate, mirroring the backend prerequisites for UX only: required, not yet
+ * satisfied, and the ONLY remaining blocker is the fiscal receipt itself (the backend deriver
+ * refuses anything else with FISCAL_RECEIPT_LOCKED).
+ */
+export function canOfferFiscalReceiptUpload(group: CompletionReadinessGroupDto): boolean {
+    return group.fiscalReceiptRequired &&
+        !group.fiscalReceiptSatisfied &&
+        group.blockingReasons.length === 1 &&
+        group.blockingReasons[0].code === 'FISCAL_RECEIPT_PENDING';
+}
+
+/**
+ * Release 4 next-action guidance for the legacy status header of a request governed by the
+ * ACTIVE completion lifecycle (grouped + classified + CompletionEnabled=true). Derived from
+ * the completion-readiness read model — never a second rulebook: the projection booleans are
+ * read as-is, in lifecycle order (Fatura Final before Recibo Fiscal, matching the checklist).
+ * The legacy "Anexar recibo do fornecedor e finalizar pedido" wording never applies to these
+ * requests (v2.229.7).
+ */
+export function completionNextActionGuidance(
+    readiness: CompletionReadinessDto
+): { responsible: string; nextAction: string } {
+    const open = readiness.groups.filter(g => !isGroupPersistedCompleted(g));
+
+    if (open.some(g => !g.operationInvoiceSatisfied)) {
+        return { responsible: 'Financeiro', nextAction: 'Registrar / validar a Fatura Final' };
+    }
+    if (open.some(g => g.fiscalReceiptRequired && !g.fiscalReceiptSatisfied)) {
+        return { responsible: 'Financeiro', nextAction: 'Registrar o Recibo Fiscal' };
+    }
+    if (open.some(g => g.blockingReasons.length > 0)) {
+        // Unusual at WAITING_RECEIPT (e.g., a payment/receiving dimension reopened): defer to
+        // the ownership of the first blocking reason, rendered in "Conclusão do Pedido".
+        return {
+            responsible: 'Ver "Conclusão do Pedido"',
+            nextAction: 'Resolver os itens pendentes indicados na Conclusão do Pedido'
+        };
+    }
+    // Every requirement satisfied under the active lifecycle: completion is automatic.
+    return {
+        responsible: 'Sistema',
+        nextAction: 'Conclusão automática em andamento — nenhuma ação manual necessária'
+    };
+}
+
+/**
+ * Persisted lifecycle completion — the group actually transitioned to COMPLETED and (under
+ * the lifecycle) carries its CompletedAtUtc stamp. ONLY this may present "Grupo Concluído":
+ * `complete` on the same DTO is the readiness PROJECTION (all dimensions satisfied), which
+ * under CompletionEnabled=false is deliberately never persisted — presenting it as a
+ * completed group would fabricate a lifecycle event that never ran (v2.229.6).
+ */
+export function isGroupPersistedCompleted(group: CompletionReadinessGroupDto): boolean {
+    return (group.groupStatusCode ?? '').toUpperCase() === 'COMPLETED';
+}

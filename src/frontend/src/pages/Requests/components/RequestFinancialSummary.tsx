@@ -10,6 +10,7 @@
  */
 import React from 'react';
 import { CollapsibleSection } from '../../../components/ui/CollapsibleSection';
+import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { CurrencyDto } from '../../../types';
 
 export interface RequestFinancialSummaryProps {
@@ -74,17 +75,14 @@ export function RequestFinancialSummary({
 
                     <label className={labelClassName}>
                         Desconto Global ({currencies.find(c => c.id === Number(formData.currencyId))?.code || ''})
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                        <MoneyInput
                             value={formData.discountAmount}
-                            onChange={(e) => {
-                                setFormData(prev => ({ ...prev, discountAmount: e.target.value }));
+                            onChange={(v) => {
+                                setFormData(prev => ({ ...prev, discountAmount: v }));
                                 clearFieldError('DiscountAmount');
                             }}
                             disabled={!canEditHeader}
-                            placeholder="0.00"
+                            placeholder="0,00"
                             className={getInputClassName('DiscountAmount')}
                         />
                         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '4px', display: 'block' }}>

@@ -38,7 +38,7 @@ export const APPROVAL_DRAWER_FINAL_STEPS: TourStep[] = [
     {
         target: '[data-tour="approval-drawer-quotations"]',
         title: 'Cotações e Escolha do Fornecedor',
-        content: 'Confirme se as cotações foram analisadas corretamente e se a cotação vencedora faz sentido para o pedido.',
+        content: 'O Comprador envia as opções de cotação e o Aprovador de Área seleciona a vencedora de cada item. Aqui você revisa esse desfecho comercial — o vencedor de cada item e, quando útil, as demais opções enviadas (somente leitura). Se a escolha precisar mudar, devolva o lote para reajuste; a Aprovação Final não altera vencedores.',
         placement: 'top',
     },
     {

@@ -155,11 +155,13 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                 if (reqItem && !mappedIds.has(reqItem.id)) {
                     const itemIndex = draft.items.findIndex((i: any) => i === quoteItem);
                     if (itemIndex !== -1) {
-                        updateDraftItemFields(itemIndex, { 
-                            reconciliationStatus: 'MAPPED', 
+                        // ivaRates is mandatory (v2.226.2): this very call, missing it, was
+                        // silently recomputing auto-mapped lines' totals at 0% IVA.
+                        updateDraftItemFields(itemIndex, {
+                            reconciliationStatus: 'MAPPED',
                             mappedRequestLineItemId: reqItem.id,
                             isAutoSuggested: true
-                        });
+                        }, ivaRates);
                         mappedIds.add(reqItem.id);
                     }
                 }

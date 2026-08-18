@@ -59,7 +59,9 @@ public class RequestsExplorerDisplayStateTests
             Mock.Of<ILineItemFactory>(),
             Mock.Of<IRequestLineItemSubmissionValidator>(),
             Mock.Of<IQuotationItemEligibilityService>(),
-            Mock.Of<IBatchExtraItemDecisionService>());
+            Mock.Of<IBatchExtraItemDecisionService>(),
+            new AlplaPortal.Infrastructure.Services.Suppliers.InternalCompanyGuard(ctx),
+            Microsoft.Extensions.Options.Options.Create(new AlplaPortal.Domain.Configuration.PostPaymentCompletionOptions()));
 
         var claims = new List<Claim>
         {
@@ -281,11 +283,14 @@ public class RequestsExplorerDisplayStateTests
 
         string StateOf(string label) => timeline.Steps.First(s => s.Label == label).State;
 
-        Assert.Equal("completed", StateOf("P.O / Contratação"));
-        Assert.Equal("completed", StateOf("Agendamento"));
+        // v2.229.9: the duplicate "Agendamento" stage is gone; the tail is
+        // Recebimento / Execução → Documentação Fiscal → Concluído.
+        Assert.Equal("completed", StateOf("P.O. / Contratação"));
         Assert.Equal("current", StateOf("Pagamento"));
-        Assert.Equal("pending", StateOf("Recebimento"));
+        Assert.Equal("pending", StateOf("Recebimento / Execução"));
+        Assert.Equal("pending", StateOf("Documentação Fiscal"));
         Assert.Equal("pending", StateOf("Concluído"));
+        Assert.DoesNotContain(timeline.Steps, s => s.Label == "Agendamento");
     }
 
     [Fact]
@@ -325,8 +330,184 @@ public class RequestsExplorerDisplayStateTests
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var timeline = Assert.IsType<RequestTimelineDto>(ok.Value);
-        // GetPaymentStages()'s "Agendamento" = { APPROVED, PO_ISSUED } — untouched by the
-        // QUOTATION-only "Pagamento" stage change.
-        Assert.Equal("current", timeline.Steps.First(s => s.Label == "Agendamento").State);
+        // v2.229.9: the PAYMENT "Agendamento" stage became "P.O. / Contratação"
+        // ({ APPROVED, PO_PARTIALLY_UPLOADED, PO_ISSUED, WAITING_PO_CORRECTION }).
+        Assert.Equal("current", timeline.Steps.First(s => s.Label == "P.O. / Contratação").State);
+        Assert.DoesNotContain(timeline.Steps, s => s.Label == "Agendamento");
+    }
+
+    // ── v2.229.9: the 8-stage Release 4 timeline (Recebimento / Execução × Documentação Fiscal) ──
+
+    private static readonly string[] QuotationStageLabels =
+    {
+        "Rascunho", "Cotação", "Aprovações", "P.O. / Contratação",
+        "Pagamento", "Recebimento / Execução", "Documentação Fiscal", "Concluído"
+    };
+
+    private static readonly string[] PaymentStageLabels =
+    {
+        "Rascunho", "Aprovação Área", "Aprovação Final", "P.O. / Contratação",
+        "Pagamento", "Recebimento / Execução", "Documentação Fiscal", "Concluído"
+    };
+
+    private static RequestStatus AddStatus(ApplicationDbContext ctx, int id, string code)
+    {
+        var s = new RequestStatus { Id = id, Code = code, Name = "ZZTEST " + code, DisplayOrder = id };
+        ctx.RequestStatuses.Add(s);
+        return s;
+    }
+
+    private static async Task<RequestTimelineDto> TimelineOf(
+        ApplicationDbContext ctx, User actor, Request request)
+    {
+        var controller = BuildController(ctx, actor.Id);
+        var result = await controller.GetRequestTimeline(request.Id);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        return Assert.IsType<RequestTimelineDto>(ok.Value);
+    }
+
+    [Fact]
+    public async Task Timeline_A_quotation_has_the_eight_stage_order_with_no_duplicates()
+    {
+        var ctx = NewContext();
+        var (actor, quotationType, _, statuses) = SeedCommon(ctx);
+        var request = NewQuotationRequest(actor, quotationType, statuses["APPROVED"], "ZZTEST-TL-ORDER");
+        ctx.Requests.Add(request);
+        await ctx.SaveChangesAsync();
+
+        var timeline = await TimelineOf(ctx, actor, request);
+
+        Assert.Equal(QuotationStageLabels, timeline.Steps.Select(s => s.Label).ToArray());
+        // B: PO_ISSUED belongs to exactly ONE stage (the old duplicate "Agendamento" is gone).
+        Assert.Single(timeline.Steps, s => s.Label == "P.O. / Contratação");
+    }
+
+    [Fact]
+    public async Task Timeline_payment_flow_has_the_standardized_tail()
+    {
+        var ctx = NewContext();
+        var (actor, _, paymentType, statuses) = SeedCommon(ctx);
+        var request = NewQuotationRequest(actor, paymentType, statuses["APPROVED"], "ZZTEST-TL-PAY-TAIL");
+        ctx.Requests.Add(request);
+        await ctx.SaveChangesAsync();
+
+        var timeline = await TimelineOf(ctx, actor, request);
+
+        Assert.Equal(PaymentStageLabels, timeline.Steps.Select(s => s.Label).ToArray());
+    }
+
+    [Theory]
+    // C: operational receiving/execution states.
+    [InlineData("WAITING_SUPPLIER_DELIVERY", "Recebimento / Execução")]
+    [InlineData("IN_FOLLOWUP", "Recebimento / Execução")]
+    // D: fiscal-document states.
+    [InlineData("WAITING_RECEIPT", "Documentação Fiscal")]
+    [InlineData("WAITING_FISCAL_RECEIPT", "Documentação Fiscal")]
+    // E: reconciliation is a payment-family state.
+    [InlineData("WAITING_RECONCILIATION", "Pagamento")]
+    // F: PO-family states, including the previously unmapped ones.
+    [InlineData("WAITING_PO_CORRECTION", "P.O. / Contratação")]
+    [InlineData("PO_PARTIALLY_UPLOADED", "P.O. / Contratação")]
+    // G: terminal completion.
+    [InlineData("COMPLETED", "Concluído")]
+    public async Task Timeline_CtoH_release4_statuses_map_to_their_stage_and_are_never_unmapped(
+        string statusCode, string expectedStageLabel)
+    {
+        var ctx = NewContext();
+        var (actor, quotationType, _, _) = SeedCommon(ctx);
+        var status = AddStatus(ctx, 900, statusCode);
+        var request = NewQuotationRequest(actor, quotationType, status, "ZZTEST-TL-" + statusCode);
+        ctx.Requests.Add(request);
+        await ctx.SaveChangesAsync();
+
+        var timeline = await TimelineOf(ctx, actor, request);
+
+        // H: exactly one current stage — currentStageIndex is never -1 for these statuses.
+        var current = Assert.Single(timeline.Steps, s => s.State == "current");
+        Assert.Equal(expectedStageLabel, current.Label);
+    }
+
+    [Fact]
+    public async Task Timeline_I_operational_receipt_stamp_is_preferred_over_the_history_date()
+    {
+        var ctx = NewContext();
+        var (actor, quotationType, _, _) = SeedCommon(ctx);
+        var wsd = AddStatus(ctx, 901, "WAITING_SUPPLIER_DELIVERY");
+        var waitingReceipt = AddStatus(ctx, 902, "WAITING_RECEIPT");
+
+        var request = NewQuotationRequest(actor, quotationType, waitingReceipt, "ZZTEST-TL-STAMP");
+        ctx.Requests.Add(request);
+
+        var historyInstant = DateTime.UtcNow.AddDays(-2);
+        var stampInstant = DateTime.UtcNow.AddDays(-1);
+        AddHistory(ctx, request, wsd, historyInstant);
+        AddHistory(ctx, request, waitingReceipt, stampInstant.AddHours(1));
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            SupplierNameSnapshot = "ZZTEST Stamp Supplier",
+            Status = "WAITING_RECEIPT",
+            OperationalReceiptCompletedAtUtc = stampInstant,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-3),
+            CreatedByUserId = actor.Id
+        });
+        await ctx.SaveChangesAsync();
+
+        var timeline = await TimelineOf(ctx, actor, request);
+
+        var receiving = timeline.Steps.First(s => s.Label == "Recebimento / Execução");
+        Assert.Equal("completed", receiving.State);
+        // The persisted operational receipt (not the WSD history entry) is the stage instant.
+        Assert.Equal(stampInstant, receiving.CompletedAt!.Value.UtcDateTime, TimeSpan.FromSeconds(1));
+
+        var fiscal = timeline.Steps.First(s => s.Label == "Documentação Fiscal");
+        Assert.Equal("current", fiscal.State);
+    }
+
+    [Fact]
+    public async Task Timeline_I2_without_a_full_stamp_the_history_date_stands_and_nothing_is_fabricated()
+    {
+        var ctx = NewContext();
+        var (actor, quotationType, _, _) = SeedCommon(ctx);
+        var wsd = AddStatus(ctx, 903, "WAITING_SUPPLIER_DELIVERY");
+        var waitingReceipt = AddStatus(ctx, 904, "WAITING_RECEIPT");
+
+        var request = NewQuotationRequest(actor, quotationType, waitingReceipt, "ZZTEST-TL-NOSTAMP");
+        ctx.Requests.Add(request);
+        var historyInstant = DateTime.UtcNow.AddDays(-2);
+        AddHistory(ctx, request, wsd, historyInstant);
+        AddHistory(ctx, request, waitingReceipt, DateTime.UtcNow.AddDays(-1));
+        // Two groups, only ONE stamped: the furthest-behind rule refuses the preferred instant.
+        ctx.RequestPoGroups.AddRange(
+            new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "ZZTEST A", Status = "WAITING_RECEIPT", OperationalReceiptCompletedAtUtc = DateTime.UtcNow.AddDays(-1), CreatedAtUtc = DateTime.UtcNow.AddDays(-3), CreatedByUserId = actor.Id },
+            new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "ZZTEST B", Status = "WAITING_SUPPLIER_DELIVERY", OperationalReceiptCompletedAtUtc = null, CreatedAtUtc = DateTime.UtcNow.AddDays(-3), CreatedByUserId = actor.Id });
+        await ctx.SaveChangesAsync();
+
+        var timeline = await TimelineOf(ctx, actor, request);
+
+        var receiving = timeline.Steps.First(s => s.Label == "Recebimento / Execução");
+        Assert.Equal("completed", receiving.State); // WSD history exists
+        Assert.Equal(historyInstant, receiving.CompletedAt!.Value.UtcDateTime, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Timeline_J_endpoint_is_read_only()
+    {
+        var ctx = NewContext();
+        var (actor, quotationType, _, _) = SeedCommon(ctx);
+        var wsd = AddStatus(ctx, 905, "WAITING_SUPPLIER_DELIVERY");
+        var request = NewQuotationRequest(actor, quotationType, wsd, "ZZTEST-TL-READONLY");
+        ctx.Requests.Add(request);
+        AddHistory(ctx, request, wsd, DateTime.UtcNow.AddHours(-1));
+        await ctx.SaveChangesAsync();
+        var historyCountBefore = await ctx.RequestStatusHistories.CountAsync();
+        var statusBefore = request.StatusId;
+
+        await TimelineOf(ctx, actor, request);
+
+        Assert.Equal(historyCountBefore, await ctx.RequestStatusHistories.CountAsync());
+        var reloaded = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == request.Id);
+        Assert.Equal(statusBefore, reloaded.StatusId);
     }
 }

@@ -15,7 +15,14 @@ import { ShieldCheck, AlertCircle, AlertTriangle, UserPlus } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { DateInput } from '../../../components/DateInput';
+import { SourceDocumentTypeField } from '../../../components/requests/SourceDocumentTypeField';
+import { FieldMessageIcon } from '../../../components/ui/FieldMessageIcon';
+import {
+    ClassificationConflictState,
+    OcrDocumentClassification
+} from '../../../lib/documentClassificationDecision';
 import { LookupDto } from '../../../types';
+import { PlantMismatch } from '../../../lib/paymentSourceDocuments';
 
 export interface RequestGeneralDataSectionProps {
     // Form state & handlers
@@ -50,6 +57,31 @@ export interface RequestGeneralDataSectionProps {
     status: string | null;
     lineItemsCount: number;
 
+    /** Post-Payment Completion (Release 2). Absent/false renders the pre-feature layout. */
+    featureFlags?: { postPaymentCompletionEnabled: boolean; sourceDocumentTypeRequired: boolean };
+    /**
+     * The request keeps its supplier and document identity on its PaymentSourceDocuments.
+     *
+     * <p>`Request.SupplierId` and `Request.SourceDocumentType` remain as compatibility echoes of the
+     * first document, but showing them here as editable inputs asks the user to answer, at request
+     * level, a question each document already answers for itself — and then blocks submission on the
+     * unanswered copy. They are removed from this screen instead.</p>
+     */
+    isMultiDocumentPayment?: boolean;
+    /**
+     * Active documents whose plant differs from the request's routing plant.
+     *
+     * <p>Disclosure only. The two plants answer different questions and are allowed to differ; this
+     * exists so the split is visible here rather than discovered later, when the groups come out
+     * addressed to a plant the request header never mentioned.</p>
+     */
+    plantMismatches?: PlantMismatch[];
+
+    /** The reading this request's classification was judged against, restored from the saved data. */
+    documentClassification?: OcrDocumentClassification | null;
+    classificationConflict?: ClassificationConflictState;
+    setClassificationConflict?: React.Dispatch<React.SetStateAction<ClassificationConflictState>>;
+
     // Style helpers (Phase 4A: CSS Module class names)
     sectionTitleClassName: string;
     labelClassName: string;
@@ -61,9 +93,12 @@ export interface RequestGeneralDataSectionProps {
 export function RequestGeneralDataSection({
     formData, setFormData, handleChange, clearFieldError,
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
+    isMultiDocumentPayment = false,
+    plantMismatches = [],
     needLevels, departments, companies, plants,
+    documentClassification, classificationConflict, setClassificationConflict,
     canEditHeader, canEditSupplier, isQuotationPartiallyEditable, isQuotationStage, hasSavedQuotations,
-    requestTypeCode, requestNumber, status, lineItemsCount,
+    requestTypeCode, requestNumber, status, lineItemsCount, featureFlags,
     sectionTitleClassName, labelClassName, getInputClassName, renderFieldError, getFieldErrors
 }: RequestGeneralDataSectionProps) {
     return (
@@ -157,7 +192,11 @@ export function RequestGeneralDataSection({
                                 value={formData.requestTypeId}
                                 onChange={handleChange}
                                 className={getInputClassName('RequestTypeId')}
-                                disabled={!canEditHeader || isQuotationPartiallyEditable || status !== 'DRAFT'}
+                                // A request's type is decided when it is raised and never after:
+                                // it selects the entire workflow, the validation rules, the
+                                // grouping and the documents already attached beneath it. The
+                                // backend refuses a change regardless of what this control allows.
+                                disabled
                             >
                                 <option value={1}>COTAÇÃO (COM)</option>
                                 <option value={2}>PAGAMENTO (PAG)</option>
@@ -165,6 +204,19 @@ export function RequestGeneralDataSection({
                             {renderFieldError('RequestTypeId')}
                         </label>
 
+                        {isMultiDocumentPayment ? (
+                            <div className={labelClassName}>
+                                <span>Fornecedor</span>
+                                <p style={{
+                                    margin: '6px 0 0', fontSize: '0.78rem', lineHeight: 1.5,
+                                    color: 'var(--color-text-muted)'
+                                }}>
+                                    Definido por documento, em <strong>Documentos do pedido</strong>. Um
+                                    pedido pode pagar documentos de fornecedores diferentes, por isso não
+                                    há um fornecedor único ao nível do pedido.
+                                </p>
+                            </div>
+                        ) : (
                         <div className={labelClassName}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span>
@@ -230,12 +282,40 @@ export function RequestGeneralDataSection({
                             )}
                             {renderFieldError('SupplierId')}
                         </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                        {/* Post-Payment Completion (Release 2) — PAYMENT only, feature-gated.
+                            Editable while the request is a DRAFT; locked afterwards, because the
+                            Final Invoice obligation is derived from this choice at Final Approval. */}
+                        {featureFlags?.postPaymentCompletionEnabled && !isMultiDocumentPayment &&
+                         (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
+                            <SourceDocumentTypeField
+                                data-guide="request-source-document-type"
+                                context="PAYMENT_REQUEST"
+                                value={formData.sourceDocumentType || ''}
+                                onChange={(val) => {
+                                    setFormData(prev => ({ ...prev, sourceDocumentType: val }));
+                                    clearFieldError('sourceDocumentType');
+                                }}
+                                ocr={documentClassification ?? null}
+                                conflict={classificationConflict}
+                                onConflictChange={setClassificationConflict}
+                                readOnly={status !== 'DRAFT'}
+                                required={featureFlags?.sourceDocumentTypeRequired}
+                                error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
+                                labelClassName={labelClassName}
+                                inputClassName={getInputClassName('sourceDocumentType')}
+                            />
+                        )}
+
                         <label className={labelClassName}>
                             Grau de Necessidade <span style={{ color: 'red' }}>*</span>
-                            <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} className={getInputClassName('NeedLevelId')} disabled={!canEditHeader}>
+                            {/* Read-only once the document composition is saved: the review screen
+                                exists to correct the request header, and the urgency was decided
+                                when the request was raised. */}
+                            <select name="needLevelId" value={formData.needLevelId} onChange={handleChange} className={getInputClassName('NeedLevelId')} disabled={!canEditHeader || isMultiDocumentPayment}>
                                 <option value="">-- Selecione --</option>
                                 {needLevels.filter(nl => nl.isActive || Number(formData.needLevelId) === nl.id).map(nl => (
                                     <option key={nl.id} value={nl.id}>{nl.name}</option>
@@ -253,7 +333,28 @@ export function RequestGeneralDataSection({
                                     style={{ overflow: 'hidden' }}
                                 >
                                     <label className={labelClassName}>
-                                        {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                            {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'Data de vencimento' : 'Necessário até (Data limite)'} <span style={{ color: 'red' }}>*</span>
+                                            {/* Contextual, not corrective — see the same treatment on the create screen. */}
+                                            {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
+                                                <FieldMessageIcon
+                                                    severity="warning"
+                                                    tooltip={(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                        ? 'O documento está vencido. Clique para saber o que isso significa.'
+                                                        : 'A data selecionada está no passado. Clique para saber mais.'}
+                                                    title={(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                        ? 'O documento está vencido'
+                                                        : 'A data selecionada está no passado'}
+                                                    maxWidth={520}
+                                                >
+                                                    <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                                        {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2)
+                                                            ? 'A data de vencimento indicada já passou, pelo que o documento anexado está vencido. O pedido pode continuar, mas poderá ser necessário obter um documento atualizado junto do fornecedor, e o pagamento pode implicar juros ou penalizações. Verifique a data no documento antes de prosseguir.'
+                                                            : 'A data limite indicada já passou. O pedido pode continuar, mas o prazo pedido não é realizável — confirme se a data está correta.'}
+                                                    </p>
+                                                </FieldMessageIcon>
+                                            )}
+                                        </span>
                                         <DateInput
                                             required
                                             name="needByDateUtc"
@@ -266,12 +367,6 @@ export function RequestGeneralDataSection({
                                             disabled={!canEditHeader}
                                         />
                                         {renderFieldError('NeedByDateUtc')}
-                                        {!getFieldErrors('NeedByDateUtc') && formData.needByDateUtc && new Date(formData.needByDateUtc).getTime() < new Date().setHours(0, 0, 0, 0) && (
-                                            <div style={{ color: '#D97706', fontSize: '0.75rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                                                <AlertTriangle size={12} />
-                                                {(requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) ? 'O documento está vencido.' : 'A data selecionada está no passado.'}
-                                            </div>
-                                        )}
                                     </label>
                                 </motion.div>
                             )}
@@ -314,7 +409,42 @@ export function RequestGeneralDataSection({
                         </label>
 
                         <label className={labelClassName}>
-                            Planta <span style={{ color: 'red' }}>*</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                Planta <span style={{ color: 'red' }}>*</span>
+                                {plantMismatches.length > 0 && (
+                                    <FieldMessageIcon
+                                        severity="info"
+                                        tooltip="A planta do pedido difere da planta de um ou mais documentos."
+                                        ariaLabel="Ver a diferença entre a planta do pedido e as plantas dos documentos"
+                                        title="Plantas diferentes entre o pedido e os documentos"
+                                        maxWidth={560}
+                                    >
+                                        <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-main)' }}>
+                                            A planta de encaminhamento do pedido é diferente da planta de um
+                                            ou mais documentos. O fluxo de aprovação seguirá a planta do
+                                            pedido, enquanto o agrupamento e as obrigações seguirão as
+                                            plantas indicadas nos documentos.
+                                        </p>
+                                        <p style={{ margin: '10px 0 6px', fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                                            Documentos com planta diferente:
+                                        </p>
+                                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.8125rem', lineHeight: 1.6, color: 'var(--color-text-main)' }}>
+                                            {plantMismatches.map(m => (
+                                                <li key={m.sequenceNumber}>
+                                                    Documento {m.sequenceNumber}
+                                                    {m.documentNumber ? ` — ${m.documentNumber}` : ''}
+                                                    {m.plantName ? ` — ${m.plantName}` : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <p style={{ margin: '10px 0 0', fontSize: '0.8125rem', lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+                                            Não é um erro e não impede guardar nem submeter. Alterar a planta
+                                            do pedido não altera a planta dos documentos nem dos seus itens —
+                                            essas são corrigidas em cada documento.
+                                        </p>
+                                    </FieldMessageIcon>
+                                )}
+                            </span>
                             <select 
                                 name="plantId" 
                                 value={formData.plantId} 

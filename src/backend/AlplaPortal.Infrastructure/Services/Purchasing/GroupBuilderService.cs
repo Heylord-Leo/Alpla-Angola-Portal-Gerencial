@@ -1,22 +1,35 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Domain.Configuration;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AlplaPortal.Infrastructure.Services.Purchasing;
 
 public class GroupBuilderService : IGroupBuilderService
 {
     private readonly ApplicationDbContext _context;
+    private readonly PostPaymentCompletionOptions _postPaymentOptions;
 
-    public GroupBuilderService(ApplicationDbContext context)
+    /// <summary>
+    /// <paramref name="postPaymentOptions"/> is optional so existing call sites that only care
+    /// about grouping keep working; when omitted the Post-Payment classification is treated as
+    /// disabled, which is the safe default.
+    /// </summary>
+    public GroupBuilderService(
+        ApplicationDbContext context,
+        IOptions<PostPaymentCompletionOptions>? postPaymentOptions = null)
     {
         _context = context;
+        _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
     }
 
     public async Task BuildGroupsForRequestAsync(Guid requestId, CancellationToken cancellationToken = default)
@@ -103,6 +116,11 @@ public class GroupBuilderService : IGroupBuilderService
 
             // Calculate total for the group based on the awarded quotation items (not line item estimates)
             existingGroup.TotalAmount = group.Sum(x => x.QuotationItem!.LineTotal);
+
+            // Post-Payment Completion (Release 2): derive the group's Final Invoice obligation from
+            // the WINNING quotation(s) behind its awarded items. Losing quotations never contribute,
+            // because only items carrying SelectedQuotationItemId reach this point.
+            ApplyDocumentClassification(existingGroup, group.Select(x => x.QuotationItem!.Quotation));
         }
 
         // Clean up any empty groups (e.g. after a correction/return flow)
@@ -120,12 +138,28 @@ public class GroupBuilderService : IGroupBuilderService
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Per-item winner projection for batch group building. Candidate model: every
+    /// commercial value comes from the WINNING ApprovalBatchItemCandidate's frozen snapshot; the
+    /// live Quotation is carried only for document-identity classification. Legacy items (no
+    /// candidate rows) project from the live quotation item as before.</summary>
+    private sealed record BatchWinnerProjection(
+        RequestLineItem LineItem,
+        int? SupplierId,
+        string SupplierName,
+        string? SupplierNif,
+        string CurrencyCode,
+        decimal LineTotal,
+        Quotation Quotation);
+
     /// <inheritdoc />
     public async Task BuildGroupsForBatchAsync(Guid batchId, CancellationToken cancellationToken = default)
     {
         var batch = await _context.ApprovalBatches
             .Include(b => b.Items)
                 .ThenInclude(bi => bi.RequestLineItem)
+            .Include(b => b.Items)
+                .ThenInclude(bi => bi.Candidates)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
 
         if (batch == null)
@@ -137,27 +171,57 @@ public class GroupBuilderService : IGroupBuilderService
         if (request == null)
             return;
 
-        // Fetch the corresponding quotation items for all batch items
-        var quotationItemIds = batch.Items.Select(bi => bi.SelectedQuotationItemId).Distinct().ToList();
+        // Fetch the winning quotation items' quotations. Only WINNERS reach this point — losing
+        // candidates never contribute a group, a total, or an obligation. Items with no winner
+        // yet (pre-decision) are skipped defensively; area approval guarantees none remain.
+        var winnerQuotationItemIds = batch.Items
+            .Where(bi => bi.SelectedQuotationItemId.HasValue)
+            .Select(bi => bi.SelectedQuotationItemId!.Value)
+            .Distinct()
+            .ToList();
         var quotationItems = await _context.Set<QuotationItem>()
             .Include(qi => qi.Quotation)
                 .ThenInclude(q => q.Supplier)
-            .Where(qi => quotationItemIds.Contains(qi.Id))
+            .Where(qi => winnerQuotationItemIds.Contains(qi.Id))
             .ToDictionaryAsync(qi => qi.Id, cancellationToken);
 
-        // Group the batch items by Supplier, Currency, and Request's PaymentConditionCode (V1 legacy)
-        var groupedItems = batch.Items
-            .Select(bi => new
-            {
-                BatchItem = bi,
-                LineItem = bi.RequestLineItem,
-                QuotationItem = quotationItems.ContainsKey(bi.SelectedQuotationItemId) ? quotationItems[bi.SelectedQuotationItemId] : null
-            })
-            .Where(x => x.QuotationItem != null)
+        var projections = new List<BatchWinnerProjection>();
+        foreach (var bi in batch.Items)
+        {
+            if (!bi.SelectedQuotationItemId.HasValue || bi.RequestLineItem == null)
+                continue;
+            if (!quotationItems.TryGetValue(bi.SelectedQuotationItemId.Value, out var liveItem))
+                continue;
+
+            var winnerCandidate = bi.SelectedCandidateId.HasValue
+                ? bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId.Value)
+                : null;
+
+            projections.Add(winnerCandidate != null
+                ? new BatchWinnerProjection(
+                    bi.RequestLineItem,
+                    winnerCandidate.SupplierId,
+                    winnerCandidate.SupplierNameSnapshot,
+                    winnerCandidate.SupplierNifSnapshot,
+                    winnerCandidate.Currency,
+                    winnerCandidate.LineTotal,
+                    liveItem.Quotation)
+                : new BatchWinnerProjection(
+                    bi.RequestLineItem,
+                    liveItem.Quotation.SupplierId,
+                    liveItem.Quotation.Supplier?.Name ?? liveItem.Quotation.SupplierNameSnapshot,
+                    liveItem.Quotation.Supplier?.TaxId,
+                    liveItem.Quotation.Currency,
+                    liveItem.LineTotal,
+                    liveItem.Quotation));
+        }
+
+        // Group the winners by Supplier, Currency, and Request's PaymentConditionCode (V1 legacy)
+        var groupedItems = projections
             .GroupBy(x => new
             {
-                SupplierId = x.QuotationItem!.Quotation.SupplierId,
-                CurrencyCode = x.QuotationItem!.Quotation.Currency,
+                x.SupplierId,
+                CurrencyCode = x.CurrencyCode,
                 PaymentConditionCode = request.PaymentConditionCode // V1 legacy approach — same as BuildGroupsForRequestAsync
             })
             .ToList();
@@ -165,8 +229,7 @@ public class GroupBuilderService : IGroupBuilderService
         // For each group, create a new PO group scoped to this batch
         foreach (var group in groupedItems)
         {
-            var quotation = group.First().QuotationItem!.Quotation;
-            var supplier = quotation.Supplier;
+            var first = group.First();
 
             // Get currency ID if possible
             var currencyObj = await _context.Currencies.FirstOrDefaultAsync(c => c.Code == group.Key.CurrencyCode, cancellationToken);
@@ -176,19 +239,24 @@ public class GroupBuilderService : IGroupBuilderService
                 RequestId = batch.RequestId,
                 ApprovalBatchId = batchId,
                 SupplierId = group.Key.SupplierId,
-                SupplierNameSnapshot = supplier?.Name ?? quotation.SupplierNameSnapshot,
-                SupplierNifSnapshot = supplier?.TaxId,
+                SupplierNameSnapshot = first.SupplierName,
+                SupplierNifSnapshot = first.SupplierNif,
                 CurrencyId = currencyObj?.Id,
                 CurrencyCode = group.Key.CurrencyCode,
                 PaymentConditionCode = group.Key.PaymentConditionCode,
                 AdvancePaymentPercent = request.AdvancePaymentPercent,
                 Status = RequestConstants.PoGroupStatuses.Pending,
-                TotalAmount = group.Sum(x => x.QuotationItem!.LineTotal),
+                // Financial truth = the frozen submitted values (candidate snapshots); a live
+                // quotation edit after submission can never change the awarded total.
+                TotalAmount = group.Sum(x => x.LineTotal),
                 CreatedAtUtc = DateTime.UtcNow,
                 CreatedByUserId = request.CreatedByUserId // System action
             };
 
             _context.RequestPoGroups.Add(poGroup);
+
+            // Post-Payment Completion (Release 2) — see ApplyBillingClassification.
+            ApplyDocumentClassification(poGroup, group.Select(x => x.Quotation));
 
             // Assign the LineItems to this group
             foreach (var item in group)
@@ -198,5 +266,71 @@ public class GroupBuilderService : IGroupBuilderService
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Post-Payment Completion (Release 2 corrected): copies the document IDENTITY from the winning
+    /// quotations onto the PO group, then derives every obligation from it through
+    /// <see cref="DocumentObligationResolver"/>.
+    ///
+    /// <para>Identity and obligations are kept strictly separate: this method never decides what is
+    /// owed, it only records what the document is and asks the resolver. That is what makes a
+    /// Factura de Adiantamento (fiscal, yet still owing an operation invoice AND regularization) and
+    /// a Factura-Recibo (owing no separate receipt) representable at all.</para>
+    ///
+    /// <para>Losing quotations never contribute — only items carrying SelectedQuotationItemId reach
+    /// here. Two winning quotations that disagree resolve to UNCLASSIFIED rather than to a guess.</para>
+    ///
+    /// <para><b>Winner replacement.</b> Groups are rebuilt whenever the award changes, so this runs
+    /// again and recomputes the obligations. It refuses to touch a group that has already started its
+    /// post-payment lifecycle (an invoice uploaded, a fiscal receipt attached, or the operational
+    /// receipt confirmed): silently rewriting an obligation that documents already answer would
+    /// discard real evidence.</para>
+    /// </summary>
+    private void ApplyDocumentClassification(RequestPoGroup poGroup, IEnumerable<Quotation> winningQuotations)
+    {
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return;
+
+        // Release 3: coverage is cumulative, so "an invoice already arrived" is now the presence of
+        // any allocation rather than a single attachment pointer. A group that has started its
+        // post-payment lifecycle keeps the obligation the documents were judged against.
+        var hasPostPaymentActivity =
+            poGroup.Id != Guid.Empty &&
+            _context.OperationInvoiceAllocations.Any(a => a.RequestPoGroupId == poGroup.Id) ||
+            poGroup.FiscalReceiptAttachmentId != null ||
+            poGroup.OperationalReceiptCompletedAtUtc != null;
+
+        if (hasPostPaymentActivity)
+            return;
+
+        var distinctTypes = winningQuotations
+            .Select(q => RequestConstants.SourceDocumentTypes.Normalize(q.DocumentType))
+            .Distinct()
+            .ToList();
+
+        // Exactly one agreed classification is required; anything else stays unclassified.
+        var identity = distinctTypes.Count == 1 ? distinctTypes[0] : null;
+
+        var obligations = DocumentObligationResolver.Resolve(
+            identity, DocumentUsageContext.QuotationManagement);
+
+        poGroup.SourceDocumentType = identity;
+        poGroup.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
+        poGroup.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
+        poGroup.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
+        poGroup.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
+        poGroup.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
+
+        // Release 4 Phase 1c: the commercial baseline the operation invoices must eventually
+        // cover, captured ONCE from the awarded group total — the same convention as PAYMENT
+        // group creation (BuildPaymentPoGroupsAsync), never a second one. Both callers set
+        // TotalAmount before invoking this method, so the value is known and stable here.
+        // A non-null expected total is a snapshot and is never recalculated on rebuild.
+        if (obligations.RequiresOperationInvoice && poGroup.ExpectedOperationInvoiceTotal == null)
+        {
+            poGroup.ExpectedOperationInvoiceTotal = poGroup.TotalAmount;
+            poGroup.ExpectedOperationInvoiceCurrency = poGroup.CurrencyCode;
+        }
     }
 }

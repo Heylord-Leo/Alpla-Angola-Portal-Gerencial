@@ -27,6 +27,25 @@ interface CatalogItemReconciliationModalProps {
     onClose: () => void;
     classifiedItems: ClassifiedItem[];
     onResolveAll: (resolutions: ItemResolution[]) => void;
+    /**
+     * Optional item-index → source-document label, e.g. `"Documento 2 — FT-002"`.
+     *
+     * <p>Supplied only by a multi-document PAYMENT request, where the same modal now shows lines
+     * belonging to different invoices and "SmartNet Cisco Firewall" on its own no longer says which
+     * one. Absent — every other caller — the Documento column is not rendered at all and the table
+     * is exactly the one that shipped before.</p>
+     */
+    documentLabels?: Record<number, string>;
+    /**
+     * Optional: given a row index, the other unresolved rows that name the same catalogue item.
+     *
+     * <p>When supplied, resolving one row settles those too, with the same catalogue item and
+     * without a second call to create anything. Supplied only by multi-document PAYMENT, where one
+     * request can legitimately carry the same unknown line on two different invoices.</p>
+     *
+     * <p>Absent — every other caller — each row is answered on its own, exactly as before.</p>
+     */
+    equivalentIndexesOf?: (index: number) => number[];
 }
 
 type RowAction = 'idle' | 'linking' | 'creating';
@@ -66,7 +85,10 @@ export function CatalogItemReconciliationModal({
     onClose,
     classifiedItems,
     onResolveAll,
+    documentLabels,
+    equivalentIndexesOf,
 }: CatalogItemReconciliationModalProps) {
+    const showDocumentColumn = !!documentLabels;
     // Only show unresolved items
     const unresolvedItems = classifiedItems.filter(
         ci => ci.status === 'UNMATCHED' || ci.status === 'LOW_CONFIDENCE'
@@ -97,6 +119,31 @@ export function CatalogItemReconciliationModal({
         });
     }, []);
 
+    /**
+     * Settles the rows that name the same catalogue item as the one just answered.
+     *
+     * <p>Always as LINKED_MANUALLY, whatever the source row did: the catalogue item now exists, and
+     * an equivalent line is being pointed at it rather than creating anything a second time.</p>
+     */
+    const resolveEquivalents = useCallback((
+        itemIndex: number,
+        link: { catalogId: number; catalogCode: string | null; description?: string; defaultUnitId: number | null }
+    ) => {
+        if (!equivalentIndexesOf) return;
+
+        for (const otherIndex of equivalentIndexesOf(itemIndex)) {
+            updateRowState(otherIndex, {
+                action: 'linking',
+                linkedCatalogId: link.catalogId,
+                linkedCatalogCode: link.catalogCode,
+                linkedDescription: link.description,
+                defaultUnitId: link.defaultUnitId,
+                resolved: true,
+                resolvedStatus: 'LINKED_MANUALLY',
+            });
+        }
+    }, [equivalentIndexesOf, updateRowState]);
+
     const handleLink = useCallback((itemIndex: number, description: string, catalogId: number | null, catalogCode: string | null, defaultUnitId: number | null) => {
         if (catalogId) {
             updateRowState(itemIndex, {
@@ -108,8 +155,9 @@ export function CatalogItemReconciliationModal({
                 resolved: true,
                 resolvedStatus: 'LINKED_MANUALLY',
             });
+            resolveEquivalents(itemIndex, { catalogId, catalogCode, description, defaultUnitId });
         }
-    }, [updateRowState]);
+    }, [updateRowState, resolveEquivalents]);
 
     const handleCreateNew = useCallback(async (itemIndex: number, description: string) => {
         updateRowState(itemIndex, { isProcessing: true });
@@ -125,11 +173,19 @@ export function CatalogItemReconciliationModal({
                 resolvedStatus: 'CREATED_PENDING',
                 isProcessing: false,
             });
+            // The item now exists. Any equivalent row links to it — creating it again would put a
+            // second pending entry in the catalogue for a name it already has.
+            resolveEquivalents(itemIndex, {
+                catalogId: result.id,
+                catalogCode: result.code,
+                description: result.description,
+                defaultUnitId: result.defaultUnitId,
+            });
         } catch (err) {
             console.error('Failed to create catalog item via reconciliation:', err);
             updateRowState(itemIndex, { isProcessing: false });
         }
-    }, [updateRowState]);
+    }, [updateRowState, resolveEquivalents]);
 
     const handleSaveAll = useCallback(() => {
         const resolutions: ItemResolution[] = [];
@@ -238,6 +294,9 @@ export function CatalogItemReconciliationModal({
                         <thead>
                             <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
                                 <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 800, fontSize: '0.6875rem', textTransform: 'uppercase', color: 'var(--color-text-muted, #64748b)', letterSpacing: '0.05em' }}>#</th>
+                                {showDocumentColumn && (
+                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 800, fontSize: '0.6875rem', textTransform: 'uppercase', color: 'var(--color-text-muted, #64748b)', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Documento</th>
+                                )}
                                 <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 800, fontSize: '0.6875rem', textTransform: 'uppercase', color: 'var(--color-text-muted, #64748b)', letterSpacing: '0.05em' }}>Descrição do Item</th>
                                 <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 800, fontSize: '0.6875rem', textTransform: 'uppercase', color: 'var(--color-text-muted, #64748b)', letterSpacing: '0.05em' }}>Estado</th>
                                 <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 800, fontSize: '0.6875rem', textTransform: 'uppercase', color: 'var(--color-text-muted, #64748b)', letterSpacing: '0.05em' }}>Ações</th>
@@ -254,6 +313,17 @@ export function CatalogItemReconciliationModal({
                                         <td style={{ padding: '14px 8px', fontWeight: 700, color: '#94A3B8' }}>
                                             {ci.index + 1}
                                         </td>
+                                        {showDocumentColumn && (
+                                            <td style={{ padding: '14px 8px', verticalAlign: 'top' }}>
+                                                <span style={{
+                                                    display: 'inline-block', padding: '3px 8px', borderRadius: '4px',
+                                                    backgroundColor: '#F1F5F9', color: '#334155',
+                                                    fontSize: '0.6875rem', fontWeight: 700, whiteSpace: 'nowrap',
+                                                }}>
+                                                    {documentLabels?.[ci.index] ?? '—'}
+                                                </span>
+                                            </td>
+                                        )}
                                         <td style={{ padding: '14px 8px' }}>
                                             <div style={{ fontWeight: 600, color: 'var(--color-text-primary, #1e293b)', marginBottom: '4px' }}>
                                                 {ci.item.description}

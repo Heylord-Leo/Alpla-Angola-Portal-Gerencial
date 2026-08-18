@@ -72,6 +72,21 @@ public class RequestDetailsDto
     public decimal DiscountAmount { get; set; }
     public string? CurrencyCode { get; set; }
 
+    /// <summary>
+    /// Post-Payment Completion (Release 2): billing document that originated a PAYMENT request —
+    /// PROFORMA or FINAL_INVOICE. Null on QUOTATION requests (their obligation comes from the
+    /// winning quotation) and on requests created before the feature was activated.
+    /// </summary>
+    public string? SourceDocumentType { get; set; }
+
+    // Returned so reopening a draft restores the reading the classification was judged against —
+    // without it, the edit screen would show no suggestion and could not detect a contradiction.
+    public string? SourceDocumentTypeOcrSuggestion { get; set; }
+    public decimal? SourceDocumentTypeOcrConfidence { get; set; }
+    public string? SourceDocumentTypeEvidenceJson { get; set; }
+    public bool ClassificationConflictAcknowledged { get; set; }
+    public string? ClassificationJustification { get; set; }
+
     // B2P: Payment Condition
     public string? PaymentConditionCode { get; set; }
     public decimal? AdvancePaymentPercent { get; set; }
@@ -135,7 +150,26 @@ public class RequestApprovalBatchItemDto
 {
     public Guid Id { get; set; }
     public Guid RequestLineItemId { get; set; }
-    public Guid SelectedQuotationItemId { get; set; }
+
+    /// <summary>Winning quotation item. Candidate model: null until the Area decision.
+    /// Legacy batch items (no candidate rows): the historical buyer-selected winner.</summary>
+    public Guid? SelectedQuotationItemId { get; set; }
+
+    // ── Candidate model (Final Approval reads winner + losing candidates read-only) ──
+    public Guid? SelectedCandidateId { get; set; }
+    public Guid? WinnerSelectedByUserId { get; set; }
+    /// <summary>Display name of the Area Approver who selected the winner — enriched post-query
+    /// (the UI must never show the raw user id).</summary>
+    public string? WinnerSelectedByUserName { get; set; }
+    public DateTime? WinnerSelectedAtUtc { get; set; }
+    public string? WinnerSelectionJustification { get; set; }
+
+    /// <summary>True for historical items decided by the Buyer under the pre-candidate model
+    /// (zero candidate rows, winner already populated).</summary>
+    public bool IsLegacyBuyerSelectedWinner { get; set; }
+
+    /// <summary>Frozen candidate snapshots (empty for legacy items — never synthesized).</summary>
+    public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
 }
 
 public class RequestLineItemDto
@@ -173,6 +207,18 @@ public class RequestLineItemDto
 
     public int? PlantId { get; set; }
     public string? PlantName { get; set; }
+
+    /// <summary>
+    /// The source document this item belongs to, on a multi-document PAYMENT request.
+    ///
+    /// <para>Null for quotations and for the legacy single-document path. Exposed so the review
+    /// screen can show which document an item is being paid against — without it, a consolidated
+    /// item list is a set of lines with no stated owner.</para>
+    /// </summary>
+    public Guid? PaymentSourceDocumentId { get; set; }
+
+    /// <summary>Sequence of the owning document, so the UI can say "Documento 2" without a lookup.</summary>
+    public int? PaymentSourceDocumentSequence { get; set; }
 
     public int? CostCenterId { get; set; }
     public string? CostCenterName { get; set; }

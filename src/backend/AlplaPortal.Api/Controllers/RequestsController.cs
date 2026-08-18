@@ -26,7 +26,10 @@ using AlplaPortal.Application.DTOs.Integration;
 using AlplaPortal.Application.Interfaces.Integration;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.Approvals;
+using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Application.Validation;
+using AlplaPortal.Domain.Configuration;
+using Microsoft.Extensions.Options;
 
 
 [Authorize]
@@ -47,6 +50,9 @@ public class RequestsController : BaseController
     private readonly IRequestLineItemSubmissionValidator _lineItemValidator;
     private readonly IQuotationItemEligibilityService _quotationEligibility;
     private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
+    private readonly PostPaymentCompletionOptions _postPaymentOptions;
+
+    private readonly IInternalCompanyGuard _internalCompanies;
 
     public RequestsController(
         ApplicationDbContext context,
@@ -62,8 +68,12 @@ public class RequestsController : BaseController
         ILineItemFactory lineItemFactory,
         IRequestLineItemSubmissionValidator lineItemValidator,
         IQuotationItemEligibilityService quotationEligibility,
-        IBatchExtraItemDecisionService extraItemDecisionService) : base(context)
+        IBatchExtraItemDecisionService extraItemDecisionService,
+        IInternalCompanyGuard internalCompanies,
+        IOptions<PostPaymentCompletionOptions> postPaymentOptions) : base(context)
     {
+        _internalCompanies = internalCompanies;
+        _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
         _extractionService = extractionService;
         _adminLog = adminLog;
         _logger = logger;
@@ -134,7 +144,7 @@ public class RequestsController : BaseController
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection),
+                AwaitingPo = g.Count(r => r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
                 InAttention = g.Count(r => !terminalStates.Contains(r.Status!.Code) && r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value < in4Days)
             })
@@ -217,7 +227,7 @@ public class RequestsController : BaseController
                 WaitingAreaApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval),
                 WaitingFinalApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
                 InAdjustment = g.Count(r => r.Status!.Code == RequestConstants.Statuses.AreaAdjustment || r.Status!.Code == RequestConstants.Statuses.FinalAdjustment),
-                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted) && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 PaymentCompleted = g.Count(r => r.Status!.Code == RequestConstants.Statuses.PaymentCompleted || r.Status!.Code == RequestConstants.Statuses.Paid),
                 WaitingReceipt = g.Count(r => r.Status!.Code == "WAITING_RECEIPT" || r.Status!.Code == RequestConstants.Statuses.InFollowup),
@@ -712,7 +722,7 @@ public class RequestsController : BaseController
                 Total = g.Count(),
                 WaitingQuotation = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingQuotation && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingApproval = g.Count(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter),
-                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection) && r.RequestType!.Code == RequestConstants.Types.Quotation),
+                AwaitingPo = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved || r.Status!.Code == RequestConstants.Statuses.QuotationCompleted || r.Status!.Code == RequestConstants.Statuses.PoRequested || r.Status!.Code == RequestConstants.Statuses.WaitingPoCorrection) && r.RequestType!.Code == RequestConstants.Types.Quotation),
                 AwaitingPayment = g.Count(r => (r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled),
                 Completed = g.Count(r => r.Status!.Code == "COMPLETED") // COMPLETED status not yet in constants
             })
@@ -1116,6 +1126,12 @@ public class RequestsController : BaseController
                 CurrencyCode = r.Currency != null ? r.Currency.Code : null,
 
                 // B2P: Payment Condition
+                SourceDocumentType = r.SourceDocumentType,
+                SourceDocumentTypeOcrSuggestion = r.SourceDocumentTypeOcrSuggestion,
+                SourceDocumentTypeOcrConfidence = r.SourceDocumentTypeOcrConfidence,
+                SourceDocumentTypeEvidenceJson = r.SourceDocumentTypeEvidenceJson,
+                ClassificationConflictAcknowledged = r.ClassificationConflictAcknowledged,
+                ClassificationJustification = r.ClassificationJustification,
                 PaymentConditionCode = r.PaymentConditionCode,
                 AdvancePaymentPercent = r.AdvancePaymentPercent,
                 PaymentConditionSource = r.PaymentConditionSource,
@@ -1146,6 +1162,10 @@ public class RequestsController : BaseController
                     DivergenceNotes = li.DivergenceNotes,
                     PlantId = li.PlantId,
                     PlantName = li.Plant != null ? li.Plant.Name : null,
+                    PaymentSourceDocumentId = li.PaymentSourceDocumentId,
+                    PaymentSourceDocumentSequence = li.PaymentSourceDocument != null
+                        ? li.PaymentSourceDocument.SequenceNumber
+                        : (int?)null,
                     CostCenterId = li.CostCenterId,
                     CostCenterName = li.CostCenter != null ? li.CostCenter.Name : null,
                     CostCenterCode = li.CostCenter != null ? li.CostCenter.Code : null,
@@ -1232,6 +1252,12 @@ public class RequestsController : BaseController
                     SupplierPrimaveraCode = q.Supplier != null ? q.Supplier.PrimaveraCode : null,
                     SupplierRegistrationStatus = q.Supplier != null ? q.Supplier.RegistrationStatus : null,
                     DocumentNumber = q.DocumentNumber,
+                    DocumentType = q.DocumentType,
+                    DocumentTypeOcrSuggestion = q.DocumentTypeOcrSuggestion,
+                    DocumentTypeOcrConfidence = q.DocumentTypeOcrConfidence,
+                    DocumentTypeEvidenceJson = q.DocumentTypeEvidenceJson,
+                    ClassificationConflictAcknowledged = q.ClassificationConflictAcknowledged,
+                    ClassificationJustification = q.ClassificationJustification,
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
@@ -1295,7 +1321,39 @@ public class RequestsController : BaseController
                     {
                         Id = bi.Id,
                         RequestLineItemId = bi.RequestLineItemId,
-                        SelectedQuotationItemId = bi.SelectedQuotationItemId
+                        SelectedQuotationItemId = bi.SelectedQuotationItemId,
+                        SelectedCandidateId = bi.SelectedCandidateId,
+                        WinnerSelectedByUserId = bi.WinnerSelectedByUserId,
+                        WinnerSelectedAtUtc = bi.WinnerSelectedAtUtc,
+                        WinnerSelectionJustification = bi.WinnerSelectionJustification,
+                        IsLegacyBuyerSelectedWinner = !bi.Candidates.Any() && bi.SelectedQuotationItemId != null,
+                        Candidates = bi.Candidates.Select(c => new ApprovalBatchItemCandidateDto
+                        {
+                            Id = c.Id,
+                            QuotationItemId = c.QuotationItemId,
+                            QuotationId = c.QuotationId,
+                            SupplierId = c.SupplierId,
+                            SupplierName = c.SupplierNameSnapshot,
+                            SupplierNif = c.SupplierNifSnapshot,
+                            Description = c.QuotedDescription,
+                            Quantity = c.QuotedQuantity,
+                            UnitText = c.UnitTextSnapshot,
+                            UnitPrice = c.UnitPrice,
+                            DiscountAmount = c.DiscountAmount,
+                            IvaRatePercent = c.IvaRatePercent,
+                            IvaAmount = c.IvaAmount,
+                            GrossSubtotal = c.GrossSubtotal,
+                            LineTotal = c.LineTotal,
+                            Currency = c.Currency,
+                            QuotationDocumentNumber = c.QuotationDocumentNumber,
+                            QuotationDocumentDate = c.QuotationDocumentDate,
+                            HasReconciliationWarnings = c.HasReconciliationWarnings,
+                            ReconciliationStatus = c.ReconciliationStatusSnapshot,
+                            ReconciliationJustification = c.ReconciliationJustificationSnapshot,
+                            LineAdjustmentJustification = c.LineAdjustmentJustificationSnapshot,
+                            BuyerNote = c.BuyerNote,
+                            IsWinner = bi.SelectedCandidateId != null && c.Id == bi.SelectedCandidateId
+                        }).ToList()
                     }).ToList()
                 }).OrderByDescending(b => b.CreatedAtUtc).ToList()
             })
@@ -1345,7 +1403,8 @@ public class RequestsController : BaseController
         if (request.ApprovalBatches.Any())
         {
             var batchUserIds = request.ApprovalBatches
-                .SelectMany(b => new[] { (Guid?)b.CreatedByUserId, b.UpdatedByUserId })
+                .SelectMany(b => new[] { (Guid?)b.CreatedByUserId, b.UpdatedByUserId }
+                    .Concat(b.Items.Select(i => i.WinnerSelectedByUserId)))
                 .Where(uid => uid.HasValue)
                 .Select(uid => uid!.Value)
                 .Distinct()
@@ -1361,17 +1420,29 @@ public class RequestsController : BaseController
                     batchDto.CreatedByUserName = createdName;
                 if (batchDto.UpdatedByUserId.HasValue && batchUserNamesById.TryGetValue(batchDto.UpdatedByUserId.Value, out var updatedName))
                     batchDto.UpdatedByUserName = updatedName;
+                foreach (var itemDto in batchDto.Items)
+                {
+                    if (itemDto.WinnerSelectedByUserId.HasValue && batchUserNamesById.TryGetValue(itemDto.WinnerSelectedByUserId.Value, out var winnerByName))
+                        itemDto.WinnerSelectedByUserName = winnerByName;
+                }
             }
 
             // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED
             // lines, unresolved legacy extras) — read-only, computed from the quotation(s) that
-            // contributed a winner to that specific batch. See IBatchExtraItemDecisionService.
+            // contributed a CANDIDATE (or, for legacy batches, a winner) to that specific batch.
+            // See IBatchExtraItemDecisionService.
             foreach (var batchDto in request.ApprovalBatches)
             {
-                var winningQuotationItemIds = batchDto.Items.Select(i => i.SelectedQuotationItemId).ToList();
-                if (winningQuotationItemIds.Count == 0) continue;
+                var contributingQuotationItemIds = batchDto.Items
+                    .SelectMany(i => i.Candidates.Select(c => c.QuotationItemId))
+                    .Concat(batchDto.Items
+                        .Where(i => i.SelectedQuotationItemId.HasValue)
+                        .Select(i => i.SelectedQuotationItemId!.Value))
+                    .Distinct()
+                    .ToList();
+                if (contributingQuotationItemIds.Count == 0) continue;
 
-                var informational = await _extraItemDecisionService.GetInformationalLinesAsync(batchDto.Id, winningQuotationItemIds);
+                var informational = await _extraItemDecisionService.GetInformationalLinesAsync(batchDto.Id, contributingQuotationItemIds);
                 batchDto.ExcludedExtraItems = informational.ExcludedExtraItems;
                 batchDto.IgnoredLines = informational.IgnoredLines;
                 batchDto.UnresolvedLegacyLines = informational.UnresolvedLegacyLines;
@@ -1600,6 +1671,7 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
+            .Include(r => r.PoGroups)
             .Include(r => r.StatusHistories)
                 .ThenInclude(sh => sh.NewStatus)
             .FirstOrDefaultAsync(r => r.Id == id);
@@ -1733,17 +1805,36 @@ public class RequestsController : BaseController
             result.Steps.Add(step);
         }
 
-        // Post-process: Remove "Agendamento" step if the request completely bypassed it
-        // (i.e. Finance paid directly without ever selecting a scheduling date).
-        bool passedThroughScheduling = history.Any(h => h.NewStatus.Code == "PAYMENT_SCHEDULED") || currentStatusCode == "PAYMENT_SCHEDULED";
-        bool isPastSchedulingStage = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "COMPLETED" }.Contains(currentStatusCode);
+        // ── v2.229.9: preferred stage-6 instant — the persisted operational receipt ──
+        // When every relevant (non-cancelled) group carries OperationalReceiptCompletedAtUtc,
+        // the LAST stamp is the factual completion of "Recebimento / Execução" (the same
+        // furthest-behind philosophy as everywhere else). Never fabricated: without a stamp on
+        // every group the status-history date (or pending state) stands. This also completes
+        // the stage for requests that reached fiscal documentation through a path that wrote
+        // no WSD/IN_FOLLOWUP history row, because the stamp itself proves the receiving.
+        var relevantGroups = request.PoGroups
+            .Where(g => !string.Equals(g.Status, RequestConstants.PoGroupStatuses.Cancelled,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        DateTime? operationalReceiptCompletedAtUtc =
+            relevantGroups.Count > 0 && relevantGroups.All(g => g.OperationalReceiptCompletedAtUtc != null)
+                ? relevantGroups.Max(g => g.OperationalReceiptCompletedAtUtc)
+                : null;
 
-        if (isPastSchedulingStage && !passedThroughScheduling)
+        if (operationalReceiptCompletedAtUtc.HasValue && !isRejectionPath)
         {
-            var agendamentoStep = result.Steps.FirstOrDefault(s => s.Label == "Agendamento");
-            if (agendamentoStep != null)
+            var receivingIndex = stages.FindIndex(s => s.Label == ReceivingStageLabel);
+            var overallCurrentIndex = stages.FindIndex(s => s.StatusCodes.Contains(currentStatusCode));
+            var receivingStep = result.Steps.FirstOrDefault(s => s.Label == ReceivingStageLabel);
+            var stageIsBehindCurrent = receivingIndex >= 0 &&
+                (overallCurrentIndex > receivingIndex || (isTerminal && currentStatusCode == "COMPLETED"));
+
+            if (receivingStep != null &&
+                (receivingStep.State == "completed" ||
+                 (receivingStep.State == "pending" && stageIsBehindCurrent)))
             {
-                result.Steps.Remove(agendamentoStep);
+                receivingStep.State = "completed";
+                receivingStep.CompletedAt = AsUtcOffset(operationalReceiptCompletedAtUtc);
             }
         }
 
@@ -1847,6 +1938,18 @@ public class RequestsController : BaseController
             }
         }
 
+        // 2.2. Post-Payment Completion (Release 2 corrected) — identity of the attached document.
+        // Format-checked here; the mandatory rule lives at submission (a draft may be saved
+        // without it). Only PAYMENT carries it on the Request: a QUOTATION derives the obligation
+        // from its winning Quotation.DocumentType instead, so the field stays null there.
+        string? SourceDocumentType = null;
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            SourceDocumentType = RequestConstants.SourceDocumentTypes.Normalize(dto.SourceDocumentType);
+            var problem = ValidatePaymentSourceDocumentType(SourceDocumentType);
+            if (problem != null) return BadRequest(problem);
+        }
+
         var initialStatusCode = requestTypeEntity.Code == "QUOTATION" ? "WAITING_QUOTATION" : "DRAFT";
         var initialStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == initialStatusCode);
         if (initialStatus == null) return StatusCode(500, $"{initialStatusCode} status code not found in database lookup.");
@@ -1941,6 +2044,7 @@ public class RequestsController : BaseController
             NeedByDateUtc = dto.NeedByDateUtc,
             
             SupplierId = dto.SupplierId,
+            SourceDocumentType = SourceDocumentType, // PAYMENT only; null until explicitly chosen
             BuyerId = dto.BuyerId, // Let it be null
             // Phase B: AreaApproverId is no longer nominated — it stays null until an
             // area manager actually decides (routing via DepartmentManagers at submit).
@@ -1954,6 +2058,28 @@ public class RequestsController : BaseController
             SubmittedAtUtc = requestTypeEntity.Code == "QUOTATION" ? DateTime.UtcNow : null,
             IsCancelled = false
         };
+
+        // 4.0. Classification evidence — what was proposed, whether the requester overrode it, why.
+        // Previously only the update path persisted this, so a request created in one pass with a
+        // contradicted classification kept the choice and lost the reasoning behind it.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            // Stamped once, at creation, from the feature state at that moment. This is what lets
+            // the UI tell "historical request, no documents by definition" apart from "new draft
+            // whose first document is not persisted yet" — two states a row count cannot separate.
+            request.UsesMultiSourceDocuments =
+                !PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions);
+
+            request.SourceDocumentTypeSource = string.IsNullOrWhiteSpace(dto.SourceDocumentTypeSource)
+                ? null : dto.SourceDocumentTypeSource.Trim().ToUpperInvariant();
+            request.SourceDocumentTypeOcrSuggestion =
+                RequestConstants.SourceDocumentTypes.Normalize(dto.SourceDocumentTypeOcrSuggestion);
+            request.SourceDocumentTypeOcrConfidence = dto.SourceDocumentTypeOcrConfidence;
+            request.SourceDocumentTypeEvidenceJson = dto.SourceDocumentTypeEvidenceJson;
+            request.ClassificationConflictAcknowledged = dto.ClassificationConflictAcknowledged ?? false;
+            request.ClassificationJustification = string.IsNullOrWhiteSpace(dto.ClassificationJustification)
+                ? null : dto.ClassificationJustification.Trim();
+        }
 
         // 4.1. Bulk add Line Items if provided (Copy flow)
         if (dto.LineItems != null && dto.LineItems.Any())
@@ -2028,16 +2154,40 @@ public class RequestsController : BaseController
 
         _context.RequestStatusHistories.Add(history);
 
+        // 4.2. A classification that contradicts the reading is admissible, but never silent.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment)
+        {
+            var overrideProblem = await StageDocumentClassificationOverrideAsync(
+                new DocumentClassificationOverrideRequest
+                {
+                    Context = RequestConstants.DocumentClassificationContexts.PaymentRequest,
+                    ScopeId = request.Id,
+                    AttachmentId = dto.SourceDocumentAttachmentId,
+                    SuggestedType = request.SourceDocumentTypeOcrSuggestion,
+                    Confidence = request.SourceDocumentTypeOcrConfidence,
+                    TitleFound = dto.SourceDocumentTypeTitleFound,
+                    EvidenceJson = request.SourceDocumentTypeEvidenceJson,
+                    ConflictingEvidenceJson = dto.SourceDocumentTypeConflictingEvidenceJson,
+                    SuggestionSource = dto.SourceDocumentTypeSuggestionSource,
+                    SelectedType = request.SourceDocumentType,
+                    Acknowledged = request.ClassificationConflictAcknowledged,
+                    Justification = request.ClassificationJustification
+                },
+                request.Id, quotationId: null, actorId, initialStatus.Id);
+
+            if (overrideProblem != null) return BadRequest(overrideProblem);
+        }
+
         // 5. Persist transaction
         try
         {
-            await _context.SaveChangesAsync();
+            await SaveChangesWithClassificationAuditRetryAsync();
         }
         catch (DbUpdateException ex)
         {
-            return StatusCode(500, new { 
-                Message = "An error occurred while saving the entity changes.", 
-                Details = ex.InnerException?.Message ?? ex.Message 
+            return StatusCode(500, new {
+                Message = "An error occurred while saving the entity changes.",
+                Details = ex.InnerException?.Message ?? ex.Message
             });
         }
 
@@ -2294,10 +2444,82 @@ public class RequestsController : BaseController
             TrackField("EstimatedTotalAmount", "Valor Bruto Estimado", request.EstimatedTotalAmount.ToString("F2"), dto.EstimatedTotalAmount.ToString("F2"));
             request.EstimatedTotalAmount = dto.EstimatedTotalAmount; changedFields.Add("Valor Bruto Estimado"); changed = true;
         }
+        // Post-Payment Completion (Release 2 corrected): the document identity is editable only
+        // while the request is still a DRAFT. Once submitted it is locked — every post-payment
+        // obligation is derived from it.
+        if (requestTypeEntity.Code == RequestConstants.Types.Payment && statusCode == "DRAFT")
+        {
+            var newSourceDocumentType = RequestConstants.SourceDocumentTypes.Normalize(dto.SourceDocumentType);
+            var problem = ValidatePaymentSourceDocumentType(newSourceDocumentType);
+            if (problem != null) return BadRequest(problem);
+
+            if (request.SourceDocumentType != newSourceDocumentType)
+            {
+                TrackField("SourceDocumentType", "Tipo de documento anexado",
+                    RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType),
+                    RequestConstants.SourceDocumentTypes.DisplayName(newSourceDocumentType));
+                request.SourceDocumentType = newSourceDocumentType;
+                changedFields.Add("Tipo de documento anexado"); changed = true;
+            }
+
+            // Classification evidence: what OCR proposed, whether the user overrode it, and why.
+            request.SourceDocumentTypeSource = string.IsNullOrWhiteSpace(dto.SourceDocumentTypeSource)
+                ? request.SourceDocumentTypeSource : dto.SourceDocumentTypeSource.Trim().ToUpperInvariant();
+            request.SourceDocumentTypeOcrSuggestion =
+                RequestConstants.SourceDocumentTypes.Normalize(dto.SourceDocumentTypeOcrSuggestion)
+                ?? request.SourceDocumentTypeOcrSuggestion;
+            request.SourceDocumentTypeOcrConfidence =
+                dto.SourceDocumentTypeOcrConfidence ?? request.SourceDocumentTypeOcrConfidence;
+            request.SourceDocumentTypeEvidenceJson =
+                dto.SourceDocumentTypeEvidenceJson ?? request.SourceDocumentTypeEvidenceJson;
+            request.ClassificationConflictAcknowledged =
+                dto.ClassificationConflictAcknowledged ?? request.ClassificationConflictAcknowledged;
+            request.ClassificationJustification =
+                string.IsNullOrWhiteSpace(dto.ClassificationJustification)
+                    ? request.ClassificationJustification : dto.ClassificationJustification.Trim();
+
+            // A selection that contradicts the reading is admissible, but never silent.
+            var overrideProblem = await StageDocumentClassificationOverrideAsync(
+                new DocumentClassificationOverrideRequest
+                {
+                    Context = RequestConstants.DocumentClassificationContexts.PaymentRequest,
+                    ScopeId = request.Id,
+                    AttachmentId = dto.SourceDocumentAttachmentId,
+                    SuggestedType = request.SourceDocumentTypeOcrSuggestion,
+                    Confidence = request.SourceDocumentTypeOcrConfidence,
+                    TitleFound = dto.SourceDocumentTypeTitleFound,
+                    EvidenceJson = request.SourceDocumentTypeEvidenceJson,
+                    ConflictingEvidenceJson = dto.SourceDocumentTypeConflictingEvidenceJson,
+                    SuggestionSource = dto.SourceDocumentTypeSuggestionSource,
+                    SelectedType = request.SourceDocumentType,
+                    Acknowledged = request.ClassificationConflictAcknowledged,
+                    Justification = request.ClassificationJustification
+                },
+                request.Id, quotationId: null, actorId, request.StatusId);
+
+            if (overrideProblem != null) return BadRequest(overrideProblem);
+        }
+
         if (request.DiscountAmount != dto.DiscountAmount)
         {
             TrackField("DiscountAmount", "Desconto Global", request.DiscountAmount.ToString("F2"), dto.DiscountAmount.ToString("F2"));
             request.DiscountAmount = dto.DiscountAmount; changedFields.Add("Desconto Global"); changed = true;
+        }
+
+        // --- The request type is immutable after creation ---
+        // It selects the whole workflow: which validations run, how items are grouped, what
+        // documents may hang beneath it and who approves. A PAYMENT already carrying source
+        // documents cannot coherently become a QUOTATION, so the change is refused for everyone —
+        // System Administrator included. Set once, at creation.
+        if (dto.RequestTypeId != 0 && request.RequestTypeId != dto.RequestTypeId)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "O tipo do pedido é definido na criação e não pode ser alterado. " +
+                         "Cancele este pedido e crie um novo se precisar de outro tipo.",
+                Status = 400
+            });
         }
 
         // --- Restricted Fields in Quotation Stage ---
@@ -2323,7 +2545,7 @@ public class RequestsController : BaseController
         else
         {
             // Normal Draft/Adjustment rules
-            if (request.RequestTypeId != dto.RequestTypeId) { request.RequestTypeId = dto.RequestTypeId; changedFields.Add("Tipo de Pedido"); changed = true; }
+            // RequestTypeId is deliberately absent here — refused above, never written.
             if (request.BuyerId != dto.BuyerId) { request.BuyerId = dto.BuyerId; changedFields.Add("Comprador"); changed = true; }
             
             // Phase B: changing the department no longer nominates an AreaApprover —
@@ -2421,7 +2643,7 @@ public class RequestsController : BaseController
             }
         }
 
-        await _context.SaveChangesAsync();
+        await SaveChangesWithClassificationAuditRetryAsync();
 
         // Notification: Notify assigned buyer in WAITING_QUOTATION status if changes occurred
         if (changed && statusCode == "WAITING_QUOTATION" && request.BuyerId.HasValue)
@@ -2529,6 +2751,17 @@ public class RequestsController : BaseController
         if (request.RequestType!.Code == "QUOTATION" && request.NeedByDateUtc == null)
             errors.Add("A Data de Necessidade (Necessário Até) é obrigatória para pedidos de Cotação.");
 
+        // PAYMENT: Post-Payment Completion (Release 2 corrected) — the document identity becomes
+        // mandatory at submission, never at draft. Gated twice: the feature must be on, and the
+        // request must fall on or after the effective date (PostPaymentCompletionPolicy evaluates
+        // Request.CreatedAtUtc). A request created before the cut-off keeps the old submission
+        // rules and is classified later through the Release 5 Finance workflow instead.
+        if (request.RequestType!.Code == RequestConstants.Types.Payment &&
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request))
+        {
+            errors.AddRange(await ValidatePaymentSourceDocumentsForSubmissionAsync(request));
+        }
+
         // Conditional Item Validation
         // Phase 2 — a QUOTATION can only be submitted with at least one VALID item; an attachment no
         // longer substitutes items (closes the /duplicate DRAFT-quotation bypass). Reuses the same
@@ -2595,8 +2828,18 @@ public class RequestsController : BaseController
 
         // Mandatory Document Validation for Submission
         // QUOTATION: Proforma NOT mandatory on initial submission
-        // PAYMENT: Proforma IS mandatory
-        if (request.RequestType.Code == "PAYMENT" && !await HasAttachmentAsync(id, RequestAttachment.TYPE_PROFORMA))
+        // PAYMENT: Proforma IS mandatory — in the LEGACY single-document model only.
+        //
+        // Under the multi-document model the commercial document is a PaymentSourceDocument: it
+        // carries its own attachment (typed PAYMENT_SOURCE_DOCUMENT), its own classification,
+        // supplier, dates, items and totals, and is validated per document just above. Demanding a
+        // second attachment in the legacy PROFORMA slot would ask the user to upload the same
+        // invoice twice — and, because the slot is never filled by that flow, would refuse every
+        // multi-document request outright.
+        //
+        // Keyed to the persisted discriminator, not a date or a row count.
+        if (request.RequestType.Code == "PAYMENT" && !request.UsesMultiSourceDocuments &&
+            !await HasAttachmentAsync(id, RequestAttachment.TYPE_PROFORMA))
         {
             errors.Add("É necessário anexar a Proforma antes de submeter o pedido.");
         }
@@ -2811,7 +3054,7 @@ public class RequestsController : BaseController
             var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, "REQUESTS");
 
             // Map back to legacy DTO to preserve frontend compatibility
-            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
+            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult, file.FileName);
 
             await LogOcrExecutionAsync(file.FileName, id, internalResult, null);
 
@@ -2821,9 +3064,11 @@ public class RequestsController : BaseController
             var extractionBatchId = Guid.NewGuid();
             var units = await _context.Units.Where(u => u.IsActive).ToListAsync();
 
-            // Find the proforma attachment for this request (latest PROFORMA)
+            // Find the quotation document for this request (latest QUOTATION; legacy rows carry PROFORMA)
             var proformaAtt = await _context.RequestAttachments
-                .Where(a => a.RequestId == id && a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted)
+                .Where(a => a.RequestId == id
+                    && (a.AttachmentTypeCode == AttachmentConstants.Types.Quotation || a.AttachmentTypeCode == "PROFORMA")
+                    && !a.IsDeleted)
                 .OrderByDescending(a => a.UploadedAtUtc)
                 .FirstOrDefaultAsync();
 
@@ -3132,7 +3377,7 @@ public class RequestsController : BaseController
             var internalResult = await _extractionService.ExtractAsync(stream, file.FileName, sourceContext);
 
             // Map back to legacy DTO to preserve frontend compatibility
-            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult);
+            var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult, file.FileName);
 
             await LogOcrExecutionAsync(file.FileName, null, internalResult, null);
 
@@ -3532,6 +3777,7 @@ public class RequestsController : BaseController
         GlobalDiscountImpact = r.GlobalDiscountImpact,
         ManualAdditionsImpact = r.ManualAdditionsImpact,
         ExplainedLineAdjustments = r.ExplainedLineAdjustments,
+        DocumentSummaryIvaCredit = r.DocumentSummaryIvaCredit,
         ResidualVariance = r.ResidualVariance,
         ToleranceApplied = r.ToleranceApplied,
         ResidualExceedsTolerance = r.ResidualExceedsTolerance,
@@ -3817,6 +4063,9 @@ public class RequestsController : BaseController
         var ivaRates = await _context.IvaRates.ToDictionaryAsync(i => i.Id, i => i.RatePercent);
         var unitAllowsDecimal = await _context.Units.ToDictionaryAsync(u => u.Id, u => u.AllowsDecimalQuantity);
 
+        var documentTypeProblem = ValidateQuotationDocumentType(request, dto.DocumentType, out var quotationDocumentType);
+        if (documentTypeProblem != null) return BadRequest(documentTypeProblem);
+
         var quotation = new Quotation
         {
             Id = Guid.NewGuid(),
@@ -3825,6 +4074,7 @@ public class RequestsController : BaseController
             SupplierNameSnapshot = supplier.Name, // Explicit snapshot from the current record
             DocumentNumber = dto.DocumentNumber?.Trim(),
             DocumentDate = dto.DocumentDate,
+            DocumentType = quotationDocumentType,
             Currency = dto.Currency.ToUpper(),
             SourceType = dto.SourceType ?? "MANUAL",
             SourceFileName = dto.SourceFileName,
@@ -3832,6 +4082,8 @@ public class RequestsController : BaseController
             CreatedAtUtc = DateTime.UtcNow,
             CreatedByUserId = actorId
         };
+
+        ApplyQuotationClassificationEvidence(quotation, dto);
 
         if (replaceQuotationId.HasValue)
         {
@@ -3996,8 +4248,14 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(qHistory);
 
-        await _context.SaveChangesAsync();
-        
+        // The Buyer may classify against the reading, but not silently.
+        var quotationOverrideProblem = await StageDocumentClassificationOverrideAsync(
+            BuildQuotationOverrideRequest(quotation, dto),
+            request.Id, quotation.Id, actorId, request.StatusId);
+        if (quotationOverrideProblem != null) return BadRequest(quotationOverrideProblem);
+
+        await SaveChangesWithClassificationAuditRetryAsync();
+
         // RE-QUERY items with Units to ensure the response projection is complete
         var savedItems = await _context.QuotationItems
             .Include(qi => qi.Unit)
@@ -4016,6 +4274,12 @@ public class RequestsController : BaseController
             SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
+            DocumentType = quotation.DocumentType,
+            DocumentTypeOcrSuggestion = quotation.DocumentTypeOcrSuggestion,
+            DocumentTypeOcrConfidence = quotation.DocumentTypeOcrConfidence,
+            DocumentTypeEvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ClassificationConflictAcknowledged = quotation.ClassificationConflictAcknowledged,
+            ClassificationJustification = quotation.ClassificationJustification,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -4122,18 +4386,30 @@ public class RequestsController : BaseController
             quotation.ProformaAttachmentId = dto.ProformaAttachmentId;
         }
         
+        var updateDocumentTypeProblem = ValidateQuotationDocumentType(request, dto.DocumentType, out var updatedDocumentType);
+        if (updateDocumentTypeProblem != null) return BadRequest(updateDocumentTypeProblem);
+
         quotation.SupplierId = dto.SupplierId;
         quotation.SupplierNameSnapshot = supplier.Name;
         quotation.DocumentNumber = dto.DocumentNumber?.Trim();
         quotation.DocumentDate = dto.DocumentDate;
+        quotation.DocumentType = updatedDocumentType;
+        ApplyQuotationClassificationEvidence(quotation, dto);
         quotation.Currency = dto.Currency.ToUpper();
 
-        // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints)
+        // Replace Items (Merge/Upsert logic to preserve IDs and avoid FK constraints).
+        // A line is protected when it is a batch winner OR a submitted candidate — a frozen
+        // candidate snapshot must keep its traceability row.
         var existingItemIds = quotation.Items.Select(i => i.Id).ToList();
-        var referencedItemIds = await _context.Set<ApprovalBatchItem>()
-            .Where(abi => existingItemIds.Contains(abi.SelectedQuotationItemId))
-            .Select(abi => abi.SelectedQuotationItemId)
+        var referencedWinnerIds = await _context.Set<ApprovalBatchItem>()
+            .Where(abi => abi.SelectedQuotationItemId != null && existingItemIds.Contains(abi.SelectedQuotationItemId.Value))
+            .Select(abi => abi.SelectedQuotationItemId!.Value)
             .ToListAsync();
+        var referencedCandidateIds = await _context.ApprovalBatchItemCandidates
+            .Where(c => existingItemIds.Contains(c.QuotationItemId))
+            .Select(c => c.QuotationItemId)
+            .ToListAsync();
+        var referencedItemIds = referencedWinnerIds.Concat(referencedCandidateIds).Distinct().ToList();
 
         var existingItemsList = quotation.Items.ToList();
         var itemsToRemove = new List<QuotationItem>();
@@ -4330,9 +4606,16 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(history);
 
-        try 
+        // Re-classifying an already-read document is the same audited decision as classifying it
+        // the first time — and re-saving the same confirmed decision writes nothing new.
+        var quotationUpdateOverrideProblem = await StageDocumentClassificationOverrideAsync(
+            BuildQuotationOverrideRequest(quotation, dto),
+            requestId, quotation.Id, actorId, request.StatusId);
+        if (quotationUpdateOverrideProblem != null) return BadRequest(quotationUpdateOverrideProblem);
+
+        try
         {
-            await _context.SaveChangesAsync();
+            await SaveChangesWithClassificationAuditRetryAsync();
         }
         catch (DbUpdateConcurrencyException ex)
         {
@@ -4368,6 +4651,12 @@ public class RequestsController : BaseController
             SupplierPrimaveraCode = quotation.Supplier != null ? quotation.Supplier.PrimaveraCode : null,
             SupplierRegistrationStatus = quotation.Supplier != null ? quotation.Supplier.RegistrationStatus : null,
             DocumentNumber = quotation.DocumentNumber,
+            DocumentType = quotation.DocumentType,
+            DocumentTypeOcrSuggestion = quotation.DocumentTypeOcrSuggestion,
+            DocumentTypeOcrConfidence = quotation.DocumentTypeOcrConfidence,
+            DocumentTypeEvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ClassificationConflictAcknowledged = quotation.ClassificationConflictAcknowledged,
+            ClassificationJustification = quotation.ClassificationJustification,
             DocumentDate = quotation.DocumentDate,
             Currency = quotation.Currency,
             TotalGrossAmount = quotation.TotalGrossAmount,
@@ -4445,10 +4734,13 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
-        // Check if any quotation item is used in an approval batch
+        // Check if any quotation item is used in an approval batch (as a winner or as a
+        // submitted candidate — both anchor frozen approval evidence)
         var quotationItemIds = quotation.Items.Select(i => i.Id).ToList();
         var isReferencedByBatch = await _context.Set<ApprovalBatchItem>()
-            .AnyAsync(abi => quotationItemIds.Contains(abi.SelectedQuotationItemId));
+            .AnyAsync(abi => abi.SelectedQuotationItemId != null && quotationItemIds.Contains(abi.SelectedQuotationItemId.Value))
+            || await _context.ApprovalBatchItemCandidates
+                .AnyAsync(c => quotationItemIds.Contains(c.QuotationItemId));
 
         if (isReferencedByBatch)
         {
@@ -4706,8 +4998,8 @@ public class RequestsController : BaseController
 
             if (currentStatusCode == "WAITING_QUOTATION")
             {
-                bool hasBuyerProcessing = request.SupplierId.HasValue || 
-                    request.Attachments.Any(a => a.AttachmentTypeCode == "PROFORMA" && !a.IsDeleted) || 
+                bool hasBuyerProcessing = request.SupplierId.HasValue ||
+                    request.Attachments.Any(a => (a.AttachmentTypeCode == "PROFORMA" || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted) ||
                     request.LineItems.Any(li => !li.IsDeleted && (li.SupplierId.HasValue || !string.IsNullOrEmpty(li.SupplierName) || (li.LineItemStatus != null && li.LineItemStatus.Code != "WAITING_QUOTATION" && li.LineItemStatus.Code != "PENDING")));
 
                 if (hasBuyerProcessing)
@@ -4922,6 +5214,18 @@ public class RequestsController : BaseController
             }
         }
 
+        // PAYMENT multi-document: the item must name the document that pays for it, and must not
+        // contradict it. Skipped entirely on QUOTATION and on requests that carry no documents.
+        var (documentBinding, bindingProblem) = await ResolvePaymentSourceDocumentBindingAsync(
+            request, dto.PaymentSourceDocumentId,
+            new PaymentLineItemBinding(null, dto.PlantId, null));
+
+        if (bindingProblem != null) return BadRequest(bindingProblem);
+
+        var effectivePlantId = documentBinding != null
+            ? (dto.PlantId ?? documentBinding.PlantId)
+            : dto.PlantId;
+
         // Build + stage the item and its history through the shared factory
         // (same total/status/line-number math as before; single source of truth
         // shared with the buyer reconciliation workaround).
@@ -4932,7 +5236,7 @@ public class RequestsController : BaseController
             UnitId = dto.UnitId,
             UnitPrice = dto.UnitPrice ?? 0,
             CurrencyId = dto.CurrencyId,
-            PlantId = dto.PlantId,
+            PlantId = effectivePlantId,
             CostCenterId = dto.CostCenterId,
             DiscountPercent = dto.DiscountPercent,
             DiscountAmount = dto.DiscountAmount,
@@ -4943,6 +5247,14 @@ public class RequestsController : BaseController
             DueDate = dto.DueDate,
             ItemPriority = dto.ItemPriority ?? "MEDIUM"
         }, actorId, user.FullName);
+
+        if (documentBinding != null)
+        {
+            newItem.PaymentSourceDocumentId = documentBinding.DocumentId;
+            // Inherited rather than echoed by the client: anything the item left unset takes the
+            // document's value, which is why a mismatch can only come from a stated disagreement.
+            newItem.SupplierId ??= documentBinding.SupplierId;
+        }
 
         await _context.SaveChangesAsync();
 
@@ -5268,7 +5580,26 @@ public class RequestsController : BaseController
         // LineItemStatusId is intentionally NOT updated here — status is backend/buyer-controlled only
         if (request.RequestType?.Code == "PAYMENT")
         {
-            item.SupplierId = request.SupplierId;
+            // Multi-document: the supplier comes from the item's OWN source document, not from the
+            // request header — which is null whenever the documents disagree. Falls back to the
+            // header for requests that carry no documents.
+            var (updatedBinding, updateBindingProblem) = await ResolvePaymentSourceDocumentBindingAsync(
+                request, dto.PaymentSourceDocumentId ?? item.PaymentSourceDocumentId,
+                new PaymentLineItemBinding(null, dto.PlantId ?? item.PlantId, null));
+
+            if (updateBindingProblem != null) return BadRequest(updateBindingProblem);
+
+            if (updatedBinding != null)
+            {
+                item.PaymentSourceDocumentId = updatedBinding.DocumentId;
+                item.SupplierId = updatedBinding.SupplierId;
+                item.PlantId = dto.PlantId ?? updatedBinding.PlantId;
+            }
+            else
+            {
+                item.SupplierId = request.SupplierId;
+            }
+
             item.SupplierName = null;
         }
         else
@@ -5304,6 +5635,109 @@ public class RequestsController : BaseController
 
         await _context.SaveChangesAsync();
 
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Sets ONLY the catalogue linkage of a line item. Used by catalogue reconciliation.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>Deliberately not <c>PUT .../line-items/{id}</c>. That endpoint replaces the whole line
+    /// and recomputes <c>TotalAmount</c> from quantity, price, discount and IVA — so using it to
+    /// record "this line is catalogue item X" would put every financial figure on the line at the
+    /// mercy of a round trip, on a document whose stated total the user has already reconciled to
+    /// the cent. Catalogue identity and the money owed are separate concerns; only one of them is
+    /// being decided here.</para>
+    ///
+    /// <para>On a multi-document PAYMENT request this also protects
+    /// <c>PaymentSourceDocumentId</c>: the line keeps the document it belongs to, because nothing
+    /// in this handler can reach it.</para>
+    ///
+    /// <para>Idempotent. Re-sending the same linkage changes nothing and writes no history, so a
+    /// user who presses Submeter twice does not get two audit entries for one decision.</para>
+    /// </remarks>
+    [HttpPut("{requestId}/line-items/{itemId}/catalog-link")]
+    public async Task<IActionResult> UpdateLineItemCatalogLink(
+        Guid requestId, Guid itemId, [FromBody] UpdateLineItemCatalogLinkDto dto)
+    {
+        var actorId = CurrentUserId;
+        var user = await _context.Users.FindAsync(actorId);
+        if (user == null) return Unauthorized();
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.LineItems)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (request == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+        // The same editable window as any other item change. Reconciliation is not a privileged
+        // side channel into a request that has moved past editing.
+        if (request.Status!.Code != "DRAFT" && request.Status!.Code != "AREA_ADJUSTMENT" &&
+            request.Status!.Code != "FINAL_ADJUSTMENT" && request.Status!.Code != "WAITING_QUOTATION")
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Regra de Negócio Violada",
+                Detail = "Operação bloqueada: este pedido não está em rascunho nem em fase de reajuste/cotação, por isso não é possível alterar itens.",
+                Status = 409
+            });
+        }
+
+        if (request.Status!.Code != "DRAFT" && request.RequesterId != actorId)
+        {
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Acesso Proibido",
+                Detail = "Apenas o criador do pedido pode editar itens do pedido nesta fase.",
+                Status = 403
+            });
+        }
+
+        var item = request.LineItems.FirstOrDefault(l => l.Id == itemId && !l.IsDeleted);
+        if (item == null)
+            return NotFound(new ProblemDetails { Title = "Item não encontrado no pedido.", Status = 404 });
+
+        // The catalogue is the same single catalogue used everywhere in the Portal. An inactive or
+        // unknown id is refused rather than stored, so a line can never point at nothing.
+        if (dto.ItemCatalogId.HasValue)
+        {
+            var catalogItem = await _context.ItemCatalogItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ic => ic.Id == dto.ItemCatalogId.Value && ic.IsActive);
+
+            if (catalogItem == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Erro de Validação",
+                    Detail = "O item de catálogo indicado não existe ou está inativo.",
+                    Status = 400
+                });
+            }
+        }
+
+        if (item.ItemCatalogId == dto.ItemCatalogId) return NoContent();
+
+        item.ItemCatalogId = dto.ItemCatalogId;
+        item.UpdatedAtUtc = DateTime.UtcNow;
+        item.UpdatedByUserId = actorId;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "ITEM_CATALOG_LINKED",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Item #{item.LineNumber} (\"{item.Description}\") reconciliado com o catálogo por {user.FullName}.",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
         return NoContent();
     }
 
@@ -5602,58 +6036,18 @@ public class RequestsController : BaseController
             }
             request.ApprovedAtUtc = DateTime.UtcNow;
 
-            // ── Payment Request: Auto-create PO Group ──────────────────────
-            // Payment Requests don't go through the quotation/award/GroupBuilder path.
-            // Create a single PO group from the request's supplier, currency, and
-            // estimated total so the Buyer can register the P.O. after final approval.
+            // ── Payment Request: build PO groups from the source documents ─────
+            // Payment requests do not go through the quotation/award/GroupBuilder path.
+            //
+            // Release 3 replaced the previous behaviour — exactly ONE group per payment request,
+            // taken from the request header — because a request may now carry several source
+            // documents. That single group was wrong in both directions: two invoices for two
+            // plants must not share one, and two documents agreeing on every dimension must not
+            // produce two. Grouping is now over the documents' line items, keyed by
+            // Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
             if (request.RequestType!.Code == RequestConstants.Types.Payment)
             {
-                var existingGroups = await _context.RequestPoGroups
-                    .AnyAsync(g => g.RequestId == id);
-
-                if (!existingGroups)
-                {
-                    var currencyObj = request.CurrencyId.HasValue
-                        ? await _context.Currencies.FindAsync(request.CurrencyId.Value)
-                        : null;
-                    var supplier = request.SupplierId.HasValue
-                        ? await _context.Suppliers.FindAsync(request.SupplierId.Value)
-                        : null;
-
-                    if (supplier == null && request.SupplierId.HasValue)
-                    {
-                        _logger.LogWarning(
-                            "ProcessFinalApproval — Payment Request {RequestId} ({RequestNumber}) has SupplierId={SupplierId} but Supplier entity not found.",
-                            id, request.RequestNumber, request.SupplierId);
-                    }
-
-                    var paymentGroup = new RequestPoGroup
-                    {
-                        RequestId = request.Id,
-                        SupplierId = request.SupplierId,
-                        SupplierNameSnapshot = supplier?.Name ?? "Fornecedor não definido",
-                        SupplierNifSnapshot = supplier?.TaxId,
-                        CurrencyId = currencyObj?.Id,
-                        CurrencyCode = currencyObj?.Code ?? "AOA",
-                        TotalAmount = request.EstimatedTotalAmount,
-                        PaymentConditionCode = request.PaymentConditionCode,
-                        AdvancePaymentPercent = request.AdvancePaymentPercent,
-                        Status = RequestConstants.PoGroupStatuses.WaitingPo,
-                        CreatedAtUtc = DateTime.UtcNow,
-                        CreatedByUserId = actorId
-                    };
-
-                    _context.RequestPoGroups.Add(paymentGroup);
-
-                    _logger.LogInformation(
-                        "ProcessFinalApproval — Auto-created PO group for Payment Request {RequestId} ({RequestNumber}). " +
-                        "Supplier: {Supplier}, Amount: {Amount:N2} {Currency}, GroupId: {GroupId}",
-                        id, request.RequestNumber,
-                        paymentGroup.SupplierNameSnapshot,
-                        paymentGroup.TotalAmount,
-                        paymentGroup.CurrencyCode,
-                        paymentGroup.Id);
-                }
+                await BuildPaymentPoGroupsAsync(request, actorId);
             }
 
             // ── PO Group Activation: PENDING → WAITING_PO ──────────────────────
@@ -6504,6 +6898,12 @@ public class RequestsController : BaseController
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = CurrentUserId;
 
+        // Phase 4C: a P.O. registration (including the corrected-P.O. path that clears
+        // WAITING_PO_CORRECTION) changes the PoSatisfied/NoBlockingCorrection facts — Phase 1
+        // reads the freshly tracked group state; the projector alone decides whether anything
+        // advances (registering a P.O. never completes a group by itself).
+        await EvaluateCompletionPhaseOneAsync(id, null);
+
         await _context.SaveChangesAsync();
 
         // ── Notifications ──
@@ -6518,6 +6918,9 @@ public class RequestsController : BaseController
                 CorrelationId = Guid.NewGuid()
             });
         } catch { }
+
+        // Phase 2 strictly post-save; never fails the registration.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = successMsg });
     }
@@ -6705,7 +7108,15 @@ public class RequestsController : BaseController
             advancePayment.DivergenceNotes = dto.Comment;
         }
 
-        group.Status = RequestConstants.Statuses.AdvancePaymentCompleted;
+        // v2.229.3 (REQ-17/08/2026-232): the confirmed advance hands the group DIRECTLY to the
+        // supplier-delivery stage. ADVANCE_PAYMENT_COMPLETED remains the FINANCIAL EVENT (the
+        // history row below), but parking the group there orphaned the whole B2P delivery
+        // chain — the Receiving workspace, ConfirmReceiving, item receiving and ConfirmDelivery
+        // all speak WAITING_SUPPLIER_DELIVERY, and nothing ever wrote it. Applies to FULL and
+        // PARTIAL advances alike: delivery precedes reconciliation/final balance by design, so
+        // receiving eligibility is intentionally independent of full payment (the completion
+        // readiness payment dimension stays honest on its own evidence).
+        group.Status = RequestConstants.Statuses.WaitingSupplierDelivery;
         group.UpdatedAtUtc = DateTime.UtcNow;
 
         var prevStatusId = request.StatusId;
@@ -6719,18 +7130,26 @@ public class RequestsController : BaseController
             PreviousStatusId = prevStatusId,
             NewStatusId = prevStatusId, // Keep parent request status id context — same convention as SchedulePayment/MarkAsPaid
             Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Montante", advancePayment.ActualPaidAmount!.Value)
-                + $" Adiantamento de {group.AdvancePaymentPercent:0.##}% realizado. Pago em {dto.PaidDate:dd/MM/yyyy}. " + (dto.Comment ?? ""),
+                + $" Adiantamento de {group.AdvancePaymentPercent:0.##}% realizado. Pago em {dto.PaidDate:dd/MM/yyyy}. "
+                + "Grupo encaminhado para Ag. Entrega/Serviço. " + (dto.Comment ?? ""),
             CreatedAtUtc = DateTime.UtcNow
         });
         
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
+        // Phase 4C: the advance is now actually PAID (never merely scheduled) — Phase 1 reads
+        // the freshly tracked payment/group state in this same save.
+        await EvaluateCompletionPhaseOneAsync(id, group.Id);
+
         await _context.SaveChangesAsync();
 
         // Aggregate to update parent status
         var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
         await _statusAggregationService.AggregateRequestStatusAsync(id);
+
+        // Phase 2 strictly post-save; never fails the confirmation.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = "Adiantamento confirmado.", paymentId = advancePayment.Id });
     }
@@ -6852,7 +7271,17 @@ public class RequestsController : BaseController
 
         activeReconciliation.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
+
+        // Phase 4C: a reconciliation decision changes the payment dimension either way — a
+        // COMPLETED reconciliation may discharge the regularization obligation, while a created
+        // FINAL_BALANCE row is a NEW tracked blocker Phase 1 must observe before the save. The
+        // reconciliation is request-level, so every group is evaluated.
+        await EvaluateCompletionPhaseOneAsync(id, null);
+
         await _context.SaveChangesAsync();
+
+        // Phase 2 strictly post-save; never fails the reconciliation.
+        await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = "Reconciliação registrada com sucesso.", statusCode = request.Status!.Code });
     }
@@ -7006,12 +7435,80 @@ public class RequestsController : BaseController
             };
             _context.RequestStatusHistories.Add(history);
 
+            // ── Release 4 Phase 4B: operational receipt dimension ──
+            // The stamp is a FACTUAL dimension record (approved decision: gated by Enabled, not
+            // CompletionEnabled — it feeds Phase 3/4 readiness without activating completion).
+            // This is the LIVE writer for new receiving events: real event time, real actor,
+            // normal-completion wording. The Phase-1 lazy derivation covers only pre-activation
+            // groups that were already fully received with no stamp — never this path, because
+            // the stamp below exists before the evaluation runs.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                if (poGroup.OperationalReceiptCompletedAtUtc == null &&
+                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup))
+                {
+                    var receiptStampedAt = DateTime.UtcNow;
+                    poGroup.OperationalReceiptCompletedAtUtc = receiptStampedAt;
+                    poGroup.OperationalReceiptCompletedByUserId = actorId;
+
+                    var orKey = PostPaymentIdempotencyKeys.OperationalReceiptCompleted(poGroup.Id);
+                    var orExists = _context.RequestStatusHistories.Local
+                                       .Any(h => h.IdempotencyKey == orKey)
+                                   || await _context.RequestStatusHistories
+                                       .AnyAsync(h => h.IdempotencyKey == orKey);
+                    if (!orExists)
+                    {
+                        _context.RequestStatusHistories.Add(new RequestStatusHistory
+                        {
+                            Id = Guid.NewGuid(),
+                            RequestId = request.Id,
+                            ActorUserId = actorId,
+                            ActionTaken = WorkflowEventCodes.OperationalReceiptCompleted,
+                            PreviousStatusId = oldStatusId,
+                            NewStatusId = request.StatusId,
+                            Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"}] " +
+                                      "Recebimento operacional concluído: todos os itens do grupo " +
+                                      "foram recebidos.",
+                            IdempotencyKey = orKey,
+                            CreatedAtUtc = receiptStampedAt
+                        });
+                    }
+                }
+
+                // Phase 1 completion evaluation — same transaction, before SaveChanges, per the
+                // committed contract (no transaction/SaveChanges of its own). Exact no-op while
+                // CompletionEnabled=false; idempotent when the group cannot progress.
+                var completionService = HttpContext.RequestServices
+                    .GetRequiredService<IRequestCompletionService>();
+                await completionService.EvaluateGroupCompletionAsync(request.Id, poGroup.Id, actorId);
+            }
+
             await _context.SaveChangesAsync();
-            
+
             // Re-aggregate the parent status
             await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
-            
+
             await transaction.CommitAsync();
+
+            // ── Phase 4C: parent completion — STRICTLY after the commit (two-phase contract).
+            // The aggregation above never writes COMPLETED first (Phase 4C safeguard); this is
+            // the authoritative path. A ConflictUnresolved or technical failure never fails the
+            // receiving action — the next trigger or the recovery sweep re-evaluates.
+            if (!PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions))
+            {
+                try
+                {
+                    var parentCompletion = HttpContext.RequestServices
+                        .GetRequiredService<IRequestCompletionService>();
+                    await parentCompletion.EvaluateParentCompletionAsync(request.Id, actorId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "Non-critical: parent completion evaluation failed after ConfirmReceiving on Request {RequestId}.",
+                        request.Id);
+                }
+            }
 
             // Notification dispatch
             try
@@ -7054,6 +7551,411 @@ public class RequestsController : BaseController
         }
     }
 
+    /// <summary>
+    /// Release 4 Phase 1b: the operation-invoice obligations of a request, derived on read.
+    ///
+    /// <para>Strictly read-only and diagnostic. The status is RECOMPUTED from authoritative inputs
+    /// (document identity via <see cref="DocumentObligationResolver"/>, allocations via
+    /// <see cref="OperationInvoiceAggregateDeriver"/>) and returned beside the cached
+    /// <c>OperationInvoiceStatus</c> column; a disagreement is reported as <c>statusDrift</c> and
+    /// logged, never repaired here — the transactional re-stamp belongs to the write path that
+    /// changes the classification (Phase 1c).</para>
+    /// </summary>
+    [HttpGet("{id:guid}/operation-invoice-obligations")]
+    public async Task<ActionResult<OperationInvoiceObligationsDto>> GetOperationInvoiceObligations(Guid id)
+    {
+        // Gated-endpoint contract since Release 1: while the feature is disabled, no new endpoint
+        // is reachable. The same 404 as an unknown request — the route does not exist yet.
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return NotFound("Pedido não encontrado.");
+
+        // Same visibility scope as every other request read: plant/department scoped, admin sees
+        // all. Knowing an id must never be enough to read another department's finances.
+        var request = await (await GetScopedRequestsQuery()).FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == id)
+            .OrderBy(g => g.CreatedAtUtc).ThenBy(g => g.Id)
+            .Select(g => new
+            {
+                g.Id,
+                g.SupplierId,
+                g.SupplierNameSnapshot,
+                g.CurrencyCode,
+                g.PaymentConditionCode,
+                g.PlantId,
+                g.SourceDocumentType,
+                g.ExpectedOperationInvoiceTotal,
+                g.ExpectedOperationInvoiceCurrency,
+                g.OperationInvoiceStatus,
+                g.PurchaseOrderNumber
+            })
+            .ToListAsync();
+
+        var groupIds = groups.Select(g => g.Id).ToList();
+
+        // Traceability comes from the group's own line items — never from the request header,
+        // the supplier or the document type. Line order keeps the derived id order deterministic.
+        var lines = await _context.RequestLineItems.AsNoTracking()
+            .Where(li => li.RequestId == id && !li.IsDeleted &&
+                         li.RequestPoGroupId != null && groupIds.Contains(li.RequestPoGroupId.Value))
+            .OrderBy(li => li.LineNumber).ThenBy(li => li.Id)
+            .Select(li => new { li.Id, li.RequestPoGroupId, li.PaymentSourceDocumentId })
+            .ToListAsync();
+
+        // Exactly the inputs the aggregate deriver consumes: the invoice's status and the stored
+        // allocated gross. Superseded invoices are excluded — their replacement carries the live
+        // allocation. No coverage arithmetic happens here.
+        var allocations = await _context.OperationInvoiceAllocations.AsNoTracking()
+            .Where(a => groupIds.Contains(a.RequestPoGroupId))
+            .Join(_context.OperationInvoices.Where(i => i.SupersededByOperationInvoiceId == null),
+                  a => a.OperationInvoiceId, i => i.Id,
+                  (a, i) => new
+                  {
+                      a.Id,
+                      a.RequestPoGroupId,
+                      a.OperationInvoiceId,
+                      i.Status,
+                      i.DocumentNumber,
+                      i.DocumentSeries,
+                      a.AllocatedNetAmount,
+                      a.AllocatedTaxAmount,
+                      a.AllocatedGrossAmount,
+                      a.SequenceNumber,
+                      a.Notes,
+                      a.CreatedAtUtc,
+                      a.UpdatedAtUtc
+                  })
+            .OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.SequenceNumber)
+            .ToListAsync();
+
+        var activeShortCloses = await _context.OperationInvoiceShortCloses.AsNoTracking()
+            .Where(c => groupIds.Contains(c.RequestPoGroupId) &&
+                        RequestConstants.ShortCloseStatuses.Active.Contains(c.Status))
+            .Select(c => new { c.RequestPoGroupId, c.Status })
+            .ToListAsync();
+
+        var snapshots = groups.Select(g => new OperationInvoiceObligationGroupSnapshot
+        {
+            GroupId = g.Id,
+            SupplierId = g.SupplierId,
+            SupplierNameSnapshot = g.SupplierNameSnapshot,
+            CurrencyCode = g.CurrencyCode,
+            PaymentConditionCode = g.PaymentConditionCode,
+            PlantId = g.PlantId,
+            SourceDocumentType = g.SourceDocumentType,
+            ExpectedTotal = g.ExpectedOperationInvoiceTotal,
+            ExpectedCurrency = g.ExpectedOperationInvoiceCurrency,
+            PersistedStatus = g.OperationInvoiceStatus,
+            PurchaseOrderNumber = g.PurchaseOrderNumber,
+            Allocations = allocations
+                .Where(a => a.RequestPoGroupId == g.Id)
+                .Select(a => new AllocationCoverage(a.Status, a.AllocatedGrossAmount))
+                .ToList(),
+            ActiveShortCloseStatus = activeShortCloses
+                .FirstOrDefault(c => c.RequestPoGroupId == g.Id)?.Status,
+            SourceDocumentIds = lines
+                .Where(l => l.RequestPoGroupId == g.Id && l.PaymentSourceDocumentId.HasValue)
+                .Select(l => l.PaymentSourceDocumentId!.Value)
+                .Distinct()
+                .ToList(),
+            LineItemIds = lines
+                .Where(l => l.RequestPoGroupId == g.Id)
+                .Select(l => l.Id)
+                .ToList()
+        }).ToList();
+
+        var projection = OperationInvoiceObligationProjector.Project(snapshots);
+
+        foreach (var drifted in projection.Obligations.Where(o => o.StatusDrift))
+        {
+            _logger.LogWarning(
+                "Operation-invoice status drift on request {RequestId}, group {GroupId}: persisted {PersistedStatus}, derived {DerivedStatus}.",
+                id, drifted.GroupId, drifted.PersistedStatus, drifted.DerivedStatus);
+        }
+
+        var groupById = groups.ToDictionary(g => g.Id);
+
+        return Ok(new OperationInvoiceObligationsDto
+        {
+            RequestId = id,
+            Obligations = projection.Obligations.Select(o =>
+            {
+                var g = groupById[o.GroupId];
+                return new OperationInvoiceObligationDto
+                {
+                    GroupId = o.GroupId,
+                    SupplierId = g.SupplierId,
+                    SupplierName = g.SupplierNameSnapshot,
+                    Currency = g.CurrencyCode,
+                    PaymentConditionCode = g.PaymentConditionCode,
+                    PlantId = g.PlantId,
+                    SourceDocumentType = o.SourceDocumentType,
+                    RequiresOperationInvoice = o.RequiresOperationInvoice,
+                    ExpectedAmount = o.ExpectedAmount,
+                    ExpectedCurrency = o.ExpectedCurrency,
+                    ValidatedCoveredAmount = o.ValidatedCoveredAmount,
+                    PendingCoveredAmount = o.PendingCoveredAmount,
+                    RemainingAmount = o.RemainingAmount,
+                    AppliedTolerance = o.AppliedTolerance,
+                    DerivedStatus = o.DerivedStatus,
+                    PersistedStatus = o.PersistedStatus,
+                    StatusDrift = o.StatusDrift,
+                    ClosedShort = o.ClosedShort,
+                    PurchaseOrderNumber = o.PurchaseOrderNumber,
+                    PaymentSourceDocumentIds = o.SourceDocumentIds.ToList(),
+                    LineItemCount = o.LineItemCount,
+                    ReasonCode = o.ReasonCode,
+                    Explanation = o.Explanation,
+                    // Phase 3A: percentage only against a known, positive finish line — an
+                    // unknown expected total has no percentage, deliberately not 0.
+                    CoveragePercent = o.ExpectedAmount is > 0
+                        ? Math.Round(o.ValidatedCoveredAmount / o.ExpectedAmount.Value * 100m, 2)
+                        : null,
+                    Allocations = allocations
+                        .Where(a => a.RequestPoGroupId == o.GroupId)
+                        .Select(a => new OperationInvoiceObligationAllocationDto
+                        {
+                            AllocationId = a.Id,
+                            OperationInvoiceId = a.OperationInvoiceId,
+                            InvoiceDocumentNumber = a.DocumentNumber,
+                            InvoiceDocumentSeries = a.DocumentSeries,
+                            InvoiceStatus = a.Status,
+                            AllocatedNetAmount = a.AllocatedNetAmount,
+                            AllocatedTaxAmount = a.AllocatedTaxAmount,
+                            AllocatedGrossAmount = a.AllocatedGrossAmount,
+                            SequenceNumber = a.SequenceNumber,
+                            Notes = a.Notes,
+                            IsEffective = RequestConstants.OperationInvoiceDocumentStatuses.CountsTowardCoverage(a.Status),
+                            IsPendingDecision = RequestConstants.OperationInvoiceDocumentStatuses.IsAwaitingDecision(a.Status),
+                            CreatedAtUtc = a.CreatedAtUtc,
+                            UpdatedAtUtc = a.UpdatedAtUtc
+                        })
+                        .ToList()
+                };
+            }).ToList(),
+            Rollup = new OperationInvoiceObligationRollupDto
+            {
+                TotalGroups = projection.Rollup.TotalGroups,
+                RequiringOperationInvoiceCount = projection.Rollup.RequiringOperationInvoiceCount,
+                PendingActionCount = projection.Rollup.PendingActionCount,
+                SatisfiedCount = projection.Rollup.SatisfiedCount,
+                NotRequiredCount = projection.Rollup.NotRequiredCount,
+                UnclassifiedCount = projection.Rollup.UnclassifiedCount,
+                DriftCount = projection.Rollup.DriftCount,
+                HasStatusDrift = projection.Rollup.HasStatusDrift,
+                GroupsWithUnknownExpectedTotal = projection.Rollup.CurrencyTotals
+                    .Sum(c => c.GroupsWithUnknownExpectedTotal),
+                CurrencyTotals = projection.Rollup.CurrencyTotals
+                    .Select(c => new OperationInvoiceObligationCurrencyTotalsDto
+                    {
+                        CurrencyCode = c.CurrencyCode,
+                        ExpectedTotal = c.ExpectedTotal,
+                        ValidatedTotal = c.ValidatedTotal,
+                        PendingValidationTotal = c.PendingValidationTotal,
+                        RemainingTotal = c.RemainingTotal,
+                        GroupsWithUnknownExpectedTotal = c.GroupsWithUnknownExpectedTotal
+                    })
+                    .ToList()
+            }
+        });
+    }
+
+    /// <summary>
+    /// Release 4 Phase 4D: the completion-readiness read model — a faithful, strictly read-only
+    /// projection of <see cref="GroupCompletionProjector"/> (the single Phase 4 rulebook) plus
+    /// the request-level facts Phase 2 evaluates.
+    ///
+    /// <para>A SIBLING of the obligations endpoint on purpose: the obligations DTO is the
+    /// coverage/allocation workspace, while this one answers "may this request complete, and
+    /// what is missing" — merging them would bury ten lifecycle booleans inside an already
+    /// large financial payload. The UI joins the two by group id.</para>
+    ///
+    /// <para>Normal request visibility (never Finance-only): whoever may read the request may
+    /// read its readiness. Gated-endpoint contract: 404 while the feature is disabled. Honest
+    /// under CompletionEnabled=false — the facts are returned unchanged, and
+    /// <c>CompletionLifecycleEnabled</c> tells the UI not to imply the automatic transition.</para>
+    /// </summary>
+    [HttpGet("{id:guid}/completion-readiness")]
+    public async Task<ActionResult<CompletionReadinessDto>> GetCompletionReadiness(Guid id)
+    {
+        if (PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            return NotFound("Pedido não encontrado.");
+
+        var scopedQuery = await GetScopedRequestsQuery();
+        var request = await scopedQuery
+            .Include(r => r.Status)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound("Pedido não encontrado.");
+
+        var groups = await _context.RequestPoGroups.AsNoTracking()
+            .Include(g => g.Plant)
+            .Include(g => g.LineItems).ThenInclude(li => li.LineItemStatus)
+            .Include(g => g.LineItems).ThenInclude(li => li.SelectedQuotationItem!)
+                .ThenInclude(qi => qi.LineItemStatus)
+            .Where(g => g.RequestId == id)
+            .ToListAsync();
+
+        var payments = await _context.RequestPayments.AsNoTracking()
+            .Where(p => p.RequestId == id)
+            .ToListAsync();
+        var reconciliations = await _context.RequestReconciliations.AsNoTracking()
+            .Where(r => r.RequestId == id)
+            .ToListAsync();
+
+        var groupIds = groups.Select(g => g.Id).ToList();
+        var approvedShortCloses = (await _context.OperationInvoiceShortCloses.AsNoTracking()
+                .Where(c => groupIds.Contains(c.RequestPoGroupId))
+                .ToListAsync())
+            .Where(c => string.Equals(c.Status, RequestConstants.ShortCloseStatuses.Approved,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.RequestPoGroupId)
+            .ToHashSet();
+
+        // Fiscal receipt evidence: file + uploader, through the normal attachment rows.
+        var receiptAttachmentIds = groups
+            .Where(g => g.FiscalReceiptAttachmentId != null)
+            .Select(g => g.FiscalReceiptAttachmentId!.Value)
+            .ToList();
+        var receiptAttachments = await _context.RequestAttachments.AsNoTracking()
+            .Where(a => receiptAttachmentIds.Contains(a.Id))
+            .Select(a => new { a.Id, a.FileName })
+            .ToListAsync();
+        var uploaderIds = groups
+            .Where(g => g.FiscalReceiptUploadedByUserId != null)
+            .Select(g => g.FiscalReceiptUploadedByUserId!.Value)
+            .Distinct()
+            .ToList();
+        var uploaderNames = await _context.Users.AsNoTracking()
+            .Where(u => uploaderIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        var hasActiveReconciliation = reconciliations.Any(r =>
+            r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.Draft ||
+            r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.InProgress);
+
+        var isCompleted = string.Equals(request.Status?.Code, RequestConstants.Statuses.Completed,
+            StringComparison.OrdinalIgnoreCase);
+
+        DateTime? requestCompletedAt = null;
+        if (isCompleted)
+        {
+            requestCompletedAt = await _context.RequestStatusHistories.AsNoTracking()
+                .Where(h => h.RequestId == id && h.ActionTaken == "REQUEST_COMPLETED")
+                .OrderByDescending(h => h.CreatedAtUtc)
+                .Select(h => (DateTime?)h.CreatedAtUtc)
+                .FirstOrDefaultAsync();
+        }
+
+        var dto = new CompletionReadinessDto
+        {
+            CompletionLifecycleEnabled = !PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions),
+            RequestStatusCode = request.Status?.Code,
+            IsCompleted = isCompleted,
+            CompletedAtUtc = requestCompletedAt,
+            HasActiveReconciliation = hasActiveReconciliation
+        };
+
+        var relevant = groups
+            .Where(g => !string.Equals(g.Status, RequestConstants.PoGroupStatuses.Cancelled,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var group in relevant)
+        {
+            var projection = GroupCompletionProjector.Project(
+                group, payments, reconciliations,
+                hasApprovedShortClose: approvedShortCloses.Contains(group.Id));
+
+            var groupDto = new CompletionReadinessGroupDto
+            {
+                GroupId = group.Id,
+                SupplierName = group.SupplierNameSnapshot,
+                PlantName = group.Plant?.Name,
+                CurrencyCode = group.CurrencyCode,
+                PurchaseOrderNumber = group.PurchaseOrderNumber,
+                GroupStatusCode = group.Status,
+                Classified = projection.Classified,
+                PoSatisfied = projection.PoSatisfied,
+                NoBlockingCorrection = projection.NoBlockingCorrection,
+                PaymentSatisfied = projection.PaymentSatisfied,
+                ReceiptSatisfied = projection.ReceiptSatisfied,
+                OperationInvoiceSatisfied = projection.OperationInvoiceSatisfied,
+                ClosedShort = projection.ClosedShort,
+                FiscalReceiptRequired = projection.FiscalReceiptRequired,
+                FiscalReceiptSatisfied = projection.FiscalReceiptSatisfied,
+                Complete = projection.Complete,
+                CompletedAtUtc = group.CompletedAtUtc,
+                BlockingReasons = projection.BlockingReasons
+                    .Select(code => new CompletionBlockingReasonDto
+                    {
+                        Code = code,
+                        OwnerCode = GroupCompletionOwnership.OwnerOf(code)
+                    })
+                    .ToList()
+            };
+
+            if (group.FiscalReceiptAttachmentId != null)
+            {
+                groupDto.FiscalReceipt = new CompletionFiscalReceiptDto
+                {
+                    AttachmentId = group.FiscalReceiptAttachmentId.Value,
+                    FileName = receiptAttachments
+                        .FirstOrDefault(a => a.Id == group.FiscalReceiptAttachmentId.Value)?.FileName,
+                    UploadedAtUtc = group.FiscalReceiptUploadedAtUtc,
+                    UploadedByName = group.FiscalReceiptUploadedByUserId != null &&
+                                     uploaderNames.TryGetValue(group.FiscalReceiptUploadedByUserId.Value, out var name)
+                        ? name
+                        : null
+                };
+            }
+
+            dto.Groups.Add(groupDto);
+        }
+
+        dto.TotalGroupCount = relevant.Count;
+        dto.CompletedGroupCount = dto.Groups.Count(g => g.Complete);
+        dto.BlockingGroupCount = dto.Groups.Count(g => !g.Complete);
+        // Authoritative readiness — the same conjunction Phase 2 evaluates.
+        dto.IsCompletionReady = relevant.Count > 0
+            && dto.Groups.All(g => g.Complete)
+            && !hasActiveReconciliation;
+
+        return Ok(dto);
+    }
+
+    // ── Phase 4C completion-trigger helpers ──
+    // The service self-gates on the flags, but the gate is checked here too so no resolution
+    // happens at all on the hot path while completion is disabled (and so tests that construct
+    // this controller without registering the service never resolve it).
+
+    /// <summary>Phase 1 — inside the current transaction scope, before SaveChanges.</summary>
+    private async Task EvaluateCompletionPhaseOneAsync(Guid requestId, Guid? groupId)
+    {
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions)) return;
+
+        var completion = HttpContext.RequestServices.GetRequiredService<IRequestCompletionService>();
+        await completion.EvaluateGroupCompletionAsync(requestId, groupId, CurrentUserId);
+    }
+
+    /// <summary>Phase 2 — strictly after the successful save/commit; never fails the action.</summary>
+    private async Task EvaluateCompletionPhaseTwoAsync(Guid requestId)
+    {
+        if (PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions)) return;
+
+        try
+        {
+            var completion = HttpContext.RequestServices.GetRequiredService<IRequestCompletionService>();
+            await completion.EvaluateParentCompletionAsync(requestId, CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Non-critical: parent completion evaluation failed on Request {RequestId}.", requestId);
+        }
+    }
+
     [HttpPost("{id}/operational/finalize")]
     public async Task<IActionResult> FinalizeRequest(Guid id, [FromBody] ApprovalActionDto dto)
     {
@@ -7073,6 +7975,65 @@ public class RequestsController : BaseController
             if (request.Status!.Code == "COMPLETED")
             {
                 return Ok(new { Message = "Pedido já finalizado.", StatusCode = "COMPLETED" });
+            }
+
+            // ── Post-Payment Completion Workflow guard (Release 1 foundation, split at the
+            // Phase 3A checkpoint) ──
+            // Two independently switched rules live here:
+            //
+            //   R15 data-quality guard (intake family, PostPaymentCompletion.Enabled): a request
+            //   owning an UNCLASSIFIED group may not finalize until someone says what the
+            //   documents are — classification is what derives the obligations the coverage
+            //   model reads.
+            //
+            //   Completion redirect (completion family, CompletionEnabled): once Phase 4 is on,
+            //   a classified grouped request completes exclusively through
+            //   RequestCompletionService after the Fiscal Receipt. During Phase 3B
+            //   (Enabled=true, CompletionEnabled=false) a classified grouped request still
+            //   finalizes through the legacy path below — deliberately, because the new
+            //   completion lifecycle does not exist yet.
+            //
+            // While both switches are false — the committed default everywhere — this block is
+            // skipped before any query runs and FinalizeRequest executes exactly the code path
+            // it executed before the feature existed.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                var hasPoGroups = await _context.RequestPoGroups
+                    .AnyAsync(g => g.RequestId == id);
+
+                if (hasPoGroups)
+                {
+                    var anyUnclassified = await _context.RequestPoGroups
+                        .AnyAsync(g => g.RequestId == id &&
+                                       g.OperationInvoiceStatus == RequestConstants.OperationInvoiceStatuses.Unclassified);
+
+                    if (anyUnclassified)
+                    {
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Classificação Obrigatória",
+                            Detail = "Este pedido possui grupos sem classificação de documento. " +
+                                     "Classifique o tipo de faturação antes de finalizar.",
+                            Status = 400
+                        });
+                    }
+
+                    if (!PostPaymentCompletionPolicy.IsCompletionDisabled(_postPaymentOptions))
+                    {
+                        return BadRequest(new ProblemDetails
+                        {
+                            Title = "Fluxo Atualizado",
+                            Detail = "Este pedido utiliza o novo fluxo de conclusão pós-pagamento. " +
+                                     "A finalização ocorre automaticamente após o upload do Recibo Fiscal.",
+                            Status = 400
+                        });
+                    }
+
+                    // Classified + completion lifecycle not yet active → legacy finalization
+                    // remains the completion path (the Phase 3B window).
+                }
+
+                // No PO groups → historical groupless request → legacy fallback below is allowed.
             }
 
             // Status Rule: Finance finalization ONLY from WAITING_RECEIPT
@@ -7327,7 +8288,7 @@ public class RequestsController : BaseController
             bool anyCompleteQuotation = request.Quotations.Any(q => 
                 q.SupplierId > 0 && 
                 q.Items.Any() && 
-                (q.ProformaAttachmentId.HasValue || request.Attachments.Any(a => a.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA && !a.IsDeleted))
+                (q.ProformaAttachmentId.HasValue || request.Attachments.Any(a => (a.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA || a.AttachmentTypeCode == RequestAttachment.TYPE_QUOTATION) && !a.IsDeleted))
             );
 
             if (!anyCompleteQuotation)
@@ -7949,6 +8910,704 @@ public class RequestsController : BaseController
         }
     }
 
+    /// <summary>
+    /// Post-Payment Completion (Release 2): validates the quotation's billing document type.
+    ///
+    /// <para>Returns null when acceptable, or the ProblemDetails to return otherwise. The value is
+    /// mandatory only when the new workflow applies to the parent request (feature enabled AND the
+    /// request falls on/after the effective date); a quotation on an older request stays
+    /// unclassified here and is handled by the Release 5 Finance classification workflow.</para>
+    /// </summary>
+    /// <summary>
+    /// Post-Payment Completion (Release 2 corrected): validates the identity of a document offered
+    /// as the origin of a PAYMENT request.
+    ///
+    /// <para>Acceptance is decided by <see cref="DocumentObligationResolver"/>, not by an enum
+    /// membership test, because whether a document may originate a payment depends on what the
+    /// document IS. A Factura-Recibo already documents the operation and its full payment — letting
+    /// it start a payable request would ask the Portal to pay the same thing twice. An Orçamento is
+    /// non-fiscal and cannot authorize payment at all.</para>
+    /// </summary>
+    private ProblemDetails? ValidatePaymentSourceDocumentType(string? normalized)
+    {
+        if (normalized == null) return null; // A draft may be saved unclassified.
+
+        if (!RequestConstants.SourceDocumentTypes.IsValid(normalized))
+        {
+            return new ProblemDetails
+            {
+                Title = "Erro de Validação",
+                Detail = "O tipo de documento anexado é inválido.",
+                Status = 400
+            };
+        }
+
+        var obligations = DocumentObligationResolver.Resolve(normalized, DocumentUsageContext.PaymentRequest);
+        if (!obligations.CanInitiatePayment)
+        {
+            return new ProblemDetails
+            {
+                Title = "Documento Não Elegível",
+                Detail = $"{RequestConstants.SourceDocumentTypes.DisplayName(normalized)}: " +
+                         (obligations.BlockingReason ?? "este documento não pode originar um pedido de pagamento."),
+                Status = 400
+            };
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Every reason a PAYMENT request's origin documents are not yet submittable, gathered in one
+    /// pass so the requester sees the whole list instead of discovering it one refusal at a time.
+    ///
+    /// <para>Each message names the document it belongs to. A request holding three invoices must
+    /// never report that something, somewhere, is wrong.</para>
+    ///
+    /// <para><b>Legacy requests keep the old rule.</b> A request with no <c>PaymentSourceDocument</c>
+    /// rows is validated against the request header exactly as before — nothing is backfilled, so a
+    /// request created before this release must still be submittable.</para>
+    /// </summary>
+    /// <summary>
+    /// Refuses a PAYMENT request whose payable supplier is an internal ALPLA legal entity.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>Covers both shapes: the header supplier of a legacy request, and the supplier of every
+    /// active source document. A document ALPLA issued to an external customer is a sales-side
+    /// document — evidence that somebody owes ALPLA, not that ALPLA owes anybody — so it can never
+    /// originate a payment.</para>
+    ///
+    /// <para><b>Not a permission check.</b> There is no role exemption and no override: a System
+    /// Administrator submitting the request gets the same refusal, because the problem is with the
+    /// counterparty, not with who is asking.</para>
+    ///
+    /// <para>Applies to the ordinary PAYMENT flow only. QUOTATION is untouched — the entities remain
+    /// perfectly referenceable everywhere else in the Portal.</para>
+    /// </remarks>
+    private async Task<List<string>> ValidatePaymentSupplierIsNotInternalAsync(Request request)
+    {
+        var errors = new List<string>();
+
+        if (request.RequestType?.Code != RequestConstants.Types.Payment) return errors;
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .OrderBy(d => d.SequenceNumber)
+            .Select(d => new { d.SequenceNumber, d.SupplierId })
+            .ToListAsync();
+
+        if (documents.Count == 0)
+        {
+            var headerInternal = await _internalCompanies.ResolveSupplierAsync(request.SupplierId);
+            if (headerInternal != null)
+            {
+                errors.Add($"O fornecedor indicado é {headerInternal.Name}, uma empresa do grupo ALPLA, " +
+                           "e não pode ser o fornecedor de um pedido de pagamento. " +
+                           "Verifique se o documento selecionado é o correto.");
+            }
+
+            return errors;
+        }
+
+        foreach (var document in documents)
+        {
+            var internalCompany = await _internalCompanies.ResolveSupplierAsync(document.SupplierId);
+            if (internalCompany == null) continue;
+
+            errors.Add($"Documento {document.SequenceNumber}: o fornecedor indicado é {internalCompany.Name}, " +
+                       "uma empresa do grupo ALPLA, e não pode ser utilizado como fornecedor de um " +
+                       "pedido de pagamento. Verifique se o documento selecionado é o correto.");
+        }
+
+        return errors;
+    }
+
+    private async Task<List<string>> ValidatePaymentSourceDocumentsForSubmissionAsync(Request request)
+    {
+        var errors = new List<string>();
+
+        // Counterparty integrity first: a request payable to ALPLA itself is wrong regardless of how
+        // complete its documents are, and saying so before the field-level complaints keeps the real
+        // problem at the top of the list.
+        errors.AddRange(await ValidatePaymentSupplierIsNotInternalAsync(request));
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .OrderBy(d => d.SequenceNumber)
+            .ToListAsync();
+
+        if (documents.Count == 0)
+        {
+            // ── Pre-multi-document path, unchanged ──
+            if (!RequestConstants.SourceDocumentTypes.IsValid(request.SourceDocumentType))
+            {
+                errors.Add("O tipo de documento anexado é obrigatório. Indique que documento o fornecedor emitiu antes de submeter.");
+                return errors;
+            }
+
+            var headerObligations = DocumentObligationResolver.Resolve(
+                request.SourceDocumentType, DocumentUsageContext.PaymentRequest);
+
+            if (!headerObligations.CanInitiatePayment)
+            {
+                errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)}: " +
+                           (headerObligations.BlockingReason ?? "este documento não pode originar um pedido de pagamento."));
+            }
+            else if (headerObligations.RequiresFinanceClassificationReview &&
+                     string.IsNullOrWhiteSpace(request.ClassificationJustification) &&
+                     !request.ClassificationConflictAcknowledged)
+            {
+                errors.Add($"{RequestConstants.SourceDocumentTypes.DisplayName(request.SourceDocumentType)} " +
+                           "requer confirmação: reveja as obrigações associadas antes de submeter.");
+            }
+
+            return errors;
+        }
+
+        // ── Multi-document path ──
+        var itemTotals = await _context.RequestLineItems
+            .Where(i => i.RequestId == request.Id && !i.IsDeleted && i.PaymentSourceDocumentId != null)
+            .GroupBy(i => i.PaymentSourceDocumentId!.Value)
+            .Select(g => new { DocumentId = g.Key, Total = g.Sum(i => i.TotalAmount), Count = g.Count() })
+            .ToDictionaryAsync(x => x.DocumentId, x => x);
+
+        var states = documents.Select(d => new PaymentSourceDocumentState
+        {
+            Id = d.Id,
+            SequenceNumber = d.SequenceNumber,
+            Label = $"Documento {d.SequenceNumber}",
+            HasAttachment = d.AttachmentId != Guid.Empty,
+            SupplierId = d.SupplierId,
+            PlantId = d.PlantId,
+            DocumentNumber = d.DocumentNumber,
+            SourceDocumentType = d.SourceDocumentType,
+            DocumentDate = d.DocumentDate,
+            DueDate = d.DueDate,
+            Currency = d.Currency,
+            GrossAmount = d.GrossAmount,
+            ItemsTotal = itemTotals.TryGetValue(d.Id, out var t) ? t.Total : 0m,
+            ActiveItemCount = itemTotals.TryGetValue(d.Id, out var c) ? c.Count : 0,
+            OcrSuggestion = d.OcrSuggestion,
+            OcrConfidence = d.OcrConfidence,
+            ClassificationConflictAcknowledged = d.ClassificationConflictAcknowledged,
+            ClassificationJustification = d.ClassificationJustification
+        }).ToList();
+
+        var result = PaymentSourceDocumentValidator.Validate(states, requireClassification: true);
+
+        foreach (var problem in result.Problems)
+        {
+            errors.Add(problem.DocumentId == Guid.Empty
+                ? problem.Message
+                : $"{problem.Label}: {problem.Message}");
+        }
+
+        // Every active item must belong to an active document — an orphan would be paid for
+        // without any document accounting for it.
+        var orphanCount = await _context.RequestLineItems
+            .CountAsync(i => i.RequestId == request.Id && !i.IsDeleted && i.PaymentSourceDocumentId == null);
+
+        if (orphanCount > 0)
+        {
+            errors.Add($"{orphanCount} item(ns) não estão associados a nenhum documento de origem. " +
+                       "Associe cada item ao documento que o paga.");
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Resolves the source document an item claims, and refuses anything inconsistent with it.
+    ///
+    /// <para>Returns <c>(null, null)</c> when the rule does not apply — QUOTATION requests, and
+    /// PAYMENT requests that carry no source documents at all. A request created before this
+    /// release has none and must keep working exactly as it did.</para>
+    /// </summary>
+    private async Task<(PaymentSourceDocumentBinding? Binding, ProblemDetails? Problem)>
+        ResolvePaymentSourceDocumentBindingAsync(
+            Request request, Guid? documentId, PaymentLineItemBinding item)
+    {
+        if (request.RequestType?.Code != RequestConstants.Types.Payment)
+            return (null, null);
+
+        var activeCount = await _context.PaymentSourceDocuments
+            .CountAsync(d => d.RequestId == request.Id && !d.IsVoided);
+
+        var required = PaymentLineItemAssociation.IsDocumentRequired(
+            request.RequestType?.Code,
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request),
+            activeCount);
+
+        if (documentId == null || documentId == Guid.Empty)
+        {
+            if (!required) return (null, null);
+
+            return (null, new ProblemDetails
+            {
+                Title = "Documento de origem em falta",
+                Detail = "Indique a que documento de origem este item pertence.",
+                Status = 400
+            });
+        }
+
+        var document = await _context.PaymentSourceDocuments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId.Value);
+
+        var binding = document == null
+            ? null
+            : new PaymentSourceDocumentBinding(
+                document.Id, document.RequestId, document.IsVoided,
+                document.SupplierId, document.PlantId, document.Currency, document.SequenceNumber);
+
+        var problem = PaymentLineItemAssociation.Validate(request.Id, binding, item);
+        if (problem != null)
+        {
+            return (null, new ProblemDetails
+            {
+                Title = "Item incompatível com o documento",
+                Detail = problem,
+                Status = 400
+            });
+        }
+
+        return (binding, null);
+    }
+
+    // ── PAYMENT PO groups from source documents (Release 3) ──────────────────────────────────
+
+    /// <summary>
+    /// Creates the PO groups a PAYMENT request needs, one per distinct
+    /// Supplier + Currency + PaymentCondition + Plant + SourceDocumentType.
+    ///
+    /// <para><b>Idempotent.</b> Re-running final approval must never produce a second set of groups,
+    /// so the whole operation is keyed on the request and skipped once it has run. Any group that
+    /// already exists for a key is reused and updated rather than duplicated.</para>
+    ///
+    /// <para><b>Legacy requests keep working.</b> A request with no <c>PaymentSourceDocument</c> rows
+    /// — every request created before this release — falls back to the single group built from the
+    /// header, exactly as before. Nothing is backfilled: inventing a source document nobody recorded
+    /// would manufacture a historical fact.</para>
+    /// </summary>
+    private async Task BuildPaymentPoGroupsAsync(Request request, Guid actorId)
+    {
+        var alreadyBuilt = await _context.RequestStatusHistories
+            .AnyAsync(h => h.IdempotencyKey == PostPaymentIdempotencyKeys.PaymentGroupsBuilt(request.Id));
+
+        if (alreadyBuilt) return;
+
+        var existingGroups = await _context.RequestPoGroups
+            .Where(g => g.RequestId == request.Id)
+            .ToListAsync();
+
+        var documents = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == request.Id && !d.IsVoided)
+            .ToListAsync();
+
+        var plan = documents.Count == 0
+            ? await BuildLegacyPaymentPlanAsync(request)
+            : await BuildDocumentPaymentPlanAsync(request, documents);
+
+        if (plan.Count == 0) return;
+
+        var currencies = await _context.Currencies.AsNoTracking().ToListAsync();
+        var created = 0;
+
+        foreach (var planned in plan)
+        {
+            // Reuse rather than duplicate: an existing group with the same identity is the same
+            // group, whether it was created by an earlier run or by another path.
+            var group = existingGroups.FirstOrDefault(g =>
+                g.SupplierId == planned.Key.SupplierId &&
+                string.Equals(g.CurrencyCode, planned.Key.CurrencyCode, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(g.PaymentConditionCode, planned.Key.PaymentConditionCode, StringComparison.OrdinalIgnoreCase) &&
+                g.PlantId == planned.Key.PlantId &&
+                string.Equals(g.SourceDocumentType, planned.Key.SourceDocumentType, StringComparison.OrdinalIgnoreCase));
+
+            if (group == null)
+            {
+                group = new RequestPoGroup
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = request.Id,
+                    SupplierId = planned.Key.SupplierId,
+                    SupplierNameSnapshot = planned.SupplierNameSnapshot ?? "Fornecedor não definido",
+                    SupplierNifSnapshot = planned.SupplierTaxIdSnapshot,
+                    CurrencyCode = planned.Key.CurrencyCode ?? "AOA",
+                    CurrencyId = currencies.FirstOrDefault(c =>
+                        string.Equals(c.Code, planned.Key.CurrencyCode, StringComparison.OrdinalIgnoreCase))?.Id,
+                    PlantId = planned.Key.PlantId,
+                    PaymentConditionCode = planned.Key.PaymentConditionCode,
+                    AdvancePaymentPercent = request.AdvancePaymentPercent,
+                    Status = RequestConstants.PoGroupStatuses.WaitingPo,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    CreatedByUserId = actorId
+                };
+
+                _context.RequestPoGroups.Add(group);
+                existingGroups.Add(group);
+                created++;
+            }
+
+            group.TotalAmount = planned.TotalAmount;
+
+            // Identity is copied; every obligation is derived from it through the single resolver.
+            // Skipped while the feature is disabled, leaving the schema defaults untouched.
+            if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
+            {
+                var obligations = DocumentObligationResolver.Resolve(
+                    planned.Key.SourceDocumentType, DocumentUsageContext.PaymentRequest);
+
+                group.SourceDocumentType = planned.Key.SourceDocumentType;
+                group.OperationInvoiceStatus = obligations.OperationInvoiceStatus;
+                group.RequiresOperationInvoice = obligations.RequiresOperationInvoice;
+                group.RequiresSeparateFiscalReceipt = obligations.RequiresSeparateFiscalReceipt;
+                group.RequiresAdvanceRegularization = obligations.RequiresAdvanceRegularization;
+                group.RequiresFinanceClassificationReview = obligations.RequiresFinanceClassificationReview;
+
+                // The commercial baseline the operation invoices must eventually cover, captured
+                // once. Re-deriving it later would drift as items are edited, silently moving the
+                // finish line.
+                if (obligations.RequiresOperationInvoice && group.ExpectedOperationInvoiceTotal == null)
+                {
+                    group.ExpectedOperationInvoiceTotal = planned.TotalAmount;
+                    group.ExpectedOperationInvoiceCurrency = planned.Key.CurrencyCode;
+                }
+            }
+
+            // Traceability: every contributing item points at the group it landed in.
+            foreach (var itemId in planned.LineItemIds)
+            {
+                var item = request.LineItems.FirstOrDefault(i => i.Id == itemId);
+                if (item != null) item.RequestPoGroupId = group.Id;
+            }
+        }
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = request.Id,
+            ActorUserId = actorId,
+            ActionTaken = "GRUPOS_PAGAMENTO_CRIADOS",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = documents.Count == 0
+                ? $"Grupo de pagamento criado a partir do cabeçalho do pedido (pedido anterior ao multi-documento)."
+                : $"{plan.Count} grupo(s) de pagamento criado(s) a partir de {documents.Count} documento(s) de origem.",
+            IdempotencyKey = PostPaymentIdempotencyKeys.PaymentGroupsBuilt(request.Id),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        _logger.LogInformation(
+            "BuildPaymentPoGroups — Request {RequestId} ({RequestNumber}): {Planned} planned, {Created} created, " +
+            "from {Documents} source document(s).",
+            request.Id, request.RequestNumber, plan.Count, created, documents.Count);
+    }
+
+    /// <summary>Grouping over the request's source documents — the Release 3 path.</summary>
+    private async Task<IReadOnlyList<PlannedPaymentGroup>> BuildDocumentPaymentPlanAsync(
+        Request request, IReadOnlyList<PaymentSourceDocument> documents)
+    {
+        var byId = documents.ToDictionary(d => d.Id);
+
+        var supplierNames = await _context.Suppliers.AsNoTracking()
+            .Where(s => documents.Select(d => d.SupplierId).Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => new { s.Name, s.TaxId });
+
+        var items = request.LineItems
+            .Where(i => !i.IsDeleted && i.PaymentSourceDocumentId.HasValue &&
+                        byId.ContainsKey(i.PaymentSourceDocumentId.Value))
+            .Select(i =>
+            {
+                var d = byId[i.PaymentSourceDocumentId!.Value];
+                var supplier = d.SupplierId.HasValue && supplierNames.ContainsKey(d.SupplierId.Value)
+                    ? supplierNames[d.SupplierId.Value]
+                    : null;
+
+                return new PaymentGroupableItem
+                {
+                    LineItemId = i.Id,
+                    PaymentSourceDocumentId = d.Id,
+                    SupplierId = d.SupplierId,
+                    SupplierNameSnapshot = d.SupplierNameSnapshot ?? supplier?.Name,
+                    SupplierTaxIdSnapshot = d.SupplierTaxIdSnapshot ?? supplier?.TaxId,
+                    CurrencyCode = d.Currency,
+                    PlantId = d.PlantId,
+                    SourceDocumentType = d.SourceDocumentType,
+                    TotalAmount = i.TotalAmount
+                };
+            })
+            .ToList();
+
+        return PaymentGroupPlan.Build(items, request.PaymentConditionCode);
+    }
+
+    /// <summary>
+    /// The pre-multi-document path: one group from the request header. Kept so every request
+    /// created before Release 3 continues to behave exactly as it did.
+    /// </summary>
+    private async Task<IReadOnlyList<PlannedPaymentGroup>> BuildLegacyPaymentPlanAsync(Request request)
+    {
+        var supplier = request.SupplierId.HasValue
+            ? await _context.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.Id == request.SupplierId.Value)
+            : null;
+
+        var currencyCode = request.CurrencyId.HasValue
+            ? (await _context.Currencies.AsNoTracking()
+                .Where(c => c.Id == request.CurrencyId.Value).Select(c => c.Code).FirstOrDefaultAsync())
+            : null;
+
+        return new[]
+        {
+            new PlannedPaymentGroup
+            {
+                Key = PaymentGroupingKey.From(
+                    request.SupplierId, currencyCode ?? "AOA", request.PaymentConditionCode,
+                    request.PlantId, request.SourceDocumentType),
+                SupplierNameSnapshot = supplier?.Name,
+                SupplierTaxIdSnapshot = supplier?.TaxId,
+                TotalAmount = request.EstimatedTotalAmount,
+                LineItemIds = Array.Empty<Guid>(),
+                SourceDocumentIds = Array.Empty<Guid>()
+            }
+        };
+    }
+
+    // ── Document-classification override audit (Release 2 corrective) ────────────────────────
+    //
+    // A user may classify a document as something the evidence says it is not. That is allowed —
+    // the evidence is a reading, not a ruling — but it must be explicit, justified and recorded.
+    // The rules live in DocumentClassificationOverrideRecorder (pure); this layer only persists.
+
+    /// <summary>
+    /// Stages the audit of a classification that contradicts the document, or refuses it.
+    ///
+    /// <para>Nothing is saved here: the audit row and the classification it explains are committed
+    /// by the caller's single <c>SaveChanges</c>, so the record and the fact can never diverge.</para>
+    ///
+    /// <para>Returns a <see cref="ProblemDetails"/> when the override is inadmissible (no explicit
+    /// confirmation, or no written reason where one is owed), and <c>null</c> both when there is
+    /// nothing to record and when the same decision was already recorded — re-saving a draft that
+    /// carries an already-confirmed override must not append a second identical entry.</para>
+    /// </summary>
+    private async Task<ProblemDetails?> StageDocumentClassificationOverrideAsync(
+        DocumentClassificationOverrideRequest overrideRequest,
+        Guid requestId,
+        Guid? quotationId,
+        Guid actorId,
+        int statusId)
+    {
+        var decision = DocumentClassificationOverrideRecorder.Evaluate(overrideRequest);
+
+        if (decision.RejectionReason != null)
+        {
+            return new ProblemDetails
+            {
+                Title = "Classificação Divergente",
+                Detail = decision.RejectionReason,
+                Status = 400
+            };
+        }
+
+        if (!decision.ShouldRecord) return null;
+
+        // Fast path only — the unique index is the actual guarantee (see the retry in
+        // SaveChangesWithClassificationAuditRetryAsync).
+        var alreadyRecorded = await _context.DocumentClassificationOverrides
+            .AnyAsync(o => o.IdempotencyKey == decision.IdempotencyKey);
+        if (alreadyRecorded) return null;
+
+        _context.DocumentClassificationOverrides.Add(new DocumentClassificationOverride
+        {
+            Id = Guid.NewGuid(),
+            Context = decision.NormalizedContext,
+            RequestId = requestId,
+            QuotationId = quotationId,
+            AttachmentId = overrideRequest.AttachmentId,
+            SuggestedType = decision.NormalizedSuggestedType,
+            Confidence = overrideRequest.Confidence,
+            TitleFound = Truncate(overrideRequest.TitleFound, 400),
+            EvidenceJson = overrideRequest.EvidenceJson,
+            ConflictingEvidenceJson = overrideRequest.ConflictingEvidenceJson,
+            SuggestionSource = decision.NormalizedSuggestionSource,
+            SelectedType = decision.NormalizedSelectedType,
+            Acknowledged = overrideRequest.Acknowledged,
+            Justification = Truncate(decision.TrimmedJustification, 2000),
+            ActorUserId = actorId,
+            CreatedAtUtc = DateTime.UtcNow,
+            IdempotencyKey = decision.IdempotencyKey
+        });
+
+        // The same event in the place users actually read: the request timeline. A quotation
+        // override is anchored to the parent request and names the quotation in the sentence,
+        // because RequestStatusHistory has no quotation dimension of its own.
+        var comment = quotationId.HasValue
+            ? $"{decision.HistoryComment} (Cotação {quotationId.Value:D})"
+            : decision.HistoryComment;
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = actorId,
+            ActionTaken = "CLASSIFICACAO_DOCUMENTO_DIVERGENTE",
+            PreviousStatusId = statusId,
+            NewStatusId = statusId,
+            Comment = Truncate(comment, 2000),
+            IdempotencyKey = decision.IdempotencyKey,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        return null;
+    }
+
+    /// <summary>
+    /// Copies the classification evidence from the wire onto the quotation. Shared by create and
+    /// update so the two can never persist a different subset of the same decision.
+    /// </summary>
+    private static void ApplyQuotationClassificationEvidence(Quotation quotation, SaveQuotationRequestDto dto)
+    {
+        quotation.DocumentTypeSource = string.IsNullOrWhiteSpace(dto.DocumentTypeSource)
+            ? quotation.DocumentTypeSource : dto.DocumentTypeSource.Trim().ToUpperInvariant();
+        quotation.DocumentTypeOcrSuggestion =
+            RequestConstants.SourceDocumentTypes.Normalize(dto.DocumentTypeOcrSuggestion)
+            ?? quotation.DocumentTypeOcrSuggestion;
+        quotation.DocumentTypeOcrConfidence =
+            dto.DocumentTypeOcrConfidence ?? quotation.DocumentTypeOcrConfidence;
+        quotation.DocumentTypeEvidenceJson =
+            dto.DocumentTypeEvidenceJson ?? quotation.DocumentTypeEvidenceJson;
+        quotation.ClassificationConflictAcknowledged =
+            dto.ClassificationConflictAcknowledged ?? quotation.ClassificationConflictAcknowledged;
+        quotation.ClassificationJustification =
+            string.IsNullOrWhiteSpace(dto.ClassificationJustification)
+                ? quotation.ClassificationJustification : dto.ClassificationJustification.Trim();
+    }
+
+    /// <summary>
+    /// Builds the override request for a quotation. The suggestion is read from the quotation
+    /// itself, so a re-save that omits the OCR payload still compares against what was recorded.
+    /// </summary>
+    private static DocumentClassificationOverrideRequest BuildQuotationOverrideRequest(
+        Quotation quotation, SaveQuotationRequestDto dto) =>
+        new()
+        {
+            Context = RequestConstants.DocumentClassificationContexts.QuotationManagement,
+            ScopeId = quotation.Id,
+            AttachmentId = quotation.ProformaAttachmentId,
+            SuggestedType = quotation.DocumentTypeOcrSuggestion,
+            Confidence = quotation.DocumentTypeOcrConfidence,
+            TitleFound = dto.DocumentTypeTitleFound,
+            EvidenceJson = quotation.DocumentTypeEvidenceJson,
+            ConflictingEvidenceJson = dto.DocumentTypeConflictingEvidenceJson,
+            SuggestionSource = dto.DocumentTypeSuggestionSource,
+            SelectedType = quotation.DocumentType,
+            Acknowledged = quotation.ClassificationConflictAcknowledged,
+            Justification = quotation.ClassificationJustification
+        };
+
+    private static string? Truncate(string? value, int maxLength) =>
+        value != null && value.Length > maxLength ? value.Substring(0, maxLength) : value;
+
+    /// <summary>
+    /// Saves, and if the only thing that failed was a duplicate classification-audit row, drops
+    /// that row and saves again.
+    ///
+    /// <para>A duplicate means the decision was already recorded, so the audit is already complete.
+    /// What must never happen is the classification change itself being lost because its explanation
+    /// could not be written a second time — SQL Server aborts the entire transaction on the
+    /// constraint violation, taking the business update with it. Retrying without the audit entity
+    /// is what keeps the update.</para>
+    ///
+    /// <para>Deliberately narrow: it recognises our own two index names rather than SQL error codes
+    /// 2601/2627, so no unrelated uniqueness violation can be quietly swallowed here.</para>
+    /// </summary>
+    private async Task SaveChangesWithClassificationAuditRetryAsync()
+    {
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsClassificationAuditDuplicate(ex))
+        {
+            foreach (var entry in _context.ChangeTracker
+                         .Entries<DocumentClassificationOverride>()
+                         .Where(e => e.State == EntityState.Added)
+                         .ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            foreach (var entry in _context.ChangeTracker
+                         .Entries<RequestStatusHistory>()
+                         .Where(e => e.State == EntityState.Added && IsClassificationOverrideKey(e.Entity.IdempotencyKey))
+                         .ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    private bool IsClassificationAuditDuplicate(DbUpdateException ex)
+    {
+        var message = $"{ex.Message} {ex.InnerException?.Message}";
+
+        if (message.Contains("UX_DocumentClassificationOverride_IdempotencyKey", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // The shared history index only counts as ours when we are actually inserting an override row.
+        return message.Contains("UX_RequestStatusHistory_IdempotencyKey", StringComparison.OrdinalIgnoreCase)
+               && _context.ChangeTracker.Entries<RequestStatusHistory>()
+                   .Any(e => e.State == EntityState.Added && IsClassificationOverrideKey(e.Entity.IdempotencyKey));
+    }
+
+    private static bool IsClassificationOverrideKey(string? key) =>
+        key != null && key.StartsWith("DC_OVERRIDE:", StringComparison.Ordinal);
+
+    private ProblemDetails? ValidateQuotationDocumentType(Request request, string? rawDocumentType, out string? normalized)
+    {
+        normalized = RequestConstants.SourceDocumentTypes.Normalize(rawDocumentType);
+
+        if (normalized != null && !RequestConstants.SourceDocumentTypes.IsValid(normalized))
+        {
+            return new ProblemDetails
+            {
+                Title = "Validação de Cotação",
+                Detail = "O tipo de documento anexado é inválido.",
+                Status = 400
+            };
+        }
+
+        // A Factura-Recibo is not a quotation-origin document: it states the operation and its full
+        // payment already happened, so it cannot describe a purchase still being negotiated.
+        if (normalized != null &&
+            !DocumentObligationResolver.Resolve(normalized, DocumentUsageContext.QuotationManagement).CanBeUsedInQuotation)
+        {
+            return new ProblemDetails
+            {
+                Title = "Documento Não Elegível",
+                Detail = $"{RequestConstants.SourceDocumentTypes.DisplayName(normalized)}: " +
+                         "não é um documento de origem para cotação. Requer exceção revista pelo Financeiro.",
+                Status = 400
+            };
+        }
+
+        if (normalized == null &&
+            PostPaymentCompletionPolicy.IsNewWorkflowMandatory(_postPaymentOptions, request))
+        {
+            return new ProblemDetails
+            {
+                Title = "Validação de Cotação",
+                Detail = "O tipo de documento anexado é obrigatório. Indique que documento o fornecedor emitiu antes de guardar a cotação.",
+                Status = 400
+            };
+        }
+
+        return null;
+    }
+
     private async Task<bool> HasAttachmentAsync(Guid requestId, string typeCode)
     {
         // VoidedAtUtc is only ever set for a since-cancelled PAYMENT_SCHEDULE attachment (Finance
@@ -7980,15 +9639,43 @@ public class RequestsController : BaseController
         public string[] StatusCodes { get; set; } = Array.Empty<string>();
     }
 
+    // ── v2.229.9 timeline semantics (Release 4) ──
+    // "Recebimento / Execução" is the OPERATIONAL confirmation (goods received / service
+    // executed — WAITING_SUPPLIER_DELIVERY, IN_FOLLOWUP); "Documentação Fiscal" is the
+    // post-receiving fiscal-document lifecycle (WAITING_RECEIPT, WAITING_FISCAL_RECEIPT:
+    // Final Invoice / Recibo Fiscal). WAITING_RECEIPT is only ever entered by the
+    // all-received ConfirmReceiving branch, so the split needs no readiness join. The old
+    // duplicate "Agendamento" stage (a second PO_ISSUED) is gone. Presentation only —
+    // no workflow semantics live here.
+
+    private const string ReceivingStageLabel = "Recebimento / Execução";
+
+    private static readonly string[] TailPaymentStatuses =
+    {
+        "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED",
+        "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED",
+        "WAITING_RECONCILIATION"
+    };
+
+    private static readonly string[] TailReceivingStatuses =
+    {
+        "WAITING_SUPPLIER_DELIVERY", "IN_FOLLOWUP"
+    };
+
+    private static readonly string[] TailFiscalDocumentationStatuses =
+    {
+        "WAITING_RECEIPT", "WAITING_FISCAL_RECEIPT"
+    };
+
     private List<StageDef> GetQuotationStages() => new()
     {
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
-        new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION" } },
+        new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION", "QUOTATION_ADJUSTMENT" } },
         new StageDef { Label = "Aprovações", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED" } },
-        new StageDef { Label = "Agendamento", StatusCodes = new[] { "PO_ISSUED" } },
-        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED" } },
-        new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
+        new StageDef { Label = "P.O. / Contratação", StatusCodes = new[] { "APPROVED", "QUOTATION_COMPLETED", "PO_REQUESTED", "PO_PARTIALLY_UPLOADED", "PO_ISSUED", "WAITING_PO_CORRECTION" } },
+        new StageDef { Label = "Pagamento", StatusCodes = TailPaymentStatuses },
+        new StageDef { Label = ReceivingStageLabel, StatusCodes = TailReceivingStatuses },
+        new StageDef { Label = "Documentação Fiscal", StatusCodes = TailFiscalDocumentationStatuses },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
 
@@ -7997,9 +9684,10 @@ public class RequestsController : BaseController
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
         new StageDef { Label = "Aprovação Área", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT" } },
         new StageDef { Label = "Aprovação Final", StatusCodes = new[] { "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "Agendamento", StatusCodes = new[] { "APPROVED", "PO_ISSUED" } },
-        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED" } },
-        new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
+        new StageDef { Label = "P.O. / Contratação", StatusCodes = new[] { "APPROVED", "PO_PARTIALLY_UPLOADED", "PO_ISSUED", "WAITING_PO_CORRECTION" } },
+        new StageDef { Label = "Pagamento", StatusCodes = TailPaymentStatuses },
+        new StageDef { Label = ReceivingStageLabel, StatusCodes = TailReceivingStatuses },
+        new StageDef { Label = "Documentação Fiscal", StatusCodes = TailFiscalDocumentationStatuses },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
 

@@ -48,8 +48,30 @@ public static class FinalApprovalLotViewBuilder
                 SelectedQuotationItemId = bi.SelectedQuotationItemId
             };
 
-            if (itemById.TryGetValue(bi.SelectedQuotationItemId, out var found))
+            // Candidate model: the winning candidate's FROZEN snapshot is the authoritative money
+            // — a live quotation edit after submission must never change what was approved.
+            var winnerCandidate = bi.SelectedCandidateId.HasValue
+                ? bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId.Value)
+                : null;
+
+            if (winnerCandidate != null)
             {
+                lotItem.Description = winnerCandidate.Description;
+                lotItem.Quantity = winnerCandidate.Quantity;
+                lotItem.UnitCode = winnerCandidate.UnitText;
+                lotItem.LineTotal = winnerCandidate.LineTotal;
+                lotItem.SupplierName = winnerCandidate.SupplierName;
+                lotItem.IsExtraItem = string.Equals(winnerCandidate.ReconciliationStatus, "EXTRA_ITEM", StringComparison.OrdinalIgnoreCase);
+
+                resolvedSum += winnerCandidate.LineTotal;
+                if (!string.IsNullOrWhiteSpace(winnerCandidate.SupplierName)
+                    && !supplierNames.Contains(winnerCandidate.SupplierName))
+                    supplierNames.Add(winnerCandidate.SupplierName);
+            }
+            else if (bi.SelectedQuotationItemId.HasValue
+                && itemById.TryGetValue(bi.SelectedQuotationItemId.Value, out var found))
+            {
+                // Legacy buyer-selected winner (no candidate rows) — live lookup as before.
                 lotItem.Description = found.Item.Description;
                 lotItem.Quantity = found.Item.Quantity;
                 lotItem.UnitCode = found.Item.UnitCode;
@@ -64,7 +86,7 @@ public static class FinalApprovalLotViewBuilder
             }
             else
             {
-                // Winner could not be resolved — never fabricate a 0 total. Flag it instead.
+                // No winner decided or winner could not be resolved — never fabricate a 0 total.
                 lotItem.LineTotal = null;
                 hasUnresolved = true;
             }

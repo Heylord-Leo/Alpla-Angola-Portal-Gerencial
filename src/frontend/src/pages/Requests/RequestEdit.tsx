@@ -26,16 +26,26 @@ import { ApprovalModal, ApprovalActionType } from '../../components/ApprovalModa
 import { RegisterPoModal } from '../../components/RegisterPoModal';
 import { CorrectPoModal } from '../../components/CorrectPoModal';
 import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
+import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
+import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { RequestGeneralDataSection } from './components/RequestGeneralDataSection';
+import { PaymentSourceDocumentsSection } from './components/PaymentSourceDocumentsSection';
+import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocument';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
 import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
+import { OperationInvoiceSection } from './components/OperationInvoiceSection';
+import { RequestCompletionSection } from './components/RequestCompletionSection';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
+import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
+import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
+import { plantMismatches } from '../../lib/paymentSourceDocuments';
+import { completionNextActionGuidance } from '../../lib/operationInvoiceView';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -58,6 +68,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         requestNumber,
         formData,
         setFormData,
+        featureFlags,
+        documentClassification,
+        classificationConflict,
+        setClassificationConflict,
         initialFormData,
         supplierName,
         setSupplierName,
@@ -128,6 +142,13 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         handleSubmit,
         handleRequestAction,
         handleSubmitRequest,
+        showCatalogReconciliationWarning,
+        setShowCatalogReconciliationWarning,
+        catalogReconciliation,
+        catalogUnresolved,
+        catalogDocumentLabels,
+        catalogEquivalentIndexesOf,
+        applyCatalogResolutions,
         handleSaveItem,
         handleDeleteItem,
         handleDeleteRequest,
@@ -135,10 +156,119 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         loadData,
         navigate,
         location,
-        poGroups
+        poGroups,
+        setUsesMultiSourceDocuments
     } = useRequestDetail({ id: inputRequestId || undefined, onClose: onDrawerClose });
 
     const isDrawerMode = !!onDrawerClose;
+    const { user } = useAuth();
+
+    // Mirrors LookupsController.CanCreateSupplierContextuallyAsync. The scope half is proxied by the
+    // lookup lists this screen loaded, which are themselves scoped to the user; the server remains
+    // the authority and will still refuse if the proxy is ever generous.
+    const canCreateSupplier = canCreateSupplierContextually(user?.roles, {
+        hasPlantScope: plants.length > 0,
+        hasDepartmentScope: departments.length > 0
+    });
+
+    // Release 3: the PAYMENT source-document collection. Held here rather than in the hook because
+    // the summary is the authoritative source of totals and canSubmit, and the section owns it.
+    const [sourceDocumentsSummary, setSourceDocumentsSummary] =
+        useState<PaymentSourceDocumentsSummaryDto | null>(null);
+    const [sourceDocsOpen, setSourceDocsOpen] = useState(true);
+
+    /**
+     * This request's documents are the authority, not its header.
+     *
+     * <p>From the persisted discriminator, never a row count or a date: a new multi-document draft
+     * has zero documents until its first is saved and must still be treated as one.</p>
+     *
+     * <p>Declared AFTER the state it reads. `// @ts-nocheck` at the top of this file means the
+     * compiler will not catch a use-before-declaration here, and a `const` read during render before
+     * its `useState` has run is a temporal-dead-zone crash, not a warning.</p>
+     */
+    const isMultiDocumentPayment =
+        featureFlags.paymentMultiDocumentEnabled &&
+        requestTypeCode === 'PAYMENT' &&
+        sourceDocumentsSummary?.usesMultiDocumentModel === true;
+    const [documentEditingState, setDocumentEditingState] =
+        useState<{ openSequence: number | null; unsavedSequences: number[] }>(
+            { openSequence: null, unsavedSequences: [] });
+    /** Why the request cannot be submitted yet. Shown instead of letting the backend refuse. */
+    const [submitBlockers, setSubmitBlockers] = useState<string[] | null>(null);
+
+    // ── Release 4 (v2.229.7): legacy manual finalization vs the active completion lifecycle ──
+    // The readiness read model already fetched by RequestCompletionSection is reported up here
+    // (single fetch), so the legacy WAITING_RECEIPT header/action never claims "Anexar recibo do
+    // fornecedor e finalizar pedido" for a grouped+classified request the backend would refuse
+    // with "Fluxo Atualizado". While readiness has not loaded, a grouped request under the
+    // active lifecycle already suppresses the button (it can never succeed); the readiness
+    // result then refines the predicate to the approved grouped+classified scope.
+    const [completionReadiness, setCompletionReadiness] = useState(null);
+    const release4LegacyFinalizeSuppressed =
+        featureFlags.completionLifecycleEnabled &&
+        (poGroups?.length ?? 0) > 0 &&
+        (completionReadiness === null ||
+            (completionReadiness.groups.length > 0 &&
+             completionReadiness.groups.every(g => g.classified)));
+    const release4Guidance = (release4LegacyFinalizeSuppressed && completionReadiness)
+        ? completionNextActionGuidance(completionReadiness)
+        : null;
+
+    /**
+     * Stable by construction. An inline arrow here is a new function every render, and the
+     * collection used to fold that identity into its load effect — one render became one fetch,
+     * and one fetch became one render.
+     */
+    const handleSourceDocumentsSummary = useCallback(
+        (summary: PaymentSourceDocumentsSummaryDto | null) => {
+            setSourceDocumentsSummary(summary);
+            // The submit guards live in the hook and must stop asking for the header-level
+            // classification the moment the documents own it.
+            setUsesMultiSourceDocuments(summary?.usesMultiDocumentModel === true);
+        }, [setUsesMultiSourceDocuments]);
+
+    /**
+     * §16 — submission preflight for a multi-document PAYMENT.
+     *
+     * <p>Two things must be true before an approver sees this request: nothing is still being typed,
+     * and the backend's own summary says it may be submitted. The server re-checks everything and
+     * stays authoritative; this exists so the user is told <b>which document</b> is the problem
+     * rather than receiving one generic refusal.</p>
+     */
+    const guardedSubmitRequest = () => {
+        const summary = sourceDocumentsSummary;
+        if (!featureFlags.paymentMultiDocumentEnabled || !summary?.usesMultiDocumentModel) {
+            void handleSubmitRequest();
+            return;
+        }
+
+        const problems: string[] = [];
+
+        for (const seq of documentEditingState.unsavedSequences) {
+            problems.push(
+                `Documento ${seq} tem alterações por guardar. Guarde o documento antes de gerar o pedido.`);
+        }
+
+        if (documentEditingState.openSequence != null &&
+            !documentEditingState.unsavedSequences.includes(documentEditingState.openSequence)) {
+            problems.push(
+                `Documento ${documentEditingState.openSequence} ainda está em revisão. ` +
+                'Confirme o documento antes de gerar o pedido.');
+        }
+
+        if (!summary.canSubmit) {
+            problems.push(...summary.requestValidationMessages);
+            for (const d of summary.documents) {
+                for (const m of d.validationMessages) {
+                    problems.push(`Documento ${d.sequenceNumber}: ${m}`);
+                }
+            }
+        }
+
+        if (problems.length > 0) { setSubmitBlockers(problems); return; }
+        void handleSubmitRequest();
+    };
 
     const getFieldErrors = (fieldName: string) => {
         if (!fieldErrors) return null;
@@ -303,7 +433,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 )}
                 {isDraftEditable && (
                     <button
-                        onClick={handleSubmitRequest}
+                        onClick={guardedSubmitRequest}
                         disabled={submitting || saving}
                         className="btn-primary"
                         style={{
@@ -316,7 +446,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 )}
             </>
         ),
-        operationalGuidance: (status ? getRequestGuidance(status, requestTypeCode || '') : null) as OperationalGuidance | null,
+        operationalGuidance: (status
+            ? (status === 'WAITING_RECEIPT' && release4Guidance) || getRequestGuidance(status, requestTypeCode || '')
+            : null) as OperationalGuidance | null,
         feedback,
         onCloseFeedback: () => setFeedback(prev => ({ ...prev, message: null })),
         isDrawerMode: !!onDrawerClose
@@ -353,6 +485,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     navigate={navigate}
                     onDrawerClose={onDrawerClose}
                     getRequestGuidance={getRequestGuidance}
+                    suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
+                    completionGuidance={release4Guidance}
                 />
             </RequestActionHeader>
 
@@ -367,6 +501,13 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 gap: '32px'
             }}>
                 <RequestGeneralDataSection
+                    isMultiDocumentPayment={isMultiDocumentPayment}
+                    plantMismatches={isMultiDocumentPayment
+                        ? plantMismatches(
+                            formData.plantId ? Number(formData.plantId) : null,
+                            sourceDocumentsSummary?.documents ?? [],
+                            id => plants.find(p => p.id === id)?.name ?? null)
+                        : []}
                     formData={formData}
                     setFormData={setFormData}
                     handleChange={handleChange}
@@ -389,6 +530,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     requestNumber={requestNumber}
                     status={status}
                     lineItemsCount={lineItems.length}
+                    featureFlags={featureFlags}
+                    documentClassification={documentClassification}
+                    classificationConflict={classificationConflict}
+                    setClassificationConflict={setClassificationConflict}
                     sectionTitleClassName={styles.sectionTitle}
                     labelClassName={styles.formLabel}
                     getInputClassName={getInputClassName}
@@ -396,8 +541,67 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getFieldErrors={getFieldErrors}
                 />
 
+                {/* Release 3: PAYMENT may carry several source documents, each with its own OCR,
+                    classification and items. Renders nothing when the flag is off or when the
+                    request has no source-document rows (the legacy single-document path). */}
+                {id && (
+                    <PaymentSourceDocumentsSection
+                        requestId={id}
+                        requestTypeCode={requestTypeCode}
+                        statusCode={status}
+                        multiDocumentEnabled={featureFlags.paymentMultiDocumentEnabled}
+                        // The explicit discriminator, not a row count: a NEW multi-document draft has zero
+                        // documents until its first is persisted, and must still show the collection.
+                        hasSourceDocuments={
+                            sourceDocumentsSummary?.usesMultiDocumentModel === true ||
+                            (sourceDocumentsSummary?.documents.length ?? 0) > 0
+                        }
+                        documentCount={sourceDocumentsSummary?.documents.length ?? 0}
+                        plants={plants}
+                        currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
+                        isOpen={sourceDocsOpen}
+                        onToggle={() => setSourceDocsOpen(o => !o)}
+                        canCreateSupplier={canCreateSupplier}
+                        onSummaryChange={handleSourceDocumentsSummary}
+                        onEditingStateChange={setDocumentEditingState}
+                    />
+                )}
 
+                {/* Release 4 Phase 3B: Final Invoice registration, allocation and coverage. Works
+                    for PAYMENT and QUOTATION alike — the obligations read model is the abstraction.
+                    Renders nothing while the coverage capability is off or nothing exists to show.
+                    The completion lifecycle (Phase 4) is deliberately absent. */}
+                {id && (
+                    <OperationInvoiceSection
+                        requestId={id}
+                        coverageEnabled={featureFlags.postPaymentCompletionEnabled}
+                        statusCode={status || null}
+                        isFinance={isFinance}
+                        isBuyer={isBuyer}
+                        isAdmin={user?.roles?.includes('System Administrator') ?? false}
+                        currentUserId={user?.id ?? null}
+                    />
+                )}
 
+                {/* Release 4 Phase 4D: completion readiness — a faithful rendering of the backend
+                    completion-readiness read model. Shows what is missing and who acts next; the
+                    completion itself is automatic (no manual "Concluir Pedido"). Renders nothing
+                    while the coverage capability is off or the request has no groups. */}
+                {id && (
+                    <RequestCompletionSection
+                        requestId={id}
+                        coverageEnabled={featureFlags.postPaymentCompletionEnabled}
+                        lifecycleEnabled={featureFlags.completionLifecycleEnabled}
+                        isFinance={isFinance}
+                        isAdmin={user?.roles?.includes('System Administrator') ?? false}
+                        onReadiness={setCompletionReadiness}
+                    />
+                )}
+
+                {/* One authoritative total. On a multi-document request the value IS the sum of the
+                    active documents, and the source-document summary already states it — a second
+                    editable copy of currency and discount would be a second, contradictory answer. */}
+                {!isMultiDocumentPayment && (
                 <RequestFinancialSummary
                     formData={formData}
                     setFormData={setFormData}
@@ -414,6 +618,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getInputClassName={getInputClassName}
                     renderFieldError={renderFieldError}
                 />
+                )}
 
             </form>
 
@@ -433,7 +638,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 supplierId={formData.supplierId ?? null}
                 fieldErrors={fieldErrors}
                 clearFieldError={clearFieldError}
-                canEditItems={canEditItems}
+                // Items belong to a document. They are changed inside the document composer, never
+                // from a consolidated list where a line has no stated owner.
+                canEditItems={canEditItems && !isMultiDocumentPayment}
+                showSourceDocumentColumn={isMultiDocumentPayment}
                 handleSaveItem={handleSaveItem}
                 handleDeleteItem={handleDeleteItem}
                 isOpen={sectionsOpen.items}
@@ -516,6 +724,17 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         onRefresh={handleAttachmentRefresh}
                         requestType={requestTypeCode || undefined}
                         status={status || undefined}
+                        showSourceDocuments={isMultiDocumentPayment}
+                        sourceDocuments={isMultiDocumentPayment
+                            ? (sourceDocumentsSummary?.documents ?? []).map(d => ({
+                                sequenceNumber: d.sequenceNumber,
+                                attachmentId: d.attachmentId,
+                                fileName: d.attachmentFileName ?? null,
+                                documentNumber: d.documentNumber ?? null,
+                                sourceDocumentType: (d.sourceDocumentType as string | null) ?? null,
+                                supplierName: d.supplierNameSnapshot ?? null
+                            }))
+                            : []}
                     />
                 </div>
             </CollapsibleSection>
@@ -688,6 +907,28 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 })()
             )}
 
+            {/* Catalogue reconciliation — multi-document PAYMENT drafts.
+                Same warning and same modal the creation flow uses; the only difference is that the
+                answers are written straight to lines that already exist. */}
+            <ReconciliationWarningDialog
+                isOpen={showCatalogReconciliationWarning}
+                unresolvedCount={catalogUnresolved.length}
+                onReviewItems={() => {
+                    setShowCatalogReconciliationWarning(false);
+                    catalogReconciliation.openModal();
+                }}
+                onCancel={() => setShowCatalogReconciliationWarning(false)}
+            />
+
+            <CatalogItemReconciliationModal
+                isOpen={catalogReconciliation.isModalOpen}
+                onClose={catalogReconciliation.closeModal}
+                classifiedItems={catalogReconciliation.classifiedItems}
+                documentLabels={catalogDocumentLabels}
+                equivalentIndexesOf={catalogEquivalentIndexesOf}
+                onResolveAll={(resolutions) => { void applyCatalogResolutions(resolutions); }}
+            />
+
             {/* Reconciliation Modal */}
             <ReconciliationModal
                 show={showReconciliationModal}
@@ -735,6 +976,23 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 initialName={quickSupplierModal.initialName}
                 initialTaxId={quickSupplierModal.initialTaxId}
             />
+
+            {/* §16 — every remaining document-level issue, named by document. */}
+            {submitBlockers && (
+                <ConfirmationDialog
+                    title="O pedido ainda não pode ser gerado"
+                    message={
+                        <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {submitBlockers.map(b => <li key={b}>{b}</li>)}
+                        </ul>
+                    }
+                    confirmText="Rever documentos"
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => { setSubmitBlockers(null); setSourceDocsOpen(true); }}
+                    onCancel={() => setSubmitBlockers(null)}
+                />
+            )}
 
         </motion.div >
     );

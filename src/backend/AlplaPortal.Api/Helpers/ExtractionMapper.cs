@@ -1,5 +1,7 @@
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Services;
 
 namespace AlplaPortal.Api.Helpers;
 
@@ -9,7 +11,8 @@ public static class ExtractionMapper
     /// Temporary mapper to preserve backward compatibility with the frontend's expected OCR response shape.
     /// This should be replaced when the frontend is updated to consume the provider-agnostic ExtractionResultDto.
     /// </summary>
-    public static OcrExtractionResultDto MapToLegacyOcrResult(ExtractionResultDto internalResult)
+    public static OcrExtractionResultDto MapToLegacyOcrResult(
+        ExtractionResultDto internalResult, string? fileName = null)
     {
         var integrationDto = new OcrIntegrationDto
         {
@@ -18,8 +21,10 @@ public static class ExtractionMapper
                 SupplierName = new OcrValueDto<string> { Value = internalResult.Header?.SupplierName, Status = "recommended" },
                 SupplierTaxId = new OcrValueDto<string> { Value = internalResult.Header?.SupplierTaxId, Status = "recommended" },
                 BilledCompany = new OcrValueDto<string> { Value = internalResult.Header?.BilledCompanyName, Status = "recommended" },
+                BilledCompanyTaxId = new OcrValueDto<string> { Value = internalResult.Header?.BilledCompanyTaxId, Status = "recommended" },
                 DocumentNumber = new OcrValueDto<string> { Value = internalResult.Header?.DocumentNumber, Status = "recommended" },
                 Date = new OcrValueDto<string> { Value = internalResult.Header?.DocumentDate, Status = "recommended" },
+                DueDate = new OcrValueDto<string> { Value = internalResult.Header?.DueDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
                 TotalAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount ?? 0, Status = "recommended" },
                 DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },
@@ -39,7 +44,12 @@ public static class ExtractionMapper
                 VendorIban = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorIban) ? new OcrValueDto<string> { Value = internalResult.Header.VendorIban, Status = "suggested" } : null,
                 VendorBankAccount = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorBankAccount) ? new OcrValueDto<string> { Value = internalResult.Header.VendorBankAccount, Status = "suggested" } : null,
                 VendorSwift = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorSwift) ? new OcrValueDto<string> { Value = internalResult.Header.VendorSwift, Status = "suggested" } : null,
-                VendorPaymentTerms = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorPaymentTerms) ? new OcrValueDto<string> { Value = internalResult.Header.VendorPaymentTerms, Status = "suggested" } : null
+                VendorPaymentTerms = !string.IsNullOrWhiteSpace(internalResult.Header?.VendorPaymentTerms) ? new OcrValueDto<string> { Value = internalResult.Header.VendorPaymentTerms, Status = "suggested" } : null,
+
+                // Document classification (Release 2 corrected). Passed through as a PROPOSAL with
+                // its evidence so the UI can ask the user to confirm or correct it. Deliberately
+                // never mapped into any field the user's selection is read from.
+                DocumentClassification = BuildDocumentClassification(internalResult.Header, fileName)
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {
@@ -93,6 +103,73 @@ public static class ExtractionMapper
                 { "isPartial", internalResult.Metadata?.IsPartial ?? false },
                 { "conflictsDetected", internalResult.Metadata?.ConflictsDetected ?? false }
             }
+        };
+    }
+
+    /// <summary>
+    /// Projects the extraction's document-identity opinion, or null when it had none.
+    ///
+    /// <para>Returning null rather than an empty object matters: "the extraction could not identify
+    /// this document" and "the extraction identified nothing suspicious" are different situations,
+    /// and only the first should leave the UI without a suggestion to reconcile against.</para>
+    /// </summary>
+    private static OcrDocumentClassificationDto? BuildDocumentClassification(
+        ExtractionHeaderDto? header, string? fileName)
+    {
+        if (header == null) return null;
+
+        var hasOpinion = !string.IsNullOrWhiteSpace(header.DocumentClassificationType)
+                         || !string.IsNullOrWhiteSpace(header.DocumentClassificationTitleFound)
+                         || header.DocumentClassificationSupportingEvidence?.Count > 0
+                         || header.DocumentClassificationConflictingEvidence?.Count > 0
+                         || header.DocumentClassificationFiscalMarkers?.Count > 0
+                         || header.DocumentClassificationNonFiscalMarkers?.Count > 0;
+
+        // No structured block — older provider, truncated response, or a scan with little text.
+        // Fall back to a weak, clearly-labelled suggestion rather than staying silent: with no
+        // suggestion the UI has nothing to reconcile the user's choice against, which is exactly
+        // how an FT invoice was accepted as a "Fatura Proforma" unchallenged.
+        if (!hasOpinion)
+        {
+            var fallback = DocumentClassificationFallback.Derive(header.DocumentNumber, fileName);
+            if (fallback.SuggestedType == null) return null;
+
+            return new OcrDocumentClassificationDto
+            {
+                SuggestedType = fallback.SuggestedType,
+                Confidence = fallback.Confidence,
+                TitleFound = fallback.TitleFound,
+                SupportingEvidence = fallback.SupportingEvidence,
+                ConflictingEvidence = new List<string>(),
+                FiscalMarkers = new List<string>(),
+                NonFiscalMarkers = fallback.NonFiscalMarkers,
+                IndicatesFiscalDocument = fallback.IndicatesFiscalDocument,
+                IsFallback = true
+            };
+        }
+
+        var fiscalMarkers = header.DocumentClassificationFiscalMarkers ?? new List<string>();
+        var nonFiscalMarkers = header.DocumentClassificationNonFiscalMarkers ?? new List<string>();
+
+        var suggested = header.DocumentClassificationType?.Trim().ToUpperInvariant();
+
+        // A fiscal reading is claimed either by the suggested type itself or by certification
+        // markers on the page — unless the document explicitly declares itself non-fiscal, which
+        // always wins ("sem valor fiscal" is a statement by the issuer, not an inference).
+        var indicatesFiscal =
+            nonFiscalMarkers.Count == 0 &&
+            (RequestConstants.SourceDocumentTypes.IsFiscal(suggested) || fiscalMarkers.Count > 0);
+
+        return new OcrDocumentClassificationDto
+        {
+            SuggestedType = suggested,
+            Confidence = header.DocumentClassificationConfidence,
+            TitleFound = header.DocumentClassificationTitleFound,
+            SupportingEvidence = header.DocumentClassificationSupportingEvidence ?? new List<string>(),
+            ConflictingEvidence = header.DocumentClassificationConflictingEvidence ?? new List<string>(),
+            FiscalMarkers = fiscalMarkers,
+            NonFiscalMarkers = nonFiscalMarkers,
+            IndicatesFiscalDocument = indicatesFiscal
         };
     }
 }

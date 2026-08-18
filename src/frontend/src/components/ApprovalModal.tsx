@@ -49,6 +49,12 @@ interface ApprovalModalProps {
     batchItemCount?: number | null;
     /** Legacy-scope context: when true, REJECT/ADJUSTMENT descriptions inform the user the action targets the complete request. */
     isLegacyQuotationApproval?: boolean;
+    /** Candidate model: the batch carries an Area winner decision that a return will revoke —
+     * ADJUSTMENT copy must say the winner selection will have to be redone. */
+    isDecidedCandidateBatch?: boolean;
+    /** v2.229.4: blocks CONFIRMAR beyond `processing` — e.g. the mandatory Receiving
+     * attestation checkbox. */
+    confirmDisabled?: boolean;
     children?: React.ReactNode;
 }
 
@@ -70,6 +76,8 @@ export function ApprovalModal({
     batchNumber,
     batchItemCount,
     isLegacyQuotationApproval,
+    isDecidedCandidateBatch,
+    confirmDisabled,
     children
 }: ApprovalModalProps) {
     if (!show) return null;
@@ -122,15 +130,15 @@ export function ApprovalModal({
             case 'DELETE_ITEM': return 'Tem certeza que deseja excluir este item?';
             case 'DELETE_QUOTATION': return 'Tem certeza que deseja excluir esta cotação?';
             case 'MOVE_TO_RECEIPT': return 'Deseja mover este pedido para a fase de aguardando recibo?';
-            case 'CONFIRM_RECEIVING': 
-                return isPartial 
+            case 'CONFIRM_RECEIVING':
+                return isPartial
                     ? 'Atenção: Existem itens pendentes. Ao confirmar, o pedido será movido para acompanhamento até que todos os itens sejam recebidos.'
-                    : 'Deseja confirmar o recebimento de todos os itens deste pedido? O pedido permanecerá aguardando o recibo do fornecedor.';
+                    : 'Confirme que os bens ou serviços deste grupo foram efetivamente recebidos ou executados.';
             case 'FINALIZE': 
                 return 'Deseja finalizar este pedido? O recibo do fornecedor será registrado e o pedido será encerrado permanentemente.';
             case 'COMPLETE_QUOTATION': return 'Deseja confirmar que o processo de cotação foi concluído e enviar para aprovação?';
             case 'REQUEST_ADJUSTMENT': return batchNumber
-                ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados. Informe o que precisa ser ajustado.`
+                ? `O reajuste será aplicado apenas ao Lote #${batchNumber}, contendo ${batchItemCount ?? '?'} ${(batchItemCount ?? 0) === 1 ? 'item' : 'itens'}. Os demais itens do pedido não serão afetados.${isDecidedCandidateBatch ? ' Este lote será devolvido para correção e a seleção de vencedores deverá ser refeita pelo Aprovador de Área (a decisão anterior fica registrada no histórico).' : ''} Informe o que precisa ser ajustado.`
                 : isLegacyQuotationApproval
                     ? 'Este pedido utiliza o fluxo legado de cotação e não possui um lote de aprovação. O pedido completo será devolvido ao comprador para que o mapeamento dos itens da cotação e a seleção dos vencedores sejam corrigidos.'
                     : 'Informe o que precisa ser ajustado no pedido pelo solicitante.';
@@ -260,7 +268,7 @@ export function ApprovalModal({
                                 CANCELAR
                             </button>
                             <button
-                                disabled={processing}
+                                disabled={processing || confirmDisabled}
                                 onClick={() => onConfirm(type)}
                                 style={{
                                     height: '48px',
@@ -268,13 +276,13 @@ export function ApprovalModal({
                                     backgroundColor: (type === 'REJECT' || type === 'DELETE' || type === 'DELETE_ITEM' || type === 'DELETE_QUOTATION' || type === 'CANCEL_REQUEST' || type === 'DELETE_OBLIGATION') ? 'var(--color-status-red)' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
-                                    cursor: 'pointer',
+                                    cursor: (processing || confirmDisabled) ? 'not-allowed' : 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
                                     boxShadow: 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
-                                    opacity: processing ? 0.7 : 1
+                                    opacity: (processing || confirmDisabled) ? 0.6 : 1
                                 }}
                             >
                                 {processing ? 'PROCESSANDO...' : (isLastItem && type === 'ITEM_STATUS_CHANGE' ? 'OK, ENCERRAR PEDIDO, TODOS ITENS RECEBIDOS' : 'CONFIRMAR')}

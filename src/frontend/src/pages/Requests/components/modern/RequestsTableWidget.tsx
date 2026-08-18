@@ -28,6 +28,8 @@ const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; ico
     'WAITING_RECEIPT':    { bg: '#ECFEFF', fg: '#0E7490', border: '#67E8F9', icon: FileText },
     'COMPLETED':          { bg: '#ECFDF5', fg: '#047857', border: '#6EE7B7', icon: CheckCircle2 },
     'QUOTATION_COMPLETED':{ bg: '#ECFDF5', fg: '#047857', border: '#6EE7B7', icon: CheckCircle2 },
+    // v2.229.1: awaiting first P.O. — an ACTION-REQUIRED stage, never a done-looking green check.
+    'PO_REQUESTED':       { bg: '#F0F9FF', fg: '#0369A1', border: '#7DD3FC', icon: Clock },
     'CANCELLED':          { bg: '#F1F5F9', fg: '#475569', border: '#CBD5E1', icon: XCircle },
     'REJECTED':           { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },
     'WAITING_PO_CORRECTION': { bg: '#FEF2F2', fg: '#DC2626', border: '#FCA5A5', icon: AlertCircle },

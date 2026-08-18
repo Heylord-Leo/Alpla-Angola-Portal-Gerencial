@@ -208,9 +208,14 @@ public class BatchExtraItemDecisionServiceTests
         Assert.False(newLineItem.IsDeleted);
         Assert.Contains("[Item Adicional]", newLineItem.Description);
 
-        var newBatchItem = s.Batch.Items.FirstOrDefault(bi => bi.SelectedQuotationItemId == s.ExtraItem.Id);
+        // Candidate model: the included extra becomes a batch item with NO winner and exactly ONE
+        // frozen candidate — the Area Approver still confirms it via winner selection.
+        var newBatchItem = s.Batch.Items.FirstOrDefault(bi => bi.RequestLineItemId == newLineItem.Id);
         Assert.NotNull(newBatchItem);
-        Assert.Equal(newLineItem.Id, newBatchItem!.RequestLineItemId);
+        Assert.Null(newBatchItem!.SelectedQuotationItemId);
+        var candidate = s.Ctx.ApprovalBatchItemCandidates.Local.Single(c => c.ApprovalBatchItemId == newBatchItem.Id);
+        Assert.Equal(s.ExtraItem.Id, candidate.QuotationItemId);
+        Assert.Equal(s.ExtraItem.LineTotal, candidate.LineTotal);
 
         var decisionRow = await s.Ctx.ApprovalBatchExtraItemDecisions
             .FirstOrDefaultAsync(d => d.ApprovalBatchId == s.Batch.Id && d.QuotationItemId == s.ExtraItem.Id);

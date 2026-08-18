@@ -11,9 +11,17 @@ export interface KebabOption {
 
 interface KebabMenuProps {
     options: KebabOption[];
+    /**
+     * Layering override for menus rendered INSIDE an elevated surface (v2.228.2). The default
+     * keeps every page-context menu exactly where it always was (Z_INDEX.DROPDOWN = 500); a
+     * kebab living inside a Drawer (1400/1401) passes Z_INDEX.MODAL (1500) so its popup clears
+     * the drawer while still stacking below ModalWrapper flows (2000/2001). Never change the
+     * global --z-dropdown token for this.
+     */
+    zIndex?: string;
 }
 
-export function KebabMenu({ options }: KebabMenuProps) {
+export function KebabMenu({ options, zIndex }: KebabMenuProps) {
     const [isOpen, setIsOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const [dropdownStyles, setDropdownStyles] = useState<React.CSSProperties>({});
@@ -38,12 +46,12 @@ export function KebabMenu({ options }: KebabMenuProps) {
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
                 display: 'flex',
                 flexDirection: 'column',
-                zIndex: Z_INDEX.DROPDOWN as any,
+                zIndex: (zIndex ?? Z_INDEX.DROPDOWN) as any,
                 padding: '4px 0',
                 overflow: 'hidden'
             });
         }
-    }, [isOpen]);
+    }, [isOpen, zIndex]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {

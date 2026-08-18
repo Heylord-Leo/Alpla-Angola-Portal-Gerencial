@@ -89,6 +89,16 @@ public sealed class QuotationReconciliationResult
     public decimal FinalConsideredTotal { get; init; }
     public decimal ManualAdditionsTotal { get; init; }
 
+    /// <summary>
+    /// Tax the DOCUMENT itself carries only at summary level (v2.226.1). Recognized by
+    /// reconciliation INFERENCE — the OCR line baseline has no per-line rate, the confirmed rate
+    /// applied to the ORIGINAL line components materially improves the header consistency — and
+    /// credited against the residual so the document's own IVA is never reported as an
+    /// unexplained difference. Zero whenever the baseline already carries per-line rates, the
+    /// document is genuinely tax-free, or the credit would not improve reconciliation.
+    /// </summary>
+    public decimal DocumentSummaryIvaCredit { get; init; }
+
     public decimal IgnoredImpact { get; init; }
     public decimal QuantityImpact { get; init; }
     public decimal UnitPriceImpact { get; init; }
@@ -98,7 +108,8 @@ public sealed class QuotationReconciliationResult
     public decimal ManualAdditionsImpact { get; init; }
     public decimal ExplainedLineAdjustments { get; init; }
 
-    /// <summary>Signed: OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal.</summary>
+    /// <summary>Signed: OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal −
+    /// DocumentSummaryIvaCredit. Only the residual AFTER recognized document components gates.</summary>
     public decimal ResidualVariance { get; init; }
     public decimal ToleranceApplied { get; init; }
     public bool ResidualExceedsTolerance { get; init; }
@@ -111,10 +122,16 @@ public sealed class QuotationReconciliationResult
 /// final considered quotation total, after item-level explained adjustments.
 ///
 /// The residual is anchored to the OCR document's INTERNAL consistency
-/// (OcrHeaderTotal − ReconstructedOcrLineSum) and is therefore independent of the buyer's final
-/// values — it can never be zero by construction. Buyer line edits are attributed to the explained
-/// buckets (IGNORED → quantity → unit-price → discount → IVA → manual-additions → global-discount),
-/// which reconcile to <c>FinalConsideredTotal − ReconstructedOcrLineSum</c> within rounding.
+/// (OcrHeaderTotal − ReconstructedOcrLineSum), credited with recognized document-level components
+/// the line baseline cannot carry (<see cref="QuotationReconciliationResult.DocumentSummaryIvaCredit"/>,
+/// v2.226.1) — so a document whose header includes summary-only IVA reconciles to zero instead of
+/// reporting its own tax as unexplained. Buyer line edits are attributed to the explained buckets
+/// (IGNORED → quantity → unit-price → discount → IVA → manual-additions → global-discount), which
+/// reconcile to <c>FinalConsideredTotal − ReconstructedOcrLineSum</c> within rounding.
+///
+/// Known limitation (documented follow-up, not expanded here): OCR-summary-only DISCOUNTS have the
+/// same architectural shape and are not yet credited — a header net of a summary discount absent
+/// from the line baseline still surfaces as residual.
 ///
 /// Global-discount allocation and IVA re-proportioning reuse the EXACT rules of
 /// <see cref="QuotationIntegrityCalculator"/> so the two calculators never diverge.
@@ -211,9 +228,47 @@ public static class QuotationReconciliationCalculator
         decimal explained = ignoredImpact + quantityImpact + unitPriceImpact + discountImpact + ivaImpact
                             + manualAdditionsImpact + globalDiscountImpact;
 
+        // ── Document-summary IVA credit (v2.226.1) — a RECONCILIATION INFERENCE, not extraction ──
+        //
+        // A document that states IVA only in its summary yields a line baseline with NULL per-line
+        // rates, so the reconstruction structurally undercounts the header by the document's own
+        // tax — which then surfaced as an "unexplained" residual even though the confirmed rate
+        // fully accounted for it. No stronger persisted summary-tax signal exists (the global-VAT
+        // inference lives in client state only), so recognition is inferred, guarded twice:
+        //
+        //   1. Eligibility: only baselined, considered lines whose OCR rate is genuinely NULL
+        //      (an extracted 0% is a confirmed tax-free line and is never credited — no double
+        //      count when the baseline already carries rates, including mixed documents).
+        //   2. The numeric test: the credit is granted only when it IMPROVES the header
+        //      consistency (|residual − credit| < |residual|). A genuinely tax-free document
+        //      whose header equals its net lines gets no artificial credit merely because the
+        //      buyer selected a rate — that selection stays a buyer adjustment, not document tax.
+        //
+        // The credit uses the ORIGINAL line components with the confirmed rate, so buyer edits to
+        // quantity/price/discount neither inflate nor deflate the document's own tax.
+        decimal rawSummaryIvaCredit = 0m;
+        foreach (var l in baselined)
+        {
+            if (l.OcrIvaPercent != null) continue;
+            if (!RequestConstants.ReconciliationStatuses.Considered.Contains(l.ReconciliationStatus)) continue;
+
+            var oQty = l.OcrQuantity ?? 0m;
+            var oUp = l.OcrUnitPrice ?? 0m;
+            var oDisc = l.OcrDiscount ?? 0m;
+            rawSummaryIvaCredit += Value(oQty, oUp, oDisc, l.FinalIvaPercent) - Value(oQty, oUp, oDisc, 0m);
+        }
+
+        decimal residualWithoutCredit = ocrHeaderTotal + explained - finalConsideredTotal;
+        decimal documentSummaryIvaCredit =
+            rawSummaryIvaCredit != 0m &&
+            Math.Abs(residualWithoutCredit - rawSummaryIvaCredit) < Math.Abs(residualWithoutCredit)
+                ? rawSummaryIvaCredit
+                : 0m;
+
         // Signed residual — the canonical control value. Any bucket shortfall (rounding/interaction)
-        // is honestly absorbed here rather than hidden.
-        decimal residual = ocrHeaderTotal + explained - finalConsideredTotal;
+        // is honestly absorbed here rather than hidden. The structural header difference remains a
+        // separate diagnostic and may legitimately stay non-zero on a fully reconciled document.
+        decimal residual = residualWithoutCredit - documentSummaryIvaCredit;
         decimal residualRounded = Round2(residual);
 
         // ── Per-line diagnostics (materiality is decided by the caller for quantity/unit; the
@@ -285,6 +340,7 @@ public static class QuotationReconciliationCalculator
             OcrLineComponentDifference = Round2(ocrLineComponentDifference),
             FinalConsideredTotal = Round2(finalConsideredTotal),
             ManualAdditionsTotal = Round2(manualAdditionsTotal),
+            DocumentSummaryIvaCredit = Round2(documentSummaryIvaCredit),
             IgnoredImpact = Round2(ignoredImpact),
             QuantityImpact = Round2(quantityImpact),
             UnitPriceImpact = Round2(unitPriceImpact),

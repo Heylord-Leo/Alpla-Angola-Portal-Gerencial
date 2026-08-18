@@ -52,4 +52,23 @@ public static class WorkflowEventCodes
     public const string FinalBalanceScheduled = "FINAL_BALANCE_SCHEDULED";
     public const string FinalBalanceCompleted = "FINAL_BALANCE_COMPLETED";
     public const string CreditDebitNoteRequired = "CREDIT_DEBIT_NOTE_REQUIRED";
+
+    // --- Post-Payment Completion Workflow ---
+    // Release 1 declares the codes so history/notification wiring has a single source of truth.
+    // NO handler is registered and NO event is emitted for any of them until Releases 3–4;
+    // while PostPaymentCompletion.Enabled is false they are unreachable by design.
+    public const string FinalInvoiceObligationActivated = "FINAL_INVOICE_OBLIGATION_ACTIVATED";
+    public const string FinalInvoiceUploaded = "FINAL_INVOICE_UPLOADED";
+    public const string FinalInvoiceValidationRequired = "FINAL_INVOICE_VALIDATION_REQUIRED";
+    public const string FinalInvoiceValidated = "FINAL_INVOICE_VALIDATED";
+    public const string FinalInvoiceRejected = "FINAL_INVOICE_REJECTED";
+    public const string FinalInvoiceReplacementRequested = "FINAL_INVOICE_REPLACEMENT_REQUESTED";
+    public const string FinalInvoiceDivergenceAccepted = "FINAL_INVOICE_DIVERGENCE_ACCEPTED";
+    public const string OperationalReceiptCompleted = "OPERATIONAL_RECEIPT_COMPLETED";
+    public const string ReceiptCompletedInvoicePending = "RECEIPT_COMPLETED_INVOICE_PENDING";
+    public const string InvoiceValidatedReceiptPending = "INVOICE_VALIDATED_RECEIPT_PENDING";
+    public const string FiscalReceiptUnlocked = "FISCAL_RECEIPT_UNLOCKED";
+    public const string FiscalReceiptUploaded = "FISCAL_RECEIPT_UPLOADED";
+    public const string GroupCompleted = "GROUP_COMPLETED";
+    public const string LegacyDocumentClassified = "LEGACY_DOCUMENT_CLASSIFIED";
 }

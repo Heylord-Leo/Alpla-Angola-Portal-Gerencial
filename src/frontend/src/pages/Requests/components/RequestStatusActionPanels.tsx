@@ -58,6 +58,14 @@ export interface RequestStatusActionPanelsProps {
 
     // Utility
     getRequestGuidance: (status: string, requestTypeCode: string) => { responsible: string; nextAction: string };
+
+    // Release 4 (v2.229.7): a grouped+classified request under the ACTIVE completion lifecycle
+    // never finalizes through the legacy manual action — the backend refuses it ("Fluxo
+    // Atualizado") and the button/text must not be offered.
+    suppressLegacyFinalize?: boolean;
+    /** Readiness-derived replacement for the WAITING_RECEIPT header text (null while the
+     *  readiness read model has not loaded). */
+    completionGuidance?: { responsible: string; nextAction: string } | null;
 }
 
 export function RequestStatusActionPanels({
@@ -69,8 +77,15 @@ export function RequestStatusActionPanels({
     poGroups = [],
     setPoGroupIdForUpload, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
-    getRequestGuidance
+    getRequestGuidance,
+    suppressLegacyFinalize = false,
+    completionGuidance = null
 }: RequestStatusActionPanelsProps) {
+    // The legacy WAITING_RECEIPT wording ("Anexar recibo do fornecedor e finalizar pedido")
+    // only applies to requests the legacy FinalizeRequest path still governs.
+    const guidance = (status === 'WAITING_RECEIPT' && suppressLegacyFinalize && completionGuidance)
+        ? completionGuidance
+        : getRequestGuidance(status || '', requestTypeCode);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {/* Unified Approval Presentation (replaces legacy direct action buttons) */}
@@ -115,7 +130,7 @@ export function RequestStatusActionPanels({
 
 
             {/* Procurement/Buyer Status Panel (Former Action Bar) */}
-            {canExecuteOperationalAction && ['APPROVED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
+            {canExecuteOperationalAction && ['APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
                 <div style={{
                     backgroundColor: 'white',
                     padding: '12px 24px',
@@ -136,13 +151,13 @@ export function RequestStatusActionPanels({
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Responsável atual</span>
                                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                    {getRequestGuidance(status || '', requestTypeCode).responsible}
+                                    {guidance.responsible}
                                 </span>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Próxima ação / Situação</span>
                                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                                    {getRequestGuidance(status || '', requestTypeCode).nextAction}
+                                    {guidance.nextAction}
                                 </span>
                             </div>
                         </div>
@@ -152,7 +167,7 @@ export function RequestStatusActionPanels({
                         {isBuyer && (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {/* Group-level PO Registration */}
-                                {(status === 'APPROVED' || status === 'QUOTATION_COMPLETED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
+                                {(status === 'APPROVED' || status === 'QUOTATION_COMPLETED' || status === 'PO_REQUESTED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
                                     poGroups.filter(g => g.status === 'WAITING_PO').map(group => (
                                         <button 
                                             key={`po-upload-${group.id}`}
@@ -240,9 +255,15 @@ export function RequestStatusActionPanels({
                                         A confirmação de pagamento deve ser realizada pelo Financeiro na tela de Pagamentos.
                                     </span>
                                 ) : (
-                                    isFinance && status === 'WAITING_RECEIPT' && (
+                                    // v2.229.7: the legacy manual finalization is only offered
+                                    // while the legacy path still governs the request — a
+                                    // grouped+classified request under the active completion
+                                    // lifecycle completes automatically (backend refuses this
+                                    // action with "Fluxo Atualizado"); its real actions live in
+                                    // "Fatura Final — Cobertura" and "Conclusão do Pedido".
+                                    isFinance && status === 'WAITING_RECEIPT' && !suppressLegacyFinalize && (
                                         <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button 
+                                            <button
                                                 onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
                                                 className="btn-success"
                                                 style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}

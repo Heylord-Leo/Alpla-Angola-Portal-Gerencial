@@ -55,7 +55,10 @@ public class FinalApprovalLotViewDto
 public class FinalApprovalLotItemDto
 {
     public Guid RequestLineItemId { get; set; }
-    public Guid SelectedQuotationItemId { get; set; }
+
+    /// <summary>Winning quotation item. Null before the Area winner decision (candidate model) —
+    /// a state the Final screen never legitimately sees, surfaced via HasUnresolvedItemValue.</summary>
+    public Guid? SelectedQuotationItemId { get; set; }
     public string Description { get; set; } = string.Empty;
     public decimal Quantity { get; set; }
     public string? UnitCode { get; set; }

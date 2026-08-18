@@ -319,10 +319,17 @@ if ($qiOffCount -gt 0) {
     Write-Host "OK - No 'SET QUOTED_IDENTIFIER OFF' found in generated SQL." -ForegroundColor Green
 }
 
-Set-Content -Path $sqlOutputFile -Value $sqlContent -Encoding UTF8
+# ── UTF-8 WITH BOM, explicitly (v2.229.1 encoding fix) ──
+# 'Set-Content -Encoding UTF8' writes a BOM-LESS file under PowerShell 7, and sqlcmd reads a
+# BOM-less file as the system ANSI codepage — which is exactly how the Portuguese status names
+# ("Adiantamento Necessário", "Ag. Entrega/Serviço", "Ag. Reconciliação") were inserted as
+# mojibake in every environment. The BOM makes sqlcmd decode UTF-8 correctly regardless of
+# sqlcmd version; [System.IO.File]::WriteAllText with UTF8Encoding($true) produces it
+# identically on PowerShell 5.1 and 7+.
+[System.IO.File]::WriteAllText($sqlOutputFile, $sqlContent, [System.Text.UTF8Encoding]::new($true))
 
 $sqlSize = (Get-Item $sqlOutputFile).Length
-Write-Host "Generated SQL script: $sqlOutputFile ($sqlSize bytes)"
+Write-Host "Generated SQL script: $sqlOutputFile ($sqlSize bytes, UTF-8 with BOM)"
 
 # Diagnostic: print first 20 lines of the SQL file
 Write-Host ""
@@ -464,11 +471,15 @@ if ("$qiValue" -ne "1") {
 Write-Host "OK - Preflight passed: QUOTED_IDENTIFIER = 1 (ON)" -ForegroundColor Green
 Write-Host ""
 
-# --- Execute the migration SQL with -I (QUOTED_IDENTIFIER ON) ---
+# --- Execute the migration SQL with -I (QUOTED_IDENTIFIER ON) and explicit UTF-8 input ---
+# -f 65001 (input codepage UTF-8) is the second half of the v2.229.1 encoding fix, belt to the
+# BOM's braces: supported by ODBC sqlcmd 13+ and go-sqlcmd alike, it guarantees correct decoding
+# even if a future change reintroduces a BOM-less file. With the BOM present, both sqlcmd
+# generations decode UTF-8 correctly either way.
 if ($connBuilder.IntegratedSecurity) {
-    sqlcmd -S $server -d $database -E -I -b -i $sqlOutputFile
+    sqlcmd -S $server -d $database -E -I -b -f 65001 -i $sqlOutputFile
 } else {
-    sqlcmd -S $server -d $database -U $userId -P $password -I -b -i $sqlOutputFile
+    sqlcmd -S $server -d $database -U $userId -P $password -I -b -f 65001 -i $sqlOutputFile
 }
 
 if ($LASTEXITCODE -ne 0) {

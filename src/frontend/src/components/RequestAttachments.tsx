@@ -25,10 +25,29 @@ interface RequestAttachmentsProps {
     status?: string;      // e.g., 'DRAFT', 'PO_ISSUED'
     highlight?: boolean;
     id?: string;
+
+    /**
+     * The request's origin documents live on its PaymentSourceDocuments.
+     *
+     * <p>Their attachments carry the type <c>PAYMENT_SOURCE_DOCUMENT</c>, which is not one of the
+     * legacy slots below — so they were counted in the section badge and then rendered nowhere,
+     * leaving "Anexos (1)" above "Nenhum documento". They get their own subsection, and the legacy
+     * PROFORMA slot is withdrawn because the proforma IS one of these documents now.</p>
+     */
+    showSourceDocuments?: boolean;
+    sourceDocuments?: Array<{
+        sequenceNumber: number;
+        attachmentId: string;
+        fileName: string | null;
+        documentNumber: string | null;
+        sourceDocumentType: string | null;
+        supplierName: string | null;
+    }>;
 }
 
 const TYPE_LABELS: Record<string, string> = {
     'PROFORMA': 'Proforma',
+    'QUOTATION': 'Cotação',
     'PO': 'P.O',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
     'PAYMENT_PROOF': 'Comprovante de Pagamento',
@@ -43,6 +62,8 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
     onRefresh,
     requestType,
     status,
+    showSourceDocuments = false,
+    sourceDocuments = [],
     highlight,
     id
 }) => {
@@ -60,6 +81,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
         switch (typeCode) {
             case 'PROFORMA':
+            case 'QUOTATION':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
             case 'SUPPORTING':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
@@ -81,6 +103,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
 
         switch (typeCode) {
             case 'PROFORMA':
+            case 'QUOTATION':
                 return ['DRAFT', 'AREA_ADJUSTMENT', 'FINAL_ADJUSTMENT', 'WAITING_QUOTATION'].includes(status);
             case 'PO':
                 return ['APPROVED'].includes(status);
@@ -185,14 +208,74 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                 </div>
             )}
 
+            {showSourceDocuments && (
+                <div style={{
+                    marginBottom: '20px', padding: '16px', borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)'
+                }}>
+                    <span style={{
+                        display: 'block', marginBottom: '12px', fontSize: '0.75rem', fontWeight: 800,
+                        textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)'
+                    }}>
+                        Documentos de origem
+                    </span>
+
+                    {sourceDocuments.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                            Nenhum documento de origem.
+                        </span>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {sourceDocuments.map(d => (
+                                <div key={d.attachmentId || d.sequenceNumber} style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+                                    padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    border: '1px solid var(--color-border)'
+                                }}>
+                                    <FileText size={15} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                                    <span style={{ fontWeight: 800, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                                        Documento {d.sequenceNumber}
+                                    </span>
+                                    <span style={{
+                                        flex: 1, minWidth: 0, fontSize: '0.78rem',
+                                        color: 'var(--color-text-muted)', overflowWrap: 'anywhere'
+                                    }}>
+                                        {[d.supplierName, d.documentNumber, d.fileName]
+                                            .filter(Boolean).join(' · ') || 'Sem ficheiro'}
+                                    </span>
+                                    {d.attachmentId && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDownload(d.attachmentId, d.fileName || 'documento')}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                                background: 'none', border: 'none', cursor: 'pointer',
+                                                color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.75rem'
+                                            }}
+                                        >
+                                            <Download size={13} /> Abrir
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
                 {Object.entries(TYPE_LABELS).map(([code, label]) => {
+                    // The proforma is a source document now; an empty legacy slot beside the real
+                    // one would suggest something is missing when nothing is.
+                    if (showSourceDocuments && code === 'PROFORMA') return null;
+
                     const typeAttachments = activeAttachments.filter(a => a.attachmentTypeCode === code);
 
                     // Logic: Some sections shouldn't even be shown if they don't apply to the request type
                     // After PO_ISSUED, both types follow the financial flow, so they stay visible
                     const isFinancialType = ['PAYMENT_SCHEDULE', 'PAYMENT_PROOF', 'RECEIPT'].includes(code);
-                    if (isFinancialType && !['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED'].includes(status || '')) {
+                    if (isFinancialType && !['PO_ISSUED', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'COMPLETED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED'].includes(status || '')) {
                         return null;
                     }
 

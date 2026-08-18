@@ -21,15 +21,14 @@ const ACTIVE_OR_APPROVED_BATCH_STATUSES = [
  * batch never blocks re-selection.
  */
 export function isQuotationItemSelectableForApproval(quotationItemId: string, group: any): boolean {
-    const referencedBatchItems = group?.approvalBatches
-        ?.flatMap((batch: any) => batch.items?.map((item: any) => ({
-            batchStatus: batch.status,
-            selectedQuotationItemId: item.selectedQuotationItemId
-        })) ?? []) ?? [];
-
-    return !referencedBatchItems.some((ref: any) =>
-        ref.selectedQuotationItemId === quotationItemId &&
-        ACTIVE_OR_APPROVED_BATCH_STATUSES.includes(ref.batchStatus)
+    // Candidate model: a quotation item is "held" both when it is a batch item's winner
+    // (legacy pointer / Area-decided) AND when it is one of the item's submitted CANDIDATES —
+    // an option under review must not be offered again elsewhere.
+    return !(group?.approvalBatches ?? []).some((batch: any) =>
+        ACTIVE_OR_APPROVED_BATCH_STATUSES.includes(batch.status) &&
+        (batch.items ?? []).some((item: any) =>
+            item.selectedQuotationItemId === quotationItemId ||
+            (item.candidates ?? []).some((c: any) => c.quotationItemId === quotationItemId))
     );
 }
 

@@ -1,4 +1,13 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload, FeatureFlagsDto } from '../types';
+import {
+    PaymentSourceDocumentDto,
+    PaymentSourceDocumentsSummaryDto,
+    SavePaymentSourceDocumentDto,
+    VoidPaymentSourceDocumentDto,
+    PaymentSourceDocumentConflictDto
+} from '../types/paymentSourceDocument';
+import { OcrExtractionEnvelope } from '../types/ocrExtraction';
+import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
 import { logger, FrontendComponentKey } from './logger';
 import { buildInfo } from '../buildInfo';
 import { versionSignal } from './versionSignal';
@@ -219,7 +228,9 @@ export const api = {
     requests: {
         createApprovalBatch: async (
             requestId: string,
-            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            // Candidate model: identity + optional BuyerNote per option — no winner, no financial
+            // values on the wire; the backend snapshots authoritative values server-side.
+            items: import('../types').BatchItemInput[],
             comment?: string,
             extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
         ): Promise<any> => {
@@ -234,7 +245,7 @@ export const api = {
         updateApprovalBatch: async (
             requestId: string,
             batchId: string,
-            items: { requestLineItemId: string, selectedQuotationItemId: string }[],
+            items: import('../types').BatchItemInput[],
             comment?: string,
             extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
         ): Promise<any> => {
@@ -277,12 +288,16 @@ export const api = {
             budgetJustification?: string,
             reassignments?: any[],
             itemAllocations?: Record<string, any[]>,
-            extraItemDecisions?: Record<string, any>
+            extraItemDecisions?: Record<string, any>,
+            /** Candidate model: the Area winner decision per ApprovalBatchItem — identity +
+             * optional justification only. Required for candidate-based batches; omitted for
+             * legacy buyer-selected batches. The backend is authoritative. */
+            selections?: { approvalBatchItemId: string, selectedCandidateId: string, winnerSelectionJustification?: string }[]
         ): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions }),
+                body: JSON.stringify({ comment, itemAwards, itemAssignments, budgetJustification, reassignments, itemAllocations, extraItemDecisions, selections }),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao aprovar o lote.');
             return response.json();
@@ -439,6 +454,69 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar o pedido de rascunho.');
         },
+        // ── PAYMENT source documents (Release 3) ────────────────────────────────────────
+        // PAYMENT only. Quotation Management keeps one document per quotation and never calls these.
+
+        /** Documents, totals, per-document validation and the mixed-type notice, in one read. */
+        getSourceDocuments: async (requestId: string): Promise<PaymentSourceDocumentsSummaryDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/source-documents`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os documentos do pedido.');
+            return response.json();
+        },
+
+        createSourceDocument: async (
+            requestId: string,
+            data: SavePaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/source-documents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao adicionar o documento.');
+            return response.json();
+        },
+
+        /**
+         * Updates one document. A 409 is returned as data rather than thrown, because a concurrency
+         * conflict is a situation the user resolves — not an error the caller should swallow.
+         */
+        updateSourceDocument: async (
+            requestId: string,
+            documentId: string,
+            data: SavePaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentDto | PaymentSourceDocumentConflictDto> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/${documentId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+            if (response.status === 409) return response.json();
+            if (!response.ok) return handleApiError(response, 'Falha ao guardar o documento.');
+            return response.json();
+        },
+
+        /**
+         * Removes a document: deleted outright before the request was ever submitted, voided after.
+         * The backend decides which — the client never chooses to erase an audited decision.
+         */
+        removeSourceDocument: async (
+            requestId: string,
+            documentId: string,
+            data?: VoidPaymentSourceDocumentDto
+        ): Promise<PaymentSourceDocumentsSummaryDto | PaymentSourceDocumentConflictDto> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/${documentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data ?? {}),
+                });
+            if (response.status === 409) return response.json();
+            if (!response.ok) return handleApiError(response, 'Falha ao remover o documento.');
+            return response.json();
+        },
+
         createLineItem: async (requestId: string, data: any): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items`, {
                 method: 'POST',
@@ -469,6 +547,27 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao adicionar item solicitado a partir da proforma.');
             return response.json();
         },
+        /**
+         * Records ONLY the catalogue linkage of a persisted line, for reconciliation.
+         *
+         * <p>Deliberately not `updateLineItem`: that endpoint replaces the whole line and
+         * recomputes its total, so using it to say "this line is catalogue item X" would put the
+         * quantity, price, discount, IVA and total of an already-reconciled document at the mercy
+         * of a round trip. It also cannot touch `paymentSourceDocumentId`, so a line keeps the
+         * source document it belongs to.</p>
+         */
+        setLineItemCatalogLink: async (
+            requestId: string, itemId: string, itemCatalogId: number | null
+        ): Promise<void> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${itemId}/catalog-link`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ itemCatalogId }),
+                });
+            if (!response.ok) return handleApiError(response, 'Falha ao vincular o item ao catálogo.');
+        },
+
         updateLineItem: async (requestId: string, itemId: string, data: any): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/line-items/${itemId}`, {
                 method: 'PUT',
@@ -512,7 +611,17 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao duplicar o pedido.');
             return response.json();
         },
-        getBudgetPreview: async (id: string, payload: { itemAwards: Record<string, string>, itemAssignments: Record<string, { plantId: number | null, costCenterId: number | null }>, itemAllocations?: Record<string, any[]>, extraItemDecisions?: Record<string, any> }): Promise<any> => {
+        getBudgetPreview: async (id: string, payload: {
+            itemAwards: Record<string, string>,
+            itemAssignments: Record<string, { plantId: number | null, costCenterId: number | null }>,
+            itemAllocations?: Record<string, any[]>,
+            extraItemDecisions?: Record<string, any>,
+            /** Scopes the preview to one ApprovalBatch. */
+            batchId?: string,
+            /** Candidate model: tentative Area winner selections (identity only — the backend
+             * values them from the frozen candidate snapshots; read-only, nothing persists). */
+            selections?: { approvalBatchItemId: string, selectedCandidateId: string }[]
+        }): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/budget-preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -757,7 +866,33 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar OCR do documento.', 'OcrSettings');
             return response.json();
         },
-        directOcrExtract: async (file: File, sourceContext?: string): Promise<any> => {
+        /**
+         * Raw-file extraction; needs no RequestId.
+         *
+         * <p><b>Answers HTTP 200 even when the extraction failed</b> — callers must check
+         * `success === true`. `sourceContext` is an OCR module allowlist key checked against
+         * `OcrModuleConfigs` (`REQUESTS`, `CONTRACTS`), not a free-text hint: an unconfigured value
+         * makes the server refuse the extraction before any provider is called. Omitting it skips
+         * the allowlist entirely.</p>
+         */
+        /**
+         * Asks whether a file may be attached to a request's source documents, before uploading or
+         * reading it. The hash is computed in the browser; the file itself never leaves it.
+         */
+        checkSourceDocumentDuplicate: async (
+            requestId: string,
+            payload: { contentHash: string; candidateFileName?: string; replacingDocumentId?: string | null }
+        ): Promise<SourceDocumentDuplicateResult> => {
+            const response = await apiFetch(
+                `${API_BASE_URL}/api/v1/requests/${requestId}/source-documents/check-duplicate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade do documento.');
+            return response.json();
+        },
+        directOcrExtract: async (file: File, sourceContext?: string): Promise<OcrExtractionEnvelope> => {
             const formData = new FormData();
             formData.append('file', file);
             const ctxParam = sourceContext ? `?sourceContext=${encodeURIComponent(sourceContext)}` : '';
@@ -1198,6 +1333,18 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao remover anexo.');
         }
     },
+    config: {
+        /**
+         * Runtime feature flags. The Post-Payment Completion workflow is configuration-driven, so
+         * the UI asks the server what to render rather than assuming. Failures are non-fatal:
+         * callers fall back to "everything off", which is the pre-feature behaviour.
+         */
+        getFeatures: async (): Promise<FeatureFlagsDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/config/features`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar configuração de funcionalidades.');
+            return response.json();
+        }
+    },
     lookups: {
         getRequestStatuses: async (includeInactive = false): Promise<any[]> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/request-statuses?includeInactive=${includeInactive}`);
@@ -1434,8 +1581,17 @@ export const api = {
                 pageSize: json.pageSize || 15
             };
         },
-        searchSuppliers: async (term: string): Promise<any[]> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?q=${encodeURIComponent(term)}`);
+        /**
+         * Supplier autocomplete.
+         *
+         * <p>`excludeInternal` is used by payable-supplier pickers (the PAYMENT source-document
+         * supplier field). Internal ALPLA legal entities are then dropped from the results — they
+         * can never be the counterparty a payment request owes. Off everywhere else, because those
+         * entities are legitimately referenced elsewhere in the Portal.</p>
+         */
+        searchSuppliers: async (term: string, excludeInternal = false): Promise<any[]> => {
+            const query = `q=${encodeURIComponent(term)}` + (excludeInternal ? '&excludeInternal=true' : '');
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/search?${query}`);
             if (!response.ok) return handleApiError(response, 'Falha ao pesquisar fornecedores.');
             return response.json();
         },

@@ -38,18 +38,11 @@ public static class RequestWorkflowHelper
 
     /// <summary>
     /// Checks whether all items belonging to a specific PO group have been physically received.
+    /// Delegates to the domain rulebook so the Phase 4 completion projection and the receiving
+    /// endpoints can never disagree about what "all received" means.
     /// </summary>
     public static bool AreAllGroupItemsReceived(RequestPoGroup group)
-    {
-        if (group.LineItems == null || !group.LineItems.Any())
-            return false;
-
-        return group.LineItems.Where(li => !li.IsDeleted).All(li => 
-            li.SelectedQuotationItemId.HasValue && li.SelectedQuotationItem != null
-                ? li.SelectedQuotationItem.LineItemStatus?.Code == "RECEIVED"
-                : li.LineItemStatus?.Code == "RECEIVED"
-        );
-    }
+        => AlplaPortal.Domain.Services.OperationalReceiptFacts.AreAllGroupItemsReceived(group);
 
     /// <summary>
     /// Determines the next status for a PO Group after a Receiving "confirm receiving" action.

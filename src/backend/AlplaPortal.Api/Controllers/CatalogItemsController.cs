@@ -1,12 +1,10 @@
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
-using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -136,28 +134,14 @@ public class CatalogItemsController : ControllerBase
     /// Steps: trim → lowercase → remove diacritics/accents → collapse whitespace → strip trailing punctuation.
     /// This ensures exact comparison is reliable regardless of formatting differences.
     /// </summary>
+    /// <remarks>
+    /// The rule itself now lives in <see cref="CatalogItemReconciliationPolicy"/>, unchanged. It was
+    /// moved out because reconciliation across several payment source documents has to answer the
+    /// same question — "do these two descriptions name the same catalogue item?" — and a second copy
+    /// of the answer is a second copy to drift.
+    /// </remarks>
     private static string NormalizeDescription(string desc)
-    {
-        if (string.IsNullOrWhiteSpace(desc)) return string.Empty;
-
-        // 1. Trim and lowercase
-        var normalized = desc.Trim().ToLowerInvariant();
-
-        // 2. Remove diacritics/accents (e.g., ç→c, ã→a, é→e)
-        normalized = new string(
-            normalized.Normalize(NormalizationForm.FormD)
-                .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-                .ToArray()
-        ).Normalize(NormalizationForm.FormC);
-
-        // 3. Collapse multiple whitespace into single space
-        normalized = Regex.Replace(normalized, @"\s+", " ");
-
-        // 4. Strip trailing punctuation (e.g., "item." → "item")
-        normalized = normalized.TrimEnd('.', ',', ';', ':', '!');
-
-        return normalized;
-    }
+        => CatalogItemReconciliationPolicy.NormalizeDescription(desc);
 
     // ─── Endpoints ─────────────────────────────────────────────────────────
 

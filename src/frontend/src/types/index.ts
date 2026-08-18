@@ -140,6 +140,9 @@ export interface RequestLineItemDto {
     notes: string | null;
     plantId: number | null;
     plantName: string | null;
+    /** The PaymentSourceDocument this item belongs to; null outside multi-document PAYMENT. */
+    paymentSourceDocumentId?: string | null;
+    paymentSourceDocumentSequence?: number | null;
     lineItemStatusCode: string | null;
     lineItemStatusName: string | null;
     lineItemStatusBadgeColor: string | null;
@@ -261,6 +264,14 @@ export interface SavedQuotationDto {
     supplierRegistrationStatus?: string;
     documentNumber?: string;
     documentDate?: string;
+    /** Post-Payment Completion (Release 2 corrected): the document identity, null when unclassified. */
+    documentType?: string | null;
+    /** What extraction proposed when this quotation was saved. Rehydrated on reopen. */
+    documentTypeOcrSuggestion?: string | null;
+    documentTypeOcrConfidence?: number | null;
+    documentTypeEvidenceJson?: string | null;
+    classificationConflictAcknowledged?: boolean;
+    classificationJustification?: string | null;
     currency: string;
     totalGrossAmount: number;
     totalDiscountAmount: number;
@@ -342,7 +353,66 @@ export interface RequestAttachmentDto {
 export interface ApprovalBatchItemSummary {
     id: string;
     requestLineItemId: string;
-    selectedQuotationItemId: string;
+    /** Winning quotation item. Candidate model: null until the Area Approver decides.
+     * Legacy batches: the historical buyer-selected winner. */
+    selectedQuotationItemId: string | null;
+    /** Candidate model — Area winner decision metadata (null before the Area decision). */
+    selectedCandidateId?: string | null;
+    winnerSelectedByUserId?: string | null;
+    /** Display name of the Area Approver who selected the winner (enriched server-side). */
+    winnerSelectedByUserName?: string | null;
+    winnerSelectedAtUtc?: string | null;
+    winnerSelectionJustification?: string | null;
+    /** True for items decided by the Buyer under the pre-candidate model (zero candidate rows). */
+    isLegacyBuyerSelectedWinner?: boolean;
+    /** Frozen candidate snapshots submitted by the Buyer (empty for legacy items). */
+    candidates?: ApprovalBatchItemCandidate[];
+}
+
+/** Frozen snapshot of one candidate option, exactly as submitted — mirrors the backend's
+ * ApprovalBatchItemCandidateDto. Commercial values here NEVER track later live-quotation edits. */
+export interface ApprovalBatchItemCandidate {
+    id: string;
+    quotationItemId: string;
+    quotationId: string;
+    supplierId?: number | null;
+    supplierName: string;
+    supplierNif?: string | null;
+    description: string;
+    quantity: number;
+    unitText?: string | null;
+    unitPrice: number;
+    discountAmount: number;
+    ivaRatePercent: number;
+    ivaAmount: number;
+    grossSubtotal: number;
+    lineTotal: number;
+    currency: string;
+    quotationDocumentNumber?: string | null;
+    quotationDocumentDate?: string | null;
+    hasReconciliationWarnings: boolean;
+    reconciliationStatus?: string | null;
+    reconciliationJustification?: string | null;
+    lineAdjustmentJustification?: string | null;
+    buyerNote?: string | null;
+    /** True when this candidate is the Area-selected winner of its item. */
+    isWinner: boolean;
+    /** "MENOR VALOR" badge — informational only, never a selection. */
+    isLowestTotal?: boolean;
+}
+
+/** Wire payload for one candidate option in CreateBatch/UpdateBatch. Identity + optional note
+ * ONLY — the backend snapshots every commercial value server-side. */
+export interface BatchCandidateInput {
+    quotationItemId: string;
+    buyerNote?: string;
+}
+
+/** Wire payload for one batch item in CreateBatch/UpdateBatch (candidate model — there is
+ * deliberately NO winner field anywhere in this contract). */
+export interface BatchItemInput {
+    requestLineItemId: string;
+    candidates: BatchCandidateInput[];
 }
 
 /** One informational (non-batch, non-total-affecting) quotation line — mirrors the backend's
@@ -410,7 +480,8 @@ export interface FinalApprovalLotView {
 
 export interface FinalApprovalLotItem {
     requestLineItemId: string;
-    selectedQuotationItemId: string;
+    /** Null = winner not yet decided (candidate model) or unresolved — flagged upstream. */
+    selectedQuotationItemId: string | null;
     description: string;
     quantity: number;
     unitCode?: string | null;
@@ -437,6 +508,28 @@ export interface ExtraItemDecisionState {
 }
 
 // Keep details types minimal just to prove routing works later
+/**
+ * Post-Payment Completion feature flags (GET /api/v1/config/features).
+ * Booleans only — the UI needs to know what to render, not how the server is configured.
+ */
+export interface FeatureFlagsDto {
+    /** Workflow is switched on. While false the UI renders exactly what it did before the feature. */
+    postPaymentCompletionEnabled: boolean;
+    /** A request created now must carry an explicit billing document type before submission. */
+    sourceDocumentTypeRequired: boolean;
+    /**
+     * Release 3: a PAYMENT request may carry several source documents. PAYMENT only — Quotation
+     * Management keeps one document per quotation regardless.
+     */
+    paymentMultiDocumentEnabled: boolean;
+    /**
+     * Release 4 Phase 4: the automatic completion LIFECYCLE is on. Deliberately separate from
+     * postPaymentCompletionEnabled — during Phase 3B coverage works while this stays false, and
+     * that is the INTENDED state, never an error to warn about.
+     */
+    completionLifecycleEnabled: boolean;
+}
+
 export interface RequestDetailsDto extends RequestListItemDto {
     /** Fase B: nomes dos managers elegíveis enquanto a aprovação de área está pendente e sem decisor. */
     eligibleAreaManagerNames?: string[] | null;
@@ -447,6 +540,12 @@ export interface RequestDetailsDto extends RequestListItemDto {
     poGroups: RequestPoGroupDto[];
     approvalBatches?: ApprovalBatchSummary[];
     statusHistory: RequestStatusHistoryDto[];
+    /**
+     * Post-Payment Completion (Release 2): PROFORMA or FINAL_INVOICE for a PAYMENT request.
+     * Null on QUOTATION requests and on requests created before the feature was activated.
+     */
+    sourceDocumentType?: string | null;
+
     // B2P: Payment Condition
     paymentConditionCode?: string | null;
     advancePaymentPercent?: number | null;
@@ -549,6 +648,9 @@ export interface QuotationReconciliationDto {
     globalDiscountImpact: number;
     manualAdditionsImpact: number;
     explainedLineAdjustments: number;
+    /** Summary-level document IVA recognized by backend reconciliation inference (v2.226.1) —
+     * an automatically recognized component, credited against the residual. */
+    documentSummaryIvaCredit: number;
     residualVariance: number;
     toleranceApplied: number;
     residualExceedsTolerance: boolean;
@@ -567,7 +669,17 @@ export interface OcrDraft {
     documentNumber: string;
     documentDate: string;
     dueDate?: string;
-    documentType?: 'PROFORMA' | 'FINAL';
+    /**
+     * Identity of the attached document — see lib/sourceDocumentType.
+     * Widened from the superseded binary `'PROFORMA' | 'FINAL'`; the old values still normalize.
+     */
+    documentType?: string;
+
+    /**
+     * What document extraction believes the document is, with its evidence. A PROPOSAL only —
+     * never written into `documentType` automatically.
+     */
+    documentClassification?: OcrDocumentClassificationDto | null;
     currency: string;
     extractedCurrency?: string; // Raw extracted currency for suggestion hint
     discountAmount: number; // Front-end user input
@@ -1426,3 +1538,28 @@ export interface RequestPaymentDto {
     hasDivergence: boolean;
 }
 
+
+/**
+ * Document-classification proposal returned by OCR extraction, with the evidence behind it.
+ * Mirrors `OcrDocumentClassificationDto` on the backend.
+ *
+ * Deliberately a proposal and nothing more: it is shown to the user for confirmation and is never
+ * applied to the classification field automatically.
+ */
+export interface OcrDocumentClassificationDto {
+    suggestedType?: string | null;
+    confidence?: number | null;
+    titleFound?: string | null;
+    supportingEvidence?: string[];
+    conflictingEvidence?: string[];
+    fiscalMarkers?: string[];
+    nonFiscalMarkers?: string[];
+    /** Evidence reads as a fiscal document — raises a non-fiscal selection to a high-risk conflict. */
+    indicatesFiscalDocument?: boolean;
+    /**
+     * Derived by the Portal's own weak heuristics (document-number prefix, filename) because the
+     * extraction provider returned no structured classification — not from reading the document.
+     * Labelled differently in the UI so it is never mistaken for a verified reading.
+     */
+    isFallback?: boolean;
+}

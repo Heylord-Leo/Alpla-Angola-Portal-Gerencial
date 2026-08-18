@@ -200,12 +200,102 @@ export function createRequestCreationSteps(
             placement: 'bottom',
             requiredAction: 'none',
             allowSkip: true,
-            condition: () => {
-                const domVal = readRequestTypeFromDOM();
-                if (domVal === '2') return true;
-                if (Number(getFormValues().requestTypeId) === 2) return true;
-                return false;
-            },
+            // O elemento só existe no fluxo de documento único. Com vários documentos ativos este
+            // passo desaparece sozinho e o passo seguinte assume — sem duplicar aqui a feature flag.
+            condition: () => !!document.querySelector('[data-guide="request-payment-document-section"]'),
+        },
+
+        // ── Step: Pagamento → documentos do pedido (fluxo progressivo) ──
+        {
+            id: 'request-payment-documents',
+            target: '[data-guide="request-payment-documents"]',
+            title: 'Documentos do pedido',
+            content: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <p style={{ margin: 0 }}>
+                        Um pedido de pagamento é montado <strong>um documento de cada vez</strong>. Comece
+                        por importar a fatura com OCR ou inserir os dados manualmente — não há nenhum
+                        formulário vazio à espera de ser preenchido antes disso.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        O processo é sempre o mesmo:
+                    </p>
+
+                    <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                        <li>Importe o documento ou insira os dados manualmente.</li>
+                        <li>Reveja o que foi lido — fornecedor, número, datas, valores e itens.</li>
+                        <li>Clique em <strong>Confirmar e adicionar documento</strong>.</li>
+                        <li>Adicione outro documento, se necessário, e repita.</li>
+                        <li>Verifique o total consolidado.</li>
+                        <li>Guarde o rascunho ou gere o pedido.</li>
+                    </ol>
+
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        Ao confirmar, o documento recolhe-se num cartão resumido e o seu valor passa a
+                        contar para o total do pedido. Só um documento está aberto de cada vez: pode
+                        sempre reabri-lo em <strong>Ver / editar</strong>.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted, #6b7280)' }}>
+                        Cada documento tem o seu próprio anexo, a sua própria leitura de OCR, a sua própria
+                        classificação e os seus próprios itens — resolver o Documento 1 não decide nada
+                        sobre o Documento 2. Documentos de plantas ou tipos diferentes geram
+                        acompanhamentos independentes depois do pagamento.
+                    </p>
+                </div>
+            ),
+            placement: 'bottom',
+            requiredAction: 'none',
+            allowSkip: true,
+            condition: () => !!document.querySelector('[data-guide="request-payment-documents"]'),
+        },
+
+        // ── Step: Tipo de documento anexado (Pagamento, quando a funcionalidade está ativa) ──
+        // A condição observa o próprio campo no DOM: enquanto a funcionalidade estiver desativada o
+        // campo não é renderizado e o passo desaparece sozinho, sem duplicar aqui a feature flag.
+        {
+            id: 'request-source-document-type',
+            target: '[data-guide="request-source-document-type"]',
+            title: 'Tipo de documento anexado',
+            content: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <p style={{ margin: 0 }}>
+                        Identifique o documento que o fornecedor emitiu. A escolha define o que será
+                        exigido depois do pagamento — não é apenas uma etiqueta.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        <strong>Factura Pró-forma</strong> e <strong>Factura de Adiantamento</strong> deixam
+                        a factura da operação por entregar; uma <strong>Factura</strong> deixa apenas o
+                        comprovativo de pagamento. <strong>Outro documento</strong> segue para revisão do
+                        Financeiro.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                        Junto ao rótulo aparecem pequenos ícones: <strong>?</strong> explica cada opção,
+                        <strong> ⓘ</strong> mostra o que o OCR leu no documento e um ícone de
+                        <strong> aviso</strong> assinala que a sua escolha diverge dessa leitura. Clique
+                        em qualquer um para ver os detalhes.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted, #6b7280)' }}>
+                        Se escolher um tipo que contradiz a leitura do documento, abre-se uma janela a
+                        pedir confirmação e, nos casos de maior risco, uma justificativa — e a alteração
+                        só é aplicada depois de confirmada. Pode guardar o rascunho sem escolher, mas a
+                        seleção é obrigatória para submeter.
+                    </p>
+
+                    <p style={{ margin: 0, fontSize: '0.8rem' }}>
+                        A classificação pertence ao documento que está a rever, não ao pedido. Num pedido
+                        com vários documentos, cada um é classificado no seu próprio momento de revisão.
+                    </p>
+                </div>
+            ),
+            placement: 'bottom',
+            requiredAction: 'none',
+            allowSkip: true,
+            condition: () => !!document.querySelector('[data-guide="request-source-document-type"]'),
         },
 
         // ── Step: Grau de Necessidade ──

@@ -36,6 +36,24 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
+import { isFiscalDocument, normalizeDocumentType } from '../../lib/sourceDocumentType';
+import {
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    OcrDocumentClassification,
+    buildClassificationPayload
+} from '../../lib/documentClassificationDecision';
+
+/** Rehydrates the stored evidence blob, tolerating anything that is not the shape we wrote. */
+function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentClassification> {
+    if (!json) return {};
+    try {
+        const parsed = JSON.parse(json);
+        return parsed && typeof parsed === 'object' ? parsed as Partial<OcrDocumentClassification> : {};
+    } catch {
+        return {};
+    }
+}
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -254,13 +272,32 @@ const RequestGroupSkeleton: React.FC = () => {
 
 /** Single source of truth for the quotation save/preview wire payload — used by BOTH the save call
  * and the authoritative reconcile-preview so the two never diverge for the same draft. */
-function buildQuotationPayload(draft: OcrDraft) {
+function buildQuotationPayload(draft: OcrDraft, conflict: ClassificationConflictState = EMPTY_CONFLICT) {
+    // The classification and the reasoning behind it travel together — the backend re-derives
+    // whether this was an override and refuses an unconfirmed one.
+    const classification = buildClassificationPayload(
+        draft.documentType, draft.documentClassification, conflict);
+
     return {
         source: 'OCR',
         supplierId: draft.supplierId,
         supplierNameSnapshot: draft.supplierNameSnapshot,
         documentNumber: draft.documentNumber,
         documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
+        // Post-Payment Completion (Release 2): the wizard has always collected "Tipo de Documento
+        // da Cotação" but the value was dropped before reaching the API. It is now persisted, and
+        // the winning quotation's value becomes the PO group's Final Invoice obligation.
+        // Mapped to the canonical domain value ('FINAL' → 'FINAL_INVOICE').
+        documentType: normalizeDocumentType(draft.documentType),
+        documentTypeSource: classification.source,
+        documentTypeOcrSuggestion: classification.suggestion,
+        documentTypeOcrConfidence: classification.confidence,
+        documentTypeEvidenceJson: classification.evidenceJson,
+        documentTypeTitleFound: classification.titleFound,
+        documentTypeConflictingEvidenceJson: classification.conflictingEvidenceJson,
+        documentTypeSuggestionSource: classification.suggestionSource,
+        classificationConflictAcknowledged: classification.acknowledged,
+        classificationJustification: classification.justification,
         currency: draft.currency || 'AOA',
         discountAmount: draft.discountAmount || 0,
         totalAmount: draft.totalAmount || 0,
@@ -521,7 +558,7 @@ export function BuyerItemsList() {
     > => {
         if (!wizardActiveRequest) return { success: false, error: 'No active request' };
         try {
-            const payload = buildQuotationPayload(draft);
+            const payload = buildQuotationPayload(draft, quotationWizardState.classificationConflict);
 
             setIsSaving(true);
             const requestId = wizardActiveRequest.requestId;
@@ -676,7 +713,8 @@ export function BuyerItemsList() {
         if (!wizardActiveRequest) return;
         setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
         try {
-            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'PROFORMA');
+            // Quotation documents carry their own type — PROFORMA belongs to the payment workflow.
+            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'QUOTATION');
             const attachmentId = uploadData[0].id;
             setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
             const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);
@@ -786,6 +824,23 @@ export function BuyerItemsList() {
                 supplierNameSnapshot: editQuotation.supplierNameSnapshot || '',
                 documentNumber: editQuotation.documentNumber || '',
                 documentDate: editQuotation.documentDate ? editQuotation.documentDate.split('T')[0] : '',
+                // Post-Payment Completion (Release 2): rehydrate the persisted classification so
+                // reopening a quotation does not silently drop it. Stored canonically
+                // ('FINAL_INVOICE'); the wizard's own select uses 'FINAL', so map it back.
+                documentType: editQuotation.documentType === 'FINAL_INVOICE'
+                    ? 'FINAL'
+                    : (editQuotation.documentType as OcrDraft['documentType']) || undefined,
+                // The reading that was recorded when this quotation was saved. Without it a reopened
+                // quotation would show no suggestion — and a classification that once contradicted
+                // the document could then be changed again with nothing to compare it against.
+                documentClassification: editQuotation.documentTypeOcrSuggestion
+                    ? {
+                        suggestedType: editQuotation.documentTypeOcrSuggestion,
+                        confidence: editQuotation.documentTypeOcrConfidence ?? null,
+                        indicatesFiscalDocument: isFiscalDocument(editQuotation.documentTypeOcrSuggestion),
+                        ...parseClassificationEvidence(editQuotation.documentTypeEvidenceJson)
+                    }
+                    : null,
                 currency: editQuotation.currency || 'AOA',
                 totalAmount: editQuotation.totalAmount || 0,
                 discountAmount: editQuotation.discountAmount || 0,
@@ -1220,14 +1275,15 @@ export function BuyerItemsList() {
     // Does NOT catch errors — PartialApprovalBatchModal awaits this and renders structured
     // 409/400 responses (pending decisions, locked reversal, invalid comment) inline itself;
     // swallowing them here would silently downgrade that to a generic page-level toast.
+    // Candidate model: the payload carries candidate OPTIONS per item (no winner field exists).
     const handlePartialApprovalSubmit = async (
-        submitData: { requestLineItemId: string, selectedQuotationItemId: string }[],
+        submitData: import('../../types').BatchItemInput[],
         extraItemDecisions?: Record<string, ExtraItemDecisionPayload>
     ) => {
         if (!partialApprovalModal.group) return;
         await api.requests.createApprovalBatch(partialApprovalModal.group.requestId, submitData, undefined, extraItemDecisions);
         setPartialApprovalModal({ show: false, group: null });
-        setFeedback({ type: 'success', message: 'Lote de aprovação criado e enviado com sucesso.' });
+        setFeedback({ type: 'success', message: 'Lote criado — opções enviadas para o Aprovador de Área.' });
         loadData();
     };
 
@@ -2378,7 +2434,7 @@ export function BuyerItemsList() {
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                                                                                     {(() => {
-                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId)));
+                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))));
                                                                                         if (isUsedInBatch) {
                                                                                             return (
                                                                                                 <div style={{
@@ -2699,6 +2755,10 @@ export function BuyerItemsList() {
                                                                         <span>Criado em: {new Date(batch.createdAtUtc).toLocaleDateString('pt-PT')}</span>
                                                                         <span>•</span>
                                                                         <span>Itens: {batch.items?.length || 0}</span>
+                                                                        {(() => {
+                                                                            const optionCount = (batch.items || []).reduce((acc: number, bi: any) => acc + (bi.candidates?.length || 0), 0);
+                                                                            return optionCount > 0 ? (<><span>•</span><span>Opções: {optionCount}</span></>) : null;
+                                                                        })()}
                                                                     </div>
                                                                     {batch.comment && (
                                                                         <div style={{ fontSize: '0.8rem', color: 'var(--color-text-body)', marginTop: '8px', fontStyle: 'italic' }}>

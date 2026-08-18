@@ -1,4 +1,6 @@
 import { ItemAllocation } from '../WizardStepAllocation';
+import { validateReconciliationJustification } from '../../../lib/reconciliationJustificationValidator';
+import { isCandidateBatchItem, selectionRequiresJustification } from '../candidateSelection';
 
 export const useWizardValidation = (
     activeItems: any[],
@@ -15,8 +17,42 @@ export const useWizardValidation = (
     /** The active ApprovalBatch (batch-review mode only) — its unresolvedLegacyLines is the
      * batch-scoped signal that actually replaces the request-wide extraItemDecisions/extraItemsCount
      * check in that mode (see isStep3Valid). */
-    activeBatch: any | null = null
+    activeBatch: any | null = null,
+    /** Candidate model — Area winner selections (ApprovalBatchItemId → candidate id). */
+    batchSelections: Record<string, string> = {},
+    /** Candidate model — per-item winner justifications (mandatory for non-cheapest picks). */
+    selectionJustifications: Record<string, string> = {}
 ) => {
+
+    /** Candidate model: one batch item is "decided" when exactly one of ITS candidates is
+     * selected AND, for a non-cheapest pick, a meaningful justification exists. Legacy items
+     * (no candidates) fall back to the historical winner-chain check. */
+    const isBatchItemDecided = (item: any): boolean => {
+        const batchItem = (activeBatch?.items || []).find((bi: any) => bi.requestLineItemId === item.id);
+        if (batchItem && isCandidateBatchItem(batchItem)) {
+            // Server-decided (Area decision already stamped — the Final-stage read): the item is
+            // decided and the read-only review needs no local selection state.
+            if (batchItem.selectedCandidateId
+                && (batchItem.candidates || []).some((c: any) => c.id === batchItem.selectedCandidateId)) {
+                return true;
+            }
+            const selectedCandidateId = batchSelections[batchItem.id];
+            if (!selectedCandidateId) return false;
+            const candidate = (batchItem.candidates || []).find((c: any) => c.id === selectedCandidateId);
+            if (!candidate) return false;
+            if (selectionRequiresJustification(batchItem, selectedCandidateId)) {
+                return validateReconciliationJustification(selectionJustifications[batchItem.id] || '').isValid;
+            }
+            return true;
+        }
+
+        // Legacy buyer-selected item — the winner chain must resolve against real quotation data.
+        const selectedQuotationItemId = item.selectedQuotationItemId;
+        if (!selectedQuotationItemId) return false;
+        return quotations.some((quotation: any) =>
+            quotation.items?.some((quotationItem: any) => quotationItem.id === selectedQuotationItemId)
+        );
+    };
     
     const isAssigned = (itemId: string) => {
         const allocations = itemAllocations[itemId] || [];
@@ -44,16 +80,9 @@ export const useWizardValidation = (
                 return false;
             }
 
-            allItemsAwarded = activeItems.length > 0 && activeItems.every((item: any) => {
-                // Strictly use lineItem.selectedQuotationItemId (no fallback to itemAwards or local state)
-                const selectedQuotationItemId = item.selectedQuotationItemId;
-                if (!selectedQuotationItemId) return false;
-
-                // Every active batch item must resolve to a valid QuotationItem in quotations
-                return quotations.some((quotation: any) =>
-                    quotation.items?.some((quotationItem: any) => quotationItem.id === selectedQuotationItemId)
-                );
-            });
+            // Candidate model: each item must have exactly one selected candidate (with a valid
+            // justification when required); legacy items keep the strict winner-chain check.
+            allItemsAwarded = activeItems.length > 0 && activeItems.every(isBatchItemDecided);
         } else {
             allItemsAwarded = activeItems.every((item: any) => !!itemAwards[item.id] || !!item.selectedQuotationItemId);
         }
@@ -93,11 +122,7 @@ export const useWizardValidation = (
     const step3AwardedCount = activeItems.filter((item: any) => {
         if (isBatchReviewMode) {
             if (!quotations || quotations.length === 0) return false;
-            const selectedQuotationItemId = item.selectedQuotationItemId;
-            if (!selectedQuotationItemId) return false;
-            return quotations.some((quotation: any) =>
-                quotation.items?.some((quotationItem: any) => quotationItem.id === selectedQuotationItemId)
-            );
+            return isBatchItemDecided(item);
         }
         return !!itemAwards[item.id] || !!item.selectedQuotationItemId;
     }).length;

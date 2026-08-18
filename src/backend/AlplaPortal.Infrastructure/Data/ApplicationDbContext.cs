@@ -55,6 +55,7 @@ public class ApplicationDbContext : DbContext
     // Partial Quotation Approval (Batch Model)
     public DbSet<ApprovalBatch> ApprovalBatches => Set<ApprovalBatch>();
     public DbSet<ApprovalBatchItem> ApprovalBatchItems => Set<ApprovalBatchItem>();
+    public DbSet<ApprovalBatchItemCandidate> ApprovalBatchItemCandidates => Set<ApprovalBatchItemCandidate>();
     public DbSet<ApprovalBatchExtraItemDecision> ApprovalBatchExtraItemDecisions => Set<ApprovalBatchExtraItemDecision>();
     public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
 
@@ -129,6 +130,24 @@ public class ApplicationDbContext : DbContext
 
     // Email Outbox (async email delivery queue)
     public DbSet<EmailOutboxEntry> EmailOutbox => Set<EmailOutboxEntry>();
+
+    // Post-Payment Completion Workflow (Release 1: table created, first rows written in Release 3)
+    public DbSet<OperationInvoiceReconciliation> OperationInvoiceReconciliations =>
+        Set<OperationInvoiceReconciliation>();
+
+    // ── Release 3: multi-document PAYMENT origin, and operation invoices across PO groups ──
+    /// <summary>Documents that ORIGINATE a PAYMENT request. PAYMENT only — never quotations.</summary>
+    public DbSet<PaymentSourceDocument> PaymentSourceDocuments => Set<PaymentSourceDocument>();
+
+    /// <summary>Facturas received after payment, one per document however many groups they cover.</summary>
+    public DbSet<OperationInvoice> OperationInvoices => Set<OperationInvoice>();
+    public DbSet<OperationInvoiceAllocation> OperationInvoiceAllocations => Set<OperationInvoiceAllocation>();
+    public DbSet<OperationInvoiceLine> OperationInvoiceLines => Set<OperationInvoiceLine>();
+    public DbSet<OperationInvoiceShortClose> OperationInvoiceShortCloses => Set<OperationInvoiceShortClose>();
+
+    /// <summary>Audit of classifications that contradicted the document's own evidence.</summary>
+    public DbSet<DocumentClassificationOverride> DocumentClassificationOverrides =>
+        Set<DocumentClassificationOverride>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -966,7 +985,9 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 8, Code = "WAITING_COST_CENTER", Name = "Inserir C.C", DisplayOrder = 9, BadgeColor = "yellow" },
             new RequestStatus { Id = 9, Code = "APPROVED", Name = "Aprovado", DisplayOrder = 10, BadgeColor = "green" },
             new RequestStatus { Id = 10, Code = "PROFORMA_INVOICE_INSERTED", Name = "Fatura Proforma Inserida", DisplayOrder = 11, BadgeColor = "slate" },
-            new RequestStatus { Id = 11, Code = "PO_REQUESTED", Name = "Solicitado P.O", DisplayOrder = 12, BadgeColor = "sky" },
+            // v2.229.1: repurposed as the request-level "awaiting first P.O." state (0 of N
+            // registered after Final Approval) — previously an orphaned legacy row.
+            new RequestStatus { Id = 11, Code = "PO_REQUESTED", Name = "Aguardando P.O.", DisplayOrder = 12, BadgeColor = "sky" },
             new RequestStatus { Id = 12, Code = "PO_ISSUED", Name = "P.O Emitida", DisplayOrder = 13, BadgeColor = "lime" },
             new RequestStatus { Id = 13, Code = "PAYMENT_REQUEST_SENT", Name = "Solicitação Pagamento Enviada", DisplayOrder = 14, BadgeColor = "rose" },
             new RequestStatus { Id = 14, Code = "PAYMENT_SCHEDULED", Name = "Pagamento Agendado", DisplayOrder = 15, BadgeColor = "violet" },
@@ -984,7 +1005,12 @@ public class ApplicationDbContext : DbContext
             new RequestStatus { Id = 26, Code = "WAITING_RECONCILIATION", Name = "Ag. Reconciliação", DisplayOrder = 26, BadgeColor = "#fd7e14" },
             new RequestStatus { Id = 22, Code = "WAITING_PO_CORRECTION", Name = "Devolvido para Compras", DisplayOrder = 22, BadgeColor = "red" },
             new RequestStatus { Id = 27, Code = "PO_PARTIALLY_UPLOADED", Name = "P.O Parcialmente Registrada", DisplayOrder = 27, BadgeColor = "orange" },
-            new RequestStatus { Id = 28, Code = "ADVANCE_PAYMENT_SCHEDULED", Name = "Adiantamento Agendado", DisplayOrder = 28, BadgeColor = "#17a2b8" }
+            new RequestStatus { Id = 28, Code = "ADVANCE_PAYMENT_SCHEDULED", Name = "Adiantamento Agendado", DisplayOrder = 28, BadgeColor = "#17a2b8" },
+
+            // Post-Payment Completion Workflow — lookup row only. Release 1 seeds it so the code
+            // exists before the workflow needs it; NO request or PO group is assigned this status
+            // until Release 4 activates the workflow.
+            new RequestStatus { Id = 29, Code = "WAITING_FISCAL_RECEIPT", Name = "Aguardando Recibo Fiscal", DisplayOrder = 29, BadgeColor = "#8b5cf6" }
         );
 
         modelBuilder.Entity<Currency>().HasData(

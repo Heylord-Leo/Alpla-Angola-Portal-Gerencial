@@ -8,7 +8,38 @@ import { FeedbackType } from '../../../components/ui/Feedback';
 import { ApprovalActionType } from '../../../components/ApprovalModal';
 import { scrollToFirstError } from '../../../lib/validation';
 import { completeQuotationAction } from '../../../lib/workflow';
-import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
+import { isFiscalDocument, isSelectableDocumentType } from '../../../lib/sourceDocumentType';
+import {
+    CONFLICT_JUSTIFICATION_MIN_LENGTH,
+    ClassificationConflictState,
+    EMPTY_CONFLICT,
+    OcrDocumentClassification,
+    buildClassificationPayload,
+    canConfirmConflict,
+    evaluateClassificationConflict
+} from '../../../lib/documentClassificationDecision';
+
+/** Rehydrates the stored evidence blob, tolerating anything that is not the shape we wrote. */
+function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentClassification> {
+    if (!json) return {};
+    try {
+        const parsed = JSON.parse(json);
+        return parsed && typeof parsed === 'object' ? parsed as Partial<OcrDocumentClassification> : {};
+    } catch {
+        return {};
+    }
+}
+import { useFeatureFlags } from '../../../hooks/useFeatureFlags';
+import { useCatalogItemReconciliation } from '../../../hooks/useCatalogItemReconciliation';
+import {
+    DocumentScopedItem,
+    documentLabelsByIndex,
+    equivalentUnresolvedIndexes,
+    flattenPersistedLineItems,
+    propagateEquivalentResolutions,
+    unresolvedItems
+} from '../../../lib/multiDocumentCatalogReconciliation';
+import { CurrencyDto, ItemResolution, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
 
 export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClose?: () => void } = {}) {
     const navigate = useNavigate();
@@ -18,6 +49,9 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [searchParams] = useSearchParams();
 
     const { user } = useAuth();
+    // Post-Payment Completion (Release 2). Defaults to every flag off, so the screen renders its
+    // pre-feature layout until the server says otherwise.
+    const { flags: featureFlags } = useFeatureFlags();
     
     // Derived Configuration
     const copyFromId = searchParams.get('copyFrom');
@@ -57,9 +91,17 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         capexOpexClassificationId: '',
         supplierId: '',
         areaApproverId: '',
-        finalApproverId: ''
+        finalApproverId: '',
+        // Post-Payment Completion (Release 2): PROFORMA | FINAL_INVOICE | '' (unclassified).
+        sourceDocumentType: ''
     });
     const [initialFormData, setInitialFormData] = useState<any>(null);
+    // What the document was read as, and the answer given to any contradiction. Restored from the
+    // saved request so an edit judges the classification against the same evidence as creation did.
+    const [documentClassification, setDocumentClassification] =
+        useState<OcrDocumentClassification | null>(null);
+    const [classificationConflict, setClassificationConflict] =
+        useState<ClassificationConflictState>(EMPTY_CONFLICT);
     const [supplierName, setSupplierName] = useState('');
     const [supplierPortalCode, setSupplierPortalCode] = useState('');
 
@@ -79,6 +121,15 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [currencies, setCurrencies] = useState<CurrencyDto[]>([]);
     const [needLevels, setNeedLevels] = useState<LookupDto[]>([]);
     const [departments, setDepartments] = useState<LookupDto[]>([]);
+    /**
+     * This request keeps its document identity on its PaymentSourceDocuments, not on the header.
+     *
+     * <p>Set by the review screen once the source-document summary arrives, from the persisted
+     * discriminator rather than a row count. While true, `Request.SourceDocumentType` and
+     * `Request.SupplierId` are compatibility echoes and must not gate anything: the authoritative
+     * classification lives on each document and is validated there, by the backend, per document.</p>
+     */
+    const [usesMultiSourceDocuments, setUsesMultiSourceDocuments] = useState(false);
     const [companies, setCompanies] = useState<any[]>([]);
     const [plants, setPlants] = useState<LookupDto[]>([]);
     const [costCenters, setCostCenters] = useState<LookupDto[]>([]);
@@ -129,7 +180,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     
     const isReworkStatus = status === 'AREA_ADJUSTMENT' || status === 'FINAL_ADJUSTMENT';
     const isQuotationStage = status === 'WAITING_QUOTATION';
-    const isOperationalStage = ['APPROVED', 'QUOTATION_COMPLETED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
+    const isOperationalStage = ['APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_QUOTATION'].includes(status || '');
     const isFinalizedStatus = ['COMPLETED', 'REJECTED', 'CANCELLED'].includes(status || '');
 
     const isDraftEditable = status === 'DRAFT' || isReworkStatus || isCopyMode;
@@ -506,8 +557,26 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 capexOpexClassificationId: data.capexOpexClassificationId != null ? data.capexOpexClassificationId.toString() : '',
                 supplierId: data.supplierId?.toString() || '',
                 areaApproverId: data.areaApproverId || '',
-                finalApproverId: data.finalApproverId || ''
+                finalApproverId: data.finalApproverId || '',
+                sourceDocumentType: data.sourceDocumentType || ''
             };
+
+            // The reading this classification was judged against, restored so the edit screen can
+            // show the same suggestion and detect the same contradiction as the create screen.
+            setDocumentClassification(data.sourceDocumentTypeOcrSuggestion
+                ? {
+                    suggestedType: data.sourceDocumentTypeOcrSuggestion,
+                    confidence: data.sourceDocumentTypeOcrConfidence ?? null,
+                    indicatesFiscalDocument: isFiscalDocument(data.sourceDocumentTypeOcrSuggestion),
+                    ...parseClassificationEvidence(data.sourceDocumentTypeEvidenceJson)
+                }
+                : null);
+            setClassificationConflict({
+                hasConflict: !!data.classificationConflictAcknowledged,
+                isHighRisk: false,
+                acknowledged: !!data.classificationConflictAcknowledged,
+                justification: data.classificationJustification || ''
+            });
 
             if (!isCopyMode) {
                 setSupplierName(data.supplierName || '');
@@ -656,7 +725,27 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 : null,
             buyerId: formData.buyerId || null,
             // areaApproverId removido (Fase B): o backend resolve o roteamento de área
-            finalApproverId: formData.finalApproverId || null
+            finalApproverId: formData.finalApproverId || null,
+            // Post-Payment Completion (Release 2). Empty string means "not chosen" and is sent as
+            // null — the backend accepts that on a draft and blocks it at submission instead.
+            sourceDocumentType: formData.sourceDocumentType || null,
+            // The classification and the reasoning behind it travel together — the backend
+            // re-derives whether this was an override and refuses an unconfirmed one.
+            ...(() => {
+                const c = buildClassificationPayload(
+                    formData.sourceDocumentType, documentClassification, classificationConflict);
+                return {
+                    sourceDocumentTypeSource: c.source,
+                    sourceDocumentTypeOcrSuggestion: c.suggestion,
+                    sourceDocumentTypeOcrConfidence: c.confidence,
+                    sourceDocumentTypeEvidenceJson: c.evidenceJson,
+                    sourceDocumentTypeTitleFound: c.titleFound,
+                    sourceDocumentTypeConflictingEvidenceJson: c.conflictingEvidenceJson,
+                    sourceDocumentTypeSuggestionSource: c.suggestionSource,
+                    classificationConflictAcknowledged: c.acknowledged,
+                    classificationJustification: c.justification
+                };
+            })()
         };
 
         setSaving(true);
@@ -866,6 +955,79 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         }
     };
 
+    // ── Catalogue reconciliation for a SAVED multi-document PAYMENT draft ──
+    //
+    // A draft can gain a document, a line or an edited description after it was created, and none of
+    // those went past the catalogue on the way in. The request already existing is not a reason to
+    // skip the check — it is only a reason to run it here rather than before creation.
+    //
+    // Scoped to multi-document PAYMENT on purpose. Legacy PAYMENT and QUOTATION editing never ran
+    // catalogue reconciliation at submission and are left exactly as they are.
+    const [showCatalogReconciliationWarning, setShowCatalogReconciliationWarning] = useState(false);
+
+    const catalogScopedItems: DocumentScopedItem[] = useMemo(
+        () => (requestTypeCode === 'PAYMENT' && usesMultiSourceDocuments)
+            ? flattenPersistedLineItems(lineItems as any)
+            : [],
+        [requestTypeCode, usesMultiSourceDocuments, lineItems]);
+
+    const catalogReconciliation = useCatalogItemReconciliation(catalogScopedItems);
+
+    /**
+     * Unresolved lines according to the SERVER's copy, not the modal's memory.
+     *
+     * <p>Resolutions are held by array index, and the index of a line changes when a document is
+     * removed. Deciding the gate from what was actually saved means a stale answer can never wave a
+     * genuinely unmatched item through.</p>
+     */
+    const catalogUnresolved = useMemo(
+        () => unresolvedItems(catalogScopedItems), [catalogScopedItems]);
+
+    // Undefined, not an empty object, when this request is not multi-document PAYMENT — the modal
+    // treats "labels supplied" as the switch for its Documento column, and `{}` is truthy.
+    const catalogDocumentLabels = useMemo(
+        () => catalogScopedItems.length > 0 ? documentLabelsByIndex(catalogScopedItems) : undefined,
+        [catalogScopedItems]);
+
+    const catalogEquivalentIndexesOf = useCallback(
+        (index: number) => equivalentUnresolvedIndexes(catalogScopedItems, index),
+        [catalogScopedItems]);
+
+    /**
+     * Records the answers, one focused call per line.
+     *
+     * <p>Uses the catalogue-link endpoint rather than the ordinary item update: only
+     * <c>ItemCatalogId</c> changes, so the line keeps its source document, quantity, unit, price,
+     * discount, IVA and total. Re-running it with the same answers changes nothing and writes no
+     * history, so pressing Submeter twice cannot duplicate anything.</p>
+     */
+    const applyCatalogResolutions = useCallback(async (resolutions: ItemResolution[]) => {
+        if (!id) return;
+
+        // One answer settles every equivalent line, so the same unknown item appearing on two
+        // invoices does not become two pending catalogue entries.
+        const effective = propagateEquivalentResolutions(catalogScopedItems, resolutions);
+        catalogReconciliation.resolveAll(effective);
+
+        try {
+            for (const resolution of effective) {
+                const target = catalogScopedItems[resolution.itemIndex];
+                if (!target || !resolution.linkedCatalogId) continue;
+
+                await api.requests.setLineItemCatalogLink(
+                    id, target.itemTempId, resolution.linkedCatalogId);
+            }
+
+            const data = await api.requests.get(id);
+            setLineItems(data.lineItems || []);
+        } catch (err: any) {
+            setFeedback({
+                type: 'error',
+                message: err?.message || 'Falha ao vincular os itens ao catálogo.'
+            });
+        }
+    }, [id, catalogScopedItems, catalogReconciliation]);
+
     const handleSubmitRequest = async () => {
         if (!id && !isCopyMode) return;
 
@@ -920,8 +1082,48 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             }
         }
 
-        // 1.1 Mandatory Proforma check (Only for PAYMENT types)
-        if (requestTypeCode === 'PAYMENT' && !hasAttachment('PROFORMA')) {
+        // 1.05 Post-Payment Completion (Release 2) — the billing document type becomes mandatory at
+        // submission, never while the request is still a draft. Mirrors the authoritative backend
+        // rule in SubmitRequest; the server re-checks it regardless of what the UI allows.
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments &&
+            featureFlags.sourceDocumentTypeRequired &&
+            !isSelectableDocumentType(formData.sourceDocumentType)) {
+            setFeedback({
+                type: 'error',
+                message: 'Selecione o Tipo de documento anexado antes de submeter o pedido.'
+            });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
+        // 1.06 A classification that contradicts the document reading must have been confirmed —
+        // and justified where the risk warrants it. The backend rejects an unconfirmed one with a
+        // 400; refusing here turns that into an explanation instead of a failed save.
+        // Likewise the header-level conflict: on a multi-document request the reading and the
+        // decision belong to a document, and each document carries its own answer.
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments &&
+            featureFlags.postPaymentCompletionEnabled) {
+            const evaluation = evaluateClassificationConflict(
+                formData.sourceDocumentType, documentClassification);
+
+            if (!canConfirmConflict(evaluation, classificationConflict.acknowledged,
+                                    classificationConflict.justification)) {
+                setFeedback({
+                    type: 'error',
+                    message: classificationConflict.acknowledged
+                        ? `Justifique a classificação divergente (mínimo ${CONFLICT_JUSTIFICATION_MIN_LENGTH} caracteres) antes de submeter.`
+                        : 'A classificação selecionada contradiz o documento. Confirme a divergência no aviso junto ao campo antes de submeter.'
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
+
+        // 1.1 Mandatory Proforma check — LEGACY single-document PAYMENT only.
+        // Under the multi-document model the commercial document IS the PaymentSourceDocument, whose
+        // attachment is typed PAYMENT_SOURCE_DOCUMENT. The legacy slot is never filled by that flow,
+        // so this guard would refuse every multi-document request and ask for the same invoice twice.
+        if (requestTypeCode === 'PAYMENT' && !usesMultiSourceDocuments && !hasAttachment('PROFORMA')) {
             setFeedback({
                 type: 'error',
                 message: 'É necessário anexar a Proforma antes de submeter o pedido.'
@@ -942,6 +1144,14 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setIsAttachmentsHighlighted(true);
                 setTimeout(() => setIsAttachmentsHighlighted(false), 5000);
             }, 100);
+            return;
+        }
+
+        // 1.2 Catalogue reconciliation — multi-document PAYMENT only.
+        // Runs after the request and document rules, before anything is saved or submitted. Lines
+        // already linked to a catalogue item are not asked about again.
+        if (requestTypeCode === 'PAYMENT' && usesMultiSourceDocuments && catalogUnresolved.length > 0) {
+            setShowCatalogReconciliationWarning(true);
             return;
         }
 
@@ -999,6 +1209,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     
 
     return {
+        usesMultiSourceDocuments,
+        setUsesMultiSourceDocuments,
         id,
         isCopyMode,
         copyFromId,
@@ -1021,7 +1233,12 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setRequestNumber,
         formData,
         setFormData,
+        documentClassification,
+        classificationConflict,
+        setClassificationConflict,
         initialFormData,
+        // Post-Payment Completion (Release 2): drives whether the classification field renders.
+        featureFlags,
         supplierName,
         setSupplierName,
         supplierPortalCode,
@@ -1101,6 +1318,14 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         handleSubmit,
         handleRequestAction,
         handleSubmitRequest,
+        // Catalogue reconciliation, multi-document PAYMENT drafts only.
+        showCatalogReconciliationWarning,
+        setShowCatalogReconciliationWarning,
+        catalogReconciliation,
+        catalogUnresolved,
+        catalogDocumentLabels,
+        catalogEquivalentIndexesOf,
+        applyCatalogResolutions,
         handleSaveItem,
         handleDeleteItem,
         executeDeleteItem,

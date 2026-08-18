@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { RequestDetailsDto, SavedQuotationDto, SavedQuotationItemDto, PurchaseHistoryInsightDto, BatchInformationalItem } from '../../types';
+import { RequestDetailsDto, SavedQuotationDto, SavedQuotationItemDto, PurchaseHistoryInsightDto, BatchInformationalItem, ApprovalBatchItemCandidate } from '../../types';
 import { formatCurrencyAO } from '../../lib/utils';
+import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
+import { isCandidateBatchItem, cheapestSameCurrency, financialTolerance, selectionRequiresJustification, computeTentativeSummary } from './candidateSelection';
 import {
     CheckCircle2,
     FileText,
@@ -48,6 +50,14 @@ interface WizardStepBatchReviewProps {
     quotations: SavedQuotationDto[];
     activeBatch?: any | null;
     onDownloadAttachment?: (attachmentId: string, fileName: string) => void;
+    /** Candidate model — Area winner selection state (ApprovalBatchItemId → candidate id).
+     * Local wizard state only; nothing persists before the approval submit. */
+    selections?: Record<string, string>;
+    selectionJustifications?: Record<string, string>;
+    onSelectCandidate?: (approvalBatchItemId: string, candidateId: string, requestLineItemId: string, quotationItemId: string) => void;
+    onJustificationChange?: (approvalBatchItemId: string, text: string) => void;
+    /** Show inline pending-decision highlights (set after a blocked approve/next attempt). */
+    showSelectionValidation?: boolean;
 }
 
 const renderHistoryBadge = (insight?: PurchaseHistoryInsightDto | null) => {
@@ -98,16 +108,42 @@ const renderHistoryBadge = (insight?: PurchaseHistoryInsightDto | null) => {
     );
 };
 
+const formatSnapshotDate = (iso?: string | null) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d.toLocaleDateString('pt-PT');
+};
+
 export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
     request,
     quotations,
     activeBatch,
-    onDownloadAttachment
+    onDownloadAttachment,
+    selections = {},
+    selectionJustifications = {},
+    onSelectCandidate,
+    onJustificationChange,
+    showSelectionValidation = false
 }) => {
     const [expandedOtherQuotes, setExpandedOtherQuotes] = useState<Record<string, boolean>>({});
+    // Local-only expansion of the losing candidates on a DECIDED item (Final read-only view).
+    const [expandedLosing, setExpandedLosing] = useState<Record<string, boolean>>({});
 
     const activeItems = (request.lineItems || []).filter((i: any) => !i.isDeleted);
     const batchNumber = activeBatch?.batchNumber ?? 1;
+    const batchItems: any[] = activeBatch?.items || [];
+    const batchItemByLineId = new Map<string, any>(batchItems.map((bi: any) => [bi.requestLineItemId, bi]));
+    const hasCandidateItems = batchItems.some((bi: any) => isCandidateBatchItem(bi));
+    // Every candidate item already carries the Area decision → the step is a read-only outcome
+    // review (Final stage / decided batch), never a selection surface.
+    const allServerDecided = hasCandidateItems && batchItems
+        .filter((bi: any) => isCandidateBatchItem(bi))
+        .every((bi: any) => !!bi.selectedCandidateId);
+
+    const tentative = computeTentativeSummary(
+        batchItems.filter((bi: any) => activeItems.some((li: any) => li.id === bi.requestLineItemId)),
+        selections
+    );
 
     const toggleExpandOtherQuotes = (itemId: string) => {
         setExpandedOtherQuotes(prev => ({ ...prev, [itemId]: !prev[itemId] }));
@@ -131,10 +167,16 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                     </div>
                     <div>
                         <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#111827', margin: 0 }}>
-                            Revisão da Cotação Selecionada pelo Comprador
+                            {hasCandidateItems
+                                ? (allServerDecided ? 'Desfecho Comercial Selecionado pelo Aprovador de Área' : 'Seleção da Cotação Vencedora')
+                                : 'Revisão da Cotação Selecionada pelo Comprador'}
                         </h3>
                         <p style={{ fontSize: '0.8125rem', color: '#6B7280', margin: '2px 0 0 0' }}>
-                            Confirme os fornecedores e valores selecionados pelo comprador para os itens do Lote #{batchNumber}.
+                            {hasCandidateItems
+                                ? (allServerDecided
+                                    ? `Revise o vencedor de cada item do Lote #${batchNumber} e, quando útil, as demais opções enviadas pelo Comprador (somente leitura). Os valores são os congelados no envio.`
+                                    : `Compare as opções enviadas pelo Comprador e selecione uma vencedora para cada item do Lote #${batchNumber}. Os valores exibidos são os congelados no envio.`)
+                                : `Confirme os fornecedores e valores selecionados pelo comprador para os itens do Lote #${batchNumber}.`}
                         </p>
                     </div>
                 </div>
@@ -143,6 +185,369 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
             {/* List of Batch Items */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {activeItems.map((item: any) => {
+                    const batchItem = batchItemByLineId.get(item.id);
+                    const candidateMode = isCandidateBatchItem(batchItem);
+
+                    if (candidateMode) {
+                        const candidates: ApprovalBatchItemCandidate[] = batchItem.candidates;
+
+                        // ── DECIDED item (Area decision stamped — Final/read-only view). The winner
+                        // is always visible; losing options expand read-only. No control can change
+                        // the decision — the only path to a different winner is return/adjustment. ──
+                        const serverDecided = batchItem.selectedCandidateId
+                            ? candidates.find(c => c.id === batchItem.selectedCandidateId)
+                            : undefined;
+                        if (serverDecided) {
+                            const losing = candidates.filter(c => c.id !== serverDecided.id);
+                            const isLosingExpanded = !!expandedLosing[batchItem.id];
+                            const wasNonCheapest = selectionRequiresJustification(batchItem, serverDecided.id);
+                            const justification = batchItem.winnerSelectionJustification;
+                            const decidedAt = formatSnapshotDate(batchItem.winnerSelectedAtUtc);
+                            const decidedBy = batchItem.winnerSelectedByUserName;
+
+                            const renderFacts = (c: ApprovalBatchItemCandidate, muted: boolean) => {
+                                const cheapest = cheapestSameCurrency(candidates, c.currency);
+                                const isStrictLowest = cheapest !== null && c.lineTotal === cheapest;
+                                const quantityDiffers = item.quantity != null && Number(c.quantity) !== Number(item.quantity);
+                                const warning = c.lineAdjustmentJustification
+                                    || (c.reconciliationStatus === 'SUBSTITUTE' ? c.reconciliationJustification : null);
+                                const mainColor = muted ? '#374151' : '#065F46';
+                                return (
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                <Building2 size={15} color={muted ? '#6B7280' : '#059669'} />
+                                                <span style={{ fontSize: '0.875rem', fontWeight: 800, color: mainColor }}>{c.supplierName}</span>
+                                                {isStrictLowest && (
+                                                    <span style={{ padding: '2px 8px', backgroundColor: '#ECFDF5', color: '#047857', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #A7F3D0', textTransform: 'uppercase' }}>Menor Valor</span>
+                                                )}
+                                                {c.reconciliationStatus === 'SUBSTITUTE' && (
+                                                    <span title={c.reconciliationJustification || undefined} style={{ padding: '2px 8px', backgroundColor: '#FEF9C3', color: '#854D0E', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', textTransform: 'uppercase', cursor: 'help' }}>Substituto</span>
+                                                )}
+                                                {quantityDiffers && (
+                                                    <span style={{ padding: '2px 8px', backgroundColor: '#FFF7ED', color: '#9A3412', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #FED7AA', textTransform: 'uppercase' }}>Qtd difere do pedido</span>
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginTop: '6px', wordBreak: 'break-word' }}>{c.description}</div>
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: '4px' }}>
+                                                Doc: {c.quotationDocumentNumber || 'S/N'}{formatSnapshotDate(c.quotationDocumentDate) ? ` (${formatSnapshotDate(c.quotationDocumentDate)})` : ''} • {c.currency}
+                                            </div>
+                                            {c.buyerNote && (
+                                                <div style={{ fontSize: '0.75rem', color: '#1E40AF', backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '5px 8px', marginTop: '6px' }}>
+                                                    <strong>Observação do Comprador:</strong> {c.buyerNote}
+                                                </div>
+                                            )}
+                                            {warning && (
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.75rem', color: '#92400E', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '4px', padding: '5px 8px', marginTop: '6px' }}>
+                                                    <Info size={12} style={{ marginTop: '1px', flexShrink: 0 }} />
+                                                    <span>{warning}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '175px' }}>
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Qtd cotada: <strong style={{ color: '#374151' }}>{c.quantity}{c.unitText ? ` ${c.unitText}` : ''}</strong></div>
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Preço unitário s/ IVA: {formatCurrencyAO(c.unitPrice)}</div>
+                                            {c.discountAmount > 0 && (
+                                                <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Desconto: {formatCurrencyAO(c.discountAmount)}</div>
+                                            )}
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>IVA ({c.ivaRatePercent}%): {formatCurrencyAO(c.ivaAmount)}</div>
+                                            <div style={{ fontWeight: 800, fontSize: '0.9375rem', color: mainColor, marginTop: '2px' }}>{formatCurrencyAO(c.lineTotal)}</div>
+                                        </div>
+                                    </div>
+                                );
+                            };
+
+                            return (
+                                <div key={item.id} style={{ backgroundColor: '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                                    <div style={{ padding: '14px 20px', backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4B5563', backgroundColor: '#E5E7EB', padding: '2px 8px', borderRadius: '6px' }}>Item #{item.lineNumber}</span>
+                                            <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#111827' }}>{item.description}</span>
+                                            {item.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED' && (
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, color: '#1D4ED8', backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', padding: '2px 8px', borderRadius: '20px', textTransform: 'uppercase' }}>
+                                                    <Plus size={12} strokeWidth={3} /> Item Adicional
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#4B5563' }}>
+                                            Qtd solicitada: <strong style={{ color: '#111827' }}>{item.quantity} {item.unit || 'UN'}</strong>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        {/* Winner box — always visible, read-only */}
+                                        <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.04)', border: '1.5px solid #10B981', borderRadius: '10px', padding: '14px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, color: '#047857', backgroundColor: '#D1FAE5', border: '1px solid #A7F3D0', padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase' }}>
+                                                    <Check size={13} strokeWidth={3} /> Vencedor selecionado pelo Aprovador de Área
+                                                </span>
+                                                {(decidedBy || decidedAt) && (
+                                                    <span style={{ fontSize: '0.75rem', color: '#047857' }}>
+                                                        {decidedBy ? `Selecionado por ${decidedBy}` : 'Selecionado'}{decidedAt ? ` em ${decidedAt}` : ''}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {renderFacts(serverDecided, false)}
+                                            {justification && (
+                                                <div style={{
+                                                    marginTop: '10px', paddingTop: '10px',
+                                                    borderTop: wasNonCheapest ? '1px dashed #FCD34D' : '1px dashed #A7F3D0',
+                                                    backgroundColor: wasNonCheapest ? '#FFFBEB' : 'transparent',
+                                                    border: wasNonCheapest ? '1px solid #FDE68A' : 'none',
+                                                    borderRadius: wasNonCheapest ? '6px' : 0,
+                                                    padding: wasNonCheapest ? '10px 12px' : '10px 0 0 0'
+                                                }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: wasNonCheapest ? '#92400E' : '#047857', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
+                                                        {wasNonCheapest ? 'Justificativa da escolha (acima do menor valor)' : 'Nota da decisão (opcional)'}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.8125rem', color: wasNonCheapest ? '#92400E' : '#065F46' }}>{justification}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Losing options — collapsed by default, read-only, no controls */}
+                                        {losing.length > 0 && (
+                                            <div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedLosing(prev => ({ ...prev, [batchItem.id]: !prev[batchItem.id] }))}
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'transparent', color: '#2563EB', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                                                >
+                                                    <Eye size={14} /> {isLosingExpanded ? 'Ocultar outras opções' : `Ver outras opções (${losing.length})`}
+                                                    {isLosingExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                                </button>
+                                                {isLosingExpanded && (
+                                                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        <p style={{ fontSize: '0.6875rem', color: '#9CA3AF', margin: 0, lineHeight: 1.4 }}>
+                                                            Opções enviadas pelo Comprador e não selecionadas — somente leitura, valores congelados no envio.
+                                                        </p>
+                                                        {losing.map(c => (
+                                                            <div key={c.id} style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '8px', padding: '12px 14px' }}>
+                                                                {renderFacts(c, true)}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const selectedCandidateId = selections[batchItem.id] || null;
+                        const selectedCandidate = selectedCandidateId ? candidates.find(c => c.id === selectedCandidateId) : undefined;
+                        const isPending = !selectedCandidate;
+                        const highlightPending = showSelectionValidation && isPending;
+                        const requiresJustification = !!selectedCandidateId && selectionRequiresJustification(batchItem, selectedCandidateId);
+                        const justificationText = selectionJustifications[batchItem.id] || '';
+                        const justificationValidation = validateReconciliationJustification(justificationText);
+                        const singleOption = candidates.length === 1;
+
+                        return (
+                            <div
+                                key={item.id}
+                                style={{
+                                    backgroundColor: '#FFFFFF',
+                                    border: highlightPending ? '1.5px solid #DC2626' : isPending ? '1px solid #F59E0B' : '1px solid #D1D5DB',
+                                    borderRadius: '12px',
+                                    overflow: 'hidden',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                                }}
+                            >
+                                {/* Requested Item Top Header Bar */}
+                                <div style={{
+                                    padding: '14px 20px',
+                                    backgroundColor: '#F9FAFB',
+                                    borderBottom: '1px solid #E5E7EB',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: '12px'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                        <span style={{
+                                            fontSize: '0.75rem', fontWeight: 800, color: '#4B5563',
+                                            backgroundColor: '#E5E7EB', padding: '2px 8px', borderRadius: '6px'
+                                        }}>
+                                            Item #{item.lineNumber}
+                                        </span>
+                                        <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#111827' }}>
+                                            {item.description}
+                                        </span>
+                                        {item.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED' && (
+                                            <span style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                                fontSize: '0.6875rem', fontWeight: 700, color: '#1D4ED8',
+                                                backgroundColor: '#DBEAFE', border: '1px solid #93C5FD',
+                                                padding: '2px 8px', borderRadius: '20px', textTransform: 'uppercase'
+                                            }}>
+                                                <Plus size={12} strokeWidth={3} /> Item Adicional
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#4B5563' }}>
+                                            Qtd solicitada: <strong style={{ color: '#111827' }}>{item.quantity} {item.unit || 'UN'}</strong>
+                                        </div>
+                                        {selectedCandidate ? (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, color: '#047857', backgroundColor: '#D1FAE5', border: '1px solid #A7F3D0', padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase' }}>
+                                                <Check size={13} strokeWidth={3} /> Vencedor selecionado
+                                            </span>
+                                        ) : (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, color: highlightPending ? '#B91C1C' : '#92400E', backgroundColor: highlightPending ? '#FEE2E2' : '#FEF3C7', border: highlightPending ? '1px solid #FCA5A5' : '1px solid #FCD34D', padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase' }}>
+                                                <AlertTriangle size={12} /> Decisão pendente
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {highlightPending && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '8px 12px', fontSize: '0.8rem', color: '#991B1B', fontWeight: 600 }}>
+                                            <AlertTriangle size={14} /> Selecione a opção vencedora deste item (ou devolva o lote para reajuste).
+                                        </div>
+                                    )}
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' }}>
+                                        Opções enviadas pelo Comprador ({candidates.length})
+                                    </span>
+                                    {candidates.map(candidate => {
+                                        const isSelected = selectedCandidateId === candidate.id;
+                                        const cheapest = cheapestSameCurrency(candidates, candidate.currency);
+                                        const isLowest = cheapest !== null && candidate.lineTotal <= cheapest + financialTolerance(cheapest);
+                                        const isStrictLowest = cheapest !== null && candidate.lineTotal === cheapest;
+                                        const quantityDiffers = item.quantity != null && Number(candidate.quantity) !== Number(item.quantity);
+                                        const docDate = formatSnapshotDate(candidate.quotationDocumentDate);
+                                        const warningText = candidate.lineAdjustmentJustification
+                                            || (candidate.reconciliationStatus === 'SUBSTITUTE' ? candidate.reconciliationJustification : null);
+
+                                        return (
+                                            <label
+                                                key={candidate.id}
+                                                style={{
+                                                    display: 'flex', alignItems: 'flex-start', gap: '12px',
+                                                    padding: '14px 16px', borderRadius: '10px', cursor: 'pointer',
+                                                    border: isSelected ? '1.5px solid #10B981' : '1px solid #E5E7EB',
+                                                    backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.05)' : '#FFFFFF',
+                                                    transition: 'all 0.15s'
+                                                }}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name={`winner-${batchItem.id}`}
+                                                    checked={isSelected}
+                                                    onChange={() => onSelectCandidate?.(batchItem.id, candidate.id, item.id, candidate.quotationItemId)}
+                                                    style={{ cursor: 'pointer', marginTop: '4px' }}
+                                                    aria-label={`Selecionar ${candidate.supplierName} — ${formatCurrencyAO(candidate.lineTotal)}`}
+                                                />
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                        <Building2 size={15} color={isSelected ? '#059669' : '#6B7280'} />
+                                                        <span style={{ fontSize: '0.875rem', fontWeight: 800, color: isSelected ? '#065F46' : '#111827' }}>
+                                                            {candidate.supplierName}
+                                                        </span>
+                                                        {isSelected && (
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.6875rem', fontWeight: 700, color: '#047857' }}>
+                                                                <CheckCircle2 size={13} /> Selecionada
+                                                            </span>
+                                                        )}
+                                                        {isStrictLowest && (
+                                                            <span style={{ padding: '2px 8px', backgroundColor: '#ECFDF5', color: '#047857', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #A7F3D0', textTransform: 'uppercase' }}>Menor Valor</span>
+                                                        )}
+                                                        {!isStrictLowest && isLowest && (
+                                                            <span style={{ padding: '2px 8px', backgroundColor: '#F0FDF4', color: '#166534', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #BBF7D0', textTransform: 'uppercase' }}>Empate no menor valor</span>
+                                                        )}
+                                                        {candidate.reconciliationStatus === 'SUBSTITUTE' && (
+                                                            <span title={candidate.reconciliationJustification || undefined} style={{ padding: '2px 8px', backgroundColor: '#FEF9C3', color: '#854D0E', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', textTransform: 'uppercase', cursor: 'help' }}>Substituto</span>
+                                                        )}
+                                                        {quantityDiffers && (
+                                                            <span style={{ padding: '2px 8px', backgroundColor: '#FFF7ED', color: '#9A3412', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #FED7AA', textTransform: 'uppercase' }}>Qtd difere do pedido</span>
+                                                        )}
+                                                        {singleOption && (
+                                                            <span style={{ padding: '2px 8px', backgroundColor: '#F0F9FF', color: '#0369A1', fontSize: '0.6875rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #BAE6FD', textTransform: 'uppercase' }}>Única opção enviada</span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151', marginTop: '6px', wordBreak: 'break-word' }}>
+                                                        {candidate.description}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: '4px' }}>
+                                                        Doc: {candidate.quotationDocumentNumber || 'S/N'}{docDate ? ` (${docDate})` : ''} • {candidate.currency}
+                                                    </div>
+                                                    {candidate.buyerNote && (
+                                                        <div style={{ fontSize: '0.75rem', color: '#1E40AF', backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '5px 8px', marginTop: '6px' }}>
+                                                            <strong>Observação do Comprador:</strong> {candidate.buyerNote}
+                                                        </div>
+                                                    )}
+                                                    {warningText && (
+                                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.75rem', color: '#92400E', backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '4px', padding: '5px 8px', marginTop: '6px' }}>
+                                                            <Info size={12} style={{ marginTop: '1px', flexShrink: 0 }} />
+                                                            <span>{warningText}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '175px' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Qtd cotada: <strong style={{ color: '#374151' }}>{candidate.quantity}{candidate.unitText ? ` ${candidate.unitText}` : ''}</strong></div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Preço unitário s/ IVA: {formatCurrencyAO(candidate.unitPrice)}</div>
+                                                    {candidate.discountAmount > 0 && (
+                                                        <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>Desconto: {formatCurrencyAO(candidate.discountAmount)}</div>
+                                                    )}
+                                                    <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>IVA ({candidate.ivaRatePercent}%): {formatCurrencyAO(candidate.ivaAmount)}</div>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.9375rem', color: isSelected ? '#065F46' : '#111827', marginTop: '2px' }}>
+                                                        {formatCurrencyAO(candidate.lineTotal)}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+
+                                    {/* Non-cheapest justification — mirrors the backend's mandatory rule. */}
+                                    {selectedCandidate && requiresJustification && (
+                                        <div style={{ backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '8px', padding: '12px 14px' }}>
+                                            <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#92400E', display: 'block', marginBottom: '6px' }}>
+                                                Justificativa para escolha acima do menor valor <span style={{ color: '#DC2626' }}>*</span>
+                                            </label>
+                                            <p style={{ fontSize: '0.75rem', color: '#92400E', margin: '0 0 8px 0' }}>
+                                                A opção selecionada ({formatCurrencyAO(selectedCandidate.lineTotal)}) não é a de menor valor
+                                                ({formatCurrencyAO(cheapestSameCurrency(candidates, selectedCandidate.currency) ?? 0)}). Explique o motivo da escolha (mín. 20 caracteres significativos).
+                                            </p>
+                                            <textarea
+                                                value={justificationText}
+                                                onChange={(e) => onJustificationChange?.(batchItem.id, e.target.value)}
+                                                rows={2}
+                                                maxLength={2000}
+                                                placeholder="Ex.: Fornecedor com melhor prazo de entrega e assistência técnica local."
+                                                style={{ width: '100%', padding: '8px 10px', fontSize: '0.8125rem', border: justificationText && !justificationValidation.isValid ? '1px solid #DC2626' : '1px solid #D1D5DB', borderRadius: '6px', resize: 'vertical' }}
+                                            />
+                                            {(showSelectionValidation || justificationText.length > 0) && !justificationValidation.isValid && (
+                                                <div style={{ fontSize: '0.75rem', color: '#B91C1C', fontWeight: 600, marginTop: '4px' }}>
+                                                    {justificationValidation.error || 'Justificativa obrigatória para esta escolha.'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {/* Optional justification for a cheapest/tied pick — persisted when supplied. */}
+                                    {selectedCandidate && !requiresJustification && (
+                                        <details>
+                                            <summary style={{ fontSize: '0.75rem', color: '#6B7280', cursor: 'pointer', fontWeight: 600 }}>
+                                                Adicionar justificativa da escolha (opcional)
+                                            </summary>
+                                            <textarea
+                                                value={justificationText}
+                                                onChange={(e) => onJustificationChange?.(batchItem.id, e.target.value)}
+                                                rows={2}
+                                                maxLength={2000}
+                                                placeholder="Observação opcional sobre a escolha — será registrada no histórico."
+                                                style={{ width: '100%', marginTop: '6px', padding: '8px 10px', fontSize: '0.8125rem', border: '1px solid #D1D5DB', borderRadius: '6px', resize: 'vertical' }}
+                                            />
+                                        </details>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // ── Legacy (pre-candidate) item: read-only buyer-selected winner ──
                     const selectedQItemId = item.selectedQuotationItemId;
 
                     let selectedQuotation: SavedQuotationDto | null = null;
@@ -160,15 +565,6 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                     }
 
                     // Other quotations available for comparison on THIS specific line item — read-only.
-                    // A quotation only counts as an "alternative" here if it actually has a matching
-                    // item for this line (mappedRequestLineItemId, falling back to description match,
-                    // same resolution the render used to do inline). Quotations with no matching item
-                    // for this line (would previously render as "Não Cotado") are excluded entirely:
-                    // being present on the request is not the same as being an alternative for THIS
-                    // item, and showing them under a "comparison" heading would be misleading. Each
-                    // quotation is kept independent by QuotationId — never grouped/collapsed by
-                    // SupplierId, so two quotations from the same supplier both show up if both
-                    // quoted this item.
                     const otherQuotationsWithItem: { quotation: SavedQuotationDto; matchedItem: SavedQuotationItemDto }[] = quotations
                         .filter(q => q.id !== selectedQuotation?.id)
                         .map(q => ({
@@ -251,11 +647,11 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                     <span style={{
                                                         display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                                        fontSize: '0.6875rem', fontWeight: 700, color: '#047857',
-                                                        backgroundColor: '#D1FAE5', border: '1px solid #A7F3D0',
+                                                        fontSize: '0.6875rem', fontWeight: 700, color: '#92400E',
+                                                        backgroundColor: '#FEF3C7', border: '1px solid #FCD34D',
                                                         padding: '4px 10px', borderRadius: '20px', textTransform: 'uppercase'
                                                     }}>
-                                                        <Check size={13} strokeWidth={3} /> Selecionado pelo Comprador
+                                                        <Check size={13} strokeWidth={3} /> Modelo anterior — vencedor definido pelo Comprador
                                                     </span>
 
                                                     {item.creationOrigin === 'BUYER_EXTRA_ITEM_INCLUDED' && (
@@ -480,6 +876,52 @@ export const WizardStepBatchReview: React.FC<WizardStepBatchReviewProps> = ({
                     );
                 })}
             </div>
+
+            {/* ── Tentative selection summary (candidate model): live, LOCAL, never persisted. ── */}
+            {hasCandidateItems && (
+                <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '12px', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <h4 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#111827', margin: '0 0 10px 0' }}>
+                        {tentative.allDecided ? 'Total da combinação selecionada' : 'Total parcial das seleções'}
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', fontSize: '0.8125rem' }}>
+                        <div>
+                            <span style={{ color: '#6B7280' }}>Itens no lote</span>
+                            <div style={{ fontWeight: 800, color: '#111827' }}>{tentative.itemCount}</div>
+                        </div>
+                        <div>
+                            <span style={{ color: '#6B7280' }}>Itens decididos</span>
+                            <div style={{ fontWeight: 800, color: '#047857' }}>{tentative.decidedCount}</div>
+                        </div>
+                        <div>
+                            <span style={{ color: '#6B7280' }}>Itens pendentes</span>
+                            <div style={{ fontWeight: 800, color: tentative.pendingCount > 0 ? '#B45309' : '#111827' }}>{tentative.pendingCount}</div>
+                        </div>
+                        <div>
+                            <span style={{ color: '#6B7280' }}>Fornecedores selecionados</span>
+                            <div style={{ fontWeight: 800, color: '#111827' }}>{tentative.supplierNames.length > 0 ? tentative.supplierNames.join(', ') : '—'}</div>
+                        </div>
+                    </div>
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #E5E7EB', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {Object.keys(tentative.totalByCurrency).length === 0 ? (
+                            <span style={{ fontSize: '0.8125rem', color: '#6B7280' }}>Nenhuma opção selecionada ainda.</span>
+                        ) : (
+                            Object.entries(tentative.totalByCurrency).map(([currency, total]) => (
+                                <div key={currency} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                                    <span style={{ color: '#6B7280', fontWeight: 600 }}>
+                                        {tentative.allDecided ? 'Total selecionado' : 'Total parcial'} ({currency})
+                                    </span>
+                                    <strong style={{ color: '#111827', fontSize: '0.9375rem' }}>{formatCurrencyAO(total)}</strong>
+                                </div>
+                            ))
+                        )}
+                        {!tentative.allDecided && (
+                            <span style={{ fontSize: '0.75rem', color: '#B45309', fontWeight: 600 }}>
+                                {tentative.pendingCount} item(ns) sem decisão — a aprovação exige exatamente um vencedor por item.
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Read-only informational sections (Phase R2 — previously-planned, never-implemented
                 "Phase 4"): excluded extras, ignored lines, and unresolved-legacy-lines are shown

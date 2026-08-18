@@ -62,7 +62,7 @@ export const APPROVALS_CENTER_STEPS: TourStep[] = [
     {
         target: '[data-tour="approvals-request-card"]',
         title: 'Pedido em Aprovação',
-        content: 'Cada card representa um pedido pendente. Aqui você vê informações essenciais como número do pedido, data, solicitante, departamento, valor e status atual. Clique no pedido para abrir os detalhes e tomar a decisão de aprovar ou rejeitar.',
+        content: 'Cada card representa um pedido pendente. Aqui você vê informações essenciais como número do pedido, data, solicitante, departamento, valor e status atual. Lotes de cotação aguardando a seleção do vencedor pelo Aprovador de Área mostram "A definir pelo Aprovador de Área" no lugar do valor. Clique no pedido para abrir os detalhes e tomar a decisão de aprovar ou rejeitar.',
         placement: 'bottom',
     },
     // 7. Empty state (conditional — only when queues are empty)

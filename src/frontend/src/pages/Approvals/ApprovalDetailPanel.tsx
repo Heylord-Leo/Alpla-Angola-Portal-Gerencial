@@ -36,6 +36,7 @@ import { AwardSummary } from './components/AwardSummary';
 
 const ATTACHMENT_TYPE_LABELS: Record<string, string> = {
     'PROFORMA': 'Proforma',
+    'QUOTATION': 'Cotação',
     'PO': 'P.O (Ordem de Compra)',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
     'PAYMENT_PROOF': 'Comprovante de Pagamento',
@@ -193,6 +194,27 @@ export function ApprovalDetailPanel({
         );
         return map;
     }, [lotView]);
+
+    // Candidate model: at least one batch item carries buyer-submitted candidate options —
+    // whole-quotation comparisons (MELHOR PREÇO) stop being the decision unit, and awarded lot
+    // values must come from the FROZEN winning candidate snapshots.
+    const isCandidateBatchContext = useMemo(
+        () => Boolean(activeBatch?.items?.some((bi: any) => (bi.candidates?.length ?? 0) > 0)),
+        [activeBatch]
+    );
+
+    // Awarded value per quotation in this lot = Σ winning candidate snapshot LineTotals grouped
+    // by the candidate's quotationId. A live quotation edit after submission never changes this.
+    const awardedTotalByQuotationId = useMemo(() => {
+        const map = new Map<string, number>();
+        (activeBatch?.items || []).forEach((bi: any) => {
+            if (!bi.selectedCandidateId) return;
+            const winner = (bi.candidates || []).find((c: any) => c.id === bi.selectedCandidateId);
+            if (!winner) return;
+            map.set(winner.quotationId, (map.get(winner.quotationId) || 0) + (winner.lineTotal || 0));
+        });
+        return map;
+    }, [activeBatch]);
 
     // Resolve the authoritative displayed total for one line item. For a lot item we use its
     // selected-quotation line total; a null there means "unresolved winner" — we surface a warning
@@ -455,14 +477,15 @@ export function ApprovalDetailPanel({
     };
 
     const handleWizardSubmit = async (
-        action: ApprovalActionType, 
-        awards: Record<string, string>, 
-        assignments: Record<string, ItemAssignment>, 
-        comment: string, 
+        action: ApprovalActionType,
+        awards: Record<string, string>,
+        assignments: Record<string, ItemAssignment>,
+        comment: string,
         budgetJustification?: string,
         reassignments?: AllocationReassignmentDto[],
         allocations?: Record<string, any[]>,
-        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>
+        extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>,
+        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[]
     ): Promise<boolean> => {
         setApprovalProcessing(true);
         try {
@@ -472,7 +495,7 @@ export function ApprovalDetailPanel({
             if (action === 'APPROVE') {
                 result = activeBatch
                     ? (isArea
-                        ? await api.requests.approveBatchArea(data.id, activeBatch.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
+                        ? await api.requests.approveBatchArea(data.id, activeBatch.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions, selections)
                         : await api.requests.approveBatchFinal(data.id, activeBatch.id, comment))
                     : (isArea
                         ? await api.requests.approveArea(data.id, comment, awards, assignments, budgetJustification, reassignments, allocations, extraItemDecisions)
@@ -589,6 +612,13 @@ export function ApprovalDetailPanel({
                     statusName={data.statusName || ''}
                     statusBadgeColor={data.statusBadgeColor || ''}
                     totalAmount={lotView?.lotTotal ?? activeBatchTotal ?? data.estimatedTotalAmount}
+                    totalAmountOverrideLabel={(() => {
+                        // Candidate model: before the Area winner decision there IS no batch
+                        // commercial truth — never fall back to 0 or the request estimate.
+                        const candidateItems = (activeBatch?.items || []).filter((bi: any) => (bi.candidates?.length ?? 0) > 0);
+                        const pending = candidateItems.length > 0 && candidateItems.some((bi: any) => !bi.selectedCandidateId);
+                        return pending ? 'A definir pelo Aprovador de Área' : null;
+                    })()}
                     currencyCode={data.currencyCode || ''}
                     approvalStage={approvalStage}
                     onClose={onClose}
@@ -634,6 +664,22 @@ export function ApprovalDetailPanel({
                             <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#1e40af', lineHeight: 1.4, fontWeight: 500 }}>
                                 Apenas os itens pertencentes a este lote estão visíveis e incluídos nesta ação de aprovação. Os itens restantes do pedido continuam pendentes com o comprador.
                             </p>
+                            {(() => {
+                                // Candidate model: the Buyer submitted OPTIONS — the winner is chosen
+                                // by the Area Approver inside the wizard, never pre-decided here.
+                                const candidateItems = (activeBatch.items || []).filter((bi: any) => (bi.candidates?.length ?? 0) > 0);
+                                if (candidateItems.length === 0) return null;
+                                const optionCount = candidateItems.reduce((acc: number, bi: any) => acc + bi.candidates.length, 0);
+                                const undecidedCount = candidateItems.filter((bi: any) => !bi.selectedCandidateId).length;
+                                return (
+                                    <p style={{ margin: '6px 0 0 0', fontSize: '0.72rem', color: '#1e40af', lineHeight: 1.5 }}>
+                                        <strong>Opções enviadas pelo Comprador:</strong> {optionCount} para {candidateItems.length} item(ns).{' '}
+                                        {undecidedCount > 0
+                                            ? <>Vencedores a definir pelo Aprovador de Área — compare e selecione no Assistente de Revisão.</>
+                                            : <>Vencedores selecionados pelo Aprovador de Área.</>}
+                                    </p>
+                                );
+                            })()}
                             {activeBatch.status !== data.statusCode && (
                                 <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#1e40af', lineHeight: 1.5 }}>
                                     <strong>Pedido (status geral):</strong> {data.statusName || data.statusCode}
@@ -812,7 +858,9 @@ export function ApprovalDetailPanel({
                                         <DecisionQuotationCard
                                             key={q.id}
                                             quotation={q}
-                                            isLowest={data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
+                                            /* Candidate model: awards are per ITEM, so a whole-quotation
+                                               "MELHOR PREÇO" comparison is decision-irrelevant and suppressed. */
+                                            isLowest={!isCandidateBatchContext && data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
                                             canSelectWinner={canSelectWinner}
                                             onSelectWinner={handleSelectWinner}
                                             isProcessing={quotationProcessingId === q.id}
@@ -820,6 +868,12 @@ export function ApprovalDetailPanel({
                                             onToggleExpand={(id) => setExpandedQuotationId(prev => prev === id ? null : id)}
                                             lotIncludedItemIds={lotView ? lotIncludedQuotationItemIds : undefined}
                                             lotIgnoredReasonById={lotView ? lotIgnoredReasonByQuotationItemId : undefined}
+                                            lotAwardedTotal={lotView && isCandidateBatchContext
+                                                ? (awardedTotalByQuotationId.get(q.id)
+                                                    ?? (activeBatch?.items?.every((bi: any) => (bi.candidates?.length ?? 0) === 0 || bi.selectedCandidateId)
+                                                        ? 0      // decided batch, this quotation won nothing — a genuine zero
+                                                        : null)) // decision still pending
+                                                : undefined}
                                         />
                                     ))}
                                 </div>
@@ -1361,7 +1415,13 @@ export function ApprovalDetailPanel({
                                                 {att.fileName}
                                             </div>
                                             <div style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                {ATTACHMENT_TYPE_LABELS[att.attachmentTypeCode] || att.attachmentTypeCode} • Por {att.uploadedByName}
+                                                {/* Legacy quotation documents were stamped PROFORMA before the QUOTATION
+                                                    type existed — a file referenced by a saved quotation is displayed as
+                                                    "Cotação" without rewriting the historical row. */}
+                                                {(att.attachmentTypeCode === 'PROFORMA'
+                                                    && (data.quotations || []).some(q => q.proformaAttachmentId === att.id))
+                                                    ? 'Cotação'
+                                                    : (ATTACHMENT_TYPE_LABELS[att.attachmentTypeCode] || att.attachmentTypeCode)} • Por {att.uploadedByName}
                                             </div>
                                         </div>
                                     </div>
@@ -1617,6 +1677,7 @@ export function ApprovalDetailPanel({
                 batchNumber={activeBatch?.batchNumber ?? null}
                 batchItemCount={activeBatch?.items?.length ?? null}
                 isLegacyQuotationApproval={isLegacyQuotationApproval}
+                isDecidedCandidateBatch={Boolean(activeBatch?.items?.some((bi: any) => (bi.candidates?.length ?? 0) > 0 && bi.selectedCandidateId))}
             />
 
             {/* WIZARD MODAL (For Area Approval Quotes) */}
