@@ -1,6 +1,93 @@
 # Post-Payment Completion — Release 4: Operation Invoice (Phase 1)
 
-> Status: **Phase 1 closed at v2.225.0. Phase 2 (a–e) complete and approved — closed at
+> ## RELEASE 4 — CLOSED / ACCEPTED IN TEST (2026-08-18)
+>
+> **Final acceptance recorded 2026-08-18 at v2.229.9 (`d0c91d4`, TEST build
+> `2.229.9+d0c91d4`, runtime `Enabled=true, CompletionEnabled=true,
+> EffectiveDateUtc=2026-08-06T00:00:00Z`).** All Release 4 acceptance criteria passed:
+>
+> - **STATE 1 (dormant safety, `CompletionEnabled=false`) — PASSED** on
+>   REQ-17/08/2026-232: full lifecycle to every completion dimension satisfied (P.O.,
+>   advance payment, receiving handoff + quantity registration + attestation with the
+>   persisted OperationalReceipt fact, Final Invoice registration/allocation/validation,
+>   Fiscal Receipt binding), UI honestly read "Requisitos de conclusão satisfeitos", and
+>   NOTHING transitioned: group and request were NOT persisted COMPLETED, no automatic
+>   closure. Six defects found and fixed during the cycle (v2.229.1–.6 below).
+> - **STATE 2 (active lifecycle, `CompletionEnabled=true`) — PASSED** on
+>   REQ-18/08/2026-233, clean end-to-end: Final Approval → Aguardando P.O. → PO
+>   registration → advance payment → Ag. Entrega/Serviço → Receiving workspace →
+>   operational receiving + attestation → Final Invoice + validation → Fiscal Receipt →
+>   group persisted COMPLETED (GROUP_COMPLETED history, "Grupo Concluído") → parent
+>   persisted COMPLETED automatically (REQUEST_COMPLETED history, CompletionCycleId,
+>   "Pedido Concluído"/Finalizado) — **no manual FinalizeRequest anywhere**. Final 8-stage
+>   timeline: Rascunho · Cotação · Aprovações · P.O. / Contratação · Pagamento ·
+>   Recebimento / Execução · Documentação Fiscal · Concluído.
+> - **Dormant→active recovery — PASSED** on REQ-232: "dormant facts → lifecycle
+>   activation → legitimate later trigger → automatic Phase-1 + Phase-2 recovery". The
+>   parent-sweep PREVIEW (live from TEST: `completionEnabled=true, eligibleCount=0,
+>   skippedCount=0, requests=[]`) correctly did NOT list it — its group was not persisted
+>   COMPLETED, and the sweep is by design Phase-2-only, never inferring group completion
+>   from readiness. A legitimate repeated ConfirmReceiving then produced
+>   CONFIRM_RECEIVING → GROUP_COMPLETED → REQUEST_COMPLETED → Finalizado, with the
+>   previously recorded OperationalReceipt fact as the underlying receipt evidence.
+>   Sweep APPLY was never executed (zero eligible candidates — expected, not a gap).
+> - **Final automated validation** (2026-08-18, at `d0c91d4`): backend
+>   **1489 passed / 1 failed / 1490** — the single failure is the pre-existing
+>   `GroupBuilderServiceTests.BuildGroupsForRequestAsync_CreatesGroups_WhenLineItemsHaveSelectedQuotation`
+>   baseline (pre-dates Release 4, reported separately, deliberately not "fixed" in
+>   closure); frontend `npx tsc --noEmit` clean, `npm run build` successful.
+> - **Migration inventory for the whole v2.229.x range**: NO schema migration (the
+>   Release 1–3 schema carried the entire lifecycle). Two DATA-ONLY RC repairs:
+>   `20260817101152_RepairWorkflowStatusNamesAndAwaitingPo` (NCHAR-idempotent status-name
+>   Unicode repair + Aguardando-P.O. parked-request correction) and
+>   `20260817124004_HandoffParkedAdvancePaidGroupsToDelivery` (advance-paid parked
+>   groups/parents → WAITING_SUPPLIER_DELIVERY). Both applied in TEST; both are exactly
+>   what PROD will need (PROD carries the identical corruption/parked rows).
+> - Remaining findings are classified backlog / Release 4.1 (see "Closure backlog" below)
+>   — **no unresolved Release 4 correctness blocker**. PROD untouched
+>   (`PostPaymentCompletion` absent there = defaults false); no PR/merge/tag; sweep APPLY
+>   never run; Phase 5 not started.
+>
+> **PROD rollout plan (prepared, NOT executed, separate authorization required):**
+> 1) full PROD backup; 2) Apply PROD migrations (the two data-only repairs above ride the
+> normal pending-migration chain); 3) deploy API+Web `v2.229.9` with
+> **`CompletionEnabled=false`** (add the `PostPaymentCompletion` section explicitly:
+> `Enabled=true, CompletionEnabled=false, EffectiveDateUtc` per business decision) —
+> deploy/restart alone must not and will not complete anything (no startup evaluation
+> exists; verified in TEST); 4) verify legacy operation + status-name repairs + parked
+> corrections + readiness surfaces (a STATE-1-style dormant check); 5) SEPARATELY
+> authorize `CompletionEnabled=true` (config-only, the TEST activation runbook applies);
+> 6) sweep stays preview-first — APPLY only after reviewed preview.
+>
+> ### Closure backlog (deferred — NOT Release 4 blockers)
+> - **A. PO Packaging / REQ-21/07/2026-131 (→ Release 4.1)** — same supplier + currency +
+>   payment condition merges multiple quotation documents into one `RequestPoGroup`;
+>   RegisterPo is 1 PO : 1 group. Verdict: **BY-DESIGN BUT BUSINESS MODEL INSUFFICIENT**.
+>   Business rule to implement: "Same supplier does not necessarily mean same Purchase
+>   Order." Preferred model (approved direction): Buyer-defined PO packages — default one
+>   package per quotation document, Buyer may merge/split before the first PO, package
+>   frozen after PO registration, `RequestPoGroup` remains the downstream Release 4
+>   identity anchor. Includes the missing regression suite (same supplier + two quotation
+>   documents; first-ever `BuildGroupsForBatchAsync` coverage).
+> - **B.** Finance workspace: dedicated Final Invoice / completion queue.
+> - **C.** Finance Payments header supplier "---" for batch-model QUOTATION requests
+>   (`FinanceController` resolves legacy `SelectedQuotationId`/`Request.Supplier`).
+> - **D.** Receiving workspace: group-aware listing for multi-group requests.
+> - **E.** Dual receiving-record unification (RequestLineItem × winning QuotationItem).
+> - **F.** Phase 5 — Final Invoice OCR / document intelligence.
+> - **G.** Monetary-input residuals: legacy `RequestCreate` OCR item editor and Approvals
+>   `WizardStepAllocation` still use `type="number"`.
+> - **H.** REQ-229-class legacy APPROVED awaiting-P.O. presentation = expected,
+>   non-blocking; Release 5 legacy classification tooling; short-close reopening
+>   workflow; generic drawer hydration.
+>
+> Closure is documentation-only: v2.229.9 remains the final Release 4 version (no
+> artificial bump). Release 4.1 design is referenced here as backlog only — nothing of it
+> is implemented in Release 4.
+>
+> ---
+>
+> Earlier status (historical): **Phase 1 closed at v2.225.0. Phase 2 (a–e) complete and approved — closed at
 > v2.226.0 on `Portal-Gerencial-rev1`.** The OperationInvoice document lifecycle exists
 > (API-only); **allocation writes, UI and OCR do not** — they are Phases 3+.
 >
@@ -243,9 +330,43 @@ FiscalReceiptSatisfied =
     RequiresSeparateFiscalReceipt ? (attachment bound + upload stamp) : true
 
 RequestComplete =
-    every relevant (non-cancelled) group COMPLETED
+    every relevant (non-cancelled) group persisted COMPLETED
     AND no active request-level reconciliation
 ```
+
+Final closure notes on the predicate (2026-08-18): `FiscalReceiptSatisfied` =
+`RequiresSeparateFiscalReceipt ? (valid bound Fiscal Receipt) : true`; UNCLASSIFIED fails
+closed; COMPLETED is terminal with no automatic reopen; `RequestCompletionService` is the
+SOLE first-writer of COMPLETED for grouped classified requests while
+`CompletionEnabled=true` (LineItems shortcut delegates, aggregation defers/reaffirms only,
+sweep re-invokes the same service).
+
+**Final effective trigger matrix (as shipped, re-audited at closure):** ConfirmReceiving ·
+Fiscal Receipt binding · OperationInvoice Validate / Reject / Void / Replace · short-close
+APPROVE · MarkAsPaid · ConfirmAdvancePayment · ReconcileRequest · RegisterPo (incl. the
+corrected-PO path) · LineItems last-item shortcut (delegating) · SysAdmin recovery sweep
+(Phase 2 only). Each trigger runs Phase 1 (`EvaluateGroupCompletionAsync`) inside the
+caller's transaction before SaveChanges and Phase 2 (`EvaluateParentCompletionAsync`)
+strictly post-commit, never failing the business action; all are inert while the flags are
+off. No direct competing COMPLETED writer remains for grouped classified requests.
+
+**RC correction series (STATE 1/2 findings — all deployed to TEST):**
+- **v2.229.1** — "Aguardando P.O." (PO_REQUESTED repurpose) + status-name Unicode repair +
+  migration UTF-8 transport hardening (data-only migration).
+- **v2.229.2** — full-advance PaymentSatisfied by amount evidence (`paidInFull`).
+- **v2.229.3** — advance-paid → WAITING_SUPPLIER_DELIVERY handoff (+ data-only repair
+  migration); `evidenceContradictsLadder` refinement.
+- **v2.229.4** — operational receiving attestation modal + optional `RECEIVING_EVIDENCE`
+  attachment type (legacy `RECEIPT` untouched).
+- **v2.229.5** — dual-record batch-model receiving fact (`OperationalReceiptFacts` reads
+  either side of the award pointer; fail-closed hardening).
+- **v2.229.6** — "Grupo Concluído" requires persisted COMPLETED (readiness reads
+  "Requisitos Satisfeitos"/"Pronto para Concluir"); persisted-based group counts.
+- **v2.229.7** — legacy FinalizeRequest UI suppressed for grouped+classified requests
+  under the active lifecycle; readiness-derived header guidance.
+- **v2.229.8** — locale-independent monetary inputs (shared `MoneyInput`).
+- **v2.229.9** — 8-stage timeline (Recebimento / Execução × Documentação Fiscal) +
+  Fiscal Receipt modal visual alignment.
 
 Invariants closed with Release 4:
 

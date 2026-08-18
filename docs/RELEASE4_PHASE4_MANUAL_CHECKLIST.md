@@ -1,5 +1,22 @@
 # Release 4 — Phase 4 Manual TEST Validation Checklist (AUTHORITATIVE)
 
+> ## RELEASE 4 — CLOSED / ACCEPTED IN TEST (2026-08-18, v2.229.9 / `d0c91d4`)
+>
+> **STATE 1 PASSED** (REQ-17/08/2026-232, dormant safety: every dimension satisfied, no
+> automatic closure; six findings fixed in v2.229.1–.6). **STATE 2 PASSED**
+> (REQ-18/08/2026-233, clean end-to-end automatic completion: persisted "Grupo Concluído"
+> and "Pedido Concluído" with GROUP_COMPLETED/REQUEST_COMPLETED history and
+> CompletionCycleId — sections B, C, D, K, L proven live; no manual FinalizeRequest).
+> **Recovery PASSED** (REQ-232: dormant facts → activation → legitimate repeated
+> ConfirmReceiving → automatic Phase-1 + Phase-2 completion; sweep PREVIEW live returned
+> `eligibleCount=0` correctly — Phase-2-only by design; APPLY never run). **Timeline
+> PASSED** (8 stages, Recebimento / Execução × Documentação Fiscal). Final validation:
+> backend 1489/1490 (sole failure = pre-existing GroupBuilder baseline), frontend
+> tsc/build clean. Remaining findings are backlog / Release 4.1 (see
+> POST_PAYMENT_COMPLETION_RELEASE4.md closure section) — no Release 4 correctness blocker.
+> PROD untouched; PROD rollout (migrations → deploy with CompletionEnabled=false → staged
+> activation) requires separate authorization.
+
 The authoritative manual validation record of the Release 4 completion lifecycle
 (v2.229.0). Complements `RELEASE4_PHASE3B_MANUAL_CHECKLIST.md` (coverage workspace) — the
 Phase 3 checks are not repeated here.
