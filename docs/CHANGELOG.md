@@ -4,7 +4,37 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.5
+v2.229.6
+
+## [v2.229.6] - 2026-08-17
+
+### Release 4 TEST RC correction — readiness vs persisted completion
+
+Found by STATE 1 dormant-safety validation of REQ-17/08/2026-232: with every completion
+dimension satisfied under `CompletionEnabled=false`, the request header honestly read
+"Requisitos de conclusão satisfeitos" + "O ciclo automático de conclusão ainda não está ativo
+neste ambiente" and the request correctly stayed non-COMPLETED — but the group card claimed
+"Grupo Concluído". The badge was driven by `projection.Complete` (requirements satisfied)
+instead of the persisted `RequestPoGroup.Status == COMPLETED` the lifecycle writes. Two
+distinct concepts, one label. Frontend-only; the read model already carries the persisted
+`groupStatusCode`; no backend change; no migration; TEST flags unchanged.
+
+#### Fixed
+
+- **Readiness-complete groups no longer display as persisted "Grupo Concluído" while the
+  completion lifecycle is disabled**: the completed badge (and its "Concluído em {data}"
+  timestamp line) now requires the persisted COMPLETED group status. With requirements
+  satisfied but the lifecycle dormant, the card reads "Requisitos Satisfeitos" (the header's
+  satisfied style); with the lifecycle active and the backend transition not yet projected, it
+  reads "Pronto para Concluir" (the header's ready vocabulary) — never a fabricated
+  completion.
+- **Completed badges/counts now reflect persisted COMPLETED status rather than readiness
+  projection alone**: the "N de M grupos concluídos" header count is derived from
+  `groupStatusCode == COMPLETED` (the DTO's projection-based `completedGroupCount` is no
+  longer presented as "concluídos").
+- Checklist, blocking reasons, fiscal receipt evidence and the Finance CTA keep their
+  readiness semantics unchanged; request-level header logic was audited and already correct
+  ("Pedido Concluído" only from the persisted request status).
 
 ## [v2.229.5] - 2026-08-17
 

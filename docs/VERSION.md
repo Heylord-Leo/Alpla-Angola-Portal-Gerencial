@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.229.5
+v2.229.6
+
+## [v2.229.6] - 2026-08-17
+
+### Release 4 TEST RC correction (REQ-17/08/2026-232, readiness vs persisted completion)
+
+- Group cards in "Conclusão do Pedido" no longer present "Grupo Concluído" from the readiness
+  projection alone: only a group whose PERSISTED status is COMPLETED shows the completed badge
+  and timestamp. A readiness-complete group now reads "Requisitos Satisfeitos" while the
+  completion lifecycle is disabled, or "Pronto para Concluir" during the transient window when
+  the lifecycle is active but the backend transition has not yet been projected. The "N de M
+  grupos concluídos" header count now counts persisted COMPLETED groups. Frontend-only;
+  no backend/rulebook change; no migration.
 
 ## [v2.229.5] - 2026-08-17
 

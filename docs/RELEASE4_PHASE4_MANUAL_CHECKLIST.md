@@ -89,6 +89,21 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > e) no automatic completion (CompletionEnabled=false); f) then continue with Final Invoice →
 > fiscal receipt readiness.
 
+> **STATE 1 execution note 6 (2026-08-17, after v2.229.5).** The healing confirmation and the
+> full dormant-safety pass SUCCEEDED on REQ-232 (all five dimensions ✓, request honestly
+> non-completed, correct header + explanatory sentence) — but the group card presented
+> "Grupo Concluído" from `projection.Complete` alone, conflating satisfied requirements with
+> the persisted COMPLETED status the lifecycle never wrote. Fixed in **v2.229.6**
+> (frontend-only): "Grupo Concluído" (+timestamp) requires persisted COMPLETED;
+> readiness-complete groups read "Requisitos Satisfeitos" (lifecycle off) or "Pronto para
+> Concluir" (lifecycle on, transient); the "N de M grupos concluídos" count is persisted-based.
+> **STATE 1 remains PAUSED until v2.229.6 is deployed to TEST** (code-only, no migration).
+> Live re-check on REQ-232: a) group badge reads "Requisitos Satisfeitos" — NOT "Grupo
+> Concluído"; b) header keeps "Requisitos de conclusão satisfeitos" + the inactive-lifecycle
+> sentence; c) request stays "Aguardando Recibo"; d) no lifecycle mutation. Section J below
+> now validates with this badge; sections K/L (STATE 2) will prove the persisted
+> "Grupo Concluído"/"Pedido Concluído" distinction after activation.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —
@@ -170,6 +185,8 @@ Satisfy every requirement of a single-group request (incl. fiscal receipt when o
       ainda não está ativo neste ambiente."
 - [ ] The request does NOT complete; no "Pronto para concluir", no manual complete button.
 - [ ] The fiscal receipt uploaded in this state shows as satisfied (honest dimension fact).
+- [ ] The group badge reads "Requisitos Satisfeitos" — NEVER "Grupo Concluído" (v2.229.6:
+      that badge requires the persisted COMPLETED group status, which only STATE 2 writes).
 
 ## K — Completed group rendering (State 2)
 
