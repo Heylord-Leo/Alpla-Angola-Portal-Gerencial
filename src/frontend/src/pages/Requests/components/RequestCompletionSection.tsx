@@ -8,6 +8,7 @@ import {
     blockingReasonText,
     completionChecklist,
     canOfferFiscalReceiptUpload,
+    isGroupPersistedCompleted,
     acceptedDivergence,
     formatMoney
 } from '../../../lib/operationInvoiceView';
@@ -145,7 +146,9 @@ export function RequestCompletionSection({
                     )}
                     {readiness && !readiness.isCompleted && readiness.totalGroupCount > 1 && (
                         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                            {readiness.completedGroupCount} de {readiness.totalGroupCount} grupos concluídos
+                            {/* "concluídos" = PERSISTED lifecycle completions, never the readiness
+                                projection count (which the DTO's completedGroupCount carries). */}
+                            {readiness.groups.filter(isGroupPersistedCompleted).length} de {readiness.totalGroupCount} grupos concluídos
                         </span>
                     )}
                 </span>
@@ -208,6 +211,9 @@ export function RequestCompletionSection({
                         const offerUpload = canUploadFiscalReceipt &&
                             !readiness?.isCompleted &&
                             canOfferFiscalReceiptUpload(group);
+                        // "Grupo Concluído" is a PERSISTED lifecycle fact; projection.complete
+                        // alone only proves the requirements are satisfied (v2.229.6).
+                        const persistedCompleted = isGroupPersistedCompleted(group);
 
                         return (
                             <div key={group.groupId} style={{
@@ -229,7 +235,7 @@ export function RequestCompletionSection({
                                             {group.plantName}
                                         </span>
                                     )}
-                                    {group.complete && (
+                                    {persistedCompleted ? (
                                         <span style={{
                                             fontSize: '0.73rem', fontWeight: 800, padding: '2px 8px',
                                             borderRadius: '999px', color: '#15803d',
@@ -237,6 +243,30 @@ export function RequestCompletionSection({
                                         }}>
                                             Grupo Concluído
                                         </span>
+                                    ) : group.complete && (
+                                        lifecycleActive ? (
+                                            // Transient: requirements satisfied, lifecycle active,
+                                            // backend transition not yet projected — mirrors the
+                                            // header's "Pronto para concluir" vocabulary.
+                                            <span style={{
+                                                fontSize: '0.73rem', fontWeight: 800, padding: '2px 8px',
+                                                borderRadius: '999px', color: '#15803d',
+                                                backgroundColor: '#f0fdf4', border: '1px solid #86efac'
+                                            }}>
+                                                Pronto para Concluir
+                                            </span>
+                                        ) : (
+                                            // Dormant lifecycle: satisfied requirements are a fact,
+                                            // completion is not — same style as the header's
+                                            // "Requisitos de conclusão satisfeitos".
+                                            <span style={{
+                                                fontSize: '0.73rem', fontWeight: 800, padding: '2px 8px',
+                                                borderRadius: '999px', color: '#0369a1',
+                                                backgroundColor: '#f0f9ff', border: '1px solid #7dd3fc'
+                                            }}>
+                                                Requisitos Satisfeitos
+                                            </span>
+                                        )
                                     )}
                                     {group.closedShort && (
                                         <span style={{
@@ -258,7 +288,7 @@ export function RequestCompletionSection({
                                     )}
                                 </div>
 
-                                {group.complete && group.completedAtUtc && (
+                                {persistedCompleted && group.completedAtUtc && (
                                     <div style={{ fontSize: '0.78rem', color: '#166534' }}>
                                         Concluído em {formatUtcTimestampDate(group.completedAtUtc)}
                                     </div>

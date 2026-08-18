@@ -410,3 +410,14 @@ export function canOfferFiscalReceiptUpload(group: CompletionReadinessGroupDto):
         group.blockingReasons.length === 1 &&
         group.blockingReasons[0].code === 'FISCAL_RECEIPT_PENDING';
 }
+
+/**
+ * Persisted lifecycle completion — the group actually transitioned to COMPLETED and (under
+ * the lifecycle) carries its CompletedAtUtc stamp. ONLY this may present "Grupo Concluído":
+ * `complete` on the same DTO is the readiness PROJECTION (all dimensions satisfied), which
+ * under CompletionEnabled=false is deliberately never persisted — presenting it as a
+ * completed group would fabricate a lifecycle event that never ran (v2.229.6).
+ */
+export function isGroupPersistedCompleted(group: CompletionReadinessGroupDto): boolean {
+    return (group.groupStatusCode ?? '').toUpperCase() === 'COMPLETED';
+}
