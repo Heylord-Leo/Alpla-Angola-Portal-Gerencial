@@ -1671,6 +1671,7 @@ public class RequestsController : BaseController
             .Include(r => r.Status)
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
+            .Include(r => r.PoGroups)
             .Include(r => r.StatusHistories)
                 .ThenInclude(sh => sh.NewStatus)
             .FirstOrDefaultAsync(r => r.Id == id);
@@ -1804,17 +1805,36 @@ public class RequestsController : BaseController
             result.Steps.Add(step);
         }
 
-        // Post-process: Remove "Agendamento" step if the request completely bypassed it
-        // (i.e. Finance paid directly without ever selecting a scheduling date).
-        bool passedThroughScheduling = history.Any(h => h.NewStatus.Code == "PAYMENT_SCHEDULED") || currentStatusCode == "PAYMENT_SCHEDULED";
-        bool isPastSchedulingStage = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", "COMPLETED" }.Contains(currentStatusCode);
+        // ── v2.229.9: preferred stage-6 instant — the persisted operational receipt ──
+        // When every relevant (non-cancelled) group carries OperationalReceiptCompletedAtUtc,
+        // the LAST stamp is the factual completion of "Recebimento / Execução" (the same
+        // furthest-behind philosophy as everywhere else). Never fabricated: without a stamp on
+        // every group the status-history date (or pending state) stands. This also completes
+        // the stage for requests that reached fiscal documentation through a path that wrote
+        // no WSD/IN_FOLLOWUP history row, because the stamp itself proves the receiving.
+        var relevantGroups = request.PoGroups
+            .Where(g => !string.Equals(g.Status, RequestConstants.PoGroupStatuses.Cancelled,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        DateTime? operationalReceiptCompletedAtUtc =
+            relevantGroups.Count > 0 && relevantGroups.All(g => g.OperationalReceiptCompletedAtUtc != null)
+                ? relevantGroups.Max(g => g.OperationalReceiptCompletedAtUtc)
+                : null;
 
-        if (isPastSchedulingStage && !passedThroughScheduling)
+        if (operationalReceiptCompletedAtUtc.HasValue && !isRejectionPath)
         {
-            var agendamentoStep = result.Steps.FirstOrDefault(s => s.Label == "Agendamento");
-            if (agendamentoStep != null)
+            var receivingIndex = stages.FindIndex(s => s.Label == ReceivingStageLabel);
+            var overallCurrentIndex = stages.FindIndex(s => s.StatusCodes.Contains(currentStatusCode));
+            var receivingStep = result.Steps.FirstOrDefault(s => s.Label == ReceivingStageLabel);
+            var stageIsBehindCurrent = receivingIndex >= 0 &&
+                (overallCurrentIndex > receivingIndex || (isTerminal && currentStatusCode == "COMPLETED"));
+
+            if (receivingStep != null &&
+                (receivingStep.State == "completed" ||
+                 (receivingStep.State == "pending" && stageIsBehindCurrent)))
             {
-                result.Steps.Remove(agendamentoStep);
+                receivingStep.State = "completed";
+                receivingStep.CompletedAt = AsUtcOffset(operationalReceiptCompletedAtUtc);
             }
         }
 
@@ -9619,15 +9639,43 @@ public class RequestsController : BaseController
         public string[] StatusCodes { get; set; } = Array.Empty<string>();
     }
 
+    // ── v2.229.9 timeline semantics (Release 4) ──
+    // "Recebimento / Execução" is the OPERATIONAL confirmation (goods received / service
+    // executed — WAITING_SUPPLIER_DELIVERY, IN_FOLLOWUP); "Documentação Fiscal" is the
+    // post-receiving fiscal-document lifecycle (WAITING_RECEIPT, WAITING_FISCAL_RECEIPT:
+    // Final Invoice / Recibo Fiscal). WAITING_RECEIPT is only ever entered by the
+    // all-received ConfirmReceiving branch, so the split needs no readiness join. The old
+    // duplicate "Agendamento" stage (a second PO_ISSUED) is gone. Presentation only —
+    // no workflow semantics live here.
+
+    private const string ReceivingStageLabel = "Recebimento / Execução";
+
+    private static readonly string[] TailPaymentStatuses =
+    {
+        "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED",
+        "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED",
+        "WAITING_RECONCILIATION"
+    };
+
+    private static readonly string[] TailReceivingStatuses =
+    {
+        "WAITING_SUPPLIER_DELIVERY", "IN_FOLLOWUP"
+    };
+
+    private static readonly string[] TailFiscalDocumentationStatuses =
+    {
+        "WAITING_RECEIPT", "WAITING_FISCAL_RECEIPT"
+    };
+
     private List<StageDef> GetQuotationStages() => new()
     {
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
-        new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION" } },
+        new StageDef { Label = "Cotação", StatusCodes = new[] { "WAITING_QUOTATION", "QUOTATION_ADJUSTMENT" } },
         new StageDef { Label = "Aprovações", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "P.O / Contratação", StatusCodes = new[] { "APPROVED", "PO_ISSUED", "QUOTATION_COMPLETED", "PO_REQUESTED" } },
-        new StageDef { Label = "Agendamento", StatusCodes = new[] { "PO_ISSUED" } },
-        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_REQUIRED", "ADVANCE_PAYMENT_SCHEDULED", "ADVANCE_PAYMENT_COMPLETED" } },
-        new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
+        new StageDef { Label = "P.O. / Contratação", StatusCodes = new[] { "APPROVED", "QUOTATION_COMPLETED", "PO_REQUESTED", "PO_PARTIALLY_UPLOADED", "PO_ISSUED", "WAITING_PO_CORRECTION" } },
+        new StageDef { Label = "Pagamento", StatusCodes = TailPaymentStatuses },
+        new StageDef { Label = ReceivingStageLabel, StatusCodes = TailReceivingStatuses },
+        new StageDef { Label = "Documentação Fiscal", StatusCodes = TailFiscalDocumentationStatuses },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
 
@@ -9636,9 +9684,10 @@ public class RequestsController : BaseController
         new StageDef { Label = "Rascunho", StatusCodes = new[] { "DRAFT", "SUBMITTED" } },
         new StageDef { Label = "Aprovação Área", StatusCodes = new[] { "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT" } },
         new StageDef { Label = "Aprovação Final", StatusCodes = new[] { "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER" } },
-        new StageDef { Label = "Agendamento", StatusCodes = new[] { "APPROVED", "PO_ISSUED" } },
-        new StageDef { Label = "Pagamento", StatusCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED" } },
-        new StageDef { Label = "Recebimento", StatusCodes = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP" } },
+        new StageDef { Label = "P.O. / Contratação", StatusCodes = new[] { "APPROVED", "PO_PARTIALLY_UPLOADED", "PO_ISSUED", "WAITING_PO_CORRECTION" } },
+        new StageDef { Label = "Pagamento", StatusCodes = TailPaymentStatuses },
+        new StageDef { Label = ReceivingStageLabel, StatusCodes = TailReceivingStatuses },
+        new StageDef { Label = "Documentação Fiscal", StatusCodes = TailFiscalDocumentationStatuses },
         new StageDef { Label = "Concluído", StatusCodes = new[] { "COMPLETED" } }
     };
 
