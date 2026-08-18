@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, FileCheck2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileCheck2, Upload, X } from 'lucide-react';
 import { ModalWrapper } from '../common/ModalWrapper';
 import { api } from '../../lib/api';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
@@ -22,6 +22,10 @@ interface FiscalReceiptModalProps {
  * the standard attachment upload, then bound to the group through the fiscal-receipt endpoint —
  * the binding is what stamps the dimension, writes history and lets the completion engine act.
  * No OCR, no replacement flow: an already-bound group never reaches this modal.
+ *
+ * v2.229.9: presentation aligned with the Finance modal family (OperationInvoiceRegisterModal)
+ * — Portal dashed upload area instead of the native "Choose File" control, shared label
+ * typography, primary-token CTA, explicit ✓ evidence rows. Business semantics unchanged.
  */
 export function FiscalReceiptModal({ requestId, group, onClose, onChanged }: FiscalReceiptModalProps) {
     const [file, setFile] = useState<File | null>(null);
@@ -59,21 +63,36 @@ export function FiscalReceiptModal({ requestId, group, onClose, onChanged }: Fis
         }
     };
 
+    // The Finance modal family conventions (OperationInvoiceRegisterModal).
+    const labelStyle: React.CSSProperties = {
+        fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)',
+        textTransform: 'uppercase', marginBottom: '4px', display: 'block'
+    };
     const rowStyle: React.CSSProperties = { fontSize: '0.85rem' };
+    const evidenceStyle: React.CSSProperties = {
+        display: 'flex', alignItems: 'center', gap: '6px',
+        fontSize: '0.83rem', fontWeight: 700, color: '#15803d'
+    };
 
     return (
         <ModalWrapper title="Registrar Recibo Fiscal" onClose={onClose} width={560}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ fontWeight: 800 }}>{group.supplierName || '—'}</div>
+                {/* ── Summary: supplier / P.O. ── */}
+                <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>{group.supplierName || '—'}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '6px' }}>
                     <span style={rowStyle}>P.O.: <b>{group.purchaseOrderNumber || '—'}</b></span>
                     {group.plantName && <span style={rowStyle}>Planta: <b>{group.plantName}</b></span>}
-                    <span style={rowStyle}>
-                        Fatura Final: <b style={{ color: '#15803d' }}>
-                            {group.closedShort ? 'Encerrado com Saldo Aceite' : 'Satisfeita'}
-                        </b>
+                </div>
+
+                {/* ── Status evidence (the two prerequisites the deriver already proved) ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={evidenceStyle}>
+                        <CheckCircle2 size={15} />
+                        {group.closedShort ? 'Fatura Final — Encerrado com Saldo Aceite' : 'Fatura Final satisfeita'}
                     </span>
-                    <span style={rowStyle}>Recebimento operacional: <b style={{ color: '#15803d' }}>Concluído</b></span>
+                    <span style={evidenceStyle}>
+                        <CheckCircle2 size={15} /> Recebimento operacional concluído
+                    </span>
                 </div>
 
                 <div style={{
@@ -99,18 +118,43 @@ export function FiscalReceiptModal({ requestId, group, onClose, onChanged }: Fis
                     </div>
                 ) : (
                     <div>
+                        <label style={labelStyle}>Documento do Recibo Fiscal *</label>
+                        {/* Portal upload area (the OperationInvoiceRegisterModal pattern) — the
+                            native control never shows; the hidden input keeps accessibility. */}
                         <label style={{
-                            fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase',
-                            color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px'
+                            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
+                            border: '1px dashed var(--color-border)', borderRadius: '8px',
+                            cursor: saving ? 'not-allowed' : 'pointer',
+                            fontSize: '0.85rem', fontWeight: 600,
+                            color: file ? '#15803d' : 'var(--color-text-muted)'
                         }}>
-                            Documento do Recibo Fiscal *
+                            {file ? <FileCheck2 size={16} /> : <Upload size={16} />}
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {file ? file.name : 'Selecionar o PDF/imagem do Recibo Fiscal'}
+                            </span>
+                            <input
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                style={{ display: 'none' }}
+                                onChange={e => setFile(e.target.files?.[0] ?? null)}
+                                disabled={saving}
+                            />
                         </label>
-                        <input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            onChange={e => setFile(e.target.files?.[0] ?? null)}
-                            disabled={saving}
-                        />
+                        {file && !saving && (
+                            <button
+                                type="button"
+                                onClick={() => setFile(null)}
+                                style={{
+                                    marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                    padding: '4px 8px', borderRadius: '6px',
+                                    border: '1px solid var(--color-border)', backgroundColor: 'transparent',
+                                    cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700,
+                                    color: 'var(--color-text-muted)'
+                                }}
+                            >
+                                <X size={12} /> Remover ficheiro
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -139,14 +183,15 @@ export function FiscalReceiptModal({ requestId, group, onClose, onChanged }: Fis
                     </div>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
                     <button
                         type="button"
                         onClick={onClose}
                         disabled={saving}
                         style={{
-                            padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border)',
-                            backgroundColor: 'var(--color-bg-surface)', cursor: 'pointer', fontWeight: 700
+                            padding: '9px 16px', border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)', borderRadius: '8px',
+                            fontWeight: 700, cursor: 'pointer'
                         }}
                     >
                         {done ? 'Fechar' : 'Cancelar'}
@@ -157,10 +202,11 @@ export function FiscalReceiptModal({ requestId, group, onClose, onChanged }: Fis
                             onClick={() => void submit()}
                             disabled={saving || !file || isConcurrency}
                             style={{
-                                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                                backgroundColor: saving || !file || isConcurrency ? '#94a3b8' : '#0f766e',
-                                color: '#fff', cursor: saving || !file || isConcurrency ? 'not-allowed' : 'pointer',
-                                fontWeight: 800
+                                padding: '9px 18px', border: 'none',
+                                backgroundColor: 'var(--color-primary)', color: '#fff',
+                                borderRadius: '8px', fontWeight: 800,
+                                cursor: saving || !file || isConcurrency ? 'not-allowed' : 'pointer',
+                                opacity: saving || !file || isConcurrency ? 0.6 : 1
                             }}
                         >
                             {saving ? 'A registar…' : 'Confirmar Registo'}
