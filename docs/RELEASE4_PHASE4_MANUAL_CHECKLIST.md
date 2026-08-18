@@ -104,6 +104,22 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > now validates with this badge; sections K/L (STATE 2) will prove the persisted
 > "Grupo Concluído"/"Pedido Concluído" distinction after activation.
 
+> **STATE 2 execution note 1 (2026-08-18, activation + REQ-18/08/2026-233).** STATE 1 was
+> formally CLOSED and `CompletionEnabled=true` activated in TEST (config-only, build
+> v2.229.6/63fb0ad preserved). The first STATE 2 request (REQ-233) validated the lifecycle
+> through operational receiving, but exposed a UI regression at WAITING_RECEIPT: the legacy
+> status header offered "FINALIZAR PEDIDO (Recibo Fiscal)" / "Anexar recibo do fornecedor e
+> finalizar pedido" — an action the backend Phase 4C guard refuses ("Fluxo Atualizado") for
+> grouped requests under the active lifecycle. Fixed in **v2.229.7** (frontend-only): legacy
+> finalize suppressed for grouped+classified+lifecycle-active requests; header guidance now
+> readiness-derived (Fatura Final → Recibo Fiscal → conclusão automática). **STATE 2
+> validation continues after v2.229.7 reaches TEST.** Live re-check on REQ-233: a) no
+> "FINALIZAR PEDIDO (Recibo Fiscal)"; b) header "Financeiro / Registrar / validar a Fatura
+> Final"; c) after the Fatura Final, header moves to "Registrar o Recibo Fiscal"; d) sections
+> C/K/L then prove WAITING_FISCAL_RECEIPT and the persisted automatic completions; e) legacy
+> groupless requests keep the legacy button. The parent-completion sweep APPLY remains
+> forbidden until REQ-233 completes end-to-end.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

@@ -4,7 +4,39 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.6
+v2.229.7
+
+## [v2.229.7] - 2026-08-18
+
+### Release 4 STATE 2 TEST RC correction — legacy finalize suppression
+
+Found by STATE 2 validation of REQ-18/08/2026-233 (the first request driven under
+`CompletionEnabled=true`): after operational receiving, the request sat correctly in
+WAITING_RECEIPT with readiness P.O. ✓ / Pagamento ✓ / Recebimento ✓ / Fatura Final ○ /
+Recibo Fiscal ○ — but the legacy status header offered Finance the manual
+"FINALIZAR PEDIDO (Recibo Fiscal)" button and the guidance "Anexar recibo do fornecedor e
+finalizar pedido". That is the legacy `FinalizeRequest` flow; the backend Phase 4C guard
+(audited, unchanged, pinned by `FinalizeRequestPostPaymentGuardTests`) already refuses it for
+grouped requests under the active lifecycle with "Fluxo Atualizado" — the UI was offering an
+action that can only fail. Frontend-only; no backend change; no migration.
+
+#### Fixed
+
+- **Legacy manual "Finalizar Pedido (Recibo Fiscal)" hidden for grouped Release 4 requests
+  when the automatic completion lifecycle is active**: suppression predicate = request has PO
+  groups + `completionLifecycleEnabled` + every readiness group classified (while readiness
+  loads, a grouped request under the active lifecycle is already suppressed — the action can
+  never succeed). The FINALIZE modal, `api.requests.finalize`, and every legacy/groupless
+  path remain untouched; the Phase 3B window (`CompletionEnabled=false`) keeps the legacy
+  button by design.
+- **Responsible/next-action presentation aligned with completion readiness**: for suppressed
+  requests at WAITING_RECEIPT, both the action header and the status panel derive guidance
+  from the readiness read model (single fetch, reported up from "Conclusão do Pedido"):
+  Fatura Final pending → "Financeiro / Registrar / validar a Fatura Final"; then
+  "Financeiro / Registrar o Recibo Fiscal"; all satisfied → "Sistema / Conclusão automática
+  em andamento"; any other blocker → deferred to the "Conclusão do Pedido" ownership. The
+  valid actions continue to live in "Fatura Final — Cobertura" and "Conclusão do Pedido" —
+  no replacement button was added to the legacy panel.
 
 ## [v2.229.6] - 2026-08-17
 

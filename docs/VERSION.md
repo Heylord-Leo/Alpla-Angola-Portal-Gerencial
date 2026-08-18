@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.229.6
+v2.229.7
+
+## [v2.229.7] - 2026-08-18
+
+### Release 4 STATE 2 TEST RC correction (REQ-18/08/2026-233, legacy finalize suppression)
+
+- The legacy manual "FINALIZAR PEDIDO (Recibo Fiscal)" action and the "Anexar recibo do
+  fornecedor e finalizar pedido" header guidance are no longer offered for grouped/classified
+  requests governed by the ACTIVE completion lifecycle (the backend already refused the action
+  with "Fluxo Atualizado" — Phase 4C guard, unchanged). The WAITING_RECEIPT header now derives
+  its responsible/next action from the completion-readiness read model (Fatura Final →
+  Recibo Fiscal → automatic completion). Legacy/groupless requests and the Phase 3B window
+  (CompletionEnabled=false) keep the legacy action unchanged. Frontend-only; no migration.
 
 ## [v2.229.6] - 2026-08-17
 
