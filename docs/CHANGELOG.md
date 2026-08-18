@@ -4,7 +4,47 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.7
+v2.229.8
+
+## [v2.229.8] - 2026-08-18
+
+### Monetary input hardening — locale-independent currency entry
+
+Confirmed live during STATE 2 testing of REQ-18/08/2026-233 (a long-standing backlog item):
+monetary fields used `<input type="number">`, so which decimal separator was accepted — and
+whether "," was silently refused — depended on the Windows language/browser locale. On an
+English-locale Windows the user had to know to type "." and got no thousands formatting.
+The Portal now owns monetary parsing and presentation end to end. Frontend-only; the values
+submitted to the backend are numerically identical to before (same decimal contracts); no
+backend change; no migration.
+
+#### Fixed
+
+- **Monetary inputs no longer depend on browser/Windows decimal locale**: new shared
+  `MoneyInput` component (`components/ui/MoneyInput.tsx`) + pure helpers (`lib/money.ts`:
+  `parseMoneyInput` / `formatMoneyInput`). Text-based (`inputMode="decimal"`) — never
+  `type="number"`, no spinners, no `parseFloat` on the raw user string.
+- **Editable currency fields accept "." or "," and normalize to Portal formatting**: while
+  focused the user types digits and either separator (max 2 decimals); on blur the value
+  presents as "120 000,00" (the existing `formatCurrencyAO` pt-AO convention). Blank stays
+  allowed while editing; zero representable; invalid characters ignored cleanly.
+- **Thousands/decimal formatting applied consistently**, including paste: "120000.5" /
+  "120000,5" → 120 000,50; "120 000,00", "120,000.00", "120.000,00" all → 120 000,00;
+  "1.234.567" → 1 234 567,00. Documented policy (in `lib/money.ts`): spaces are always
+  grouping; with both separators the last one is decimal; a repeated separator is grouping;
+  a single separator followed by exactly 3 digits with a 1–3 digit non-zero head is the
+  grouped-thousand shape ("120.000" → 120 000,00), everything else is decimal rounded
+  half-up on the digit string ("1234.567" → 1 234,57) — no float math in normalization.
+- **Migrated fields**: Final Invoice Valor líquido / Imposto / Total (bruto)
+  (OperationInvoiceRegisterModal) and allocation "Valor a distribuir"
+  (OperationInvoiceAllocationWizard); reconciliation Valor Final da Fatura / Valor Final
+  Aceito / Valor Entregue Aceito / Valor a Reembolsar (ReconciliationModal); payment source
+  document Valor líquido / IVA / Total do documento (PaymentSourceDocumentCard); document
+  item Preço Unitário / Desconto (PaymentDocumentItemsEditor); request Desconto Global
+  (RequestFinancialSummary); quotation Preço Unitário / Desconto Comercial (QuotationEntry).
+  The legacy `CurrencyInput` (Finance payment amounts, line-item unit price, contracts) is
+  now an alias of `MoneyInput`, replacing its ATM-style cents typing (typing 120000 now
+  yields 120 000,00, not 1 200,00). Quantity fields are not currency and were not changed.
 
 ## [v2.229.7] - 2026-08-18
 

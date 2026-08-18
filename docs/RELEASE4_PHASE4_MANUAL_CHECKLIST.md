@@ -120,6 +120,20 @@ Proforma origin — normal completion), Request B (short-close completion), Requ
 > groupless requests keep the legacy button. The parent-completion sweep APPLY remains
 > forbidden until REQ-233 completes end-to-end.
 
+> **STATE 2 execution note 2 (2026-08-18, monetary input hardening).** REQ-233's Final
+> Invoice (FT-S2A-001) validated correctly, but confirmed the monetary-input backlog item
+> live: currency fields depended on the Windows/browser decimal locale (English Windows
+> required "."). Fixed in **v2.229.8** (frontend-only): shared `MoneyInput` — "." or ","
+> accepted, pt-AO display "120 000,00", canonical values to the API. **STATE 2 remains
+> paused before the Fiscal Receipt until v2.229.8 reaches TEST.** Manual regression cases
+> (no frontend test framework — pinned by the pure-helper check script + live re-check):
+> a) type Net `105263,16`, Tax `14736.84`, Gross `120000` → blur shows 105 263,16 /
+> 14 736,84 / 120 000,00 and persisted totals remain 120 000,00 Kz / 105 263,16 Kz /
+> 14 736,84 Kz; b) paste "120 000,00", "120,000.00", "120.000,00" all read 120 000,00;
+> c) blank while editing allowed, zero representable, no browser spinner/alert;
+> d) payment/reconciliation/quotation money fields behave identically; e) then resume
+> STATE 2: fiscal receipt on REQ-233 → sections C/K/L automatic completions.
+
 ## A — Checklist dimensions render correctly
 
 For a request with one classified group, open "Conclusão do Pedido" (below "Fatura Final —

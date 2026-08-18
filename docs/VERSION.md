@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.229.7
+v2.229.8
+
+## [v2.229.8] - 2026-08-18
+
+### Monetary input hardening (REQ-18/08/2026-233)
+
+- Editable currency fields no longer depend on the Windows/browser decimal locale: the new
+  shared `MoneyInput` (text-based, no browser spinners) accepts "." or "," as the decimal
+  separator, normalizes pasted values ("120 000,00" / "120,000.00" / "120.000,00"), applies
+  the Portal's pt-AO presentation ("120 000,00") on blur, and always submits the same
+  canonical decimal values the APIs already receive. Migrated: Final Invoice
+  (líquido/imposto/bruto), invoice allocations, reconciliation amounts, payment source
+  document amounts, document item unit price/discount, request global discount, quotation
+  unit price/commercial discount; the legacy `CurrencyInput` (payments, line items,
+  contracts) now shares the same engine. Frontend-only; no migration.
 
 ## [v2.229.7] - 2026-08-18
 
