@@ -28,6 +28,9 @@ interface RequestCompletionSectionProps {
     lifecycleEnabled: boolean;
     isFinance: boolean;
     isAdmin: boolean;
+    /** Reports the loaded readiness upward (single fetch, no duplicate call) so the legacy
+     *  status header can suppress/replace the manual finalization action (v2.229.7). */
+    onReadiness?: (readiness: CompletionReadinessDto | null) => void;
 }
 
 /**
@@ -40,7 +43,7 @@ interface RequestCompletionSectionProps {
  * the Finance-only fiscal receipt registration (Phase 4B write surface).
  */
 export function RequestCompletionSection({
-    requestId, coverageEnabled, lifecycleEnabled, isFinance, isAdmin
+    requestId, coverageEnabled, lifecycleEnabled, isFinance, isAdmin, onReadiness
 }: RequestCompletionSectionProps) {
     const [readiness, setReadiness] = useState<CompletionReadinessDto | null>(null);
     const [obligations, setObligations] = useState<OperationInvoiceObligationsDto | null>(null);
@@ -64,12 +67,14 @@ export function RequestCompletionSection({
             ]);
             setReadiness(readinessResult);
             setObligations(obligationsResult);
+            onReadiness?.(readinessResult);
         } catch (error) {
             setLoadError(mapOperationInvoiceError(error).message);
+            onReadiness?.(null);
         } finally {
             setLoading(false);
         }
-    }, [requestId, coverageEnabled]);
+    }, [requestId, coverageEnabled, onReadiness]);
 
     useEffect(() => { void refresh(); }, [refresh]);
 

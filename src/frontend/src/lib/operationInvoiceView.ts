@@ -333,6 +333,7 @@ function extractExtensions(details: any): Record<string, unknown> {
 // re-derive a completion predicate.
 
 import type {
+    CompletionReadinessDto,
     CompletionReadinessGroupDto,
     CompletionBlockingReasonDto
 } from '../types/operationInvoice';
@@ -409,6 +410,40 @@ export function canOfferFiscalReceiptUpload(group: CompletionReadinessGroupDto):
         !group.fiscalReceiptSatisfied &&
         group.blockingReasons.length === 1 &&
         group.blockingReasons[0].code === 'FISCAL_RECEIPT_PENDING';
+}
+
+/**
+ * Release 4 next-action guidance for the legacy status header of a request governed by the
+ * ACTIVE completion lifecycle (grouped + classified + CompletionEnabled=true). Derived from
+ * the completion-readiness read model — never a second rulebook: the projection booleans are
+ * read as-is, in lifecycle order (Fatura Final before Recibo Fiscal, matching the checklist).
+ * The legacy "Anexar recibo do fornecedor e finalizar pedido" wording never applies to these
+ * requests (v2.229.7).
+ */
+export function completionNextActionGuidance(
+    readiness: CompletionReadinessDto
+): { responsible: string; nextAction: string } {
+    const open = readiness.groups.filter(g => !isGroupPersistedCompleted(g));
+
+    if (open.some(g => !g.operationInvoiceSatisfied)) {
+        return { responsible: 'Financeiro', nextAction: 'Registrar / validar a Fatura Final' };
+    }
+    if (open.some(g => g.fiscalReceiptRequired && !g.fiscalReceiptSatisfied)) {
+        return { responsible: 'Financeiro', nextAction: 'Registrar o Recibo Fiscal' };
+    }
+    if (open.some(g => g.blockingReasons.length > 0)) {
+        // Unusual at WAITING_RECEIPT (e.g., a payment/receiving dimension reopened): defer to
+        // the ownership of the first blocking reason, rendered in "Conclusão do Pedido".
+        return {
+            responsible: 'Ver "Conclusão do Pedido"',
+            nextAction: 'Resolver os itens pendentes indicados na Conclusão do Pedido'
+        };
+    }
+    // Every requirement satisfied under the active lifecycle: completion is automatic.
+    return {
+        responsible: 'Sistema',
+        nextAction: 'Conclusão automática em andamento — nenhuma ação manual necessária'
+    };
 }
 
 /**

@@ -45,6 +45,7 @@ import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
 import { plantMismatches } from '../../lib/paymentSourceDocuments';
+import { completionNextActionGuidance } from '../../lib/operationInvoiceView';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -195,6 +196,24 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             { openSequence: null, unsavedSequences: [] });
     /** Why the request cannot be submitted yet. Shown instead of letting the backend refuse. */
     const [submitBlockers, setSubmitBlockers] = useState<string[] | null>(null);
+
+    // ── Release 4 (v2.229.7): legacy manual finalization vs the active completion lifecycle ──
+    // The readiness read model already fetched by RequestCompletionSection is reported up here
+    // (single fetch), so the legacy WAITING_RECEIPT header/action never claims "Anexar recibo do
+    // fornecedor e finalizar pedido" for a grouped+classified request the backend would refuse
+    // with "Fluxo Atualizado". While readiness has not loaded, a grouped request under the
+    // active lifecycle already suppresses the button (it can never succeed); the readiness
+    // result then refines the predicate to the approved grouped+classified scope.
+    const [completionReadiness, setCompletionReadiness] = useState(null);
+    const release4LegacyFinalizeSuppressed =
+        featureFlags.completionLifecycleEnabled &&
+        (poGroups?.length ?? 0) > 0 &&
+        (completionReadiness === null ||
+            (completionReadiness.groups.length > 0 &&
+             completionReadiness.groups.every(g => g.classified)));
+    const release4Guidance = (release4LegacyFinalizeSuppressed && completionReadiness)
+        ? completionNextActionGuidance(completionReadiness)
+        : null;
 
     /**
      * Stable by construction. An inline arrow here is a new function every render, and the
@@ -427,7 +446,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 )}
             </>
         ),
-        operationalGuidance: (status ? getRequestGuidance(status, requestTypeCode || '') : null) as OperationalGuidance | null,
+        operationalGuidance: (status
+            ? (status === 'WAITING_RECEIPT' && release4Guidance) || getRequestGuidance(status, requestTypeCode || '')
+            : null) as OperationalGuidance | null,
         feedback,
         onCloseFeedback: () => setFeedback(prev => ({ ...prev, message: null })),
         isDrawerMode: !!onDrawerClose
@@ -464,6 +485,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     navigate={navigate}
                     onDrawerClose={onDrawerClose}
                     getRequestGuidance={getRequestGuidance}
+                    suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
+                    completionGuidance={release4Guidance}
                 />
             </RequestActionHeader>
 
@@ -571,6 +594,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         lifecycleEnabled={featureFlags.completionLifecycleEnabled}
                         isFinance={isFinance}
                         isAdmin={user?.roles?.includes('System Administrator') ?? false}
+                        onReadiness={setCompletionReadiness}
                     />
                 )}
 
