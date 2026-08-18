@@ -5,6 +5,27 @@ import { DropdownPortal } from './DropdownPortal';
 import { Feedback, FeedbackType } from './Feedback';
 import { ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
+import { MoneyInput } from './MoneyInput';
+
+/** Monetary variant of the local Input: same chrome, locale-independent parsing (v2.229.8).
+ *  onChange receives the canonical decimal string ("5000.00") directly. */
+const MoneyField = ({ label, value, onChange, placeholder, required, disabled }: any) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#334155' }}>
+            {label} {required && <span style={{ color: '#EF4444' }}>*</span>}
+        </label>
+        <MoneyInput
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            disabled={disabled}
+            style={{
+                width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-md)',
+                border: '1px solid #CBD5E1', fontSize: '0.875rem', fontFamily: 'inherit'
+            }}
+        />
+    </div>
+);
 
 const Input = ({ label, type = 'text', value, onChange, placeholder, required, disabled }: any) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -222,30 +243,27 @@ export function ReconciliationModal({ show, requestId, onClose, onSuccess }: Rec
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                                <Input
+                                <MoneyField
                                     label="Valor Final da Fatura"
-                                    type="number"
                                     value={finalInvoiceAmount}
-                                    onChange={(e: any) => setFinalInvoiceAmount(e.target.value)}
-                                    placeholder="Ex: 5000.00"
+                                    onChange={setFinalInvoiceAmount}
+                                    placeholder="Ex: 5 000,00"
                                     required
                                     disabled={processing}
                                 />
-                                <Input
+                                <MoneyField
                                     label="Valor Final Aceito"
-                                    type="number"
                                     value={finalAcceptedAmount}
-                                    onChange={(e: any) => setFinalAcceptedAmount(e.target.value)}
-                                    placeholder="Ex: 5000.00"
+                                    onChange={setFinalAcceptedAmount}
+                                    placeholder="Ex: 5 000,00"
                                     required
                                     disabled={processing}
                                 />
-                                <Input
+                                <MoneyField
                                     label="Valor Entregue Aceito"
-                                    type="number"
                                     value={deliveredAcceptedAmount}
-                                    onChange={(e: any) => setDeliveredAcceptedAmount(e.target.value)}
-                                    placeholder="Ex: 5000.00"
+                                    onChange={setDeliveredAcceptedAmount}
+                                    placeholder="Ex: 5 000,00"
                                     required
                                     disabled={processing}
                                 />
@@ -336,12 +354,11 @@ export function ReconciliationModal({ show, requestId, onClose, onSuccess }: Rec
                                             Requer Reembolso
                                         </label>
                                         {refundRequired && (
-                                            <Input
+                                            <MoneyField
                                                 label="Valor a Reembolsar"
-                                                type="number"
                                                 value={refundAmount}
-                                                onChange={(e: any) => setRefundAmount(e.target.value)}
-                                                placeholder="0.00"
+                                                onChange={setRefundAmount}
+                                                placeholder="0,00"
                                                 disabled={processing}
                                             />
                                         )}

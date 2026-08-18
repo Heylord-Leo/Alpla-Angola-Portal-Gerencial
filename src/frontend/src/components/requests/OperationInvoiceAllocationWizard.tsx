@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { ModalWrapper } from '../common/ModalWrapper';
+import { MoneyInput } from '../ui/MoneyInput';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
 import {
     aggregateStatusPresentation,
@@ -350,10 +351,9 @@ export function OperationInvoiceAllocationWizard({
                                         </span>
                                     </div>
                                     {!readOnly ? (
-                                        <input
-                                            type="number" step="0.01" min="0"
+                                        <MoneyInput
                                             value={row.gross}
-                                            onChange={e => updateRow(row.groupId, { gross: e.target.value })}
+                                            onChange={v => updateRow(row.groupId, { gross: v })}
                                             placeholder="Valor a distribuir"
                                             style={{
                                                 padding: '8px 10px', border: '1px solid var(--color-border)',

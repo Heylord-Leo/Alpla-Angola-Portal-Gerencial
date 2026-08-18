@@ -8,6 +8,7 @@ import { OcrDocumentClassification, ClassificationConflictState } from '../../li
 import { deriveCardStatus, describeDocument } from '../../lib/paymentSourceDocuments';
 import { SourceDocumentTypeField } from './SourceDocumentTypeField';
 import { FieldMessageIcon } from '../ui/FieldMessageIcon';
+import { MoneyInput } from '../ui/MoneyInput';
 import { SupplierAutocomplete } from '../SupplierAutocomplete';
 import { DateInput } from '../DateInput';
 import { formatCurrencyAO } from '../../lib/utils';
@@ -550,35 +551,32 @@ export function PaymentSourceDocumentCard({
                         gap: '10px'
                     }}>
                         {field('Valor líquido', (
-                            <input
-                                type="number" step="0.01"
+                            <MoneyInput
                                 value={document.netAmount ?? ''}
                                 disabled={readOnly}
-                                onChange={e => onFieldChange({
-                                    netAmount: e.target.value === '' ? null : Number(e.target.value)
+                                onChange={v => onFieldChange({
+                                    netAmount: v === '' ? null : Number(v)
                                 })}
                                 style={inputStyle}
                             />
                         ))}
                         {field('IVA', (
-                            <input
-                                type="number" step="0.01"
+                            <MoneyInput
                                 value={document.taxAmount ?? ''}
                                 disabled={readOnly}
-                                onChange={e => onFieldChange({
-                                    taxAmount: e.target.value === '' ? null : Number(e.target.value)
+                                onChange={v => onFieldChange({
+                                    taxAmount: v === '' ? null : Number(v)
                                 })}
                                 style={inputStyle}
                             />
                         ))}
                         {field('Total do documento', (
-                            <input
+                            <MoneyInput
                                 data-field="grossAmount"
-                                type="number" step="0.01"
                                 value={document.grossAmount ?? ''}
                                 disabled={readOnly}
-                                onChange={e => onFieldChange({
-                                    grossAmount: e.target.value === '' ? null : Number(e.target.value)
+                                onChange={v => onFieldChange({
+                                    grossAmount: v === '' ? null : Number(v)
                                 })}
                                 style={inputStyle}
                             />

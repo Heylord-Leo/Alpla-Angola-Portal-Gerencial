@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Upload, FileCheck2 } from 'lucide-react';
 import { ModalWrapper } from '../common/ModalWrapper';
+import { MoneyInput } from '../ui/MoneyInput';
 import { api, ApiError } from '../../lib/api';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
 import { mapOperationInvoiceError, formatMoney } from '../../lib/operationInvoiceView';
@@ -270,19 +271,19 @@ export function OperationInvoiceRegisterModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                     <div>
                         <label style={labelStyle}>Valor líquido</label>
-                        <input type="number" step="0.01" style={inputStyle} value={form.netAmount}
-                               onChange={e => set({ netAmount: e.target.value })} />
+                        <MoneyInput style={inputStyle} value={form.netAmount}
+                                    onChange={v => set({ netAmount: v })} />
                         {fieldError('NetAmount')}
                     </div>
                     <div>
                         <label style={labelStyle}>Imposto</label>
-                        <input type="number" step="0.01" style={inputStyle} value={form.taxAmount}
-                               onChange={e => set({ taxAmount: e.target.value })} />
+                        <MoneyInput style={inputStyle} value={form.taxAmount}
+                                    onChange={v => set({ taxAmount: v })} />
                     </div>
                     <div>
                         <label style={labelStyle}>Total (bruto) *</label>
-                        <input type="number" step="0.01" style={inputStyle} value={form.grossAmount}
-                               onChange={e => set({ grossAmount: e.target.value })} />
+                        <MoneyInput style={inputStyle} value={form.grossAmount}
+                                    onChange={v => set({ grossAmount: v })} />
                         {fieldError('GrossAmount')}
                     </div>
                 </div>

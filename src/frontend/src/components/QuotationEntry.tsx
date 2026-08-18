@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Upload, Trash2, RefreshCcw, Hash, Calendar, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { SupplierAutocomplete } from './SupplierAutocomplete';
+import { MoneyInput } from './ui/MoneyInput';
 import { CatalogItemAutocomplete } from './CatalogItemAutocomplete';
 import { useCatalogItemReconciliation } from '../hooks/useCatalogItemReconciliation';
 import { CatalogItemReconciliationModal } from './CatalogItemReconciliationModal';
@@ -754,10 +755,9 @@ export function QuotationEntry({
                                             </td>
 
                                             <td style={{ padding: '12px 16px' }}>
-                                                <input
-                                                    type="number"
+                                                <MoneyInput
                                                     value={item.unitPrice}
-                                                    onChange={e => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
+                                                    onChange={v => updateItem(idx, 'unitPrice', Number(v) || 0)}
                                                     style={{ ...inlineInputStyle, textAlign: 'right' }}
                                                     onMouseEnter={e => e.currentTarget.style.borderBottomColor = '#cbd5e1'}
                                                     onMouseLeave={e => e.currentTarget.style.borderBottomColor = 'transparent'}
@@ -867,10 +867,9 @@ export function QuotationEntry({
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '24px', paddingTop: '24px', flexWrap: 'wrap' }}>
                             <div style={{ width: '220px' }}>
                                 <label style={labelStyle}>Desconto Comercial</label>
-                                <input
-                                    type="number"
+                                <MoneyInput
                                     value={draft.discountAmount}
-                                    onChange={e => updateHeader('discountAmount', parseFloat(e.target.value) || 0)}
+                                    onChange={v => updateHeader('discountAmount', Number(v) || 0)}
                                     style={{ ...inputBase, textAlign: 'right' }}
                                 />
                             </div>

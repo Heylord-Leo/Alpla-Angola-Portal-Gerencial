@@ -10,6 +10,7 @@ import {
 } from '../../lib/paymentRequestCreation';
 import { itemsTolerance } from '../../lib/paymentDocumentComposition';
 import { formatCurrencyAO } from '../../lib/utils';
+import { MoneyInput } from '../ui/MoneyInput';
 
 interface Props {
     items: TemporaryPaymentItem[];
@@ -194,12 +195,11 @@ export function PaymentDocumentItemsEditor({
                                 </td>
 
                                 <td style={cell}>
-                                    <input
-                                        type="number" step="0.01" min="0"
+                                    <MoneyInput
                                         value={item.unitPrice}
                                         disabled={readOnly}
-                                        onChange={e => patch(item.tempId, {
-                                            unitPrice: Number(e.target.value) || 0
+                                        onChange={v => patch(item.tempId, {
+                                            unitPrice: Number(v) || 0
                                         })}
                                         style={{ ...input, textAlign: 'right' }}
                                     />
@@ -222,12 +222,11 @@ export function PaymentDocumentItemsEditor({
                                 </td>
 
                                 <td style={cell}>
-                                    <input
-                                        type="number" step="0.01" min="0"
+                                    <MoneyInput
                                         value={item.discountAmount ?? ''}
                                         disabled={readOnly}
-                                        onChange={e => patch(item.tempId, {
-                                            discountAmount: e.target.value === '' ? null : Number(e.target.value)
+                                        onChange={v => patch(item.tempId, {
+                                            discountAmount: v === '' ? null : Number(v)
                                         })}
                                         style={{ ...input, textAlign: 'right' }}
                                     />
