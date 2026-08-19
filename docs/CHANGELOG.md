@@ -92,6 +92,16 @@ status unchanged; PROD untouched (Stage 2 remains pending).
   `QuotationEntry`) and the within-request block keep their existing behavior verbatim. Pinned:
   a crafted create carrying valid L4 override fields still 409s on a cross-request file twin —
   LEVEL 1 can never be overridden.
+- **Legacy pre-Release-3 twins now count (MODEL B)**: TEST acceptance showed the hard block not
+  firing for REQ-21/07/2026-116 — correctly, under the original rule: that request predates the
+  `PaymentSourceDocuments` table (born 2026-08-04), so its proforma exists only as a
+  source-TYPED legacy attachment and the twin detector reported false. The shared discrimination
+  (`PaymentSourceDocumentFileTwins`) now recognizes a second shape: a `PROFORMA` /
+  `PAYMENT_SOURCE_DOCUMENT`-typed attachment on a live request **with no document row at all**
+  (when a row exists it remains the sole authority — a voided document stays inactive evidence).
+  Generic supporting attachments (receipts, POs, payment proofs, quotation files) stay on the
+  warn tier. Preflight and persistence extend together — a legacy twin now also 409s at
+  creation. No frontend change needed (the wizard already branches on the flag).
 
 #### Unchanged by design
 

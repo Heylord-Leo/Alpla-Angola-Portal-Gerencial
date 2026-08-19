@@ -256,6 +256,35 @@ public class PaymentSourceDocumentDuplicateEndpointTests
         Assert.Equal(0, await ctx.PaymentSourceDocuments.CountAsync(d => d.RequestId == seed.RequestId));
     }
 
+    // ── Legacy twin (pre-Release-3): persistence blocks it exactly like a document twin ─────
+
+    [Fact]
+    public async Task A_legacy_source_typed_attachment_twin_blocks_creation_too()
+    {
+        // The REQ-21/07/2026-116 shape: a live request created before PaymentSourceDocuments
+        // existed carries its proforma as a source-TYPED attachment with no document row. MODEL B:
+        // that file is the commercial source of a live request — preflight AND persistence block.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+
+        var legacyRequest = NewRequest(seed.ActorId, statusId: 6);
+        ctx.Requests.Add(legacyRequest);
+        var legacyAttachment = AddAttachment(ctx, legacyRequest.Id, seed.ActorId, fileHash: "legacy-bytes");
+        legacyAttachment.AttachmentTypeCode = RequestAttachment.TYPE_PROFORMA;
+        // Deliberately NO PaymentSourceDocument row.
+
+        var attachment = AddAttachment(ctx, seed.RequestId, seed.ActorId, fileHash: "legacy-bytes");
+        await ctx.SaveChangesAsync();
+
+        var refused = await BuildController(ctx, seed.ActorId)
+            .Create(seed.RequestId, Proposal(attachment.Id, 100m));
+
+        var conflict = Assert.IsType<ConflictObjectResult>(refused);
+        var problem = Assert.IsType<ProblemDetails>(conflict.Value);
+        Assert.Equal(PaymentSourceDocumentDuplicateHierarchy.CrossRequestFileCode, problem.Extensions["code"]);
+        Assert.Contains(legacyRequest.RequestNumber, problem.Detail);
+    }
+
     // ── O. Dead requests never block ────────────────────────────────────────────────────────
 
     [Fact]

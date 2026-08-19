@@ -557,8 +557,8 @@ public class PaymentSourceDocumentsController : BaseController
     private static string[] TerminalDeadRequestStatuses =>
         Helpers.PaymentSourceDocumentFileTwins.TerminalDeadRequestStatuses;
 
-    private async Task<PaymentSourceDocument?> FindCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
-        => (await Helpers.PaymentSourceDocumentFileTwins.FindActiveTwinAsync(_context, fileHash, requestId))?.Document;
+    private async Task<Helpers.ActiveFileTwin?> FindCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
+        => await Helpers.PaymentSourceDocumentFileTwins.FindActiveTwinAsync(_context, fileHash, requestId);
 
     /// <summary>
     /// LEVEL 1 cross-request: refuses the candidate file when its hash is an active source document
@@ -570,21 +570,21 @@ public class PaymentSourceDocumentsController : BaseController
         if (twin == null) return null;
 
         var scoped = await GetScopedRequestsQuery();
-        var visible = await scoped.AnyAsync(r => r.Id == twin.Value.Request.Id);
+        var visible = await scoped.AnyAsync(r => r.Id == twin.Request.Id);
 
         var problem = new ProblemDetails
         {
             Title = "Documento duplicado",
             Detail = visible
                 ? $"Este ficheiro já está registado como documento de origem do pedido " +
-                  $"{twin.Value.Request.RequestNumber} ainda em curso. O mesmo documento não pode " +
+                  $"{twin.Request.RequestNumber} ainda em curso. O mesmo documento não pode " +
                   "originar dois pagamentos."
                 : "Este ficheiro já está registado como documento de origem de outro pedido ainda " +
                   "em curso. O mesmo documento não pode originar dois pagamentos.",
             Status = 409
         };
         problem.Extensions["code"] = PaymentSourceDocumentDuplicateHierarchy.CrossRequestFileCode;
-        if (visible) problem.Extensions["conflictingRequestNumber"] = twin.Value.Request.RequestNumber;
+        if (visible) problem.Extensions["conflictingRequestNumber"] = twin.Request.RequestNumber;
         return problem;
     }
 

@@ -222,6 +222,12 @@ public class AttachmentCheckDuplicateEndpointTests : IDisposable
         using var ctx = NewContext();
         var seed = await SeedAsync(ctx, asSourceDocument: true, voided: true);
 
+        // Even with a source-typed attachment, the DOCUMENT ROW is the authority: voided means
+        // inactive evidence, and the legacy-attachment branch must never resurrect it.
+        var attachment = await ctx.RequestAttachments.SingleAsync();
+        attachment.AttachmentTypeCode = RequestAttachment.TYPE_PAYMENT_SOURCE_DOCUMENT;
+        await ctx.SaveChangesAsync();
+
         var result = await BuildController(ctx, seed.ActorId).CheckDuplicate(Hash);
 
         Assert.True(Read<bool>(result, "isDuplicate"));
@@ -267,6 +273,62 @@ public class AttachmentCheckDuplicateEndpointTests : IDisposable
         Assert.True(Read<bool>(result, "isDuplicate"));
         Assert.True(Has(result, "requestNumber"));
         Assert.Equal("Twin Owner", Read<string>(result, "uploadedBy"));
+    }
+
+    // ── Legacy pre-Release-3 twins (the REQ-21/07/2026-116 shape) ───────────────────────────
+    //
+    // PaymentSourceDocuments was born on 2026-08-04; a July request's proforma exists only as a
+    // source-TYPED RequestAttachment with no document row. MODEL B of the cross-request file
+    // audit: that file is still the commercial source of a live request — blocking evidence.
+
+    private async Task<IActionResult> CheckLegacyShapeAsync(
+        string attachmentTypeCode, string requestStatus = "PO_ISSUED")
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, requestStatus: requestStatus, asSourceDocument: false);
+
+        var attachment = await ctx.RequestAttachments.SingleAsync();
+        attachment.AttachmentTypeCode = attachmentTypeCode;
+        await ctx.SaveChangesAsync();
+
+        return await BuildController(ctx, seed.ActorId).CheckDuplicate(Hash);
+    }
+
+    [Theory]
+    [InlineData(RequestAttachment.TYPE_PROFORMA)]
+    [InlineData(RequestAttachment.TYPE_PAYMENT_SOURCE_DOCUMENT)]
+    public async Task A_legacy_source_typed_attachment_on_a_live_request_is_blocking_evidence(string typeCode)
+    {
+        var result = await CheckLegacyShapeAsync(typeCode);
+
+        Assert.True(Read<bool>(result, "isDuplicate"));
+        Assert.True(Read<bool>(result, "isActiveSourceDocument"));
+        Assert.StartsWith("ZZTEST-TWIN-", Read<string>(result, "requestNumber"));
+    }
+
+    [Theory]
+    [InlineData("CANCELLED")]
+    [InlineData("REJECTED")]
+    public async Task A_legacy_source_attachment_on_a_dead_request_is_not_blocking(string status)
+    {
+        var result = await CheckLegacyShapeAsync(RequestAttachment.TYPE_PROFORMA, requestStatus: status);
+
+        Assert.True(Read<bool>(result, "isDuplicate"));
+        Assert.False(Read<bool>(result, "isActiveSourceDocument"));
+    }
+
+    [Theory]
+    [InlineData(RequestAttachment.TYPE_RECEIPT)]
+    [InlineData(RequestAttachment.TYPE_PO)]
+    [InlineData(RequestAttachment.TYPE_PAYMENT_PROOF)]
+    [InlineData(RequestAttachment.TYPE_QUOTATION)]
+    public async Task A_generic_supporting_attachment_stays_on_the_warn_tier(string typeCode)
+    {
+        // Supporting evidence legitimately recurs across requests — never hard-blocked.
+        var result = await CheckLegacyShapeAsync(typeCode);
+
+        Assert.True(Read<bool>(result, "isDuplicate"));
+        Assert.False(Read<bool>(result, "isActiveSourceDocument"));
     }
 
     [Fact]
