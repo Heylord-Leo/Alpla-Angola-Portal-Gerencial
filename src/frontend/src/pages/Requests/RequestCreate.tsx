@@ -170,6 +170,18 @@ export function RequestCreate() {
         documentNumber: string | null;
         supplierName: string | null;
     } | null>(null);
+
+    /**
+     * The same file is an ACTIVE source document of another LIVE request (v2.229.10 cross-request
+     * LEVEL 1). A hard block: no proceed, no countdown, no justification — persistence would
+     * refuse it anyway. Metadata is null when the other request is outside the user's scope; the
+     * block holds regardless.
+     */
+    const [crossRequestFileBlock, setCrossRequestFileBlock] = useState<{
+        fileName: string;
+        requestNumber: string | null;
+        requestId: string | null;
+    } | null>(null);
     const sourceFileInputRef = useRef<HTMLInputElement>(null);
     const sourceFileResolverRef = useRef<((f: File | null) => void) | null>(null);
 
@@ -217,9 +229,26 @@ export function RequestCreate() {
                 return null;
             }
 
-            // ── Another request: the existing warning, with its acknowledgement and countdown ──
+            // ── Another request ──
             const dupCheck = await api.attachments.checkDuplicate(hash);
 
+            // v2.229.10 cross-request LEVEL 1: registered as an ACTIVE source document of a LIVE
+            // request, the file is a debt already in flight. A hard block with no override —
+            // persistence would refuse it with DUPLICATE_FILE_CROSS_REQUEST after the user had
+            // wasted the whole OCR-and-review effort, so the answer is given here, before any
+            // upload. Metadata may be absent (request outside the user's scope); the block holds
+            // either way.
+            if (dupCheck.isDuplicate && dupCheck.isActiveSourceDocument) {
+                setCrossRequestFileBlock({
+                    fileName: file.name,
+                    requestNumber: dupCheck.requestNumber ?? null,
+                    requestId: dupCheck.requestId ?? null
+                });
+                return null;
+            }
+
+            // Attachment-only reuse (supporting documents, dead requests): the long-standing
+            // warning, with its acknowledgement and countdown, stays exactly as it was.
             if (dupCheck.isDuplicate) {
                 const accepted = await new Promise<boolean>(resolve => {
                     setDuplicateWarning({
@@ -2686,6 +2715,41 @@ export function RequestCreate() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* The same file, already an ACTIVE source document of another LIVE request.
+                Cross-request LEVEL 1: nothing to acknowledge — the block is the answer. */}
+            {crossRequestFileBlock && (
+                <ConfirmationDialog
+                    title="Ficheiro já utilizado noutro pedido"
+                    message={
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <span>
+                                Este exato ficheiro (<strong>{crossRequestFileBlock.fileName}</strong>)
+                                já está associado
+                                {crossRequestFileBlock.requestNumber
+                                    ? <> ao pedido <strong>{crossRequestFileBlock.requestNumber}</strong></>
+                                    : ' a outro pedido'}{' '}
+                                e não pode ser reutilizado enquanto esse pedido estiver ativo.
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                                O mesmo documento não pode originar dois pagamentos. Se o outro
+                                pedido estiver errado, cancele-o ou anule lá o documento antes de o
+                                registar aqui.
+                            </span>
+                        </div>
+                    }
+                    confirmText={crossRequestFileBlock.requestId ? 'Ver pedido existente' : 'Entendi'}
+                    cancelText="Fechar"
+                    variant="warning"
+                    onConfirm={() => {
+                        const id = crossRequestFileBlock.requestId;
+                        setCrossRequestFileBlock(null);
+                        // A new tab: the wizard's half-composed request must not be abandoned.
+                        if (id) window.open(`/requests/${id}`, '_blank', 'noopener');
+                    }}
+                    onCancel={() => setCrossRequestFileBlock(null)}
+                />
+            )}
 
             {/* The same file, already in this request. Nothing to weigh up, so nothing to confirm. */}
             {sameRequestDuplicate && (

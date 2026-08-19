@@ -76,6 +76,23 @@ status unchanged; PROD untouched (Stage 2 remains pending).
   arredondamento de +0,01 (linha N)…") — no per-line badges. A non-allocatable residual now
   shows the mismatch banner instead of being silently absorbed by tolerance.
 
+#### Fixed (acceptance fix: cross-request exact-file twins hard-block in the wizard)
+
+- TEST acceptance found the creation wizard still offering the legacy overrideable
+  "Documento Já Existente" warning (countdown + "Estou Ciente, Prosseguir") for a file that is an
+  ACTIVE source document of a LIVE request — a case persistence refuses with
+  `DUPLICATE_FILE_CROSS_REQUEST` anyway, after the user had wasted the whole OCR-and-review
+  effort. `GET /attachments/check-duplicate` now additionally reports
+  `isActiveSourceDocument`, computed by the SAME shared query as the persistence guard
+  (`PaymentSourceDocumentFileTwins` — voided documents and CANCELLED/REJECTED requests are never
+  blocking evidence), with the existing privacy rule intact (no request metadata for users who
+  cannot open the request — the block signal alone travels). The wizard hard-blocks that case
+  with "Ficheiro já utilizado noutro pedido" (Fechar / Ver pedido existente; no proceed, no
+  countdown, no justification). Attachment-only reuse, quotation/PO flows (`BuyerItemsList`,
+  `QuotationEntry`) and the within-request block keep their existing behavior verbatim. Pinned:
+  a crafted create carrying valid L4 override fields still 409s on a cross-request file twin —
+  LEVEL 1 can never be overridden.
+
 #### Unchanged by design
 
 - One request = one legal company: `Request.CompanyId` semantics, the Plant.CompanyId

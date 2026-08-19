@@ -216,6 +216,46 @@ public class PaymentSourceDocumentDuplicateEndpointTests
         Assert.Equal(0, await ctx.PaymentSourceDocuments.CountAsync(d => d.RequestId == seed.RequestId));
     }
 
+    // ── H (acceptance fix). LEVEL 1 can never be overridden ─────────────────────────────────
+
+    [Fact]
+    public async Task The_L4_override_fields_cannot_beat_a_cross_request_file_twin()
+    {
+        // A crafted call carrying a fully valid L4 override must still hit the LEVEL 1 wall:
+        // the acknowledgement/justification pair exists only for AMBIGUOUS business duplicates,
+        // never for file identity.
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx);
+
+        var otherRequest = NewRequest(seed.ActorId, statusId: 6);
+        ctx.Requests.Add(otherRequest);
+        var twinAttachment = AddAttachment(ctx, otherRequest.Id, seed.ActorId, fileHash: "l1-wall");
+        ctx.PaymentSourceDocuments.Add(new PaymentSourceDocument
+        {
+            Id = Guid.NewGuid(),
+            RequestId = otherRequest.Id,
+            AttachmentId = twinAttachment.Id,
+            SupplierId = 77,
+            DocumentNumber = Reference,
+            SequenceNumber = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            CreatedByUserId = seed.ActorId
+        });
+
+        var attachment = AddAttachment(ctx, seed.RequestId, seed.ActorId, fileHash: "l1-wall");
+        await ctx.SaveChangesAsync();
+
+        var refused = await BuildController(ctx, seed.ActorId).Create(seed.RequestId,
+            Proposal(attachment.Id, 100m, overrideAcknowledged: true, overrideReason: ValidReason));
+
+        var conflict = Assert.IsType<ConflictObjectResult>(refused);
+        var problem = Assert.IsType<ProblemDetails>(conflict.Value);
+        Assert.Equal(PaymentSourceDocumentDuplicateHierarchy.CrossRequestFileCode, problem.Extensions["code"]);
+
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(0, await ctx.PaymentSourceDocuments.CountAsync(d => d.RequestId == seed.RequestId));
+    }
+
     // ── O. Dead requests never block ────────────────────────────────────────────────────────
 
     [Fact]

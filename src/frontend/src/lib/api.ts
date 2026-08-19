@@ -1290,7 +1290,20 @@ export const api = {
         }
     },
     attachments: {
-        checkDuplicate: async (hash: string): Promise<{ isDuplicate: boolean; requestNumber?: string; requestId?: string; uploadedBy?: string; createdAtUtc?: string }> => {
+        checkDuplicate: async (hash: string): Promise<{
+            isDuplicate: boolean;
+            /**
+             * v2.229.10 cross-request L1: the hash is an ACTIVE source document of a LIVE
+             * request. The payment wizard must hard-block (no override) — persistence would
+             * refuse it with DUPLICATE_FILE_CROSS_REQUEST anyway. Metadata below is present
+             * only when the user may open the request in question.
+             */
+            isActiveSourceDocument?: boolean;
+            requestNumber?: string;
+            requestId?: string;
+            uploadedBy?: string;
+            createdAtUtc?: string;
+        }> => {
              const response = await apiFetch(`${API_BASE_URL}/api/v1/attachments/check-duplicate?hash=${hash}`);
              if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade de anexo.');
              return response.json();

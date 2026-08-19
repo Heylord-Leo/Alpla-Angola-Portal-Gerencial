@@ -550,36 +550,15 @@ public class PaymentSourceDocumentsController : BaseController
     }
 
     /// <summary>
-    /// Requests whose source documents still guard against double payment. CANCELLED and REJECTED
-    /// requests can no longer lead to a payment, so a document registered on one is not a debt in
-    /// flight — blocking on it would be false double-payment protection around a dead request.
+    /// Requests whose source documents still guard against double payment. Single definition in
+    /// <see cref="Helpers.PaymentSourceDocumentFileTwins"/>, shared with the generic
+    /// attachments preflight so classification and enforcement cannot drift.
     /// </summary>
-    private static readonly string[] TerminalDeadRequestStatuses =
-        { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected };
-
-    /// <summary>
-    /// The identical file (by hash) registered as an ACTIVE source document of another LIVE
-    /// request, or null. Voided documents and dead requests are excluded by design.
-    /// </summary>
-    private async Task<(PaymentSourceDocument Document, Request Request)?> FindCrossRequestFileTwinCoreAsync(
-        Guid requestId, string? fileHash)
-    {
-        if (string.IsNullOrWhiteSpace(fileHash)) return null;
-
-        var twin = await _context.PaymentSourceDocuments
-            .Where(d => d.RequestId != requestId && !d.IsVoided)
-            .Join(_context.RequestAttachments.Where(a => !a.IsDeleted && a.FileHash == fileHash),
-                  d => d.AttachmentId, a => a.Id, (d, a) => d)
-            .Join(_context.Requests,
-                  d => d.RequestId, r => r.Id, (d, r) => new { d, r })
-            .Where(x => x.r.Status == null || !TerminalDeadRequestStatuses.Contains(x.r.Status.Code))
-            .FirstOrDefaultAsync();
-
-        return twin == null ? null : (twin.d, twin.r);
-    }
+    private static string[] TerminalDeadRequestStatuses =>
+        Helpers.PaymentSourceDocumentFileTwins.TerminalDeadRequestStatuses;
 
     private async Task<PaymentSourceDocument?> FindCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
-        => (await FindCrossRequestFileTwinCoreAsync(requestId, fileHash))?.Document;
+        => (await Helpers.PaymentSourceDocumentFileTwins.FindActiveTwinAsync(_context, fileHash, requestId))?.Document;
 
     /// <summary>
     /// LEVEL 1 cross-request: refuses the candidate file when its hash is an active source document
@@ -587,7 +566,7 @@ public class PaymentSourceDocumentsController : BaseController
     /// </summary>
     private async Task<ProblemDetails?> GuardCrossRequestFileTwinAsync(Guid requestId, string? fileHash)
     {
-        var twin = await FindCrossRequestFileTwinCoreAsync(requestId, fileHash);
+        var twin = await Helpers.PaymentSourceDocumentFileTwins.FindActiveTwinAsync(_context, fileHash, requestId);
         if (twin == null) return null;
 
         var scoped = await GetScopedRequestsQuery();
