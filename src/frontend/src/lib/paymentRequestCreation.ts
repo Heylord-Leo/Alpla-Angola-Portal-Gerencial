@@ -211,6 +211,135 @@ export function itemsTotalOf(items: TemporaryPaymentItem[]): number {
     return Math.round(items.reduce((s, i) => s + (i.totalAmount ?? 0), 0) * 100) / 100;
 }
 
+// ── Declared document totals and rounding-residual reconciliation (v2.229.10) ───────────────
+//
+// A supplier document's declared Net/Tax/Gross are documentary evidence. When the triplet is
+// internally consistent, it is authoritative — line arithmetic exists to validate it, never to
+// silently overwrite it. The cent-level gap between the declared gross and the VAT-inclusive
+// line sum (the inevitable artifact of per-line rounding) is attributed deterministically to the
+// LAST eligible line, so ONE monetary truth flows downstream:
+// Σ(item totals) == document gross == group total == expected/paid amount.
+//
+// Mirrors the tested reference implementation `PaymentRoundingResidual` (backend Domain).
+
+/** Strict internal-consistency bound for a declared triplet: cent arithmetic only — never the
+ *  far looser 0.1% financial-integrity tolerance. */
+export const DECLARED_TRIPLET_CONSISTENCY_TOLERANCE = 0.01;
+
+/** Maximum residual attributable to rounding, per line. Each line's total is rounded at most to
+ *  the cent, so per-line rounding can explain at most one cent per line. */
+export const PER_LINE_RESIDUAL_CAP = 0.01;
+
+/** The document-level totals the supplier actually declared, as read by the extraction. */
+export interface DeclaredDocumentTotals {
+    net: number | null;
+    tax: number | null;
+    gross: number | null;
+}
+
+export function readDeclaredTotals(raw?: OcrExtractionEnvelope | null): DeclaredDocumentTotals {
+    const h = (raw?.integration?.headerSuggestions ?? {}) as Record<string, unknown>;
+    return {
+        net: numOf(h.netAmount),
+        tax: numOf(h.taxAmount) ?? numOf(h.ivaAmount),
+        gross: numOf(h.grandTotal) ?? numOf(h.totalAmount)
+    };
+}
+
+/**
+ * Whether the declared triplet may be trusted as documentary truth. Positive net and gross,
+ * with net + tax = gross to the cent (a missing tax is derived as gross − net, so it is
+ * consistent by construction). A triplet that fails this is NOT rescued by any wider tolerance —
+ * it falls back to line-derived values and the ordinary mismatch handling.
+ */
+export function isConsistentDeclaredTriplet(t: DeclaredDocumentTotals): boolean {
+    if (t.net == null || t.gross == null) return false;
+    if (t.net <= 0 || t.gross <= 0) return false;
+    const tax = t.tax ?? Math.round((t.gross - t.net) * 100) / 100;
+    if (tax < 0) return false;
+    return Math.abs(t.net + tax - t.gross) <= DECLARED_TRIPLET_CONSISTENCY_TOLERANCE + 1e-9;
+}
+
+/** Disclosure metadata for an applied residual — what the muted UI note reports. */
+export interface RoundingAdjustment {
+    /** Signed residual, e.g. +0.01 or −0.01. */
+    amount: number;
+    lineTempId: string;
+    /** 1-based position in document order, for "linha N" wording. */
+    lineNumber: number;
+}
+
+export interface RoundingAllocationResult {
+    /** The lines with the residual embodied on the adjusted line. Input order preserved. */
+    items: TemporaryPaymentItem[];
+    /** Null when nothing was (or could be) adjusted. */
+    adjustment: RoundingAdjustment | null;
+}
+
+/**
+ * Reconciles canonical line totals against the document's declared gross (MODEL 2).
+ *
+ * <p>Pure, deterministic and idempotent: integer-cent arithmetic (no floating-point drift), and
+ * reconciling an already-reconciled set yields residual 0 and returns the input untouched. Input
+ * totals must be the canonical per-line values — the callers guarantee that, because the editor
+ * recomputes a line's total from its components on every change.</p>
+ *
+ * <p>Only the selected line's <c>totalAmount</c> changes. Quantity, unit price, discount and tax
+ * rate are extracted commercial components and are never altered. When the residual exceeds
+ * <c>PER_LINE_RESIDUAL_CAP × eligible lines</c>, nothing is adjusted — a 100-AOA gap must never
+ * be disguised as rounding, whatever the percentage tolerance would forgive.</p>
+ */
+export function allocateRoundingResidual(
+    items: TemporaryPaymentItem[],
+    declaredGross: number | null | undefined
+): RoundingAllocationResult {
+    if (!declaredGross || declaredGross <= 0 || items.length === 0) {
+        return { items, adjustment: null };
+    }
+
+    const toCents = (v: number) => Math.round(v * 100);
+    const residualCents = toCents(declaredGross) -
+        items.reduce((s, i) => s + toCents(i.totalAmount ?? 0), 0);
+
+    if (residualCents === 0) return { items, adjustment: null };
+
+    const eligibleCount = items.filter(i => (i.totalAmount ?? 0) > 0).length;
+    if (eligibleCount === 0 ||
+        Math.abs(residualCents) > Math.round(PER_LINE_RESIDUAL_CAP * 100) * eligibleCount) {
+        return { items, adjustment: null };
+    }
+
+    // Last eligible line in document order whose total survives the adjustment positive.
+    for (let i = items.length - 1; i >= 0; i--) {
+        const current = items[i].totalAmount ?? 0;
+        if (current <= 0) continue;
+
+        const adjusted = (toCents(current) + residualCents) / 100;
+        if (adjusted <= 0) continue;
+
+        const next = items.slice();
+        next[i] = { ...items[i], totalAmount: adjusted };
+        return {
+            items: next,
+            adjustment: {
+                amount: residualCents / 100,
+                lineTempId: items[i].tempId,
+                lineNumber: i + 1
+            }
+        };
+    }
+
+    return { items, adjustment: null };
+}
+
+function numOf(value: unknown): number | null {
+    const v = typeof value === 'object' && value !== null && 'value' in (value as any)
+        ? (value as any).value : value;
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
 let counter = 0;
 /** Collision-proof without a uuid dependency: monotonic counter plus the clock. */
 export function newTempId(prefix = 'tmp'): string {
@@ -556,14 +685,30 @@ export function fromOcrDraft(
         itemCatalogCode: i.itemCatalogCode ?? null
     }));
 
-    // The document's stated grand total is authoritative; net and IVA are derived from the lines so
-    // the three numbers agree with each other rather than with three different readings.
-    const gross = draft.totalAmount > 0 ? draft.totalAmount : null;
-    const net = items.length > 0
-        ? Math.round(items.reduce(
-            (s, i) => s + Math.max(0, (i.quantity * i.unitPrice) - (i.discountAmount ?? 0)), 0) * 100) / 100
-        : null;
-    const tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
+    // v2.229.10 monetary reconciliation: the DECLARED document totals are authoritative when the
+    // triplet is internally consistent — line arithmetic validates them, it does not overwrite
+    // them. Only when the document declared nothing (or an inconsistent triplet) are net and IVA
+    // reconstructed from the lines, which is per-line-rounded and can legitimately differ from
+    // the supplier's own document-level arithmetic by a cent.
+    const declared = readDeclaredTotals(raw);
+    const declaredIsAuthoritative = isConsistentDeclaredTriplet(declared);
+
+    let gross: number | null;
+    let net: number | null;
+    let tax: number | null;
+
+    if (declaredIsAuthoritative) {
+        gross = declared.gross;
+        net = declared.net;
+        tax = declared.tax ?? Math.round((declared.gross! - declared.net!) * 100) / 100;
+    } else {
+        gross = draft.totalAmount > 0 ? draft.totalAmount : null;
+        net = items.length > 0
+            ? Math.round(items.reduce(
+                (s, i) => s + Math.max(0, (i.quantity * i.unitPrice) - (i.discountAmount ?? 0)), 0) * 100) / 100
+            : null;
+        tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
+    }
 
     // The legacy mapper falls back to 'EUR' when the document names no currency
     // (`currencyCode || currency || 'EUR'`), which is harmless in a form the user is already

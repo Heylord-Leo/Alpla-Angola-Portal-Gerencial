@@ -29,6 +29,14 @@ v2.229.10
   content evidence → explicit confirmation with written reason (≥ 20 chars), audited in the
   request timeline. Cancelled/rejected requests and voided documents never block. The
   one-request-one-company guard is unchanged.
+- **Monetary reconciliation (follow-up):** declared document totals (Net/Tax/Gross) are
+  preserved as documentary truth when internally consistent (strict 0.01 rule, never the 0.1%
+  tolerance), instead of being rebuilt from per-line-rounded arithmetic; the cent-level rounding
+  residual against the VAT-inclusive line sum is deterministically attributed to the last
+  eligible line (cap 0.01 × lines), so Σ(item totals) == document gross == group total ==
+  expected/paid amount — one monetary truth downstream (CONSULTIT CCTV Viana02: 3,433,527.55,
+  not 3,433,527.54). Item grid labeled "TOTAL c/ IVA" / "SOMA DOS ITENS (c/ IVA)" with a muted
+  note when an adjustment was applied. No migration.
 
 ## [v2.229.9] - 2026-08-18
 

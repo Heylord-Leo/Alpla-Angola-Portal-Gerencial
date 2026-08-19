@@ -47,13 +47,44 @@ status unchanged; PROD untouched (Stage 2 remains pending).
   composer and the creation wizard (shared `DuplicateOverrideDialog`). Cancelled/rejected
   requests and voided documents are never blocking evidence.
 
+#### Fixed (follow-up: monetary reconciliation — declared totals + rounding residual)
+
+- **Declared document totals are authoritative documentary evidence.** The TEST walkthrough of
+  CONSULTIT CCTV Viana02 (declared Net 3,011,866.27 / IVA 421,661.28 / Gross 3,433,527.55)
+  showed the Portal silently rebuilding all three from per-line-rounded arithmetic
+  (3,011,866.26 / 421,661.28 / 3,433,527.54). OCR read the document correctly; the values were
+  discarded by normalization. Now: `ExtractionMapper` forwards the declared net (`netAmount`)
+  and derived tax (`taxAmount` = grand − subtotal, when sane) alongside the grand total;
+  `mapOcrResultToDraft` keeps the declared total when the line-derived recomputation agrees
+  within per-line rounding (≤ 0.01 × lines); `fromOcrDraft` prefers the declared triplet when
+  internally consistent (|net + tax − gross| ≤ 0.01 — the strict documentary rule, never the
+  0.1% integrity tolerance). Inconsistent triplets fall back to line-derived values and the
+  existing mismatch handling.
+- **One monetary truth (MODEL 2 — deterministic rounding-residual allocation).** The cent-level
+  residual between the declared gross and the VAT-inclusive line sum is attributed to the LAST
+  eligible line (only `TotalAmount`; quantity/price/discount/rate untouched), capped at
+  0.01 × line count — a 100 AOA gap is never disguised as rounding, whatever the percentage
+  tolerance would forgive. Persisted item totals therefore sum exactly to the document gross,
+  and downstream — `Request.EstimatedTotalAmount`, `PaymentGroupPlan`/`RequestPoGroup.TotalAmount`,
+  `ExpectedOperationInvoiceTotal`, payment amounts — all carry the supplier's declared
+  3,433,527.55. Reference implementation `PaymentRoundingResidual` (Domain, tested); frontend
+  mirrors it (`allocateRoundingResidual`), applied as a derived view in the items editor (survives
+  every edit by recomputation) and at line-item persistence. Duplicate fingerprints stay
+  deterministic (same read → same allocation → same hash).
+- **Item-grid labels made honest**: column "TOTAL c/ IVA", footer "SOMA DOS ITENS (c/ IVA)"; when
+  a residual was allocated, one muted document-level note ("Soma dos itens inclui ajuste de
+  arredondamento de +0,01 (linha N)…") — no per-line badges. A non-allocatable residual now
+  shows the mismatch banner instead of being silently absorbed by tolerance.
+
 #### Unchanged by design
 
 - One request = one legal company: `Request.CompanyId` semantics, the Plant.CompanyId
   validation and the plant-mismatch guard are untouched — a document can be documentary-distinct
   because it targets another ALPLA company and still be refused in a request of a different
   company.
-- RequestType QUOTATION, the Quotation entity and quotation management.
+- RequestType QUOTATION, the Quotation entity and quotation management (the declared-total
+  precedence also reaches the quotation prefill, in the already-audited direction: the declared
+  OCR total was and remains the integrity baseline).
 - Release 4 Post-Payment Completion: no behavior change; `CompletionEnabled` stays false in PROD.
 
 ## [v2.229.9] - 2026-08-18

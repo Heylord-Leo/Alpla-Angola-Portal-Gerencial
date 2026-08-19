@@ -117,6 +117,22 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         return Math.max(0, total);
     };
 
+    /**
+     * v2.229.10: which total the draft carries — the document's DECLARED one, or the
+     * line-derived recomputation.
+     *
+     * <p>The declared total wins when the two differ by no more than per-line rounding can
+     * explain (0.01 × line count, mirroring `PaymentRoundingResidual` on the backend). A missing
+     * declared total, or a gap larger than rounding, keeps the line-derived value — and what to
+     * say about the gap stays the business of the existing integrity/mismatch handling.</p>
+     */
+    const reconcileDraftTotal = (declaredTotal: number, lineDerivedTotal: number, lineCount: number) => {
+        if (!(declaredTotal > 0)) return lineDerivedTotal;
+
+        const residualCents = Math.abs(Math.round(declaredTotal * 100) - Math.round(lineDerivedTotal * 100));
+        return residualCents <= lineCount ? declaredTotal : lineDerivedTotal;
+    };
+
     const mapOcrResultToDraft = async (result: any, attachmentId?: string): Promise<OcrDraft> => {
         const suggestions = result.integration?.headerSuggestions;
         
@@ -349,10 +365,14 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             })
         };
 
-        // Always recalculate total from item components for consistency
-        // (since individual item totals are now always calculated from qty * unitPrice - discount)
+        // v2.229.10 monetary reconciliation: the document's DECLARED total is kept when the
+        // line-derived recomputation agrees with it within per-line rounding (≤ 0.01 per line) —
+        // per-line rounding is the Portal's arithmetic artifact, not evidence against the
+        // supplier's own stated total. Only a missing declared total, or a difference larger
+        // than rounding can explain, falls back to the line-derived value (where the existing
+        // integrity/mismatch handling decides what to say about it).
         if (draft.items.length > 0) {
-            draft.totalAmount = calculateDraftTotal(draft);
+            draft.totalAmount = reconcileDraftTotal(draft.totalAmount, calculateDraftTotal(draft), draft.items.length);
         }
 
         // --- Header IVA Detection ---
@@ -449,7 +469,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             draft.items.forEach(item => {
                 item.totalPrice = calculateItemTotal(item);
             });
-            draft.totalAmount = calculateDraftTotal(draft);
+            // Same declared-total precedence as the initial calculation above.
+            draft.totalAmount = reconcileDraftTotal(ocrGrandTotal, calculateDraftTotal(draft), draft.items.length);
         }
 
         // Set headerHasIva based on whether header implies IVA AND items STILL have uncertainty

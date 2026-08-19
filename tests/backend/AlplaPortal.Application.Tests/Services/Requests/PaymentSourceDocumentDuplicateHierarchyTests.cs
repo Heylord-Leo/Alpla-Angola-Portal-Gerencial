@@ -297,4 +297,30 @@ public class PaymentSourceDocumentDuplicateHierarchyTests
 
         Assert.Equal(BusinessDuplicateVerdict.Allow, decision.Verdict);
     }
+
+    // ── v2.229.10 monetary reconciliation: fingerprint stability under residual allocation ──
+
+    [Fact]
+    public void The_fingerprint_is_stable_across_repeated_residual_reconciliation()
+    {
+        // Two independent reads of the same document produce the same canonical line totals and
+        // the same declared gross → the deterministic residual rule adjusts the same line by the
+        // same amount → identical fingerprints. Duplicate detection must not weaken because a
+        // cent was attributed.
+        var canonical = new[] { 1_000_000.00m, 1_433_527.54m, 1_000_000.00m };
+
+        var firstRead = PaymentRoundingResidual.Allocate(canonical, 3_433_527.55m);
+        var secondRead = PaymentRoundingResidual.Allocate(canonical, 3_433_527.55m);
+
+        string? Fingerprint(System.Collections.Generic.IReadOnlyList<decimal> totals) =>
+            PaymentSourceDocumentFingerprint.Compute(
+                totals.Select((t, i) => new DuplicateFingerprintItem($"Linha {i + 1}", 1m, t, t)));
+
+        Assert.True(firstRead.Applied);
+        Assert.Equal(Fingerprint(firstRead.Totals), Fingerprint(secondRead.Totals));
+
+        // And the adjusted set is genuinely a different content identity from the unreconciled
+        // one — the cent lives in the hash, deterministically, on both sides of any comparison.
+        Assert.NotEqual(Fingerprint(canonical), Fingerprint(firstRead.Totals));
+    }
 }

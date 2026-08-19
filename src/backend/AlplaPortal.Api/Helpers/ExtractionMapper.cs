@@ -27,6 +27,19 @@ public static class ExtractionMapper
                 DueDate = new OcrValueDto<string> { Value = internalResult.Header?.DueDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
                 TotalAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount ?? 0, Status = "recommended" },
+                // v2.229.10 monetary reconciliation: the DECLARED subtotal (provider "totalAmount"
+                // = net after discounts, before tax) travels separately from the grand total, so a
+                // supplier-stated net is never lost to line-derived reconstruction downstream.
+                NetAmount = internalResult.Header?.TotalAmount is decimal declaredNet && declaredNet > 0
+                    ? new OcrValueDto<decimal> { Value = declaredNet, Status = "recommended" }
+                    : null,
+                // Tax is derived (grand − net), only when both are present and the difference is
+                // non-negative — the provider has no explicit document-level tax field.
+                TaxAmount = internalResult.Header?.GrandTotal is decimal declaredGrand
+                            && internalResult.Header?.TotalAmount is decimal declaredSub
+                            && declaredSub > 0 && declaredGrand >= declaredSub
+                    ? new OcrValueDto<decimal> { Value = declaredGrand - declaredSub, Status = "recommended" }
+                    : null,
                 DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },
                 PaymentCondition = !string.IsNullOrWhiteSpace(internalResult.Header?.PaymentConditionType) 
                     ? new OcrValueDto<string> { Value = internalResult.Header.PaymentConditionType, Status = internalResult.Header.PaymentConditionConfidence >= 0.7m ? "recommended" : "suggested" }

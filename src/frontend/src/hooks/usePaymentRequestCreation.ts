@@ -3,6 +3,7 @@ import { ApiError, api } from '../lib/api';
 import {
     CreationPhase,
     TemporaryPaymentDocument,
+    allocateRoundingResidual,
     applyDocumentResult,
     derivePhase,
     pendingDocuments,
@@ -181,6 +182,16 @@ export function usePaymentRequestCreation() {
                 setPhase('SAVING_ITEMS');
 
                 for (const document of withItems) {
+                    // v2.229.10 monetary reconciliation (MODEL 2): what is PERSISTED is the
+                    // reconciled attribution — the document's cent-level rounding residual lands
+                    // on its last eligible line, so Σ(persisted item totals) equals the declared
+                    // document gross exactly. Client state stays canonical; the same pure rule
+                    // recomputes the same allocation on a retry, so a partially-persisted
+                    // document resumes with identical values.
+                    const reconciledTotals = new Map(
+                        allocateRoundingResidual(document.items, document.grossAmount)
+                            .items.map(i => [i.tempId, i.totalAmount]));
+
                     for (const item of document.items.filter(i => !i.persistedId)) {
                         try {
                             const created = await api.requests.createLineItem(requestId, {
@@ -192,7 +203,7 @@ export function usePaymentRequestCreation() {
                                 unitPrice: item.unitPrice,
                                 discountAmount: item.discountAmount,
                                 ivaRateId: item.ivaRateId,
-                                totalAmount: item.totalAmount,
+                                totalAmount: reconciledTotals.get(item.tempId) ?? item.totalAmount,
                                 itemCatalogId: item.itemCatalogId,
                                 // Mandatory for every PAYMENT item, and taken from the document the
                                 // item belongs to — not from the request. In a request holding two

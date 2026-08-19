@@ -49,6 +49,21 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("grandTotal")]
     public OcrValueDto<decimal>? TotalAmount { get; set; }
 
+    /// <summary>
+    /// The document's DECLARED net subtotal (after discounts, before tax), forwarded separately
+    /// (v2.229.10 monetary reconciliation) so the declared value is never lost to line-derived
+    /// reconstruction. Null when the document did not state one.
+    /// </summary>
+    [JsonPropertyName("netAmount")]
+    public OcrValueDto<decimal>? NetAmount { get; set; }
+
+    /// <summary>
+    /// The document's tax amount: grand total − net subtotal, derived only when both are present
+    /// and numerically sane. Null otherwise — never a guess.
+    /// </summary>
+    [JsonPropertyName("taxAmount")]
+    public OcrValueDto<decimal>? TaxAmount { get; set; }
+
     [JsonPropertyName("discountAmount")]
     public OcrValueDto<decimal>? DiscountAmount { get; set; }
 
