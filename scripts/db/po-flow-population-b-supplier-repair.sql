@@ -80,13 +80,20 @@ INSERT INTO @targets VALUES
 BEGIN TRANSACTION;
 BEGIN TRY
     -- ── Idempotency triage across the WHOLE set ──
+    -- Pending = the FULL repairable state (a row whose workflow advanced — e.g. a PO was
+    -- registered — is NOT pending even though its supplier fields still look legacy).
     DECLARE @pending INT =
         (SELECT COUNT(*) FROM @targets t
-         JOIN Requests r        ON r.RequestNumber = t.RequestNumber
-         JOIN RequestPoGroups g ON g.Id = t.ExpectedGroupId AND g.RequestId = r.Id
+         JOIN Requests r         ON r.RequestNumber = t.RequestNumber
+         JOIN RequestStatuses rs ON rs.Id = r.StatusId
+         JOIN RequestPoGroups g  ON g.Id = t.ExpectedGroupId AND g.RequestId = r.Id
          WHERE g.SupplierId IS NULL
            AND g.SupplierNameSnapshot = N'Fornecedor não definido'
-           AND g.SupplierNifSnapshot IS NULL);
+           AND g.SupplierNifSnapshot IS NULL
+           AND r.SupplierId IS NULL
+           AND rs.Code = 'APPROVED'
+           AND g.Status = 'WAITING_PO'
+           AND g.PurchaseOrderNumber IS NULL);
     DECLARE @repaired INT =
         (SELECT COUNT(*) FROM @targets t
          JOIN Requests r        ON r.RequestNumber = t.RequestNumber

@@ -113,12 +113,38 @@ CROSS APPLY (VALUES
 ORDER BY t.RequestNumber, gd.CheckName;
 
 -- ── Final state per request ──
+-- PENDING_REPAIR requires the FULL pending predicate (every guard the repair enforces),
+-- not merely a NULL supplier: a row whose workflow advanced (e.g. PO registered) must
+-- classify MANUAL_REVIEW_REQUIRED even though its supplier fields still look legacy.
 SELECT t.RequestNumber,
        CASE
-         WHEN g.SupplierId IS NULL AND g.SupplierNameSnapshot = N'Fornecedor não definido'
-              AND g.SupplierNifSnapshot IS NULL
+         WHEN EXISTS (
+            SELECT 1
+            FROM Requests r2
+            JOIN RequestStatuses rs2 ON rs2.Id = r2.StatusId
+            JOIN RequestPoGroups g2  ON g2.RequestId = r2.Id
+            JOIN Suppliers s2        ON s2.Id = t.ExpectedSupplierId
+            WHERE r2.RequestNumber = t.RequestNumber
+              AND g2.Id = t.ExpectedGroupId
+              AND (SELECT COUNT(*) FROM RequestPoGroups gg WHERE gg.RequestId = r2.Id) = 1
+              AND g2.SupplierId IS NULL
+              AND g2.SupplierNameSnapshot = N'Fornecedor não definido'
+              AND g2.SupplierNifSnapshot IS NULL
+              AND r2.SupplierId IS NULL
+              AND rs2.Code = 'APPROVED'
+              AND g2.Status = 'WAITING_PO'
+              AND g2.PurchaseOrderNumber IS NULL
+              AND r2.CompanyId = t.ExpectedCompanyId
+              AND s2.TaxId = t.ExpectedSupplierNif
+              AND s2.IsActive = 1
+              AND EXISTS (SELECT 1 FROM RequestAttachments a2
+                          WHERE a2.Id = t.EvidenceAttachmentId AND a2.RequestId = r2.Id
+                            AND a2.AttachmentTypeCode = 'PROFORMA'
+                            AND a2.IsDeleted = 0 AND a2.VoidedAtUtc IS NULL
+                            AND LOWER(a2.FileHash) = LOWER(t.EvidenceFileHash)))
            THEN 'PENDING_REPAIR'
          WHEN g.SupplierId = t.ExpectedSupplierId AND g.SupplierNifSnapshot = t.ExpectedSupplierNif
+              AND g.SupplierNameSnapshot = s.Name
            THEN 'ALREADY_REPAIRED'
          ELSE 'MANUAL_REVIEW_REQUIRED'
        END AS RepairState,
@@ -128,4 +154,5 @@ SELECT t.RequestNumber,
 FROM @targets t
 LEFT JOIN Requests r        ON r.RequestNumber = t.RequestNumber
 LEFT JOIN RequestPoGroups g ON g.Id = t.ExpectedGroupId AND g.RequestId = r.Id
+LEFT JOIN Suppliers s       ON s.Id = t.ExpectedSupplierId
 ORDER BY t.RequestNumber;
