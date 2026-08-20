@@ -34,13 +34,21 @@
 SET XACT_ABORT ON;
 SET NOCOUNT ON;
 
-DECLARE @actor UNIQUEIDENTIFIER;
--- Audit actor: the administrator executing the repair. REPLACE before execution:
--- SET @actor = '<admin user guid>';
-IF @actor IS NULL
+-- ── Environment guard: refuse to run anywhere but the real database or its rehearsal clone ──
+IF DB_NAME() NOT IN ('Portal-Gerencial', 'Portal-Gerencial-Dev-ProdClone')
 BEGIN
-    PRINT 'ABORTED: set @actor to the executing administrator user id first.';
-    RETURN;
+    RAISERROR('ABORTED: connected database is [%s] — this script only runs against [Portal-Gerencial] (real) or [Portal-Gerencial-Dev-ProdClone] (rehearsal).', 16, 1, @@SERVERNAME) WITH NOWAIT;
+    SET NOEXEC ON;   -- hard stop: nothing below executes
+END
+PRINT CONCAT('Connected: server=', @@SERVERNAME, ' database=', DB_NAME(), ' login=', SYSTEM_USER);
+
+-- Audit actor: the administrator executing the repair, passed as a sqlcmd variable:
+--   sqlcmd ... -i po-flow-a1-supplier-repair.sql -v actor="<admin user guid>"
+DECLARE @actor UNIQUEIDENTIFIER = TRY_CAST('$(actor)' AS UNIQUEIDENTIFIER);
+IF @actor IS NULL OR NOT EXISTS (SELECT 1 FROM Users WHERE Id = @actor)
+BEGIN
+    PRINT 'ABORTED: pass a valid administrator user id via  -v actor="<guid>"  (must exist in Users).';
+    SET NOEXEC ON;
 END
 
 -- ────────────────────────────── REQ-09/07/2026-031 ──────────────────────────────
