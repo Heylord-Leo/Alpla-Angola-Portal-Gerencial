@@ -18,12 +18,17 @@ SET XACT_ABORT ON;
 SET NOCOUNT ON;
 
 DECLARE @connectedDb SYSNAME = DB_NAME();
-IF @connectedDb NOT IN ('Portal-Gerencial', 'Portal-Gerencial-Dev-ProdClone')
+IF @connectedDb NOT IN ('Portal-Gerencial-Test', 'Portal-Gerencial')
 BEGIN
-    RAISERROR('ABORTED: connected database is [%s] on server [%s] — allowed: [Portal-Gerencial] (real) or [Portal-Gerencial-Dev-ProdClone] (rehearsal).', 16, 1, @connectedDb, @@SERVERNAME) WITH NOWAIT;
+    RAISERROR('ABORTED: connected database is [%s] on server [%s] — the ONLY accepted Portal databases are [Portal-Gerencial-Test] (TEST rehearsal) and [Portal-Gerencial] (PROD). No bypass exists.', 16, 1, @connectedDb, @@SERVERNAME) WITH NOWAIT;
     SET NOEXEC ON;
 END
-PRINT CONCAT('Connected: server=', @@SERVERNAME, ' database=', DB_NAME(), ' login=', SYSTEM_USER);
+PRINT CONCAT('Connected: server=', @@SERVERNAME,
+             ' | database=', DB_NAME(),
+             ' | original_login=', ORIGINAL_LOGIN(),
+             ' | context=', CASE DB_NAME() WHEN 'Portal-Gerencial' THEN 'PROD'
+                                           WHEN 'Portal-Gerencial-Test' THEN 'TEST'
+                                           ELSE 'DISALLOWED' END);
 
 DECLARE @actor UNIQUEIDENTIFIER = TRY_CAST('$(actor)' AS UNIQUEIDENTIFIER);
 IF @actor IS NULL OR NOT EXISTS (SELECT 1 FROM Users WHERE Id = @actor)

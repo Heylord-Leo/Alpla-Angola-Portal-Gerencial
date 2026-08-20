@@ -11,8 +11,19 @@ SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 SET NOCOUNT ON;
 
--- ── Context (must show the intended server and database) ──
-SELECT @@SERVERNAME AS ServerIdentity, DB_NAME() AS DatabaseName, SYSTEM_USER AS LoginContext;
+-- ── Environment guard: identical to the repair/rollback scripts ──
+DECLARE @connectedDb SYSNAME = DB_NAME();
+IF @connectedDb NOT IN ('Portal-Gerencial-Test', 'Portal-Gerencial')
+BEGIN
+    RAISERROR('ABORTED: connected database is [%s] on server [%s] — the ONLY accepted Portal databases are [Portal-Gerencial-Test] (TEST rehearsal) and [Portal-Gerencial] (PROD). No bypass exists.', 16, 1, @connectedDb, @@SERVERNAME) WITH NOWAIT;
+    SET NOEXEC ON;
+END
+
+-- ── Context (must show the intended server, database, login and TEST/PROD label) ──
+SELECT @@SERVERNAME AS ServerIdentity, DB_NAME() AS DatabaseName, ORIGINAL_LOGIN() AS OriginalLogin,
+       CASE DB_NAME() WHEN 'Portal-Gerencial' THEN 'PROD'
+                      WHEN 'Portal-Gerencial-Test' THEN 'TEST'
+                      ELSE 'DISALLOWED' END AS ExecutionContext;
 
 -- ── Target rows as they exist right now ──
 SELECT r.RequestNumber, r.Id AS RequestId, rs.Code AS RequestStatus, g.Id AS GroupId,
@@ -30,7 +41,7 @@ SELECT 'REQ-098' AS Target, CheckName,
        CASE WHEN Passed = 1 THEN 'PASS' ELSE 'FAIL' END AS CheckResult
 FROM (VALUES
   ('database_is_allowed',
-    CASE WHEN DB_NAME() IN ('Portal-Gerencial','Portal-Gerencial-Dev-ProdClone') THEN 1 ELSE 0 END),
+    CASE WHEN DB_NAME() IN ('Portal-Gerencial-Test','Portal-Gerencial') THEN 1 ELSE 0 END),
   ('exactly_one_group_with_old_value',
     (SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM RequestPoGroups g JOIN Requests r ON r.Id=g.RequestId
      WHERE r.RequestNumber='REQ-20/07/2026-098' AND g.PurchaseOrderNumber='5002736705')),

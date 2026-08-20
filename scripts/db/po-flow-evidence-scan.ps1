@@ -114,7 +114,11 @@ foreach ($key in $groups.Keys) {
     $warnings = @()
 
     # ── Download ONE representative binary; SHA-256 both dedups and verifies vs DB hash ──
-    $pdf = Join-Path $OutDir "$($first.AttachmentId).bin"
+    # Preserve the original attachment extension — the extraction pipeline rejects/derates
+    # extensionless uploads (.bin), which caused false-INCONCLUSIVE scans. Fallback: .pdf.
+    $extension = [System.IO.Path]::GetExtension($first.FileName)
+    if ([string]::IsNullOrWhiteSpace($extension)) { $extension = '.pdf' }
+    $pdf = Join-Path $OutDir "$($first.AttachmentId)$extension"
     $downloadOk = $false; $sha = ''
     foreach ($m in $members) {   # fall through the copies if one download fails
         try {
