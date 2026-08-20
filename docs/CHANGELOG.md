@@ -4,7 +4,59 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.11
+v2.229.12
+
+## [v2.229.12] - 2026-08-20
+
+### Primavera P.O Identification Hardening
+
+Two blocking defects in the Purchase Order flow motivated this release: approved PAYMENT
+requests reaching the Buyer as "REGISTRAR P.O (FORNECEDOR NÃO DEFINIDO)" dead-ends
+(REQ-31/07/2026-193), and Primavera P.O extraction confusing a supplier fiscal number with the
+P.O number (NIF 5001713205 stored as a P.O). No DB migration; no historical data modified.
+
+#### Added — Primavera P.O identification
+
+- **Deterministic family detection** for the three official Primavera purchase-order layouts:
+  ECF (material de stock), ECF10 (material diverso/escritório), ECF11 (serviços), recognized
+  across formatting variants (`ECF11 2026/421`, `ECF11 2026-421`, title-prefixed forms).
+- **Canonical identity** per reference: `ECF-YYYY-N` / `ECF10-YYYY-N` / `ECF11-YYYY-N`
+  (computed, never stored — no schema change).
+- The Buyer modal **no longer takes the P.O number blindly from generic OCR `documentNumber`**:
+  a positively parsed Primavera reference auto-fills and is displayed with its family
+  ("P.O Primavera detectada"); otherwise only letter-bearing non-NIF values are eligible, and
+  bare numerics never auto-fill.
+- **NIF values can never become P.O numbers** — neither by extraction auto-fill nor by manual
+  entry: supplier and ALPLA legal-entity fiscal numbers (and any 10-digit NIF-shaped value) are
+  rejected with an actionable message; a real Primavera reference never trips this backstop.
+- Extraction surfaces `purchaseOrderReference` / canonical / family from the positive parse for
+  recognized Primavera PDFs (server-side, mirrored by the frontend parser).
+
+#### Changed — P.O duplicate detection
+
+- Primavera duplicates compare by **canonical identity scoped to the legal entity/company**:
+  same canonical in the same company keeps the existing justified, audited override; the same
+  canonical in the other legal entity is **informational only** (Plástico and SOPRO run
+  independent Primavera sequences) and never blocks or demands justification.
+- Non-Primavera references (FT/FP/FA/PP/FTC-style) keep the existing conservative global
+  fallback under loose normalization; a family is never invented for family-less values
+  (e.g. `2026/107` never matches `ECF 2026/107`).
+
+#### Fixed — supplier integrity
+
+- PAYMENT final approval now **refuses** requests with no structured supplier anywhere (header
+  or source documents), before any mutation — the flow can no longer silently create a
+  WAITING_PO group with undefined supplier.
+- Registering a P.O against a supplier-less legacy group is refused, and the Buyer now sees an
+  **actionable integrity panel** explaining the legacy data problem instead of the dead-end
+  "Fornecedor não definido" registration button.
+
+#### Added — historical integrity tooling (read-only)
+
+- Read-only dry-run reports under `scripts/db/`: supplier-less legacy PO groups
+  (deterministic-vs-manual classification) and suspicious historical P.O numbers (NIF-as-PO,
+  family-less and bare-numeric shapes). **The release itself modifies no historical data**;
+  historical corrections require explicit authorization and source-document evidence.
 
 ## [v2.229.11] - 2026-08-20
 

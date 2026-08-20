@@ -2,7 +2,27 @@
 
 ## Current Version
 
-v2.229.11
+v2.229.12
+
+## [v2.229.12] - 2026-08-20
+
+### Primavera P.O Identification Hardening
+
+- Deterministic identification of the three Primavera purchase-order families — ECF (material de
+  stock), ECF10 (material diverso/escritório), ECF11 (serviços) — with a canonical identity
+  (`ECF-YYYY-N` / `ECF10-YYYY-N` / `ECF11-YYYY-N`). The Buyer P.O field is no longer auto-filled
+  blindly from the generic OCR `documentNumber`: a positively parsed Primavera reference wins,
+  supplier/company NIF values can never be auto-used (or manually accepted) as P.O numbers, and
+  recognized Primavera PDFs show the detected family/reference for review before registration.
+- Primavera P.O duplicates are compared by canonical identity scoped to the legal entity: same
+  canonical + same company keeps the existing justified override; same canonical in the other
+  company is informational only (independent sequences). Non-Primavera references keep the
+  conservative global fallback.
+- PAYMENT final approval refuses requests with no structured supplier anywhere (prevents new
+  "Fornecedor não definido" WAITING_PO dead-ends); unresolved legacy groups show an actionable
+  integrity panel instead of a dead-end registration button. Read-only dry-run tooling added for
+  supplier-less legacy groups and suspicious historical P.O numbers — the release itself modifies
+  no historical data; corrections require explicit authorization and document evidence.
 
 ## [v2.229.11] - 2026-08-20
 
