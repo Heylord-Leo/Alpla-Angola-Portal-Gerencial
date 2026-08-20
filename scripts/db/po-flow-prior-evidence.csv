@@ -1,0 +1,9 @@
+Scope,RequestNumber,DetectedFamily,DetectedPoDisplay,DetectedPoCanonical,RecommendedSupplierId,Status,Note
+SUSPICIOUS_PO,REQ-20/07/2026-101,ECF11,ECF11 2026/386,ECF11-2026-386,,CONFIRMED,Server attachment SHA-256 matched DB FileHash and positively parsed (2026-08-20 reviewed run); stored wrong value 5001713205 = Gasp NIF
+SUSPICIOUS_PO,REQ-20/07/2026-098,ECF10,ECF10 2026/230,ECF10-2026-230,,POSITIVE_PO_PARSE,One of three extraction runs positive (VM Santos SupplierId 261); needs consensus before repair authorization
+POPULATION_B,REQ-03/08/2026-208,,,,34,NIF_EXACT,TDA — NIF-exact evidence from 2026-08-20 reviewed full scan
+POPULATION_B,REQ-05/08/2026-215,,,,34,NIF_EXACT,TDA — NIF-exact evidence from 2026-08-20 reviewed full scan
+POPULATION_B,REQ-06/08/2026-222,,,,34,NIF_EXACT,TDA — NIF-exact evidence from 2026-08-20 reviewed full scan
+POPULATION_B,REQ-12/08/2026-237,,,,257,NIF_EXACT,Embrace Angola — NIF-exact evidence from 2026-08-20 reviewed full scan
+POPULATION_B,REQ-12/08/2026-238,,,,257,NIF_EXACT,Embrace Angola — NIF-exact evidence from 2026-08-20 reviewed full scan
+POPULATION_B,REQ-12/08/2026-241,,,,257,NIF_EXACT,Embrace Angola — NIF-exact evidence from 2026-08-20 reviewed full scan
