@@ -35,9 +35,10 @@ SET XACT_ABORT ON;
 SET NOCOUNT ON;
 
 -- ── Environment guard: refuse to run anywhere but the real database or its rehearsal clone ──
-IF DB_NAME() NOT IN ('Portal-Gerencial', 'Portal-Gerencial-Dev-ProdClone')
+DECLARE @connectedDb SYSNAME = DB_NAME();
+IF @connectedDb NOT IN ('Portal-Gerencial', 'Portal-Gerencial-Dev-ProdClone')
 BEGIN
-    RAISERROR('ABORTED: connected database is [%s] — this script only runs against [Portal-Gerencial] (real) or [Portal-Gerencial-Dev-ProdClone] (rehearsal).', 16, 1, @@SERVERNAME) WITH NOWAIT;
+    RAISERROR('ABORTED: connected database is [%s] on server [%s] — this script only runs against [Portal-Gerencial] (real) or [Portal-Gerencial-Dev-ProdClone] (rehearsal).', 16, 1, @connectedDb, @@SERVERNAME) WITH NOWAIT;
     SET NOEXEC ON;   -- hard stop: nothing below executes
 END
 PRINT CONCAT('Connected: server=', @@SERVERNAME, ' database=', DB_NAME(), ' login=', SYSTEM_USER);
