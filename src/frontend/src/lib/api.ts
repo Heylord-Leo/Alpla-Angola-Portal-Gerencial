@@ -1289,6 +1289,41 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao limpar notificações lidas.');
         }
     },
+    paymentSourceDocuments: {
+        /**
+         * Review-time candidate matching (v2.229.10 L4 flow). Advisory only — the persistence
+         * guard re-runs the same rule engine and remains authoritative. Candidates on requests
+         * outside the user's scope come back with the signal but no identifying metadata.
+         */
+        matchCandidates: async (payload: {
+            excludeRequestId?: string | null;
+            excludeDocumentId?: string | null;
+            companyId?: number | null;
+            supplierId?: number | null;
+            supplierName?: string | null;
+            supplierTaxId?: string | null;
+            documentNumber?: string | null;
+            documentSeries?: string | null;
+            documentDate?: string | null;
+            currency?: string | null;
+            grossAmount?: number | null;
+            /** Source-document (OCR) evidence when it diverges from the accepted draft values —
+             *  matching is about what the PAPER says; the draft values stay untouched. */
+            ocrSupplierTaxId?: string | null;
+            ocrDocumentNumber?: string | null;
+            ocrDocumentDate?: string | null;
+            ocrCurrency?: string | null;
+            ocrGrossAmount?: number | null;
+        }): Promise<import('./paymentRequestCreation').SourceDocumentCandidatesResult> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/payment-source-documents/match-candidates`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao verificar documentos semelhantes.');
+            return response.json();
+        }
+    },
     attachments: {
         checkDuplicate: async (hash: string): Promise<{
             isDuplicate: boolean;

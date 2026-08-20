@@ -42,6 +42,8 @@ export interface OcrHeaderSuggestions {
     supplierName?: OcrValue<string> | null;
     supplierTaxId?: OcrValue<string> | null;
     billedCompany?: OcrValue<string> | null;
+    /** The CUSTOMER's fiscal number, kept distinct from the supplier's. */
+    billedCompanyTaxId?: OcrValue<string> | null;
     documentNumber?: OcrValue<string> | null;
     date?: OcrValue<string> | null;
     documentDate?: OcrValue<string> | null;

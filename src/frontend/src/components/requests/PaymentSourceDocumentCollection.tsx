@@ -116,7 +116,7 @@ export function PaymentSourceDocumentCollection({
      * justified confirmation — never by asking the user to falsify the supplier's real reference.
      */
     const [duplicateOverride, setDuplicateOverride] =
-        useState<{ documentId: string; detail: string } | null>(null);
+        useState<{ documentId: string; detail: string; classification: string | null } | null>(null);
     const [showIssues, setShowIssues] = useState(false);
 
     /** Guards the Add button against a double click creating two documents. */
@@ -256,7 +256,8 @@ export function PaymentSourceDocumentCollection({
                 if (code === 'DUPLICATE_AMBIGUOUS') {
                     setDuplicateOverride({
                         documentId: document.id,
-                        detail: (result as any).detail ?? 'Outro documento partilha esta referência.'
+                        detail: (result as any).detail ?? 'Outro documento partilha esta referência.',
+                        classification: (result as any).classification ?? null
                     });
                     patchUi(document.id, { isSaving: false });
                     return;
@@ -722,6 +723,7 @@ export function PaymentSourceDocumentCollection({
             {duplicateOverride && (
                 <DuplicateOverrideDialog
                     detail={duplicateOverride.detail}
+                    classification={duplicateOverride.classification}
                     onCancel={() => setDuplicateOverride(null)}
                     onConfirm={reason => {
                         const target = documents.find(d => d.id === duplicateOverride.documentId);

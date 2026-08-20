@@ -136,13 +136,14 @@ export function RequestCreate() {
      */
     const [duplicateOverridePrompt, setDuplicateOverridePrompt] = useState<{
         detail: string;
+        classification: string | null;
         resolve: (reason: string | null) => void;
     } | null>(null);
 
     const resolveAmbiguousDuplicate = useCallback(
-        (_document: TemporaryPaymentDocument, detail: string) =>
+        (_document: TemporaryPaymentDocument, detail: string, classification?: string | null) =>
             new Promise<string | null>(resolve => {
-                setDuplicateOverridePrompt({ detail, resolve });
+                setDuplicateOverridePrompt({ detail, classification: classification ?? null, resolve });
             }),
         []);
 
@@ -2447,6 +2448,9 @@ export function RequestCreate() {
                                     discrepanciesFor={documentOcr.discrepanciesFor}
                                     onRunOcr={runDocumentOcr}
                                     onResetOcr={documentOcr.forget}
+                                    selectedCompanyTaxId={formData.companyId
+                                        ? (companies.find(c => c.id === Number(formData.companyId))?.taxId ?? null)
+                                        : null}
                                 />
 
                                 {creation.phase !== 'NOT_STARTED' && (
@@ -2843,6 +2847,7 @@ export function RequestCreate() {
             {duplicateOverridePrompt && (
                 <DuplicateOverrideDialog
                     detail={duplicateOverridePrompt.detail}
+                    classification={duplicateOverridePrompt.classification}
                     onConfirm={reason => {
                         duplicateOverridePrompt.resolve(reason);
                         setDuplicateOverridePrompt(null);

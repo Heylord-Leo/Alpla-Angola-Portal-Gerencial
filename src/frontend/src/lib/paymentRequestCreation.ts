@@ -128,6 +128,18 @@ export interface TemporaryPaymentDocument {
      */
     supplierInternalCompany: { id: number; name: string } | null;
 
+    /**
+     * A PROBABLE existing supplier the backend matcher found when the document's supplier could
+     * not be resolved exactly (typically: same name, different NIF — a misread or changed fiscal
+     * number). Surfaced so the user can review and USE the existing supplier instead of being
+     * steered into creating a twin. Never auto-applied, never overwrites master data.
+     */
+    probableSupplier: { id: number; name: string; taxId: string | null } | null;
+
+    /** The customer/billed-company NIF read off the document. Display-only evidence — compared
+     *  against the selected company's registered NIF at review time, never persisted. */
+    billedCompanyTaxId: string | null;
+
     plantId: number | null;
 
     sourceDocumentType: string | null;
@@ -364,6 +376,8 @@ export function createTemporaryDocument(
         supplierTaxIdSnapshot: null,
         supplierExtraction: null,
         supplierInternalCompany: null,
+        probableSupplier: null,
+        billedCompanyTaxId: null,
         plantId: null,
         sourceDocumentType: null,
         documentNumber: null,
@@ -527,6 +541,51 @@ export function temporaryEstablishedCurrency(documents: TemporaryPaymentDocument
     return documents.find(d => !!d.currency)?.currency ?? null;
 }
 
+// ── Review-time candidate matching (v2.229.10 L4 flow) ──────────────────────────────────────
+
+/** One existing commercial document the backend considers a candidate match. */
+export interface SourceDocumentCandidate {
+    /** RELATED_DOCUMENT | AMBIGUOUS_MATCH | STRONG_BUSINESS_DUPLICATE | SEMANTIC_DUPLICATE */
+    classification: string;
+    /** ALLOW | AMBIGUOUS | BLOCK — what persistence would decide. */
+    verdict: string;
+    reason?: string | null;
+    matchingFields: string[];
+    conflictingFields: string[];
+    requestVisible: boolean;
+    requestId?: string | null;
+    requestNumber?: string | null;
+    documentId?: string | null;
+    sequenceNumber?: number | null;
+    existing?: {
+        supplierName?: string | null;
+        supplierTaxId?: string | null;
+        documentNumber?: string | null;
+        documentDate?: string | null;
+        currency?: string | null;
+        grossAmount?: number | null;
+    } | null;
+}
+
+export interface SourceDocumentCandidatesResult {
+    normalizedDocumentNumber?: string | null;
+    topClassification?: string | null;
+    candidates: SourceDocumentCandidate[];
+}
+
+/** Portuguese labels for the stable field codes the backend reports. */
+export const CANDIDATE_FIELD_LABELS: Record<string, string> = {
+    DOCUMENT_NUMBER: 'Nº do documento',
+    SUPPLIER: 'Fornecedor',
+    SUPPLIER_NAME: 'Nome do fornecedor',
+    SUPPLIER_NIF: 'NIF do fornecedor',
+    DOCUMENT_DATE: 'Data do documento',
+    CURRENCY: 'Moeda',
+    GROSS_AMOUNT: 'Total',
+    COMPANY: 'Empresa',
+    CONTENT: 'Conteúdo (itens)'
+};
+
 // ── Adapter: one card component for both stages ─────────────────────────────────────────────
 
 /**
@@ -656,6 +715,10 @@ export interface ExtractedDocumentFields {
     supplierExtraction: SupplierExtractionSnapshot | null;
     /** The ALPLA legal entity the reading resolved to, as decided by the SERVER's match. */
     internalCompany: { id: number; name: string } | null;
+    /** Probable existing supplier (backend DuplicateSuspected candidate). Never auto-applied. */
+    probableSupplier: { id: number; name: string; taxId: string | null } | null;
+    /** Customer/billed-company NIF read off the document. Display-only evidence. */
+    billedCompanyTaxId: string | null;
 }
 
 /**
@@ -742,6 +805,20 @@ export function fromOcrDraft(
                 name: draft.supplierMatch.internalCompany.name
             }
             : null,
+        // The matcher's DuplicateSuspected candidates used to be silently discarded here — which
+        // is exactly how "CONSULTIT with a misread NIF" became "criar fornecedor". The first
+        // candidate is carried as a PROBABLE supplier for the user to review; nothing is selected
+        // or created automatically.
+        probableSupplier: draft.supplierMatch?.status === 'DuplicateSuspected' &&
+                          Array.isArray(draft.supplierMatch?.candidates) &&
+                          draft.supplierMatch.candidates.length > 0
+            ? {
+                id: draft.supplierMatch.candidates[0].id,
+                name: draft.supplierMatch.candidates[0].name,
+                taxId: draft.supplierMatch.candidates[0].taxId ?? null
+            }
+            : null,
+        billedCompanyTaxId: text(header?.billedCompanyTaxId?.value) ?? null,
         // Only what the document actually carried — an absent field stays null and the registration
         // form shows it empty rather than inventing a value.
         supplierExtraction: {
@@ -798,6 +875,8 @@ export function extractDocumentFields(
         // This path never consulted the supplier matcher, so it has nothing to report. The server
         // still refuses an internal supplier at persistence and at submission.
         internalCompany: null,
+        probableSupplier: null,
+        billedCompanyTaxId: text(h.billedCompanyTaxId) ?? null,
         supplierName: text(h.supplierName),
         supplierTaxId: text(h.supplierTaxId),
         documentNumber: text(h.documentNumber),
@@ -881,6 +960,8 @@ export function mergeExtraction(
             // Always replaces: it describes the FILE that was just read, not anything the user
             // typed, and a stale verdict from a previous file must not survive a re-read.
             supplierInternalCompany: extracted.internalCompany,
+            probableSupplier: extracted.probableSupplier,
+            billedCompanyTaxId: extracted.billedCompanyTaxId,
             documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),
             documentDate: take(document.documentDate, extracted.documentDate, 'documentDate', 'Data do documento'),
             dueDate: document.dueDate ?? extracted.dueDate,

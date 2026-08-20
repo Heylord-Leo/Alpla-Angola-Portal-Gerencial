@@ -88,7 +88,7 @@ export function usePaymentRequestCreation() {
          * leave the document failed with the backend's explanation.
          */
         onAmbiguousDuplicate?: (
-            document: TemporaryPaymentDocument, detail: string
+            document: TemporaryPaymentDocument, detail: string, classification?: string | null
         ) => Promise<string | null>
     ): Promise<CreationRunResult> => {
         if (isRunningRef.current) {
@@ -145,7 +145,8 @@ export function usePaymentRequestCreation() {
                     // backend's explanation on the document.
                     let resolved = false;
                     if (e instanceof ApiError && e.errorCode === 'DUPLICATE_AMBIGUOUS' && onAmbiguousDuplicate) {
-                        const reason = await onAmbiguousDuplicate(document, e.message);
+                        const reason = await onAmbiguousDuplicate(
+                            document, e.message, (e.details?.classification as string) ?? null);
                         if (reason) {
                             try {
                                 const persisted: PaymentSourceDocumentDto =

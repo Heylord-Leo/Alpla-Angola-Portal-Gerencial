@@ -9,6 +9,8 @@ export const DUPLICATE_OVERRIDE_REASON_MIN_LENGTH = 20;
 interface Props {
     /** The backend's explanation of which document shares the reference and why it cannot decide. */
     detail: string;
+    /** Backend classification (e.g. STRONG_BUSINESS_DUPLICATE) — drives the severity wording. */
+    classification?: string | null;
     onConfirm: (reason: string) => void;
     onCancel: () => void;
 }
@@ -22,17 +24,22 @@ interface Props {
  * asked to falsify the supplier's real reference to get past validation — this dialog is the
  * legitimate path through.</p>
  */
-export function DuplicateOverrideDialog({ detail, onConfirm, onCancel }: Props) {
+export function DuplicateOverrideDialog({ detail, classification = null, onConfirm, onCancel }: Props) {
     const [reason, setReason] = useState('');
     const written = reason.trim().length;
     const missing = DUPLICATE_OVERRIDE_REASON_MIN_LENGTH - written;
     const canConfirm = missing <= 0;
+    const strong = classification === 'STRONG_BUSINESS_DUPLICATE';
 
     return (
-        <ModalWrapper title="Possível documento duplicado" onClose={onCancel} width={480}>
+        <ModalWrapper
+            title={strong ? 'Provável documento duplicado' : 'Possível documento duplicado'}
+            onClose={onCancel}
+            width={480}
+        >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <div style={{ color: '#ea580c', flexShrink: 0, marginTop: '2px' }}>
+                    <div style={{ color: strong ? '#dc2626' : '#ea580c', flexShrink: 0, marginTop: '2px' }}>
                         <AlertTriangle size={20} />
                     </div>
                     <p style={{
@@ -44,9 +51,14 @@ export function DuplicateOverrideDialog({ detail, onConfirm, onCancel }: Props) 
                 </div>
 
                 <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                    Fornecedores podem reutilizar a mesma referência em propostas diferentes. Se tem a
-                    certeza de que este é um documento distinto, explique porquê — a confirmação fica
-                    registada no histórico do pedido.
+                    {strong
+                        ? 'Fornecedor, referência, data, moeda e total coincidem com um documento já ' +
+                          'registado — um PDF diferente não torna o documento novo. Prossiga apenas em ' +
+                          'casos excecionais legítimos (reemissão, cópia digitalizada, exportação ' +
+                          'corrigida) e explique porquê — a confirmação fica registada no histórico.'
+                        : 'Fornecedores podem reutilizar a mesma referência em propostas diferentes. Se tem a ' +
+                          'certeza de que este é um documento distinto, explique porquê — a confirmação fica ' +
+                          'registada no histórico do pedido.'}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

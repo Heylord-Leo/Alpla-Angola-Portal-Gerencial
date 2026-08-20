@@ -1,5 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Plus } from 'lucide-react';
+import { api } from '../../lib/api';
+import { formatCurrencyAO } from '../../lib/utils';
 import { PaymentSourceDocumentCard } from './PaymentSourceDocumentCard';
 import { PaymentDocumentSummaryCard } from './PaymentDocumentSummaryCard';
 import { PaymentDocumentsSummary } from './PaymentDocumentsSummary';
@@ -18,7 +20,9 @@ import { ClassificationConflictState, EMPTY_CONFLICT } from '../../lib/documentC
 import { PaymentDocumentOcrState } from '../../types/paymentSourceDocument';
 import { IvaRate, Unit } from '../../types';
 import {
+    CANDIDATE_FIELD_LABELS,
     ExtractionDiscrepancy,
+    SourceDocumentCandidatesResult,
     TemporaryPaymentDocument,
     TemporaryPaymentItem,
     asCardDocument,
@@ -59,6 +63,9 @@ interface Props {
     onRunOcr: (document: TemporaryPaymentDocument) => Promise<void>;
     onResetOcr: (tempId: string) => void;
 
+    /** The selected company's registered NIF, for the customer-NIF discrepancy notice. */
+    selectedCompanyTaxId?: string | null;
+
     disabled?: boolean;
 }
 
@@ -89,6 +96,7 @@ export function PaymentDocumentComposer({
     discrepanciesFor,
     onRunOcr,
     onResetOcr,
+    selectedCompanyTaxId = null,
     disabled = false
 }: Props) {
     const [chooserOpen, setChooserOpen] = useState(false);
@@ -108,6 +116,15 @@ export function PaymentDocumentComposer({
         useState<{ tempId: string; prefill: SupplierPrefill } | null>(null);
     const isAddingRef = useRef(false);
 
+    /**
+     * Review-time candidate matching (v2.229.10 L4 flow), per document. Advisory: the same rule
+     * engine runs authoritatively at persistence — this exists so the user learns about a probable
+     * duplicate while reviewing, not after the whole OCR-and-review effort.
+     */
+    const [candidateResults, setCandidateResults] =
+        useState<Record<string, SourceDocumentCandidatesResult | null>>({});
+    const candidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const active = documents.find(d => d.tempId === activeTempId) ?? null;
     const others = documents.filter(d => d.tempId !== activeTempId);
     const activeOcr = active ? ocrStateFor(active.tempId) : { isProcessing: false, error: null, classification: null };
@@ -118,6 +135,71 @@ export function PaymentDocumentComposer({
     // Focus the review area once, when the reading lands. Once, because a document that finishes
     // reading while the user has moved on must not pull the caret out of the field they are in.
     useFocusOnce(active && active.entryMode === 'REVIEW' ? active.tempId : null, true);
+
+    // Candidate preflight: re-asked (debounced) whenever the identity-relevant fields of the
+    // active document settle. Failures are silent — this is a courtesy; persistence re-checks.
+    //
+    // Two value sets travel together and must never collapse: the ACCEPTED draft values (what the
+    // user kept — "manteve X") and the SOURCE evidence (what the document says — "o documento
+    // indica Y", held in the extraction-discrepancy state). Matching is about the PAPER, so the
+    // evidence is sent alongside and wins server-side; nothing here rewrites the draft.
+    const activeForCandidates = active && active.entryMode !== 'PENDING_OCR' ? active : null;
+    const activeDiscrepancies = activeForCandidates ? discrepanciesFor(activeForCandidates.tempId) : [];
+    const sourceEvidence = (field: string): string | null =>
+        activeDiscrepancies.find(d => d.field === field)?.extractedValue ?? null;
+    const sourceNumber = (field: string): number | null => {
+        const raw = sourceEvidence(field);
+        if (raw == null) return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+    };
+
+    const candidateKey = activeForCandidates ? [
+        activeForCandidates.tempId,
+        activeForCandidates.documentNumber ?? '',
+        activeForCandidates.documentSeries ?? '',
+        activeForCandidates.supplierId ?? '',
+        activeForCandidates.supplierNameSnapshot ?? '',
+        activeForCandidates.supplierTaxIdSnapshot ?? '',
+        activeForCandidates.documentDate ?? '',
+        activeForCandidates.currency ?? '',
+        activeForCandidates.grossAmount ?? '',
+        activeDiscrepancies.map(d => `${d.field}=${d.extractedValue}`).join(',')
+    ].join('|') : null;
+
+    useEffect(() => {
+        if (candidateTimerRef.current) clearTimeout(candidateTimerRef.current);
+        if (!activeForCandidates || !activeForCandidates.documentNumber?.trim()) return;
+
+        const doc = activeForCandidates;
+        candidateTimerRef.current = setTimeout(async () => {
+            try {
+                const result = await api.paymentSourceDocuments.matchCandidates({
+                    companyId: null,
+                    supplierId: doc.supplierId,
+                    supplierName: doc.supplierNameSnapshot,
+                    supplierTaxId: doc.supplierTaxIdSnapshot,
+                    documentNumber: doc.documentNumber,
+                    documentSeries: doc.documentSeries,
+                    documentDate: doc.documentDate,
+                    currency: doc.currency,
+                    grossAmount: doc.grossAmount,
+                    ocrDocumentNumber: sourceEvidence('documentNumber'),
+                    ocrDocumentDate: sourceEvidence('documentDate'),
+                    ocrCurrency: sourceEvidence('currency'),
+                    ocrGrossAmount: sourceNumber('grossAmount')
+                });
+                setCandidateResults(prev => ({ ...prev, [doc.tempId]: result }));
+            } catch {
+                // Advisory only. The persistence guard remains the enforcement.
+            }
+        }, 600);
+
+        return () => {
+            if (candidateTimerRef.current) clearTimeout(candidateTimerRef.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [candidateKey]);
     const lockedCurrency = useMemo(() => temporaryEstablishedCurrency(documents), [documents]);
     const totals = useMemo(() => confirmedTotals(documents), [documents]);
 
@@ -550,6 +632,172 @@ export function PaymentDocumentComposer({
                             </ul>
                         </div>
                     )}
+
+                    {/* A probable EXISTING supplier the matcher found (same name, different NIF).
+                        Reviewed, never auto-applied — and "Criar fornecedor" stays available for
+                        the genuinely-new case. */}
+                    {active.probableSupplier && !active.supplierId && (
+                        <div style={{
+                            padding: '10px 12px', borderRadius: '6px', fontSize: '0.78rem',
+                            border: '1px solid #fcd34d', backgroundColor: 'rgba(180,83,9,0.06)',
+                            color: 'var(--color-text-main)',
+                            display: 'flex', flexDirection: 'column', gap: '8px'
+                        }}>
+                            <strong style={{ color: '#b45309' }}>
+                                Possível fornecedor existente
+                            </strong>
+                            <span>
+                                <strong>{active.probableSupplier.name}</strong> já existe no Portal,
+                                mas o NIF lido no documento difere do NIF registado.
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                Documento: <strong>{active.supplierTaxIdSnapshot ?? 'NIF não lido pelo OCR'}</strong>
+                                {' '}· Fornecedor registado: <strong>{active.probableSupplier.taxId ?? '—'}</strong>
+                            </span>
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => patch(active.tempId, {
+                                        supplierId: active.probableSupplier!.id,
+                                        supplierNameSnapshot: active.probableSupplier!.name
+                                        // The documentary NIF snapshot stays as read — it is
+                                        // evidence about the document, not master data.
+                                    })}
+                                    style={{
+                                        padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
+                                        border: '1px solid var(--color-primary)', backgroundColor: 'transparent',
+                                        color: 'var(--color-primary)', fontWeight: 800, fontSize: '0.75rem'
+                                    }}
+                                >
+                                    Usar fornecedor existente
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Customer-NIF discrepancy: display-only evidence (nothing is persisted). */}
+                    {(() => {
+                        const norm = (v?: string | null) =>
+                            (v ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+                        return selectedCompanyTaxId && active.billedCompanyTaxId &&
+                            norm(selectedCompanyTaxId) !== norm(active.billedCompanyTaxId) ? (
+                            <p style={{
+                                margin: 0, padding: '8px 10px', borderRadius: '6px', fontSize: '0.75rem',
+                                fontWeight: 600, color: '#b45309',
+                                border: '1px solid #fcd34d', backgroundColor: 'rgba(180,83,9,0.06)'
+                            }}>
+                                O NIF do cliente lido no documento
+                                ({active.billedCompanyTaxId}) não corresponde ao NIF da empresa
+                                selecionada ({selectedCompanyTaxId}). Verifique se o documento
+                                pertence a esta empresa.
+                            </p>
+                        ) : null;
+                    })()}
+
+                    {/* Candidate matching (L4 flow): why the Portal thinks this document may
+                        already exist — or is merely related. Conflicting fields highlighted. */}
+                    {(() => {
+                        const result = candidateResults[active.tempId];
+                        const top = result?.candidates?.[0];
+                        if (!top) return null;
+
+                        const strong = top.classification === 'STRONG_BUSINESS_DUPLICATE'
+                            || top.classification === 'SEMANTIC_DUPLICATE';
+                        const related = top.classification === 'RELATED_DOCUMENT';
+                        const border = strong ? '#fca5a5' : related ? 'var(--color-border)' : '#fcd34d';
+                        const bg = strong ? 'rgba(185,28,28,0.06)'
+                            : related ? 'var(--color-bg-page)' : 'rgba(180,83,9,0.06)';
+                        const titleColor = strong ? '#b91c1c' : related ? 'var(--color-text-muted)' : '#b45309';
+                        const title = strong
+                            ? 'Provável documento duplicado'
+                            : related ? 'Documento relacionado encontrado' : 'Possível documento correspondente';
+
+                        // The "uploaded" column shows what the DOCUMENT says (source evidence
+                        // preferred over the accepted draft value) — the same values the
+                        // classification was computed from. The "manteve X / o documento indica Y"
+                        // panel above explains any divergence from the draft.
+                        const evGross = sourceNumber('grossAmount');
+                        const uploadedValues: Record<string, string> = {
+                            SUPPLIER: active.supplierNameSnapshot ?? '—',
+                            SUPPLIER_NAME: active.supplierNameSnapshot ?? '—',
+                            SUPPLIER_NIF: active.supplierTaxIdSnapshot ?? '—',
+                            DOCUMENT_NUMBER: sourceEvidence('documentNumber') ?? active.documentNumber ?? '—',
+                            DOCUMENT_DATE: sourceEvidence('documentDate') ?? active.documentDate ?? '—',
+                            CURRENCY: sourceEvidence('currency') ?? active.currency ?? '—',
+                            GROSS_AMOUNT: evGross != null
+                                ? formatCurrencyAO(evGross)
+                                : active.grossAmount != null ? formatCurrencyAO(active.grossAmount) : '—'
+                        };
+                        const existingValues: Record<string, string> = {
+                            SUPPLIER: top.existing?.supplierName ?? '—',
+                            SUPPLIER_NAME: top.existing?.supplierName ?? '—',
+                            SUPPLIER_NIF: top.existing?.supplierTaxId ?? '—',
+                            DOCUMENT_NUMBER: top.existing?.documentNumber ?? '—',
+                            DOCUMENT_DATE: top.existing?.documentDate?.substring(0, 10) ?? '—',
+                            CURRENCY: top.existing?.currency ?? '—',
+                            GROSS_AMOUNT: top.existing?.grossAmount != null
+                                ? formatCurrencyAO(top.existing.grossAmount) : '—'
+                        };
+                        const rows = ['SUPPLIER', 'SUPPLIER_NIF', 'DOCUMENT_NUMBER',
+                            'DOCUMENT_DATE', 'CURRENCY', 'GROSS_AMOUNT'];
+
+                        return (
+                            <div style={{
+                                padding: '10px 12px', borderRadius: '6px', fontSize: '0.78rem',
+                                border: `1px solid ${border}`, backgroundColor: bg,
+                                display: 'flex', flexDirection: 'column', gap: '8px'
+                            }}>
+                                <strong style={{ color: titleColor }}>{title}</strong>
+                                <span style={{ color: 'var(--color-text-main)' }}>
+                                    {top.requestNumber
+                                        ? <>Documento {top.sequenceNumber} do pedido <strong>{top.requestNumber}</strong></>
+                                        : 'Um documento de outro pedido (fora do seu âmbito de acesso)'}
+                                    {top.reason ? <> — {top.reason}.</> : '.'}
+                                </span>
+                                {top.existing && (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ borderCollapse: 'collapse', fontSize: '0.75rem', minWidth: '380px' }}>
+                                            <thead>
+                                                <tr style={{ color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                                                    <td style={{ padding: '2px 10px 2px 0' }} />
+                                                    <td style={{ padding: '2px 10px' }}>Documento existente</td>
+                                                    <td style={{ padding: '2px 10px' }}>Documento carregado</td>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rows.map(f => {
+                                                    const conflict = top.conflictingFields.includes(f)
+                                                        || (f === 'SUPPLIER' && top.conflictingFields.includes('SUPPLIER_NIF'));
+                                                    return (
+                                                        <tr key={f} style={conflict
+                                                            ? { color: '#b91c1c', fontWeight: 700 }
+                                                            : undefined}>
+                                                            <td style={{ padding: '2px 10px 2px 0', fontWeight: 700 }}>
+                                                                {CANDIDATE_FIELD_LABELS[f] ?? f}
+                                                            </td>
+                                                            <td style={{ padding: '2px 10px' }}>{existingValues[f]}</td>
+                                                            <td style={{ padding: '2px 10px' }}>{uploadedValues[f]}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {!related && (
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                        Ao gerar o pedido, será pedida uma confirmação justificada
+                                        caso mantenha este documento.
+                                    </span>
+                                )}
+                                {result!.candidates.length > 1 && (
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                        +{result!.candidates.length - 1} outro(s) documento(s) com a mesma referência.
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </PaymentSourceDocumentCard>
             )}
 

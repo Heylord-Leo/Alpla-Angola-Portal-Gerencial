@@ -24,10 +24,16 @@ public class PaymentSourceDocumentDuplicateHierarchyTests
 
     private static BusinessDuplicateCandidate Candidate(
         string number = ConsultitReference, string? series = null, int companyId = 1,
-        string? currency = "AOA", decimal? gross = 1_000_000m, string? fingerprint = null) => new()
+        string? currency = "AOA", decimal? gross = 1_000_000m, string? fingerprint = null,
+        int? supplierId = 77, string? supplierName = null, string? supplierTaxId = null,
+        DateTime? date = null) => new()
     {
         DocumentNumber = number,
         DocumentSeries = series,
+        SupplierId = supplierId,
+        SupplierName = supplierName,
+        SupplierTaxId = supplierTaxId,
+        DocumentDate = date,
         CompanyId = companyId,
         Currency = currency,
         GrossAmount = gross,
@@ -38,12 +44,18 @@ public class PaymentSourceDocumentDuplicateHierarchyTests
         string number = ConsultitReference, string? series = null, int companyId = 1,
         string? currency = "AOA", decimal? gross = 1_000_000m, string? fingerprint = null,
         BusinessDuplicateScope scope = BusinessDuplicateScope.SameRequest,
-        string? requestNumber = null) => new()
+        string? requestNumber = null,
+        int? supplierId = 77, string? supplierName = null, string? supplierTaxId = null,
+        DateTime? date = null) => new()
     {
         Id = Guid.NewGuid(),
         SequenceNumber = 1,
         DocumentNumber = number,
         DocumentSeries = series,
+        SupplierId = supplierId,
+        SupplierName = supplierName,
+        SupplierTaxId = supplierTaxId,
+        DocumentDate = date,
         CompanyId = companyId,
         Currency = currency,
         GrossAmount = gross,
@@ -296,6 +308,139 @@ public class PaymentSourceDocumentDuplicateHierarchyTests
             new[] { Existing(series: "B") });
 
         Assert.Equal(BusinessDuplicateVerdict.Allow, decision.Verdict);
+    }
+
+    // ── L4 candidate matching: supplier identity is a SIGNAL, never a gate ──────────────────
+
+    [Fact]
+    public void A_supplier_nif_mismatch_produces_an_ambiguous_match_not_a_new_document()
+    {
+        // L4-1, the CONSULTIT evidence case: same name, same reference, same date, same currency,
+        // same total — only the NIF differs (misread or changed). The old logic never even
+        // searched (supplier unresolved → new document). Now the agreement of the other signals
+        // survives and the mismatch is reported as the reason.
+        var date = new DateTime(2026, 7, 23);
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(supplierId: null, supplierName: "CONSULTIT, LDA", supplierTaxId: "5000000000",
+                      gross: 1_492_231.88m, date: date),
+            new[] { Existing(supplierId: 77, supplierName: "CONSULTIT, LDA", supplierTaxId: "5417049840",
+                             gross: 1_492_231.88m, date: date) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Ambiguous, decision.Verdict);
+        Assert.Equal(BusinessDuplicateClassification.AmbiguousMatch, decision.Classification);
+        Assert.Contains(BusinessDuplicateFields.SupplierNif, decision.ConflictingFields);
+        Assert.Contains(BusinessDuplicateFields.SupplierName, decision.MatchingFields);
+        Assert.Contains(BusinessDuplicateFields.DocumentDate, decision.MatchingFields);
+        Assert.Contains(BusinessDuplicateFields.GrossAmount, decision.MatchingFields);
+    }
+
+    [Fact]
+    public void The_same_commercial_identity_in_a_different_file_is_a_strong_business_duplicate()
+    {
+        // L4-6: same strong supplier (id/NIF), same reference, same date, same currency, totals
+        // within tolerance. Different bytes are never evidence of a new commercial document.
+        var date = new DateTime(2026, 7, 23);
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(gross: 1_492_231.88m, date: date),
+            new[] { Existing(gross: 1_492_231.88m, date: date) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Ambiguous, decision.Verdict);   // justified override, not a wall
+        Assert.Equal(BusinessDuplicateClassification.StrongBusinessDuplicate, decision.Classification);
+    }
+
+    [Fact]
+    public void A_date_conflict_downgrades_the_strong_duplicate_to_ambiguous()
+    {
+        // L4-3: everything else agrees but the date differs — a strong candidate with a conflict.
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(gross: 1_492_231.88m, date: new DateTime(2026, 7, 24)),
+            new[] { Existing(gross: 1_492_231.88m, date: new DateTime(2026, 7, 23)) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Ambiguous, decision.Verdict);
+        Assert.Equal(BusinessDuplicateClassification.AmbiguousMatch, decision.Classification);
+        Assert.Contains(BusinessDuplicateFields.DocumentDate, decision.ConflictingFields);
+    }
+
+    [Fact]
+    public void Content_inequality_cannot_outrank_the_complete_commercial_identity()
+    {
+        // Strong supplier + same reference + same date + same currency + same gross, but the two
+        // content fingerprints differ (OCR variation, regenerated PDF, line wrapping…). The
+        // representation-sensitive evidence must NOT silently downgrade the full commercial
+        // identity to a frictionless related document — the pair requires justified review.
+        var date = new DateTime(2026, 7, 23);
+        var a = PaymentSourceDocumentFingerprint.Compute(Items(("Câmara IP 4MP", 12m, 85_000m)));
+        var b = PaymentSourceDocumentFingerprint.Compute(Items(("Camara IP 4MP (rev)", 12m, 85_000m)));
+
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(gross: 1_492_231.88m, date: date, fingerprint: a),
+            new[] { Existing(gross: 1_492_231.88m, date: date, fingerprint: b) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Ambiguous, decision.Verdict);          // review required
+        Assert.Equal(BusinessDuplicateClassification.AmbiguousMatch, decision.Classification);
+        Assert.Contains(BusinessDuplicateFields.Content, decision.ConflictingFields);
+        Assert.Contains(BusinessDuplicateFields.DocumentDate, decision.MatchingFields);
+        Assert.Contains(BusinessDuplicateFields.GrossAmount, decision.MatchingFields);
+    }
+
+    [Fact]
+    public void Content_inequality_without_the_full_identity_keeps_the_approved_related_rule()
+    {
+        // No date agreement → the identity is not complete → differing content keeps meaning
+        // "distinct commercial acts" (the approved LEVEL 3 behavior), informational only.
+        var a = PaymentSourceDocumentFingerprint.Compute(Items(("Câmara IP 4MP", 12m, 85_000m)));
+        var b = PaymentSourceDocumentFingerprint.Compute(Items(("Reestruturação do bastidor", 1m, 1_020_000m)));
+
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(fingerprint: a),
+            new[] { Existing(fingerprint: b) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Allow, decision.Verdict);
+        Assert.Equal(BusinessDuplicateClassification.RelatedDocument, decision.Classification);
+    }
+
+    [Fact]
+    public void A_number_only_match_with_no_corroboration_is_not_a_candidate()
+    {
+        // The false-positive floor: different suppliers legitimately share numbering schemes, so
+        // a bare reference coincidence — no supplier evidence, no date, no total — is nothing.
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(supplierId: null, gross: null, currency: null),
+            new[] { Existing(supplierId: 77, supplierName: "OUTRA EMPRESA", supplierTaxId: "999",
+                             gross: 500m, currency: "AOA") });
+
+        Assert.Equal(BusinessDuplicateVerdict.Allow, decision.Verdict);
+        Assert.Equal(BusinessDuplicateClassification.None, decision.Classification);
+    }
+
+    [Fact]
+    public void A_totals_difference_is_reported_as_a_related_document_not_a_candidate()
+    {
+        // L4-5 / CONSULTIT: informational only — persistence keeps allowing without friction.
+        var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(
+            Candidate(gross: 3_433_527.55m),
+            new[] { Existing(gross: 2_856_658.96m) });
+
+        Assert.Equal(BusinessDuplicateVerdict.Allow, decision.Verdict);
+        Assert.Equal(BusinessDuplicateClassification.RelatedDocument, decision.Classification);
+        Assert.Contains(BusinessDuplicateFields.GrossAmount, decision.ConflictingFields);
+    }
+
+    [Fact]
+    public void Evaluate_all_orders_candidates_by_severity()
+    {
+        var date = new DateTime(2026, 7, 23);
+        var all = PaymentSourceDocumentDuplicateHierarchy.EvaluateAll(
+            Candidate(gross: 1_492_231.88m, date: date),
+            new[]
+            {
+                Existing(gross: 2_856_658.96m),                          // related (totals differ)
+                Existing(gross: 1_492_231.88m, date: date)               // strong business duplicate
+            });
+
+        Assert.Equal(2, all.Count);
+        Assert.Equal(BusinessDuplicateClassification.StrongBusinessDuplicate, all[0].Classification);
+        Assert.Equal(BusinessDuplicateClassification.RelatedDocument, all[1].Classification);
     }
 
     // ── v2.229.10 monetary reconciliation: fingerprint stability under residual allocation ──

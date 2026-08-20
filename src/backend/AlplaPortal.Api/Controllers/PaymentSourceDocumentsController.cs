@@ -274,7 +274,10 @@ public class PaymentSourceDocumentsController : BaseController
         // only proven semantic duplicates, allows proven differences, and demands an explicit
         // audited confirmation when the evidence cannot decide.
         var duplicateProblem = await GuardBusinessDuplicateAsync(request!, document, dto);
-        if (duplicateProblem != null) return Conflict(duplicateProblem);
+        if (duplicateProblem != null)
+            return duplicateProblem.Status == 500
+                ? StatusCode(500, duplicateProblem)
+                : Conflict(duplicateProblem);
 
         _context.PaymentSourceDocuments.Add(document);
         await RecordHistoryAsync(
@@ -370,7 +373,10 @@ public class PaymentSourceDocumentsController : BaseController
         // The same LEVELS 2–4 rule as creation — otherwise an edit could type a twin's reference
         // into an existing document and bypass the hierarchy entirely.
         var duplicateProblem = await GuardBusinessDuplicateAsync(request!, document, dto);
-        if (duplicateProblem != null) return Conflict(duplicateProblem);
+        if (duplicateProblem != null)
+            return duplicateProblem.Status == 500
+                ? StatusCode(500, duplicateProblem)
+                : Conflict(duplicateProblem);
 
         var overrideProblem = await StageClassificationOverrideAsync(document, request!);
         if (overrideProblem != null) return BadRequest(overrideProblem);
@@ -601,93 +607,90 @@ public class PaymentSourceDocumentsController : BaseController
     private async Task<ProblemDetails?> GuardBusinessDuplicateAsync(
         Request request, PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)
     {
-        if (document.SupplierId == null || string.IsNullOrWhiteSpace(document.DocumentNumber))
-            return null;
-
-        var candidateNumber = PaymentSourceDocumentFingerprint.NormalizeReference(document.DocumentNumber);
-        var candidateSeries = PaymentSourceDocumentFingerprint.NormalizeReference(document.DocumentSeries);
-
-        bool SameReference(string? number, string? series) =>
-            string.Equals(PaymentSourceDocumentFingerprint.NormalizeReference(number),
-                          candidateNumber, StringComparison.Ordinal) &&
-            string.Equals(PaymentSourceDocumentFingerprint.NormalizeReference(series),
-                          candidateSeries, StringComparison.Ordinal);
-
-        var sameRequest = await _context.PaymentSourceDocuments
-            .Where(d => d.RequestId == request.Id && !d.IsVoided && d.Id != document.Id
-                        && d.SupplierId == document.SupplierId && d.DocumentNumber != null)
-            .Select(d => new
-            {
-                d.Id, d.SequenceNumber, d.DocumentNumber, d.DocumentSeries, d.Currency, d.GrossAmount
-            })
-            .ToListAsync();
-
-        var otherRequests = await _context.PaymentSourceDocuments
-            .Where(d => d.RequestId != request.Id && !d.IsVoided && d.Id != document.Id
-                        && d.SupplierId == document.SupplierId && d.DocumentNumber != null)
-            .Join(_context.Requests,
-                  d => d.RequestId, r => r.Id, (d, r) => new { d, r })
-            .Where(x => x.r.Status == null || !TerminalDeadRequestStatuses.Contains(x.r.Status.Code))
-            .Select(x => new
-            {
-                x.d.Id, x.d.SequenceNumber, x.d.DocumentNumber, x.d.DocumentSeries,
-                x.d.Currency, x.d.GrossAmount, x.r.CompanyId, x.r.RequestNumber, RequestId = x.r.Id
-            })
-            .ToListAsync();
-
-        var comparands = new List<BusinessDuplicateComparand>();
-
-        foreach (var d in sameRequest.Where(d => SameReference(d.DocumentNumber, d.DocumentSeries)))
+        try
         {
-            comparands.Add(new BusinessDuplicateComparand
+            return await GuardBusinessDuplicateCoreAsync(request, document, dto);
+        }
+        catch (Exception ex)
+        {
+            // Fail CLOSED, but never with internals: an unexpected failure inside duplicate
+            // validation must not silently disable the protection (that would be a double-payment
+            // hole) and must not surface a raw exception to the user either. The full detail goes
+            // to the log; the user gets a concise, actionable refusal. Genuine duplicate verdicts
+            // (DUPLICATE_AMBIGUOUS / DUPLICATE_SEMANTIC) never pass through here — they are
+            // ordinary results of the core, not exceptions.
+            _logger.LogError(ex,
+                "[DupCandidates] Duplicate validation failed for request {RequestId} doc {DocumentId} (number '{Number}').",
+                request.Id, document.Id, document.DocumentNumber);
+
+            return new ProblemDetails
             {
-                Id = d.Id,
-                SequenceNumber = d.SequenceNumber,
-                DocumentNumber = d.DocumentNumber,
-                DocumentSeries = d.DocumentSeries,
-                CompanyId = request.CompanyId,
-                Currency = d.Currency,
-                GrossAmount = d.GrossAmount,
-                ItemFingerprint = await ComputeItemFingerprintAsync(d.Id),
-                Scope = BusinessDuplicateScope.SameRequest
-            });
+                Title = "Validação de duplicados indisponível",
+                Detail = "Não foi possível validar o documento neste momento. " +
+                         "Tente novamente ou contacte o suporte de T.I.",
+                Status = 500
+            };
+        }
+    }
+
+    private async Task<ProblemDetails?> GuardBusinessDuplicateCoreAsync(
+        Request request, PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)
+    {
+        // The document number anchors the search. Deliberately NOT gated on a resolved supplier:
+        // supplier identity is evidence the hierarchy weighs — a misread NIF or an unresolved
+        // supplier must not erase the agreement of number, date, currency and total.
+        if (string.IsNullOrWhiteSpace(document.DocumentNumber)) return null;
+
+        string? supplierName = null;
+        var supplierTaxId = document.SupplierTaxIdSnapshot;
+        if (document.SupplierId.HasValue)
+        {
+            var supplier = await _context.Suppliers.AsNoTracking()
+                .Where(s => s.Id == document.SupplierId.Value)
+                .Select(s => new { s.Name, s.TaxId })
+                .FirstOrDefaultAsync();
+            supplierName = supplier?.Name;
+            supplierTaxId ??= supplier?.TaxId;
         }
 
-        foreach (var d in otherRequests.Where(d => SameReference(d.DocumentNumber, d.DocumentSeries)))
+        var input = new Helpers.CandidateSearchInput
         {
-            comparands.Add(new BusinessDuplicateComparand
-            {
-                Id = d.Id,
-                SequenceNumber = d.SequenceNumber,
-                DocumentNumber = d.DocumentNumber,
-                DocumentSeries = d.DocumentSeries,
-                CompanyId = d.CompanyId,
-                Currency = d.Currency,
-                GrossAmount = d.GrossAmount,
-                ItemFingerprint = await ComputeItemFingerprintAsync(d.Id),
-                Scope = BusinessDuplicateScope.OtherRequest,
-                RequestNumber = d.RequestNumber,
-                RequestId = d.RequestId
-            });
-        }
-
-        if (comparands.Count == 0) return null;
-
-        var candidate = new BusinessDuplicateCandidate
-        {
+            CurrentRequestId = request.Id,
+            ExcludeDocumentId = document.Id,
+            CompanyId = request.CompanyId,
+            SupplierId = document.SupplierId,
+            SupplierName = supplierName,
+            SupplierTaxId = supplierTaxId,
             DocumentNumber = document.DocumentNumber,
             DocumentSeries = document.DocumentSeries,
-            CompanyId = request.CompanyId,
+            DocumentDate = document.DocumentDate,
             Currency = document.Currency,
             GrossAmount = document.GrossAmount,
-            ItemFingerprint = await ComputeItemFingerprintAsync(document.Id)
+            ItemFingerprint = await Helpers.PaymentSourceDocumentCandidateSearch
+                .ComputeItemFingerprintAsync(_context, document.Id)
         };
 
+        var comparands = await Helpers.PaymentSourceDocumentCandidateSearch
+            .AssembleComparandsAsync(_context, input);
+        if (comparands.Count == 0) return null;
+
+        var candidate = Helpers.PaymentSourceDocumentCandidateSearch.BuildCandidate(input);
         var decision = PaymentSourceDocumentDuplicateHierarchy.Judge(candidate, comparands);
+
+        _logger.LogInformation(
+            "[DupCandidates] Persistence check request={RequestId} doc={DocumentId}: number='{Number}' " +
+            "normalized='{Normalized}' supplierId={SupplierId} comparands={ComparandCount} " +
+            "verdict={Verdict} classification={Classification} matching=[{Matching}] conflicting=[{Conflicting}]",
+            request.Id, document.Id, document.DocumentNumber,
+            PaymentSourceDocumentFingerprint.NormalizeReference(document.DocumentNumber),
+            document.SupplierId, comparands.Count, decision.Verdict, decision.Classification,
+            string.Join(",", decision.MatchingFields), string.Join(",", decision.ConflictingFields));
 
         switch (decision.Verdict)
         {
             case BusinessDuplicateVerdict.Allow:
+                // RelatedDocument stays informational: the review-time preflight explains it;
+                // persistence never adds friction to the approved LEVEL 3 rule.
                 return null;
 
             case BusinessDuplicateVerdict.Block:
@@ -716,13 +719,22 @@ public class PaymentSourceDocumentsController : BaseController
         if (!acknowledged || reason == null ||
             reason.Length < PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength)
         {
+            var strong = decision.Classification ==
+                         BusinessDuplicateClassification.StrongBusinessDuplicate;
             var problem = BuildDuplicateProblem(
                 decision,
                 PaymentSourceDocumentDuplicateHierarchy.AmbiguousDuplicateCode,
-                prefix: "O documento partilha a referência de");
-            problem.Detail += " Não foi possível comparar o conteúdo comercial. Se se tratar de um " +
-                              "documento distinto, confirme explicitamente e justifique por escrito " +
-                              $"(mínimo {PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength} caracteres).";
+                prefix: strong
+                    ? "O documento tem a mesma identidade comercial de"
+                    : "O documento partilha a referência de");
+            problem.Detail += strong
+                ? " Um PDF diferente não é evidência de um documento novo. Se se tratar mesmo de " +
+                  "um documento distinto (reemissão, cópia digitalizada, exportação corrigida), " +
+                  "confirme explicitamente e justifique por escrito " +
+                  $"(mínimo {PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength} caracteres)."
+                : " Não foi possível comparar o conteúdo comercial. Se se tratar de um " +
+                  "documento distinto, confirme explicitamente e justifique por escrito " +
+                  $"(mínimo {PaymentSourceDocumentDuplicateHierarchy.MinimumOverrideReasonLength} caracteres).";
             return problem;
         }
 
@@ -730,7 +742,8 @@ public class PaymentSourceDocumentsController : BaseController
         await RecordHistoryAsync(
             request, "DOCUMENTO_DUPLICADO_POTENCIAL_CONFIRMADO",
             $"Documento de origem com a referência {document.DocumentNumber} confirmado como " +
-            $"distinto de {DescribeMatch(match)} ({decision.Reason}). Motivo: {reason}",
+            $"distinto de {DescribeMatch(match)} ({decision.Reason}; " +
+            $"classificação {decision.Classification}). Motivo: {reason}",
             PostPaymentIdempotencyKeys.PaymentSourceDocumentDuplicateOverride(document.AttachmentId, match.Id));
 
         return null;
@@ -742,11 +755,16 @@ public class PaymentSourceDocumentsController : BaseController
         var match = decision.Match!;
         var problem = new ProblemDetails
         {
-            Title = "Documento duplicado",
+            Title = decision.Classification == BusinessDuplicateClassification.StrongBusinessDuplicate
+                ? "Provável documento duplicado"
+                : "Documento duplicado",
             Detail = $"{prefix} {DescribeMatch(match)} ({decision.Reason}).",
             Status = 409
         };
         problem.Extensions["code"] = code;
+        problem.Extensions["classification"] = decision.Classification.ToString();
+        problem.Extensions["matchingFields"] = decision.MatchingFields;
+        problem.Extensions["conflictingFields"] = decision.ConflictingFields;
         problem.Extensions["conflictingDocumentNumber"] = match.DocumentNumber;
         if (match.Scope == BusinessDuplicateScope.SameRequest)
         {
@@ -766,22 +784,6 @@ public class PaymentSourceDocumentsController : BaseController
                 ? $"um documento do pedido {match.RequestNumber} ({match.DocumentNumber ?? "sem número"})"
                 : "um documento de outro pedido em curso";
 
-    /// <summary>
-    /// Content fingerprint of a document's active items, or null when it has none — the hierarchy
-    /// must see "no evidence", never a fabricated empty fingerprint.
-    /// </summary>
-    private async Task<string?> ComputeItemFingerprintAsync(Guid documentId)
-    {
-        var items = await _context.RequestLineItems
-            .AsNoTracking()
-            .Where(i => i.PaymentSourceDocumentId == documentId && !i.IsDeleted)
-            .Select(i => new { i.Description, i.Quantity, i.UnitPrice, i.TotalAmount })
-            .ToListAsync();
-
-        return PaymentSourceDocumentFingerprint.Compute(
-            items.Select(i => new DuplicateFingerprintItem(
-                i.Description, i.Quantity, i.UnitPrice, i.TotalAmount)));
-    }
 
     private static void ApplyFields(PaymentSourceDocument document, SavePaymentSourceDocumentDto dto)
     {
