@@ -2,7 +2,31 @@
 
 ## Current Version
 
-v2.229.10
+v2.229.11
+
+## [v2.229.11] - 2026-08-20
+
+### L4 Candidate Document Matching
+
+- Business-document duplicate/ambiguity detection is now candidate-based and independent of the
+  physical file hash: the search anchors on the normalized document number, and supplier identity
+  is weighed evidence (id/NIF strong, exact name probable) — an unresolved supplier or a
+  conflicting documentary NIF no longer hides an existing commercial document. Classifications:
+  SEMANTIC_DUPLICATE (existing L2 hard block), STRONG_BUSINESS_DUPLICATE (complete commercial
+  identity in a different file — justified, audited override), AMBIGUOUS_MATCH (strong candidate
+  with conflicting fields — justified override), RELATED_DOCUMENT (same reference, materially
+  different total — informational, frictionless: the approved CONSULTIT rule), or genuinely new.
+  Regenerated/byte-different PDFs are never considered new merely because their hashes differ.
+- Review-time candidate preflight (`POST /payment-source-documents/match-candidates`, advisory;
+  persistence stays authoritative) renders the evidence in the composer: comparison table with
+  conflicting fields highlighted, severity-styled panels, scoped disclosure. Probable existing
+  suppliers (matcher `DuplicateSuspected`) are surfaced with "Usar fornecedor existente" —
+  supplier master data is never modified and the documentary NIF stays independent.
+- OCR/source evidence is preserved separately from accepted draft values and drives the matching
+  (what the PAPER says), while persistence continues validating the effective values. Reliability:
+  fixed an EF Core SQL translation regression in the candidate query, added SQL Server translation
+  regression tests, and unexpected duplicate-validation failures now fail closed with a concise
+  user-facing message (full detail logged). No DB migration.
 
 ## [v2.229.10] - 2026-08-18
 

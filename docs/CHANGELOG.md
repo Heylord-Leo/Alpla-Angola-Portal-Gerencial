@@ -4,7 +4,80 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.10
+v2.229.11
+
+## [v2.229.11] - 2026-08-20
+
+### L4 Candidate Document Matching
+
+TEST acceptance of v2.229.10 with real CONSULTIT documents showed that duplicate detection was
+still hash- and supplier-gated: a document whose supplier failed to resolve (misread NIF) — or
+whose physical bytes differed — was silently treated as NEW, and the review screen never warned
+about probable existing documents. This release makes duplicate/ambiguity detection
+candidate-based. No DB migration; Release 4 lifecycle untouched.
+
+#### Added — document duplicate and ambiguity detection
+
+- **Business-document candidate matching independent of the file hash**: the search anchors on
+  the normalized document number across this request and all live requests; supplier identity
+  became weighed evidence (SupplierId/NIF = strong, exact normalized name = probable) instead of
+  an absolute prerequisite — supplier resolution failures no longer prevent detection.
+- **Review-time detection**: a read-only candidate preflight
+  (`POST /api/v1/payment-source-documents/match-candidates`, same assembly + rule engine as the
+  persistence guard) feeds the creation composer with a severity-styled panel: comparison table
+  (existing vs uploaded), conflicting fields highlighted, requests named only when the user may
+  open them (the duplicate signal survives without identifying metadata otherwise).
+- **Explicit classification ladder**: SEMANTIC_DUPLICATE (identical content under the existing
+  L2 rules — hard block) · STRONG_BUSINESS_DUPLICATE (same probable supplier + reference + date +
+  currency + total in a different file — high-severity, justified audited override) ·
+  AMBIGUOUS_MATCH (strong candidate with conflicting NIF/date/etc., or unprovable content —
+  justified override) · RELATED_DOCUMENT (same reference, materially different total —
+  informational, frictionless) · genuinely new (conservative candidate floor: number match plus
+  supplier-probable or ≥2 of date/currency/total; number-only coincidences are nothing).
+  **Different SHA ≠ new commercial document**: regenerated, re-scanned or re-exported PDFs are
+  matched by commercial identity, and content-fingerprint inequality can never outrank the
+  complete commercial identity (requires review rather than frictionless acceptance).
+
+#### Added — supplier matching
+
+- Probable existing suppliers (matcher `DuplicateSuspected`) are surfaced during document review
+  ("Possível fornecedor existente", OCR NIF vs registered NIF side-by-side) with
+  **"Usar fornecedor existente"** — selecting the existing supplier without overwriting master
+  data and without auto-creating twins; "Criar fornecedor" remains for genuinely new suppliers.
+- The documentary supplier NIF (OCR snapshot) stays independent from the selected Portal
+  supplier and remains visible as conflicting evidence.
+
+#### Added — OCR evidence preservation
+
+- Review-time matching evaluates the OCR/source-document evidence separately from the accepted
+  draft values: when the user keeps a value ("manteve X / o documento indica Y"), the candidate
+  comparison still uses what the document actually says — a retained draft date/total can no
+  longer mask a modified document. Accepted values stay untouched and remain what persistence
+  validates. Customer/billed-company NIF discrepancy remains review-time only, shown when the
+  OCR provider extracts it.
+
+#### Fixed — reliability
+
+- EF Core SQL translation regression introduced during candidate-search development (a filter
+  composed over a record projection): the query now uses simple translatable predicates with the
+  projection as the final operator, all normalization after materialization — pinned with SQL
+  Server translation regression tests (`ToQueryString`), since the InMemory test provider cannot
+  catch translation failures.
+- Unexpected duplicate-validation failures now fail CLOSED with a concise user-facing message
+  ("Não foi possível validar o documento neste momento…") while the full detail goes to the
+  server log; genuine verdicts (`DUPLICATE_AMBIGUOUS`/`DUPLICATE_SEMANTIC`) are unaffected.
+
+#### Known limitations
+
+- Customer-NIF discrepancy is review-time only and depends on the OCR provider extracting the
+  billed-company NIF; there is no persistence-stage enforcement.
+- Proposal validity/date semantic consistency validation is not part of this release.
+- Legacy attachments without business-field data remain covered by file-hash duplicate detection
+  only, not full business-identity matching.
+- The candidate search materializes the bounded live-document set before normalized-number
+  filtering; SQL-side normalized-reference optimization is future work.
+- Post-creation detail editing receives authoritative duplicate feedback at save-time (409 with
+  the same classifications) rather than the creation-time preflight panel.
 
 ## [v2.229.10] - 2026-08-18
 
