@@ -3,22 +3,23 @@
 -- ███  EXPLICIT AUTHORIZATION REQUIRED  ███
 -- ███  ENVIRONMENT MUST BE VERIFIED BEFORE EXECUTION  ███
 -- ============================================================================
--- Reverts po-flow-final-six-supplier-repair.sql for the SAME six groups only,
+-- Reverts po-flow-final-five-supplier-repair.sql for the SAME five groups only,
 -- restoring the exact prior state captured by the 2026-08-20 review:
 --   SupplierId -> NULL
 --   SupplierNameSnapshot -> N'Fornecedor não definido'   (legacy placeholder)
 --   SupplierNifSnapshot  -> NULL
--- and removing ONLY the audit rows carrying the [HIST-SUPPLIER-REQ-***] tags.
+-- and removing ONLY the audit rows carrying the [HIST-SUPPLIER-REQ-***] tags
+-- of these five requests. REQ-200 is NOT part of this package.
 -- Note: per the established repair pattern, UpdatedAtUtc/UpdatedByUserId are
 -- stamped at rollback time (pre-repair bookkeeping values are not preserved).
 --
--- SINGLE TRANSACTION, all-or-nothing: it operates only when ALL six rows currently
+-- SINGLE TRANSACTION, all-or-nothing: it operates only when ALL five rows currently
 -- match the exact values the repair wrote (expected SupplierId + supplier NIF snapshot);
 -- any divergence aborts everything for manual review. Statuses/workflow untouched.
--- Idempotent: if all six are already back to the original legacy state, it skips.
+-- Idempotent: if all five are already back to the original legacy state, it skips.
 --
 -- Usage:
---   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-six-supplier-repair-rollback.sql -v actor="<admin user guid>"
+--   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-five-supplier-repair-rollback.sql -v actor="<admin user guid>"
 -- ============================================================================
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -57,7 +58,6 @@ INSERT INTO @targets VALUES
  (N'REQ-29/07/2026-178', '3d67213e-daba-4615-a0fc-108b19ea1a3e', 66,  N'5417231983', N'[HIST-SUPPLIER-REQ-178]'),
  (N'REQ-31/07/2026-193', 'f20b272f-00d9-4a31-a9fc-948ac4d30f8c', 45,  N'5417061590', N'[HIST-SUPPLIER-REQ-193]'),
  (N'REQ-31/07/2026-194', 'a535dabd-ea4e-4749-ab0f-1da3d136fd4f', 45,  N'5417061590', N'[HIST-SUPPLIER-REQ-194]'),
- (N'REQ-31/07/2026-200', 'a4c5cc42-2f8d-48ec-b9a9-0885c9f92081', 157, N'5001094645', N'[HIST-SUPPLIER-REQ-200]'),
  (N'REQ-12/08/2026-245', 'fe684497-448f-471a-8461-377ba3dc47c5', 159, N'5417386740', N'[HIST-SUPPLIER-REQ-245]');
 
 BEGIN TRANSACTION;
@@ -75,15 +75,15 @@ BEGIN TRY
            AND g.SupplierNameSnapshot = N'Fornecedor não definido'
            AND g.SupplierNifSnapshot IS NULL);
 
-    IF @inOriginalState = 6 AND @inRepairedState = 0
+    IF @inOriginalState = 5 AND @inRepairedState = 0
     BEGIN
-        PRINT 'ALREADY_ROLLED_BACK: all six groups are at the original legacy state — nothing written.';
+        PRINT 'ALREADY_ROLLED_BACK: all five groups are at the original legacy state — nothing written.';
         COMMIT TRANSACTION;
     END
-    ELSE IF @inRepairedState <> 6
+    ELSE IF @inRepairedState <> 5
     BEGIN
         PRINT CONCAT('ABORTED (MANUAL_REVIEW_REQUIRED): rows in repaired state = ', @inRepairedState,
-                     ' of 6 — current values do not match what this repair wrote. Nothing written, rolled back.');
+                     ' of 5 — current values do not match what this repair wrote. Nothing written, rolled back.');
         ROLLBACK TRANSACTION;
     END
     ELSE
@@ -98,9 +98,9 @@ BEGIN TRY
         JOIN @targets t ON t.ExpectedGroupId = g.Id
         WHERE g.SupplierId = t.ExpectedSupplierId AND g.SupplierNifSnapshot = t.ExpectedSupplierNif;
 
-        IF @@ROWCOUNT <> 6
+        IF @@ROWCOUNT <> 5
         BEGIN
-            PRINT 'ABORTED: rollback UPDATE affected a row count different from 6 — rolled back, nothing persisted.';
+            PRINT 'ABORTED: rollback UPDATE affected a row count different from 5 — rolled back, nothing persisted.';
             ROLLBACK TRANSACTION;
         END
         ELSE
@@ -112,7 +112,7 @@ BEGIN TRY
             WHERE h.ActionTaken = 'DATA_INTEGRITY_REPAIR'
               AND h.Comment LIKE REPLACE(t.AuditTag, '[', '[[]') + '%';
 
-            PRINT CONCAT('ROLLED BACK: six groups restored to the legacy state; ', @@ROWCOUNT, ' tagged audit row(s) removed.');
+            PRINT CONCAT('ROLLED BACK: five groups restored to the legacy state; ', @@ROWCOUNT, ' tagged audit row(s) removed.');
             COMMIT TRANSACTION;
         END
     END
@@ -130,5 +130,5 @@ JOIN Requests r         ON r.Id = g.RequestId
 JOIN RequestStatuses rs ON rs.Id = r.StatusId
 WHERE g.Id IN ('886c0d0e-80d8-4ebe-8272-e4fa3304f5c3','3d67213e-daba-4615-a0fc-108b19ea1a3e',
                'f20b272f-00d9-4a31-a9fc-948ac4d30f8c','a535dabd-ea4e-4749-ab0f-1da3d136fd4f',
-               'a4c5cc42-2f8d-48ec-b9a9-0885c9f92081','fe684497-448f-471a-8461-377ba3dc47c5')
+               'fe684497-448f-471a-8461-377ba3dc47c5')
 ORDER BY r.RequestNumber;

@@ -81,12 +81,14 @@ JOIN Requests r ON r.Id = a.RequestId
 LEFT JOIN Users u ON u.Id = a.UploadedByUserId
 WHERE r.RequestNumber = @requestNumber AND a.Id = @poAttachmentId;
 
--- ── Canonical collision scan for the 2026A/11 family (all companies, excluding this group) ──
--- Deliberately broad (any '...2026A/11' canonical): over-matching aborts, never repairs.
+-- ── Canonical collision scan for the 2026A/11 family (same company, excluding this group) ──
+-- Deliberately broad within the company (any '...2026A/11' canonical, covering
+-- ECF10-2026A-11 and its family-dropped variants): over-matching aborts, never repairs.
 SELECT r.RequestNumber, r.CompanyId, g.Id AS GroupId, g.PurchaseOrderNumber
 FROM RequestPoGroups g
 JOIN Requests r ON r.Id = g.RequestId
 WHERE g.Id <> @groupId
+  AND r.CompanyId = @companyId
   AND g.PurchaseOrderNumber IS NOT NULL
   AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(g.PurchaseOrderNumber,' ',''),'.',''),'/','#'),'-','#')) LIKE '%2026A#11';
 
@@ -129,9 +131,9 @@ FROM (VALUES
        AND a.AttachmentTypeCode = 'PO' AND a.IsDeleted = 0 AND a.VoidedAtUtc IS NULL
        AND a.RequestPoGroupId = @groupId
        AND LOWER(a.FileHash) = LOWER(@poFileHash))),
-  ('no_canonical_collision_2026A_11_family',
-    (SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM RequestPoGroups g
-     WHERE g.Id <> @groupId AND g.PurchaseOrderNumber IS NOT NULL
+  ('no_same_company_canonical_collision_2026A_11_family',
+    (SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM RequestPoGroups g JOIN Requests r ON r.Id = g.RequestId
+     WHERE g.Id <> @groupId AND r.CompanyId = @companyId AND g.PurchaseOrderNumber IS NOT NULL
        AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(g.PurchaseOrderNumber,' ',''),'.',''),'/','#'),'-','#')) LIKE '%2026A#11'))
 ) AS gd(CheckName, Passed);
 
@@ -162,8 +164,8 @@ SELECT
                         AND a2.IsDeleted = 0 AND a2.VoidedAtUtc IS NULL
                         AND a2.RequestPoGroupId = @groupId
                         AND LOWER(a2.FileHash) = LOWER(@poFileHash))
-          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx
-                          WHERE gx.Id <> @groupId AND gx.PurchaseOrderNumber IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx JOIN Requests rx ON rx.Id = gx.RequestId
+                          WHERE gx.Id <> @groupId AND rx.CompanyId = @companyId AND gx.PurchaseOrderNumber IS NOT NULL
                             AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(gx.PurchaseOrderNumber,' ',''),'.',''),'/','#'),'-','#')) LIKE '%2026A#11'))
       THEN 'PENDING_REPAIR'
     WHEN EXISTS (

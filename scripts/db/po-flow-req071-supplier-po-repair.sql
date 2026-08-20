@@ -103,8 +103,8 @@ BEGIN TRY
                         AND a.IsDeleted = 0 AND a.VoidedAtUtc IS NULL
                         AND a.RequestPoGroupId = @groupId
                         AND LOWER(a.FileHash) = LOWER(@poFileHash))
-          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx
-                          WHERE gx.Id <> @groupId AND gx.PurchaseOrderNumber IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx JOIN Requests rx ON rx.Id = gx.RequestId
+                          WHERE gx.Id <> @groupId AND rx.CompanyId = @companyId AND gx.PurchaseOrderNumber IS NOT NULL
                             AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(gx.PurchaseOrderNumber,' ',''),'.',''),'/','#'),'-','#')) LIKE '%ECF11%2026#371')
     ) THEN 1 ELSE 0 END;
 
@@ -163,13 +163,13 @@ BEGIN TRY
             INSERT INTO RequestStatusHistories (Id, RequestId, ActorUserId, ActionTaken, PreviousStatusId, NewStatusId, Comment, CreatedAtUtc)
             SELECT NEWID(), r.Id, @actor, 'DATA_INTEGRITY_REPAIR', r.StatusId, r.StatusId,
                    CONCAT(N'[HIST-SUPPLIER-PO-REQ-071]',
-                          N' [Reparo de integridade — campanha histórica final] Grupo ', LEFT(CONVERT(NVARCHAR(36), @groupId), 8),
-                          N': SupplierId NULL -> 257 — ', s.Name, N' (NIF ', s.TaxId, N'); PurchaseOrderNumber NULL -> ''ECF11 2026/371''.',
-                          N' Base: fornecedor CONFIRMADO POR REVISÃO HUMANA; documento de P.O revisto visualmente — cabeçalho "PO Serviços ECF11 2026/371", N.º Contrib. 5417101524.',
-                          N' ''FT FC202602/2101254'' é o N.º Doc. Externo desse documento, NÃO o número da P.O, e não foi gravado.',
+                          N' [Reparo de integridade — campanha histórica final] Grupo ', CONVERT(NVARCHAR(36), @groupId),
+                          N': SupplierId NULL -> 257 — ', s.Name, N' (NIF ', s.TaxId, N'), snapshots restaurados do cadastro; PurchaseOrderNumber NULL -> ''ECF11 2026/371'' (canónico ECF11-2026-371).',
+                          N' Base: fornecedor Embrace CONFIRMADO POR REVISÃO HUMANA; documento de P.O revisto visualmente — cabeçalho "PO Serviços ECF11 2026/371", N.º Contrib. 5417101524.',
+                          N' ''FT FC202602/2101254'' é o N.º Doc. Externo desse documento, NÃO a identidade da P.O, e não foi gravado.',
                           N' Contexto: a P.O foi registrada em 16/07/2026 (REGISTER_PO) ANTES da linha de grupo atual existir (criada 20/07/2026), pelo que o grupo ficou sem fornecedor e sem P.O.',
                           N' Anexo P.O ', CONVERT(NVARCHAR(36), @poAttachmentId), N' SHA-256 ', @poFileHash, N' verificado.',
-                          N' Nenhum estado de workflow/pagamento alterado; o desalinhamento do status do grupo (PENDING) é reconciliação separada, não tratada aqui.'),
+                          N' Revisão 2026-08-20. Nenhum estado de workflow/status/financeiro alterado; o desalinhamento do status do grupo (PENDING) é reconciliação separada, não tratada aqui.'),
                    SYSUTCDATETIME()
             FROM Requests r
             JOIN Suppliers s ON s.Id = @supplierId

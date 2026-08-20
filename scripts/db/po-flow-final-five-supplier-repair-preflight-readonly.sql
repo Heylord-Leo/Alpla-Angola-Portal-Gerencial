@@ -1,14 +1,17 @@
 ﻿-- ============================================================================
--- FINAL SIX HISTORICAL SUPPLIER REPAIR — PREFLIGHT (READ-ONLY)
+-- FINAL FIVE HISTORICAL SUPPLIER REPAIR — PREFLIGHT (READ-ONLY)
 -- ============================================================================
--- Stage 1 of the controlled supplier repair for EXACTLY six requests whose
+-- Stage 1 of the controlled supplier repair for EXACTLY five requests whose
 -- supplier identities were CONFIRMED BY HUMAN REVIEW (2026-08-20):
 --   REQ-16/07/2026-084 -> 53  REALVITUR ANGOLA, LIMITADA            (NIF 5417089079, company 1)
 --   REQ-29/07/2026-178 -> 66  IMPORAFRICA VEICULOS LDA              (NIF 5417231983, company 1)
 --   REQ-31/07/2026-193 -> 45  FIDELIDADE ANGOLA-COMP. DE SEGUROS    (NIF 5417061590, company 1)
 --   REQ-31/07/2026-194 -> 45  FIDELIDADE ANGOLA-COMP. DE SEGUROS    (NIF 5417061590, company 2)
---   REQ-31/07/2026-200 -> 157 HENDA HOTELARIA , LDA - HCTA          (NIF 5001094645, company 1)
 --   REQ-12/08/2026-245 -> 159 MUSOLAND-MUNDO DAS SOLUCOES-ACESS.CONS.(SU),LDA (NIF 5417386740, company 1)
+--
+-- REQ-31/07/2026-200 was REMOVED from this package: it drifted to PO_ISSUED in
+-- live PROD and is handled by the dedicated po-flow-req200-supplier-po-* package.
+-- This script supersedes the retired po-flow-final-six-supplier-repair-* trio.
 --
 -- Evidence basis: HUMAN CONFIRMATION of each request's stored source document.
 -- The pinned PROFORMA attachment id/hash below is a DRIFT-DETECTION ANCHOR only
@@ -16,13 +19,13 @@
 -- the supplier-identity evidence and filenames were never used as evidence.
 --
 -- SELECT/PRINT only — no writes of any kind. Run before
--- po-flow-final-six-supplier-repair.sql and STOP unless every row is PASS and the
--- final state is PENDING_REPAIR (or ALREADY_REPAIRED across all six).
+-- po-flow-final-five-supplier-repair.sql and STOP unless every row is PASS and
+-- the final state is PENDING_REPAIR (or ALREADY_REPAIRED across all five).
 --
 -- OPERATIONAL WARNING (does NOT block this historical repair): suppliers 45
--- (FIDELIDADE), 157 (HENDA) and 159 (MUSOLAND) are RegistrationStatus = DRAFT.
--- register-po refuses DRAFT suppliers, so PO registration on these groups stays
--- blocked until the master registrations are completed. Reported below.
+-- (FIDELIDADE) and 159 (MUSOLAND) are RegistrationStatus = DRAFT. register-po
+-- refuses DRAFT suppliers, so REGISTER_PO on these groups may remain blocked
+-- until the master registrations are completed. Reported below.
 -- ============================================================================
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -42,7 +45,7 @@ SELECT @@SERVERNAME AS ServerIdentity, DB_NAME() AS DatabaseName, ORIGINAL_LOGIN
                       WHEN 'Portal-Gerencial-Test' THEN 'TEST'
                       ELSE 'DISALLOWED' END AS ExecutionContext;
 
--- ── Allow-list: the ONLY six targets, with every reviewed expectation pinned ──
+-- ── Allow-list: the ONLY five targets, with every reviewed expectation pinned ──
 DECLARE @targets TABLE (
     RequestNumber NVARCHAR(50) PRIMARY KEY,
     ExpectedGroupId UNIQUEIDENTIFIER,
@@ -58,7 +61,6 @@ INSERT INTO @targets VALUES
  (N'REQ-29/07/2026-178', '3d67213e-daba-4615-a0fc-108b19ea1a3e', 1, 66,  N'5417231983',  164167.67, '4831f40f-73d4-41a7-99a8-74c9492acf54', N'18c4299ed825509ff0c4f1a52ff6b498f3f90409bf50e2041ccaf0bc2a8c18a9'),
  (N'REQ-31/07/2026-193', 'f20b272f-00d9-4a31-a9fc-948ac4d30f8c', 1, 45,  N'5417061590', 3661359.15, '9d68c416-9152-4766-a3e1-45b4ba24099e', N'297a2686dac84a16cf7c719836de9b6d3d062781bbf53324de889edfd551fdf2'),
  (N'REQ-31/07/2026-194', 'a535dabd-ea4e-4749-ab0f-1da3d136fd4f', 2, 45,  N'5417061590', 1050755.95, '44b9e0da-8baf-44aa-a833-fa992084a12d', N'08cca7aa13599b4e10eabe599a50c014f44a6b52ad94bf08270a0def269a5c96'),
- (N'REQ-31/07/2026-200', 'a4c5cc42-2f8d-48ec-b9a9-0885c9f92081', 1, 157, N'5001094645', 2120186.00, '0c1be5e5-516f-4b37-8b8a-45d6f6675368', N'94168ba104d99c5ee57ee240aac108e1665c3aab1148263c2bfd3babcf7e6c4e'),
  (N'REQ-12/08/2026-245', 'fe684497-448f-471a-8461-377ba3dc47c5', 1, 159, N'5417386740',  239400.00, '6f5f7e9c-8899-45ba-93de-63fa47b922bf', N'f55d286e8342b4264cb298add5811f76ecd44443901e3fa3af3b949fac74e02e');
 
 -- ── Full current state of each target ──
@@ -86,7 +88,7 @@ ORDER BY t.RequestNumber;
 
 -- ── Operational warning: DRAFT suppliers (report-only, NOT a blocking guard) ──
 SELECT s.Id AS SupplierId, s.Name, s.TaxId, s.RegistrationStatus,
-       'WARNING: register-po will refuse this supplier until registration is completed — the historical data repair itself is NOT blocked' AS OperationalWarning
+       'WARNING: REGISTER_PO may remain blocked for this supplier until its registration is completed — the historical data repair itself is NOT blocked' AS OperationalWarning
 FROM Suppliers s
 WHERE s.Id IN (SELECT ExpectedSupplierId FROM @targets)
   AND s.RegistrationStatus <> 'ACTIVE'

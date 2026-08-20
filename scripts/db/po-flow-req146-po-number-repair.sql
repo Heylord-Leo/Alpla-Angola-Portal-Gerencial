@@ -98,8 +98,8 @@ BEGIN TRY
                         AND a.IsDeleted = 0 AND a.VoidedAtUtc IS NULL
                         AND a.RequestPoGroupId = @groupId
                         AND LOWER(a.FileHash) = LOWER(@poFileHash))
-          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx
-                          WHERE gx.Id <> @groupId AND gx.PurchaseOrderNumber IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM RequestPoGroups gx JOIN Requests rx ON rx.Id = gx.RequestId
+                          WHERE gx.Id <> @groupId AND rx.CompanyId = @companyId AND gx.PurchaseOrderNumber IS NOT NULL
                             AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(gx.PurchaseOrderNumber,' ',''),'.',''),'/','#'),'-','#')) LIKE '%2026A#11')
     ) THEN 1 ELSE 0 END;
 
@@ -159,7 +159,7 @@ BEGIN TRY
                           N' ''FP - 63'' é o N.º Doc. Externo desse documento, NÃO a identidade da P.O, e não foi gravado.',
                           N' Fornecedor já estava correto (14 — BISMARK PAPELARIA, NIF 5417371270) e NÃO foi alterado.',
                           N' Anexo P.O ', CONVERT(NVARCHAR(36), @poAttachmentId), N' SHA-256 ', @poFileHash, N' verificado.',
-                          N' Nenhum estado de workflow ou de pagamento alterado.'),
+                          N' Revisão 2026-08-20. Nenhum estado de workflow ou de pagamento alterado.'),
                    SYSUTCDATETIME()
             FROM Requests r
             WHERE r.RequestNumber = @requestNumber;
