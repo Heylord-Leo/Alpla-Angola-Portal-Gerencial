@@ -5965,6 +5965,31 @@ public class RequestsController : BaseController
             }
         }
 
+        // ── Prevention: never approve a PAYMENT request into an unusable PO group ──
+        // The historical "Fornecedor não definido" dead-end (e.g. REQ-31/07/2026-193) happened
+        // because the legacy path allowed final approval with no supplier anywhere: header null
+        // and no source documents. The Buyer then received a WAITING_PO group with SupplierId
+        // null and nothing actionable. Checked BEFORE any mutation, so the refusal is clean.
+        if (action == "APPROVE" && request.RequestType!.Code == "PAYMENT")
+        {
+            var hasSupplierSource = request.SupplierId != null ||
+                await _context.PaymentSourceDocuments.AnyAsync(d =>
+                    d.RequestId == id && !d.IsVoided && d.SupplierId != null);
+
+            if (!hasSupplierSource)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Fornecedor do pedido não definido",
+                    Detail = "Este pedido de pagamento não possui um fornecedor associado de forma " +
+                             "estruturada. Identifique o fornecedor (no documento de origem ou no " +
+                             "pedido) antes da aprovação final — caso contrário o Comprador ficaria " +
+                             "impedido de emitir a P.O.",
+                    Status = 400
+                });
+            }
+        }
+
         string historyComment = action switch
         {
             "APPROVE" => $"Aprovação Final realizada. {comment}".Trim(),
@@ -6553,27 +6578,94 @@ public class RequestsController : BaseController
             });
         }
 
-        // ── Backend Duplicate PO Validation ──
-        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
-        {
-            var duplicateGroup = await _context.RequestPoGroups
-                .Include(g => g.Request)
-                .Include(g => g.Supplier)
-                .Where(g => g.PurchaseOrderNumber == dto.PurchaseOrderNumber && g.Id != dto.PoGroupId.Value)
-                .FirstOrDefaultAsync();
-
-            if (duplicateGroup != null)
+        // ── Supplier integrity: a P.O. is a commitment to a specific supplier ──
+        // A legacy group carrying no supplier ("Fornecedor não definido") must never receive a
+        // P.O. — the supplier has to be identified first (data-integrity repair flow).
+        var targetGroupIntegrity = await _context.RequestPoGroups
+            .AsNoTracking()
+            .Where(g => g.Id == dto.PoGroupId.Value)
+            .Select(g => new
             {
+                g.SupplierId,
+                SupplierNif = g.Supplier != null ? g.Supplier.TaxId : null,
+                g.SupplierNifSnapshot,
+                RequestCompanyId = g.Request!.CompanyId
+            })
+            .FirstOrDefaultAsync();
+
+        if (targetGroupIntegrity != null && targetGroupIntegrity.SupplierId == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Fornecedor do pedido não definido",
+                Detail = "Este pedido foi criado no fluxo legado e não possui um fornecedor " +
+                         "associado de forma estruturada. O fornecedor precisa ser identificado " +
+                         "antes da emissão da P.O.",
+                Status = 400
+            });
+        }
+
+        // ── Backend PO number validation (Primavera-aware, v2.229.12 groundwork) ──
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber) && targetGroupIntegrity != null)
+        {
+            // Anti-NIF backstop: a fiscal number is never a purchase-order number. The primary
+            // protection is positive ECF/ECF10/ECF11 identification (a real reference never trips
+            // this); this guard exists for the manual-entry and misread paths.
+            var companyNifs = await _context.Companies.AsNoTracking()
+                .Select(c => c.TaxId).ToListAsync();
+            var knownNifs = companyNifs
+                .Append(targetGroupIntegrity.SupplierNif)
+                .Append(targetGroupIntegrity.SupplierNifSnapshot);
+
+            if (PrimaveraPoReference.IsForbiddenPoNumber(dto.PurchaseOrderNumber, knownNifs))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Número de P.O inválido",
+                    Detail = $"O valor '{dto.PurchaseOrderNumber}' parece ser um número fiscal (NIF), " +
+                             "não a referência da P.O. Numa P.O Primavera a referência tem o formato " +
+                             "ECF/ECF10/ECF11 AAAA/NNN (ex.: 'ECF11 2026/421').",
+                    Status = 400
+                });
+            }
+
+            // Duplicate detection by CANONICAL Primavera identity, scoped to the legal entity;
+            // non-Primavera references keep their global scope with conservative normalization.
+            // Cross-company canonical matches are informational only — the companies are separate
+            // legal entities with independent Primavera sequences.
+            var existingPoRows = await _context.RequestPoGroups
+                .AsNoTracking()
+                .Where(g => g.PurchaseOrderNumber != null && g.Id != dto.PoGroupId.Value)
+                .Select(g => new
+                {
+                    g.Id,
+                    g.PurchaseOrderNumber,
+                    g.Request!.CompanyId,
+                    g.Request.RequestNumber,
+                    SupplierName = g.Supplier != null ? g.Supplier.Name : g.SupplierNameSnapshot,
+                    g.Status
+                })
+                .ToListAsync();
+
+            var verdictMatch = PrimaveraPoReference.Evaluate(
+                dto.PurchaseOrderNumber,
+                targetGroupIntegrity.RequestCompanyId,
+                existingPoRows.Select(r => (r.Id, r.PurchaseOrderNumber, r.CompanyId, (string?)r.RequestNumber)));
+
+            if (verdictMatch.Verdict == PoDuplicateVerdict.Block)
+            {
+                var duplicateRow = existingPoRows.First(r => r.Id == verdictMatch.GroupId);
+
                 if (!dto.OverrideDuplicateConfirmed)
                 {
                     return BadRequest(new ProblemDetails
                     {
                         Title = "DUPLICATE_PO",
-                        Detail = $"O número de P.O {dto.PurchaseOrderNumber} já está registrado no Pedido {duplicateGroup.Request?.RequestNumber} (Fornecedor: {duplicateGroup.Supplier?.Name}, Status: {duplicateGroup.Status}). Confirme se deseja prosseguir.",
+                        Detail = $"O número de P.O {dto.PurchaseOrderNumber} já está registrado no Pedido {duplicateRow.RequestNumber} (Fornecedor: {duplicateRow.SupplierName}, Status: {duplicateRow.Status}). Confirme se deseja prosseguir.",
                         Status = 400
                     });
                 }
-                
+
                 if (string.IsNullOrWhiteSpace(dto.DuplicateOverrideComment))
                 {
                     return BadRequest(new ProblemDetails
@@ -6583,6 +6675,13 @@ public class RequestsController : BaseController
                         Status = 400
                     });
                 }
+            }
+            else if (verdictMatch.Verdict == PoDuplicateVerdict.CrossCompanyInfo)
+            {
+                _logger.LogInformation(
+                    "[PoNumber] Cross-company canonical match for '{PoNumber}': also registered on {RequestNumber} " +
+                    "(another legal entity). Informational only — sequences are per-company.",
+                    dto.PurchaseOrderNumber, verdictMatch.RequestNumber);
             }
         }
 

@@ -14,6 +14,9 @@ public static class ExtractionMapper
     public static OcrExtractionResultDto MapToLegacyOcrResult(
         ExtractionResultDto internalResult, string? fileName = null)
     {
+        // Deterministic Primavera PO identification (v2.229.12 groundwork), parsed once.
+        var poReference = PrimaveraPoReference.TryParse(internalResult.Header?.DocumentNumber);
+
         var integrationDto = new OcrIntegrationDto
         {
             HeaderSuggestions = new OcrHeaderSuggestionsDto
@@ -41,6 +44,18 @@ public static class ExtractionMapper
                     ? new OcrValueDto<decimal> { Value = declaredGrand - declaredSub, Status = "recommended" }
                     : null,
                 DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },
+                // The ECF / ECF10 / ECF11 grammar is parsed server-side over the extracted
+                // document number, so consumers receive a POSITIVELY identified reference —
+                // never a bare numeric field that might be the supplier's NIF.
+                PurchaseOrderReference = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Display, Status = "recommended" }
+                    : null,
+                PurchaseOrderReferenceCanonical = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Canonical, Status = "recommended" }
+                    : null,
+                PurchaseOrderFamily = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Family, Status = "recommended" }
+                    : null,
                 PaymentCondition = !string.IsNullOrWhiteSpace(internalResult.Header?.PaymentConditionType) 
                     ? new OcrValueDto<string> { Value = internalResult.Header.PaymentConditionType, Status = internalResult.Header.PaymentConditionConfidence >= 0.7m ? "recommended" : "suggested" }
                     : null,

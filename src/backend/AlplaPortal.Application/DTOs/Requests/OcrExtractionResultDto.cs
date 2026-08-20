@@ -67,6 +67,22 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("discountAmount")]
     public OcrValueDto<decimal>? DiscountAmount { get; set; }
 
+    /// <summary>
+    /// Positively identified Primavera purchase-order reference (deterministic ECF/ECF10/ECF11
+    /// parse over the extracted fields), display form, e.g. "ECF11 2026/421". Null when no
+    /// reference parsed — a consumer must never fall back to a bare numeric documentNumber.
+    /// </summary>
+    [JsonPropertyName("purchaseOrderReference")]
+    public OcrValueDto<string>? PurchaseOrderReference { get; set; }
+
+    /// <summary>Canonical identity of the reference above, e.g. "ECF11-2026-421".</summary>
+    [JsonPropertyName("purchaseOrderReferenceCanonical")]
+    public OcrValueDto<string>? PurchaseOrderReferenceCanonical { get; set; }
+
+    /// <summary>The Primavera document family (ECF / ECF10 / ECF11) of the reference above.</summary>
+    [JsonPropertyName("purchaseOrderFamily")]
+    public OcrValueDto<string>? PurchaseOrderFamily { get; set; }
+
     [JsonPropertyName("vendorAddress")]
     public OcrValueDto<string>? VendorAddress { get; set; }
 

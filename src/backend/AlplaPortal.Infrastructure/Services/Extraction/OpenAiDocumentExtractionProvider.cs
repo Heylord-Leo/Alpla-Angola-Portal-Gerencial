@@ -904,7 +904,7 @@ Output ONLY JSON with this structure:
     ""supplierTaxId"": ""Fiscal number printed inside the SUPPLIER block only (NIF/Nº Contribuinte/VAT/Tax ID). null if the supplier block shows none or you cannot tell which party a number belongs to. NEVER the customer's."",
     ""billedCompanyName"": ""Name of company being billed (the CUSTOMER). Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
     ""billedCompanyTaxId"": ""Fiscal number printed inside the CUSTOMER block only, or null. This is where an ALPLA 'Nº Contribuinte' belongs on a supplier invoice."",
-    ""documentNumber"": ""string"",
+    ""documentNumber"": ""string. For Primavera PURCHASE ORDERS (titles like 'Encomenda a Fornecedor ECF', 'Encomenda Mat Escritório/Diversos ECF10', 'PO Serviços ECF11') this MUST be the full ECF reference exactly as printed, e.g. 'ECF11 2026/421' — NEVER a NIF/tax number and never any other prominent numeric field."",
     ""documentDate"": ""Date of the document, strictly YYYY-MM-DD. Numeric dates on these documents are day-first (dd/MM/yyyy). null if unreadable or genuinely undecidable."",
     ""dueDate"": ""Payment due date, strictly YYYY-MM-DD, same day-first rule. null if the document states none."",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",

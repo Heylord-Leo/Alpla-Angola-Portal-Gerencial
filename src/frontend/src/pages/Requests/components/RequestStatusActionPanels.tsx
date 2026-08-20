@@ -166,17 +166,39 @@ export function RequestStatusActionPanels({
                         {/* Buyer actions */}
                         {isBuyer && (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {/* Group-level PO Registration */}
+                                {/* Group-level PO Registration. A group with no structured supplier
+                                    (legacy "Fornecedor não definido") never offers a dead-end button:
+                                    a P.O is a commitment to a specific supplier, so the integrity
+                                    problem is stated instead — the backend refuses it anyway. */}
                                 {(status === 'APPROVED' || status === 'QUOTATION_COMPLETED' || status === 'PO_REQUESTED' || status === 'PO_PARTIALLY_UPLOADED') && poGroups && poGroups.length > 0 && (
                                     poGroups.filter(g => g.status === 'WAITING_PO').map(group => (
-                                        <button 
-                                            key={`po-upload-${group.id}`}
-                                            onClick={() => setPoGroupIdForUpload(group.id)}
-                                            className="btn-primary"
-                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                        >
-                                            <FileText size={14} /> REGISTRAR P.O ({group.supplierNameSnapshot})
-                                        </button>
+                                        group.supplierId == null ? (
+                                            <div
+                                                key={`po-blocked-${group.id}`}
+                                                role="alert"
+                                                style={{
+                                                    padding: '10px 12px', borderRadius: '6px', fontSize: '0.75rem',
+                                                    border: '1px solid #fcd34d', backgroundColor: 'rgba(180,83,9,0.06)',
+                                                    color: 'var(--color-text-main)', maxWidth: '520px'
+                                                }}
+                                            >
+                                                <strong style={{ color: '#b45309', display: 'block', marginBottom: '4px' }}>
+                                                    Fornecedor do pedido não definido
+                                                </strong>
+                                                Este pedido foi criado no fluxo legado e não possui um fornecedor
+                                                associado de forma estruturada. O fornecedor precisa ser identificado
+                                                (correção de integridade de dados) antes da emissão da P.O.
+                                            </div>
+                                        ) : (
+                                            <button
+                                                key={`po-upload-${group.id}`}
+                                                onClick={() => setPoGroupIdForUpload(group.id)}
+                                                className="btn-primary"
+                                                style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            >
+                                                <FileText size={14} /> REGISTRAR P.O ({group.supplierNameSnapshot})
+                                            </button>
+                                        )
                                     ))
                                 )}
                                 {/* Group-level PO Correction */}
