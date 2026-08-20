@@ -135,7 +135,7 @@ foreach ($key in $groups.Keys) {
     # ── Bounded retry with monotonic aggregation ─────────────────────────────────────────
     $attempts = 0; $successfulExtractions = 0; $positiveParses = 0
     $best = @{ PoDisplay=$null; PoCanonical=$null; PoFamily=$null; SupplierName=$null; SupplierNif=$null }
-    $allCanonicals = @()
+    $allCanonicals = @(); $allNifs = @()
 
     while ($downloadOk -and $attempts -lt $MaxAttempts) {
         $attempts++
@@ -157,15 +157,18 @@ foreach ($key in $groups.Keys) {
             }
         }
         if ($h.supplierName.value  -and -not $best.SupplierName) { $best.SupplierName = $h.supplierName.value }
-        if ($h.supplierTaxId.value -and -not $best.SupplierNif)  { $best.SupplierNif  = $h.supplierTaxId.value }
+        if ($h.supplierTaxId.value) {
+            $allNifs += $h.supplierTaxId.value
+            if (-not $best.SupplierNif) { $best.SupplierNif = $h.supplierTaxId.value }
+        }
 
         # Early-stop rules
         if ($isPoScope -and $best.PoCanonical -and $best.PoDisplay -and $best.PoFamily) { break }
         if (-not $isPoScope) {
-            $d = Get-DigitsOnly $best.SupplierNif
-            $nifUsable = $d.Length -ge 8 -and ($CompanyNifs -notcontains $d)
-            if ($nifUsable -and ($suppliers | Where-Object { (Get-DigitsOnly $_.TaxId) -eq $d })) { break }
-            if ($best.SupplierName -and $best.SupplierNif) { break }
+            $matched = $allNifs | ForEach-Object { Get-DigitsOnly $_ } | Select-Object -Unique |
+                Where-Object { $_.Length -ge 8 -and ($CompanyNifs -notcontains $_) } |
+                Where-Object { $d = $_; $suppliers | Where-Object { (Get-DigitsOnly $_.TaxId) -eq $d } }
+            if ($matched) { break }   # only a supplier-matched NIF is sufficient evidence to stop
         }
     }
     Remove-Item $pdf -Force -Confirm:$false -ErrorAction SilentlyContinue
@@ -178,13 +181,15 @@ foreach ($key in $groups.Keys) {
         $nifDigits = ''   # excluded from matching; raw value still reported
     }
 
-    # ── Supplier candidate matching ─────────────────────────────────────────────────────
+    # ── Supplier candidate matching (every distinct NIF reading is considered) ──────────
     $candidate = $null; $supplierStatus = 'INCONCLUSIVE'
-    if ($nifDigits.Length -ge 8) {
-        $candidate = $suppliers | Where-Object { (Get-DigitsOnly $_.TaxId) -eq $nifDigits } | Select-Object -First 1
-        if ($candidate) { $supplierStatus = 'NIF_EXACT' }
-        elseif ($best.SupplierNif) { $supplierStatus = 'NO_MATCH' }   # real extracted NIF, no supplier carries it
+    $distinctNifs = @($allNifs | ForEach-Object { Get-DigitsOnly $_ } | Where-Object { $_ } | Select-Object -Unique)
+    if ($distinctNifs.Count -gt 1) { $warnings += "NIF_VARIANT_READINGS:$($distinctNifs -join '/')" }
+    foreach ($d in ($distinctNifs | Where-Object { $_.Length -ge 8 -and ($CompanyNifs -notcontains $_) })) {
+        $candidate = $suppliers | Where-Object { (Get-DigitsOnly $_.TaxId) -eq $d } | Select-Object -First 1
+        if ($candidate) { $supplierStatus = 'NIF_EXACT'; break }
     }
+    if (-not $candidate -and $nifDigits.Length -ge 8) { $supplierStatus = 'NO_MATCH' }  # extracted, matches nothing
     if (-not $candidate -and $best.SupplierName) {
         $candidate = $suppliers | Where-Object { Test-NameMatch $best.SupplierName $_.Name } | Select-Object -First 1
         if ($candidate -and $supplierStatus -ne 'NIF_EXACT') { $supplierStatus = 'NAME_PROBABLE' }
@@ -233,7 +238,7 @@ foreach ($key in $groups.Keys) {
         SuccessfulExtractions     = $successfulExtractions
         PositiveParses            = $positiveParses
         OcrSupplierName           = $best.SupplierName
-        OcrSupplierNif            = if ($best.SupplierNif) { $best.SupplierNif } else { 'not extracted' }
+        OcrSupplierNif            = if ($allNifs) { (($allNifs | Select-Object -Unique) -join ';') } else { 'not extracted' }
         SupplierEvidenceStatus    = $supplierStatus
         CandidatePortalSupplier   = $candidate.Name
         RecommendedSupplierId     = $candidate.Id
