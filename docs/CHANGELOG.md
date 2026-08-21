@@ -6,6 +6,21 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 v2.229.12
 
+## [Documentation only] - 2026-08-21
+
+### Historical PO/Supplier Integrity Repair Campaign — closed
+
+- The historical PO/supplier data-integrity repair campaign was **completed in PROD** via
+  operator-executed, guarded `sqlcmd` scripts (see
+  [HISTORICAL-PO-SUPPLIER-INTEGRITY-REPAIR-2026-08.md](HISTORICAL-PO-SUPPLIER-INTEGRITY-REPAIR-2026-08.md)
+  for the full auditable close-out: repairs completed, cases intentionally left untouched,
+  safety controls, and script inventory).
+- **No application deployment was involved** — the PROD application version did not change
+  (PROD remained on v2.229.9; TEST on v2.229.12). This entry is documentation only: no code,
+  schema, or migration change.
+- Primavera `2026A` letter-suffixed year-series parser support recorded as **backlog only**
+  ([BACKLOG-PRIMAVERA-PO-PARSER.md](BACKLOG-PRIMAVERA-PO-PARSER.md)); not implemented.
+
 ## [v2.229.12] - 2026-08-20
 
 ### Primavera P.O Identification Hardening
