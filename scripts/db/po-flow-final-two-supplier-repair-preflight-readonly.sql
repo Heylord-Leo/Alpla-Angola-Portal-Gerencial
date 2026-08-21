@@ -1,19 +1,20 @@
 ﻿-- ============================================================================
--- FINAL THREE HISTORICAL SUPPLIER REPAIR — PREFLIGHT (READ-ONLY)
+-- FINAL TWO HISTORICAL SUPPLIER REPAIR — PREFLIGHT (READ-ONLY)
 -- ============================================================================
--- Stage 1 of the controlled supplier repair for EXACTLY three requests whose
+-- Stage 1 of the controlled supplier repair for EXACTLY two requests whose
 -- supplier identities were CONFIRMED BY HUMAN REVIEW (2026-08-20) and which
 -- passed the latest LIVE PROD preflight as PENDING_REPAIR:
---   REQ-16/07/2026-084 -> 53  REALVITUR ANGOLA, LIMITADA            (NIF 5417089079, company 1)
 --   REQ-29/07/2026-178 -> 66  IMPORAFRICA VEICULOS LDA              (NIF 5417231983, company 1)
 --   REQ-12/08/2026-245 -> 159 MUSOLAND-MUNDO DAS SOLUCOES-ACESS.CONS.(SU),LDA (NIF 5417386740, company 1)
 --
--- REQ-31/07/2026-193 and REQ-31/07/2026-194 were REMOVED from this package:
--- they drifted in live PROD to ADVANCE_PAYMENT_REQUIRED with registered PO
--- values and are handled by the dedicated po-flow-req193-194-supplier-po-*
--- package. REQ-31/07/2026-200 (PO_ISSUED drift) is handled by
+-- REQ-16/07/2026-084 was REMOVED from this package: the latest live PROD
+-- preflight showed RequestStatus = CANCELLED (group still WAITING_PO, supplier
+-- NULL, PO NULL) and it is classified HISTORICAL_INERT_NO_REPAIR_RECOMMENDED —
+-- it is intentionally left unchanged and receives NO supplier repair.
+-- REQ-193/REQ-194 (ADVANCE_PAYMENT_REQUIRED drift) are handled by
+-- po-flow-req193-194-supplier-po-*; REQ-200 (PO_ISSUED drift) by
 -- po-flow-req200-supplier-po-*. This script supersedes the retired
--- po-flow-final-five-supplier-repair-* trio.
+-- po-flow-final-three-supplier-repair-* trio.
 --
 -- Evidence basis: HUMAN CONFIRMATION of each request's stored source document.
 -- The pinned PROFORMA attachment id/hash below is a DRIFT-DETECTION ANCHOR only
@@ -21,8 +22,8 @@
 -- the supplier-identity evidence and filenames were never used as evidence.
 --
 -- SELECT/PRINT only — no writes of any kind. Run before
--- po-flow-final-three-supplier-repair.sql and STOP unless every row is PASS and
--- the final state is PENDING_REPAIR (or ALREADY_REPAIRED across all three).
+-- po-flow-final-two-supplier-repair.sql and STOP unless every row is PASS and
+-- the final state is PENDING_REPAIR (or ALREADY_REPAIRED across both).
 --
 -- OPERATIONAL WARNING (does NOT block this historical repair): supplier 159
 -- (MUSOLAND) is RegistrationStatus = DRAFT. register-po refuses DRAFT suppliers,
@@ -47,7 +48,7 @@ SELECT @@SERVERNAME AS ServerIdentity, DB_NAME() AS DatabaseName, ORIGINAL_LOGIN
                       WHEN 'Portal-Gerencial-Test' THEN 'TEST'
                       ELSE 'DISALLOWED' END AS ExecutionContext;
 
--- ── Allow-list: the ONLY three targets, with every reviewed expectation pinned ──
+-- ── Allow-list: the ONLY two targets, with every reviewed expectation pinned ──
 DECLARE @targets TABLE (
     RequestNumber NVARCHAR(50) PRIMARY KEY,
     ExpectedGroupId UNIQUEIDENTIFIER,
@@ -59,7 +60,6 @@ DECLARE @targets TABLE (
     AnchorFileHash NVARCHAR(100)
 );
 INSERT INTO @targets VALUES
- (N'REQ-16/07/2026-084', '886c0d0e-80d8-4ebe-8272-e4fa3304f5c3', 1, 53,  N'5417089079',  971392.00, '37fa585d-674f-47b1-b621-248dd845f5b0', N'78f0d3a0d0e26f421fadb0602566dea03affa43a05102c39fe4765da96791746'),
  (N'REQ-29/07/2026-178', '3d67213e-daba-4615-a0fc-108b19ea1a3e', 1, 66,  N'5417231983',  164167.67, '4831f40f-73d4-41a7-99a8-74c9492acf54', N'18c4299ed825509ff0c4f1a52ff6b498f3f90409bf50e2041ccaf0bc2a8c18a9'),
  (N'REQ-12/08/2026-245', 'fe684497-448f-471a-8461-377ba3dc47c5', 1, 159, N'5417386740',  239400.00, '6f5f7e9c-8899-45ba-93de-63fa47b922bf', N'f55d286e8342b4264cb298add5811f76ecd44443901e3fa3af3b949fac74e02e');
 
@@ -143,8 +143,9 @@ ORDER BY t.RequestNumber, gd.CheckName;
 
 -- ── Final state per request ──
 -- PENDING_REPAIR requires the FULL pending predicate (every guard the repair enforces),
--- not merely a NULL supplier: a row whose workflow advanced (e.g. PO registered) must
--- classify MANUAL_REVIEW_REQUIRED even though its supplier fields still look legacy.
+-- not merely a NULL supplier: a row whose workflow advanced (e.g. PO registered) or was
+-- cancelled must classify MANUAL_REVIEW_REQUIRED even though its supplier fields still
+-- look legacy (that is exactly how REQ-084's CANCELLED drift was caught).
 SELECT t.RequestNumber,
        CASE
          WHEN EXISTS (

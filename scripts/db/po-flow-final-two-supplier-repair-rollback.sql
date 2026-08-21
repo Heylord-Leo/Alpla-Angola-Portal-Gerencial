@@ -3,24 +3,26 @@
 -- ███  EXPLICIT AUTHORIZATION REQUIRED  ███
 -- ███  ENVIRONMENT MUST BE VERIFIED BEFORE EXECUTION  ███
 -- ============================================================================
--- Reverts po-flow-final-three-supplier-repair.sql for the SAME three groups only,
+-- Reverts po-flow-final-two-supplier-repair.sql for the SAME two groups only,
 -- restoring the exact prior state captured by the 2026-08-20 review:
 --   SupplierId -> NULL
 --   SupplierNameSnapshot -> N'Fornecedor não definido'   (legacy placeholder)
 --   SupplierNifSnapshot  -> NULL
--- and removing ONLY the audit rows carrying the [HIST-SUPPLIER-REQ-***] tags of
--- these three requests. REQ-193/194/200 are NOT part of this package.
+-- and removing ONLY the audit rows carrying the [HIST-SUPPLIER-REQ-178] /
+-- [HIST-SUPPLIER-REQ-245] tags.
+-- REQ-084 (CANCELLED, HISTORICAL_INERT_NO_REPAIR_RECOMMENDED), REQ-193/194 and
+-- REQ-200 are NOT part of this package.
 -- Note: per the established repair pattern, UpdatedAtUtc/UpdatedByUserId are
 -- stamped at rollback time (pre-repair bookkeeping values are not preserved).
 --
--- SINGLE TRANSACTION, all-or-nothing: it operates only when ALL three rows
--- currently match the exact values the repair wrote (expected SupplierId +
--- supplier NIF snapshot); any divergence aborts everything for manual review.
--- Statuses/workflow untouched. Idempotent: if all three are already back to the
+-- SINGLE TRANSACTION, all-or-nothing: it operates only when BOTH rows currently
+-- match the exact values the repair wrote (expected SupplierId + supplier NIF
+-- snapshot); any divergence aborts everything for manual review.
+-- Statuses/workflow untouched. Idempotent: if both are already back to the
 -- original legacy state, it skips.
 --
 -- Usage:
---   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-three-supplier-repair-rollback.sql -v actor="<admin user guid>"
+--   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-two-supplier-repair-rollback.sql -v actor="<admin user guid>"
 -- ============================================================================
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -55,7 +57,6 @@ DECLARE @targets TABLE (
     AuditTag NVARCHAR(40)
 );
 INSERT INTO @targets VALUES
- (N'REQ-16/07/2026-084', '886c0d0e-80d8-4ebe-8272-e4fa3304f5c3', 53,  N'5417089079', N'[HIST-SUPPLIER-REQ-084]'),
  (N'REQ-29/07/2026-178', '3d67213e-daba-4615-a0fc-108b19ea1a3e', 66,  N'5417231983', N'[HIST-SUPPLIER-REQ-178]'),
  (N'REQ-12/08/2026-245', 'fe684497-448f-471a-8461-377ba3dc47c5', 159, N'5417386740', N'[HIST-SUPPLIER-REQ-245]');
 
@@ -74,15 +75,15 @@ BEGIN TRY
            AND g.SupplierNameSnapshot = N'Fornecedor não definido'
            AND g.SupplierNifSnapshot IS NULL);
 
-    IF @inOriginalState = 3 AND @inRepairedState = 0
+    IF @inOriginalState = 2 AND @inRepairedState = 0
     BEGIN
-        PRINT 'ALREADY_ROLLED_BACK: all three groups are at the original legacy state — nothing written.';
+        PRINT 'ALREADY_ROLLED_BACK: both groups are at the original legacy state — nothing written.';
         COMMIT TRANSACTION;
     END
-    ELSE IF @inRepairedState <> 3
+    ELSE IF @inRepairedState <> 2
     BEGIN
         PRINT CONCAT('ABORTED (MANUAL_REVIEW_REQUIRED): rows in repaired state = ', @inRepairedState,
-                     ' of 3 — current values do not match what this repair wrote. Nothing written, rolled back.');
+                     ' of 2 — current values do not match what this repair wrote. Nothing written, rolled back.');
         ROLLBACK TRANSACTION;
     END
     ELSE
@@ -97,9 +98,9 @@ BEGIN TRY
         JOIN @targets t ON t.ExpectedGroupId = g.Id
         WHERE g.SupplierId = t.ExpectedSupplierId AND g.SupplierNifSnapshot = t.ExpectedSupplierNif;
 
-        IF @@ROWCOUNT <> 3
+        IF @@ROWCOUNT <> 2
         BEGIN
-            PRINT 'ABORTED: rollback UPDATE affected a row count different from 3 — rolled back, nothing persisted.';
+            PRINT 'ABORTED: rollback UPDATE affected a row count different from 2 — rolled back, nothing persisted.';
             ROLLBACK TRANSACTION;
         END
         ELSE
@@ -111,7 +112,7 @@ BEGIN TRY
             WHERE h.ActionTaken = 'DATA_INTEGRITY_REPAIR'
               AND h.Comment LIKE REPLACE(t.AuditTag, '[', '[[]') + '%';
 
-            PRINT CONCAT('ROLLED BACK: three groups restored to the legacy state; ', @@ROWCOUNT, ' tagged audit row(s) removed.');
+            PRINT CONCAT('ROLLED BACK: both groups restored to the legacy state; ', @@ROWCOUNT, ' tagged audit row(s) removed.');
             COMMIT TRANSACTION;
         END
     END
@@ -127,6 +128,5 @@ SELECT r.RequestNumber, rs.Code AS RequestStatus, g.Id AS GroupId, g.Status AS G
 FROM RequestPoGroups g
 JOIN Requests r         ON r.Id = g.RequestId
 JOIN RequestStatuses rs ON rs.Id = r.StatusId
-WHERE g.Id IN ('886c0d0e-80d8-4ebe-8272-e4fa3304f5c3','3d67213e-daba-4615-a0fc-108b19ea1a3e',
-               'fe684497-448f-471a-8461-377ba3dc47c5')
+WHERE g.Id IN ('3d67213e-daba-4615-a0fc-108b19ea1a3e','fe684497-448f-471a-8461-377ba3dc47c5')
 ORDER BY r.RequestNumber;
