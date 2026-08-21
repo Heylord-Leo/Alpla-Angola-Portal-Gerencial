@@ -390,4 +390,119 @@ public class RequestStatusCalculatorTests
 
         Assert.Equal(RequestConstants.Statuses.PoIssued, result.StatusCode);
     }
+
+    // ── v2.230.0: PO-gate floor + superseded/cancelled batch exclusion (REQ-140 class) ──
+
+    /// <summary>
+    /// The exact REQ-23/07/2026-140 shape: an abandoned AREA_ADJUSTMENT batch whose only item
+    /// was processed by the legacy batchless path into a PO_ISSUED group. Before the floor, the
+    /// batch's Phase-1 authority regressed the request to WAITING_AREA_APPROVAL (silently) and a
+    /// re-approval overwrote PO_ISSUED with APPROVED. The aggregate must stay PO_ISSUED.
+    /// </summary>
+    [Fact]
+    public void Req140Shape_AbandonedBatch_PlusBatchlessIssuedGroup_StaysPoIssued()
+    {
+        var request = MakeRequest("PO_ISSUED");
+        var group = MakeGroup(RequestConstants.PoGroupStatuses.PoIssued);
+        request.PoGroups.Add(group);
+
+        var item = MakeItem(RequestConstants.QuotationLifecycleStatuses.BatchAssigned);
+        item.RequestPoGroupId = group.Id;
+        request.LineItems.Add(item);
+
+        var staleBatch = MakeBatch(RequestConstants.ApprovalBatchStatuses.AreaAdjustment);
+        staleBatch.Items.Add(new ApprovalBatchItem { Id = Guid.NewGuid(), ApprovalBatchId = staleBatch.Id, RequestLineItemId = item.Id });
+        request.ApprovalBatches.Add(staleBatch);
+
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+
+        Assert.Equal(RequestConstants.Statuses.PoIssued, result.StatusCode);
+    }
+
+    /// <summary>
+    /// Multi-group: Group A already PO_ISSUED, a LIVE second batch still awaiting final
+    /// approval for other items. The persisted scalar must not regress to
+    /// WAITING_FINAL_APPROVAL — the in-flight wave surfaces via the display projection
+    /// (MIXED_PROCESSING), never via the compatibility aggregate.
+    /// </summary>
+    [Fact]
+    public void PoGateFloor_LiveSecondBatchInApproval_DoesNotRegressScalar()
+    {
+        var request = MakeRequest("PO_ISSUED");
+        var issuedGroup = MakeGroup(RequestConstants.PoGroupStatuses.PoIssued);
+        request.PoGroups.Add(issuedGroup);
+
+        var issuedItem = MakeItem(RequestConstants.QuotationLifecycleStatuses.QuotationApproved);
+        issuedItem.RequestPoGroupId = issuedGroup.Id;
+        request.LineItems.Add(issuedItem);
+
+        // Second, genuinely live wave: its item is NOT covered by any group yet.
+        var pendingItem = MakeItem(RequestConstants.QuotationLifecycleStatuses.BatchAssigned);
+        request.LineItems.Add(pendingItem);
+        var liveBatch = MakeBatch(RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval);
+        liveBatch.Items.Add(new ApprovalBatchItem { Id = Guid.NewGuid(), ApprovalBatchId = liveBatch.Id, RequestLineItemId = pendingItem.Id });
+        request.ApprovalBatches.Add(liveBatch);
+
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+
+        Assert.NotEqual(RequestConstants.Statuses.WaitingFinalApproval, result.StatusCode);
+        Assert.Equal(RequestConstants.Statuses.PoIssued, result.StatusCode);
+    }
+
+    /// <summary>Pending items never drag an issued request back to WAITING_QUOTATION.</summary>
+    [Fact]
+    public void PoGateFloor_PendingItems_DoNotRegressToWaitingQuotation()
+    {
+        var request = MakeRequest("PO_ISSUED");
+        request.PoGroups.Add(MakeGroup(RequestConstants.PoGroupStatuses.PoIssued));
+        request.LineItems.Add(MakeItem(RequestConstants.QuotationLifecycleStatuses.QuotationPending));
+        request.ApprovalBatches.Add(MakeBatch(RequestConstants.ApprovalBatchStatuses.Approved));
+
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+
+        Assert.NotEqual(RequestConstants.Statuses.WaitingQuotation, result.StatusCode);
+    }
+
+    /// <summary>
+    /// Pre-gate: a superseded batch (items covered by an active WAITING_PO group from another
+    /// path) must not hold the request in WAITING_AREA_APPROVAL — the WAITING_PO group drives.
+    /// </summary>
+    [Fact]
+    public void SupersededBatch_PreGate_DoesNotHoldRequestInApproval()
+    {
+        var request = MakeRequest("WAITING_AREA_APPROVAL");
+        var group = MakeGroup(RequestConstants.PoGroupStatuses.WaitingPo);
+        request.PoGroups.Add(group);
+
+        var item = MakeItem(RequestConstants.QuotationLifecycleStatuses.QuotationApproved);
+        item.RequestPoGroupId = group.Id;
+        request.LineItems.Add(item);
+
+        var staleBatch = MakeBatch(RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval);
+        staleBatch.Items.Add(new ApprovalBatchItem { Id = Guid.NewGuid(), ApprovalBatchId = staleBatch.Id, RequestLineItemId = item.Id });
+        request.ApprovalBatches.Add(staleBatch);
+
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+
+        Assert.NotEqual(RequestConstants.Statuses.WaitingAreaApproval, result.StatusCode);
+    }
+
+    /// <summary>Payment lifecycle states are protected by the same floor.</summary>
+    [Fact]
+    public void PoGateFloor_PaymentScheduledGroup_IgnoresInApprovalBatch()
+    {
+        var request = MakeRequest("PAYMENT_SCHEDULED");
+        var group = MakeGroup(RequestConstants.PoGroupStatuses.PaymentScheduled);
+        request.PoGroups.Add(group);
+
+        var newItem = MakeItem(RequestConstants.QuotationLifecycleStatuses.BatchAssigned);
+        request.LineItems.Add(newItem);
+        var liveBatch = MakeBatch(RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval);
+        liveBatch.Items.Add(new ApprovalBatchItem { Id = Guid.NewGuid(), ApprovalBatchId = liveBatch.Id, RequestLineItemId = newItem.Id });
+        request.ApprovalBatches.Add(liveBatch);
+
+        var result = RequestStatusCalculator.DetermineAggregateRequestStatus(request);
+
+        Assert.Equal(RequestConstants.Statuses.PaymentScheduled, result.StatusCode);
+    }
 }

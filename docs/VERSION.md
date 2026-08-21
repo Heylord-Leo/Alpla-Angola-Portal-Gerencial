@@ -2,7 +2,29 @@
 
 ## Current Version
 
-v2.229.12
+v2.230.0
+
+## [v2.230.0] - 2026-08-21
+
+### Multi-Group Request Workflow
+
+- The Request is now treated as a container whose batches (lotes) and P.O groups are independent
+  operational units: the aggregate request status can never regress to an approval phase after any
+  active group crossed the P.O gate (RequestStatusCalculator PO-gate floor), stale/superseded
+  in-approval batches are structurally detected and excluded from status precedence, every
+  aggregate transition is audited as a STATUS_SYNC history entry with the acting user (no more
+  silent status writes), and the legacy area/final approval endpoints refuse requests whose flow
+  already advanced ("Fluxo já avançado"). Root-cause fix for the REQ-140 status regression.
+- New read-only workflow projection (per-unit status, responsible roles, next actions, warnings)
+  drives group-aware list badges and summaries, per-lot/group semantic timelines in the expanded
+  Requests rows, a consistent Request drawer (badge, guidance, action panels) and the "Progresso
+  por Grupo" cards — including historical requests, which reconstruct their operational units
+  whenever at least one batch/group exists (unit-less legacy requests keep the previous
+  presentation). WAITING_RECEIPT is now correctly presented as the fiscal-documentation stage
+  (receiving already complete), and raw status enums were replaced by Portuguese labels.
+- No schema or migration changes. PAYMENT flow behavior intentionally unchanged; Phase-6
+  operational filters/dashboards deferred; Primavera `2026A` parser remains backlog; the REQ-140
+  PROD data repair is NOT part of this application release.
 
 ## [v2.229.12] - 2026-08-20
 

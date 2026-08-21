@@ -1010,14 +1010,12 @@ public class RequestsController : BaseController
             var batchData = await _context.Requests
                 .AsNoTracking()
                 .Where(r => quotationRequestIds.Contains(r.Id))
-                .Select(r => new
-                {
-                    r.Id,
-                    LineItems = r.LineItems.Where(li => !li.IsDeleted).ToList(),
-                    Batches = r.ApprovalBatches.ToList(),
-                    PoGroups = r.PoGroups.ToList(),
-                    StatusCode = r.Status!.Code
-                })
+                .Include(r => r.Status)
+                .Include(r => r.RequestType)
+                .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .Include(r => r.ApprovalBatches)
+                    .ThenInclude(b => b.Items)
+                .Include(r => r.PoGroups)
                 .AsSplitQuery()
                 .ToListAsync();
 
@@ -1028,10 +1026,10 @@ public class RequestsController : BaseController
                 {
                     item.DisplayWorkflowState = _statusSyncService.ComputeDisplayWorkflowState(
                         RequestConstants.Types.Quotation,
-                        data.StatusCode,
-                        data.LineItems,
-                        data.Batches,
-                        data.PoGroups);
+                        data.Status!.Code,
+                        data.LineItems.ToList(),
+                        data.ApprovalBatches.ToList(),
+                        data.PoGroups.ToList());
 
                     // Display-only, group-aware label override (never persisted, never used for
                     // permissions) — reuses this same already-page-scoped PoGroups fetch rather than
@@ -1041,6 +1039,30 @@ public class RequestsController : BaseController
                     var groupDisplay = RequestGroupDisplayStateCalculator.Resolve(data.PoGroups.Select(g => g.Status));
                     item.DisplayStatusCode = groupDisplay.DisplayStatusCode;
                     item.DisplayStatusName = groupDisplay.DisplayStatusName;
+
+                    // v2.230.0 multi-group summary for the list row (same page-scoped data —
+                    // no extra query). Single-unit requests get ActiveUnitCount<=1 and a null
+                    // UnitSummary, keeping their current appearance.
+                    var projection = RequestWorkflowProjectionBuilder.Build(data, item.DisplayWorkflowState ?? "");
+                    item.ActiveUnitCount = projection.Units.Count;
+                    item.UnitSummary = RequestWorkflowProjectionBuilder.BuildUnitSummary(projection);
+                    item.ResponsibleRoles = projection.Responsibilities.Select(rr => rr.Role).ToList();
+
+                    // v2.230.0 historical compatibility (display only, no extra query): a
+                    // single-unit request whose scalar lags the group lifecycle (REQ-140 class)
+                    // shows the unit's truthful label instead of the stale scalar. Guardrails
+                    // (terminal scalars, multi-unit, agreement) live in the pure helper; the
+                    // group-aware post-payment override above keeps precedence when present.
+                    if (item.DisplayStatusCode == null)
+                    {
+                        var badgeOverride = RequestWorkflowProjectionBuilder
+                            .ResolveSingleUnitBadgeOverride(projection, data.Status!.Code);
+                        if (badgeOverride.HasValue)
+                        {
+                            item.DisplayStatusCode = badgeOverride.Value.Code;
+                            item.DisplayStatusName = badgeOverride.Value.Label;
+                        }
+                    }
                 }
             }
         }
@@ -1065,6 +1087,40 @@ public class RequestsController : BaseController
             },
             Summary = summary
         });
+    }
+
+    /// <summary>
+    /// v2.230.0 — Multi-Group Request Workflow projection (read-only, computed, never persisted).
+    /// "Request is the container; operational units are batches/groups": returns the aggregate
+    /// display state, the active units (in-approval batches before PO-group creation, PO groups
+    /// after), responsibilities and next actions per unit, and diagnostics warnings (e.g.
+    /// superseded batches). Superseded/cancelled batches are never listed as active units.
+    /// </summary>
+    [HttpGet("{id:guid}/workflow-projection")]
+    public async Task<IActionResult> GetWorkflowProjection(Guid id)
+    {
+        var request = await _context.Requests
+            .AsNoTracking()
+            .Include(r => r.RequestType)
+            .Include(r => r.Status)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+            .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
+            .Include(r => r.PoGroups)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request == null) return NotFound();
+
+        var displayState = _statusSyncService.ComputeDisplayWorkflowState(
+            request.RequestType?.Code ?? "",
+            request.Status?.Code ?? "",
+            request.LineItems.ToList(),
+            request.ApprovalBatches.ToList(),
+            request.PoGroups.ToList());
+
+        var projection = RequestWorkflowProjectionBuilder.Build(request, displayState);
+        return Ok(projection);
     }
 
     [HttpGet("{id:guid}")]
@@ -1672,8 +1728,11 @@ public class RequestsController : BaseController
             .Include(r => r.RequestType)
             .Include(r => r.LineItems)
             .Include(r => r.PoGroups)
+            .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
             .Include(r => r.StatusHistories)
                 .ThenInclude(sh => sh.NewStatus)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound();
@@ -1835,6 +1894,35 @@ public class RequestsController : BaseController
             {
                 receivingStep.State = "completed";
                 receivingStep.CompletedAt = AsUtcOffset(operationalReceiptCompletedAtUtc);
+            }
+        }
+
+        // ── v2.230.0: per-lot progress timelines for the Requests-list expanded row ──
+        // Only for multi-lot QUOTATION requests: logical lots come from the SAME workflow
+        // projection semantics (batch∪group dedupe, superseded exclusion, terminal requests →
+        // zero units); single-lot/PAYMENT/legacy rows keep the Steps compatibility path,
+        // and a CANCELLED/REJECTED request never renders active-looking lot timelines.
+        if (typeCode == RequestConstants.Types.Quotation &&
+            currentStatusCode is not ("CANCELLED" or "REJECTED"))
+        {
+            var projection = RequestWorkflowProjectionBuilder.Build(request, currentStatusCode);
+            var lots = RequestLotTimelineBuilder.BuildLots(request, projection);
+            if (lots.Count >= 1)
+            {
+                result.Lots = lots.Select(lot => new LotTimelineDto
+                {
+                    UnitType = lot.UnitType,
+                    UnitId = lot.UnitId,
+                    LotNumber = lot.LotNumber,
+                    Label = lot.Label,
+                    SupplierName = lot.SupplierName,
+                    TotalAmount = lot.TotalAmount,
+                    CurrencyCode = lot.CurrencyCode,
+                    PurchaseOrderNumber = lot.PurchaseOrderNumber,
+                    StatusCode = lot.StatusCode,
+                    StatusLabel = lot.StatusLabel,
+                    Steps = lot.Steps.Select(s => new TimelineStepDto { Label = s.Label, State = s.State }).ToList()
+                }).ToList();
             }
         }
 
@@ -5953,6 +6041,26 @@ public class RequestsController : BaseController
         if (request.Status!.Code != "WAITING_FINAL_APPROVAL")
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "O pedido não está em fase de aprovação final.", Status = 400 });
 
+        // ── v2.230.0 lifecycle guard (REQ-23/07/2026-140) ──
+        // Once any active operational group crossed the PO gate (P.O. registrada, adiantamento,
+        // pagamento…), this request-wide legacy endpoint may no longer run: it would regress the
+        // aggregate to APPROVED over an already-advanced group. Remaining items of a multi-group
+        // request are approved through the batch endpoints, which act only on their own units.
+        var advancedGroupGuard = await _context.RequestPoGroups
+            .Where(g => g.RequestId == id)
+            .ToListAsync();
+        if (SupersededBatchPolicy.AnyActiveGroupCrossedPoGate(advancedGroupGuard))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Fluxo já avançado",
+                Detail = "Este pedido possui grupo(s) operacionais com P.O. registrada ou em fase " +
+                         "financeira. A aprovação request-wide não é permitida — utilize o fluxo de " +
+                         "lotes para aprovar itens restantes.",
+                Status = 400
+            });
+        }
+
         if (request.RequestType!.Code == "PAYMENT" && action == "REQUEST_ADJUSTMENT")
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Pedidos de Pagamento não permitem reajuste. Apenas aprovação ou rejeição são permitidas.", Status = 400 });
 
@@ -6147,6 +6255,26 @@ public class RequestsController : BaseController
                 Title = "Pedido Já Decidido",
                 Detail = $"Este pedido já foi decidido por {deciderName}.",
                 Status = 409
+            });
+        }
+
+        // ── v2.230.0 lifecycle guard (REQ-23/07/2026-140) ──
+        // Same rule as final approval: a request whose active group(s) already crossed the PO
+        // gate must never re-enter the request-wide legacy area-approval flow (the 2026-08-14
+        // re-award that preceded the APPROVED regression). Batch endpoints remain available for
+        // genuinely new approval waves.
+        var areaAdvancedGroups = await _context.RequestPoGroups
+            .Where(g => g.RequestId == id)
+            .ToListAsync();
+        if (SupersededBatchPolicy.AnyActiveGroupCrossedPoGate(areaAdvancedGroups))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Fluxo já avançado",
+                Detail = "Este pedido possui grupo(s) operacionais com P.O. registrada ou em fase " +
+                         "financeira. A aprovação request-wide não é permitida — utilize o fluxo de " +
+                         "lotes para aprovar itens restantes.",
+                Status = 400
             });
         }
 
@@ -7119,7 +7247,7 @@ public class RequestsController : BaseController
         
         // Aggregate to update parent status
         var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
-        await _statusAggregationService.AggregateRequestStatusAsync(id);
+        await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
 
         return Ok(new { message = "Adiantamento agendado com sucesso.", paymentId = advancePayment.Id });
     }
@@ -7245,7 +7373,7 @@ public class RequestsController : BaseController
 
         // Aggregate to update parent status
         var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
-        await _statusAggregationService.AggregateRequestStatusAsync(id);
+        await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
 
         // Phase 2 strictly post-save; never fails the confirmation.
         await EvaluateCompletionPhaseTwoAsync(id);
@@ -7451,7 +7579,7 @@ public class RequestsController : BaseController
         _context.RequestStatusHistories.Add(history);
 
         await _context.SaveChangesAsync();
-        await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
+        await _statusAggregationService.AggregateRequestStatusAsync(request.Id, CurrentUserId);
 
         return Ok(new { Message = "Grupo movido para aguardando recibo.", StatusCode = "WAITING_RECEIPT" });
     }
@@ -7585,7 +7713,7 @@ public class RequestsController : BaseController
             await _context.SaveChangesAsync();
 
             // Re-aggregate the parent status
-            await _statusAggregationService.AggregateRequestStatusAsync(request.Id);
+            await _statusAggregationService.AggregateRequestStatusAsync(request.Id, CurrentUserId);
 
             await transaction.CommitAsync();
 

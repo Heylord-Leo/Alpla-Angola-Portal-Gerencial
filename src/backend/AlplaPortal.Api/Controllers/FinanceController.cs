@@ -1168,7 +1168,7 @@ public class FinanceController : BaseController
         _context.RequestStatusHistories.Add(history);
         await _context.SaveChangesAsync();
 
-        await _statusAggregationService.AggregateRequestStatusAsync(id);
+        await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
 
         try
         {
@@ -1369,7 +1369,7 @@ public class FinanceController : BaseController
         // the parent from reading as globally PAYMENT_COMPLETED.
         if (r.RequestType?.Code == RequestConstants.Types.Quotation)
         {
-            await _statusAggregationService.AggregateRequestStatusAsync(id);
+            await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
         }
 
         // ── Divergence Detection: group-first for QUOTATION, request-level for PAYMENT ──
@@ -1721,7 +1721,7 @@ public class FinanceController : BaseController
 
         // Same pattern as SchedulePayment/MarkAsPaid: aggregation is a separate round-trip after
         // the group mutation is persisted, never assigned inline here.
-        await _statusAggregationService.AggregateRequestStatusAsync(id);
+        await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
 
         try
         {

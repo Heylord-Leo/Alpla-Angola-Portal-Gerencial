@@ -81,7 +81,32 @@ public static class RequestStatusCalculator
     {
         var currentStatusCode = request.Status?.Code ?? RequestConstants.Statuses.WaitingQuotation;
         var activeItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
-        var batches = request.ApprovalBatches.ToList();
+        var allGroups = request.PoGroups.ToList();
+
+        // v2.230.0 — two multi-group corrections (REQ-23/07/2026-140 regression class):
+        //
+        // (a) Batches that are CANCELLED, or SUPERSEDED (still in an approval state but every
+        //     item already processed by another active operational unit — see
+        //     SupersededBatchPolicy), no longer represent live approval work and are excluded
+        //     from Phase 1 entirely. An abandoned AREA_ADJUSTMENT batch must not keep pulling
+        //     the request back to WAITING_AREA_APPROVAL forever.
+        //
+        // (b) PO-gate floor: once ANY active group crossed the PO gate (PO_ISSUED, the
+        //     advance-payment track, payment/receiving states…), Phase 1 may no longer return a
+        //     pre-PO approval status at all — the persisted aggregate is computed from the
+        //     groups (Phase 2), and in-flight approval of REMAINING items surfaces through the
+        //     display projection (MIXED_PROCESSING), never by regressing the scalar.
+        var batches = SupersededBatchPolicy.ConsideredBatches(request.ApprovalBatches, activeItems, allGroups);
+        var poGateCrossed = SupersededBatchPolicy.AnyActiveGroupCrossedPoGate(allGroups);
+
+        // "Came from the batch workflow" keys off the ORIGINAL batch list: a request whose only
+        // batch is superseded/cancelled still ran the batch workflow, so its all-WAITING_PO
+        // groups must report PO_REQUESTED (active Buyer stage), not preserve a stale approval
+        // status. Only genuinely batchless flows (PAYMENT single-group) keep inline semantics.
+        var cameFromBatchWorkflow = request.ApprovalBatches.Count > 0;
+
+        if (poGateCrossed)
+            return DeterminePoGroupPhaseStatus(request, currentStatusCode, batches, cameFromBatchWorkflow);
 
         if (batches.Count == 0)
         {
@@ -144,8 +169,15 @@ public static class RequestStatusCalculator
         // Reached either because batches.Count == 0 with PoGroups already present (batchless
         // group workflow — e.g. a PAYMENT-type request's single auto-created group), or because
         // Phase 1 fully settled with at least one approved batch and at least one PO group.
-        var cameFromBatchPhase = batches.Count > 0;
+        return DeterminePoGroupPhaseStatus(request, currentStatusCode, batches, cameFromBatchWorkflow);
+    }
 
+    private static RequestStatusCalculationResult DeterminePoGroupPhaseStatus(
+        Request request,
+        string currentStatusCode,
+        IReadOnlyList<ApprovalBatch> batches,
+        bool cameFromBatchPhase)
+    {
         var approvedBatchIds = batches
             .Where(b => b.Status == RequestConstants.ApprovalBatchStatuses.Approved)
             .Select(b => b.Id)

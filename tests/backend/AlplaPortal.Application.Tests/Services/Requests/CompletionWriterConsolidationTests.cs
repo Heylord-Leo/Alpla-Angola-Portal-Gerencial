@@ -272,7 +272,7 @@ public class CompletionWriterConsolidationTests
 
         var aggregator = new StatusAggregationService(
             ctx, NullLogger<StatusAggregationService>.Instance, Options.Create(Flags(completion: true)));
-        await aggregator.AggregateRequestStatusAsync(seed.RequestId);
+        await aggregator.AggregateRequestStatusAsync(seed.RequestId, Guid.NewGuid());
 
         var request = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
         Assert.Equal(16, request.StatusId); // deferred — the completion service owns the transition
@@ -289,7 +289,7 @@ public class CompletionWriterConsolidationTests
         // pre-Phase-4 aggregation behaviour.
         var aggregator = new StatusAggregationService(
             ctx, NullLogger<StatusAggregationService>.Instance, Options.Create(Flags(completion: false)));
-        await aggregator.AggregateRequestStatusAsync(seed.RequestId);
+        await aggregator.AggregateRequestStatusAsync(seed.RequestId, Guid.NewGuid());
 
         var request = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
         Assert.Equal(17, request.StatusId);
@@ -308,7 +308,7 @@ public class CompletionWriterConsolidationTests
         // …then aggregation runs and changes nothing: no second transition, no extra history.
         var aggregator = new StatusAggregationService(
             ctx, NullLogger<StatusAggregationService>.Instance, Options.Create(Flags(completion: true)));
-        await aggregator.AggregateRequestStatusAsync(seed.RequestId);
+        await aggregator.AggregateRequestStatusAsync(seed.RequestId, Guid.NewGuid());
 
         var request = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
         Assert.Equal(17, request.StatusId);

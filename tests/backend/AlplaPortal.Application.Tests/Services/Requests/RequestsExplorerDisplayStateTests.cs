@@ -231,7 +231,11 @@ public class RequestsExplorerDisplayStateTests
         var page2Dto = Assert.IsType<RequestListResponseDto>(page2Ok.Value);
         var page2Item = Assert.Single(page2Dto.PagedResult.Items);
         Assert.Equal("ZZTEST-PAGE-2", page2Item.RequestNumber);
-        Assert.Null(page2Item.DisplayStatusCode); // single group -> no override, resolved independently of page 1
+        // v2.230.0 historical compatibility (Decision 2): a single-unit request whose scalar
+        // (APPROVED) lags the group lifecycle (PO_ISSUED) now receives the unit's truthful
+        // display override — resolved independently of page 1, which is this test's point.
+        Assert.Equal("PO_ISSUED", page2Item.DisplayStatusCode);
+        Assert.Equal("P.O Emitida", page2Item.DisplayStatusName);
     }
 
     // ── GetRequestTimeline: advance-payment codes added to QUOTATION's "Pagamento" stage ──

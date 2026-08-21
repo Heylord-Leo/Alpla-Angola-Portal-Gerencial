@@ -4,7 +4,73 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.12
+v2.230.0
+
+## [v2.230.0] - 2026-08-21
+
+### Multi-Group Request Workflow
+
+Motivated by the REQ-23/07/2026-140 status regression (an APPROVED request re-offering "emitir
+P.O" after the P.O was already registered): a Request is now treated as a **container** whose
+approval batches (lotes) and P.O groups are independent operational units, and the request-level
+status is a derived, audited aggregate that can never contradict the units. **No DB migration; no
+schema change; no historical data modified.**
+
+#### Fixed — status integrity (REQ-140 root cause)
+
+- **PO-gate floor** in `RequestStatusCalculator`: once any active group crossed the P.O gate
+  (P.O emitida, pagamentos, recebimento, conclusão), the aggregate status can never regress to an
+  approval-phase status because of another batch still in (or abandoned in) approval.
+- **Superseded/stale batch detection** (`SupersededBatchPolicy`): an in-approval batch whose items
+  were all already processed by another active flow is excluded from status precedence and from
+  the display state; it is surfaced to administrators as "Lote #N obsoleto" (no automatic
+  cancellation — deliberate).
+- **Audited aggregate transitions**: `StatusAggregationService` now records a STATUS_SYNC history
+  entry with the acting user on every request-status transition — the silent status writer that
+  produced the unaudited regression no longer exists.
+- **Legacy approval guards**: the legacy area/final approval endpoints refuse re-approval with
+  400 "Fluxo já avançado" whenever any active group already crossed the P.O gate.
+
+#### Added — group-aware workflow presentation
+
+- **Workflow projection** (`GET /requests/{id}/workflow-projection`, read-only/computed): per-unit
+  status, responsible role, next action, aggregate display state, responsibilities, prioritized
+  next actions and stale-lot warnings.
+- **Requests list**: active-unit count and unit summary ("3 grupos · 1 P.O. emitida · …"),
+  responsible-role chips, and group-aware badges — multi-unit rows show aggregate display labels
+  (e.g. "Processamento Parcial"), single-unit rows show the unit's truthful state when the
+  persisted scalar lags (display only; permissions and filters unchanged).
+- **Per-lot timelines in the expanded Requests row**: each batch/group renders its own semantic
+  7-stage progress timeline (Cotação → Aprovações → P.O./Contratação → Pagamento →
+  Recebimento/Execução → Documentação Fiscal → Concluído), with real lot numbers only
+  ("Lote #N · Fornecedor"; batchless groups show "Grupo · Fornecedor" — numbers are never
+  fabricated), lazy-loaded on expand; more than 3 lots collapse into an accordion.
+- **Request drawer consistency**: for requests with at least one reliable unit, the status badge,
+  Responsável/Próxima-ação guidance and action panels all derive from the projection (an
+  effective panel status maps the unit lifecycle onto the panel vocabulary), so a stale scalar can
+  no longer offer the wrong action (e.g. "emitir P.O" after issuance); multi-unit requests get a
+  FLUXOS ATIVOS / PRÓXIMAS AÇÕES header instead of single-flow guidance.
+- **Progresso por Grupo** cards for every request with reconstructible units, including
+  administrator-only stale-lot warnings.
+- **Historical compatibility**: existing requests reconstruct operational units whenever at least
+  one batch/group exists; unit-less legacy requests keep the previous request-level presentation
+  and guidance unchanged.
+
+#### Changed
+
+- **WAITING_RECEIPT semantics corrected** across timeline/projection/guidance: receiving is
+  complete and the supplier's fiscal receipt is owed — presented as Documentação Fiscal current
+  (Recebimento/Execução completed), matching the established completion-flow behavior.
+- Portuguese labels for the remaining raw group-status enums (Aguardando Ativação, Aguardando
+  P.O., Devolvido para Compras) — raw enum codes no longer reach the UI.
+
+#### Explicitly out of scope
+
+- **PAYMENT flow behavior intentionally unchanged.**
+- Phase-6 operational filters/dashboard changes **deferred** (documented follow-up).
+- Primavera `2026A` letter-suffixed parser remains **backlog only**.
+- The **REQ-140 PROD data repair is NOT part of this release** — it remains a separately
+  authorized operation after this release reaches PROD.
 
 ## [Documentation only] - 2026-08-21
 

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { motion, Variants } from 'framer-motion';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import { api } from '../../../../lib/api';
-import { RequestTimelineDto } from '../../../../types';
+import { RequestTimelineDto, LotTimelineDto, TimelineStepDto } from '../../../../types';
 import { formatDateAngola, formatTimeAngola } from '../../../../lib/utils';
+import { defaultExpandedLotIndex, lotHeaderTitle } from '../../../../lib/workflowProjection';
 
 interface ModernRequestTimelineProps {
     requestId: string;
@@ -64,12 +65,28 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
         );
     }
 
+    // v2.230.0 historical compatibility: ANY reconstructible operational unit renders the
+    // unit-based timeline (single lot = one slim header + one track, no accordion). Only
+    // unit-less legacy requests keep the Request-level timeline below.
+    const lots = timeline.lots ?? [];
+    if (lots.length >= 1) {
+        return <LotTimelines lots={lots} />;
+    }
+
     return (
         <div style={{
             width: '100%',
             overflowX: 'auto',
             padding: '24px 32px 32px',
         }}>
+            <TimelineTrack steps={timeline.steps} />
+        </div>
+    );
+}
+
+/** The existing horizontal timeline track, parametrized so multi-lot rows reuse the exact visual language. */
+function TimelineTrack({ steps }: { steps: TimelineStepDto[] }) {
+    return (
             <motion.div
                 variants={containerVariants}
                 initial="hidden"
@@ -109,16 +126,16 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                     marginRight: '40px'
                 }}
                 initial={{ scaleX: 0 }}
-                animate={{ scaleX: timeline.steps.filter(s => s.state === 'completed' || s.state === 'current').length / timeline.steps.length }}
+                animate={{ scaleX: steps.filter(s => s.state === 'completed' || s.state === 'current').length / steps.length }}
                 transition={{ duration: 0.8, ease: "easeOut" }}
                 />
 
-                {timeline.steps.map((step, index) => {
+                {steps.map((step, index) => {
                     const isCompleted = step.state === 'completed';
                     const isCurrent = step.state === 'current';
                     const isBlocked = step.state === 'blocked';
                     const isSkipped = step.state === 'skipped';
-                    const isLast = index === timeline.steps.length - 1;
+                    const isLast = index === steps.length - 1;
 
                     return (
                         <div key={index} style={{
@@ -238,6 +255,77 @@ export function ModernRequestTimeline({ requestId }: ModernRequestTimelineProps)
                     );
                 })}
             </motion.div>
+    );
+}
+
+/**
+ * v2.230.0 — one compact section per logical lot inside the expanded Requests-list row.
+ * ≤ 3 lots: all tracks expanded. > 3 lots: collapsible sections, all headers visible, only the
+ * first lot that still requires work starts expanded (a completed Lote #1 never dominates).
+ */
+function LotTimelines({ lots }: { lots: LotTimelineDto[] }) {
+    const collapsible = lots.length > 3;
+    const [expanded, setExpanded] = useState<Set<number>>(() =>
+        collapsible ? new Set([defaultExpandedLotIndex(lots)]) : new Set(lots.map((_, i) => i)));
+
+    const toggle = (i: number) => setExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(i)) next.delete(i); else next.add(i);
+        return next;
+    });
+
+    return (
+        <div style={{ width: '100%', padding: '16px 32px 24px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {lots.map((lot, i) => {
+                const isOpen = expanded.has(i);
+                return (
+                    <div key={lot.unitId} style={{ borderTop: i > 0 ? '1px dashed var(--color-border)' : 'none', paddingTop: i > 0 ? '10px' : 0 }}>
+                        {/* Lot header — real domain identity only (never a fabricated lot number) */}
+                        <div
+                            onClick={collapsible ? () => toggle(i) : undefined}
+                            role={collapsible ? 'button' : undefined}
+                            aria-expanded={collapsible ? isOpen : undefined}
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                                cursor: collapsible ? 'pointer' : 'default', padding: '4px 0'
+                            }}
+                        >
+                            <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
+                                    {lotHeaderTitle(lot)}
+                                </span>
+                                {lot.totalAmount > 0 && (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                        {lot.currencyCode || 'AOA'} {lot.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </span>
+                                )}
+                                {lot.purchaseOrderNumber && (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+                                        P.O. {lot.purchaseOrderNumber}
+                                    </span>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <span style={{
+                                    fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase',
+                                    padding: '3px 8px', borderRadius: '999px', whiteSpace: 'nowrap',
+                                    backgroundColor: 'var(--color-bg-page)', border: '1px solid var(--color-border)',
+                                    color: 'var(--color-primary)'
+                                }}>
+                                    {lot.statusLabel}
+                                </span>
+                                {collapsible && (isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                            </div>
+                        </div>
+
+                        {isOpen && (
+                            <div style={{ width: '100%', overflowX: 'auto', padding: '12px 0 8px' }}>
+                                <TimelineTrack steps={lot.steps} />
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }

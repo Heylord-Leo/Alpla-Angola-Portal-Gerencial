@@ -27,6 +27,17 @@ public class RequestListItemDto
     public string? DisplayStatusCode { get; set; }
     public string? DisplayStatusName { get; set; }
 
+    /// <summary>
+    /// v2.230.0 multi-group summary (computed by GetRequests, never persisted). ActiveUnitCount
+    /// counts active operational units (non-superseded in-approval batches + non-cancelled PO
+    /// groups). UnitSummary is the compact PT line ("3 grupos · 1 P.O. emitida · …") — null when
+    /// the request has at most one active unit so single-unit rows keep their current look.
+    /// ResponsibleRoles lists the distinct roles with pending actions, priority-ordered.
+    /// </summary>
+    public int ActiveUnitCount { get; set; }
+    public string? UnitSummary { get; set; }
+    public List<string> ResponsibleRoles { get; set; } = new();
+
     public int RequestTypeId { get; set; }
     public string RequestTypeName { get; set; } = string.Empty;
     public string RequestTypeCode { get; set; } = string.Empty;
