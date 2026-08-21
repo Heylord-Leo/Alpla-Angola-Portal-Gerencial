@@ -47,7 +47,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void The_same_file_already_on_this_request_is_blocked()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashA, TwoDocuments(), replacingDocumentId: null, existsOnAnotherRequest: false);
+            HashA, TwoDocuments(), replacingDocumentId: null, CrossRequestHashPresence.None);
 
         Assert.True(decision.IsDuplicate);
         Assert.Equal(DuplicateScope.SameRequest, decision.Scope);
@@ -63,7 +63,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
         // Present on both. The block is the stronger statement and must win, or the user would be
         // offered an acknowledgement for something that is not negotiable.
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashA, TwoDocuments(), replacingDocumentId: null, existsOnAnotherRequest: true);
+            HashA, TwoDocuments(), replacingDocumentId: null, CrossRequestHashPresence.AttachmentOnly);
 
         Assert.Equal(DuplicateScope.SameRequest, decision.Scope);
         Assert.Equal(DuplicateOutcome.Block, decision.Outcome);
@@ -73,7 +73,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void Hash_comparison_ignores_case()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashA.ToUpperInvariant(), TwoDocuments(), null, false);
+            HashA.ToUpperInvariant(), TwoDocuments(), null, CrossRequestHashPresence.None);
 
         Assert.Equal(DuplicateOutcome.Block, decision.Outcome);
     }
@@ -86,7 +86,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
         // Re-selecting the file already attached is a no-op. Calling it a duplicate would make
         // "Substituir anexo" fail whenever the user picked the file that is already there.
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashB, TwoDocuments(), replacingDocumentId: Doc2, existsOnAnotherRequest: false);
+            HashB, TwoDocuments(), replacingDocumentId: Doc2, CrossRequestHashPresence.None);
 
         Assert.False(decision.IsDuplicate);
         Assert.Equal(DuplicateOutcome.None, decision.Outcome);
@@ -96,7 +96,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void Replacing_a_document_with_another_documents_file_is_still_blocked()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashA, TwoDocuments(), replacingDocumentId: Doc2, existsOnAnotherRequest: false);
+            HashA, TwoDocuments(), replacingDocumentId: Doc2, CrossRequestHashPresence.None);
 
         Assert.Equal(DuplicateScope.SameRequest, decision.Scope);
         Assert.Equal(DuplicateOutcome.Block, decision.Outcome);
@@ -113,7 +113,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
             Document(Doc1, 1, HashA, voided: true)
         };
 
-        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(HashA, documents, null, false);
+        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(HashA, documents, null, CrossRequestHashPresence.None);
 
         Assert.False(decision.IsDuplicate);
     }
@@ -124,7 +124,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void The_same_file_on_another_request_is_warned_not_blocked()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            "cccc3333", TwoDocuments(), null, existsOnAnotherRequest: true);
+            "cccc3333", TwoDocuments(), null, CrossRequestHashPresence.AttachmentOnly);
 
         Assert.True(decision.IsDuplicate);
         Assert.Equal(DuplicateScope.OtherRequest, decision.Scope);
@@ -133,13 +133,40 @@ public class PaymentSourceDocumentDuplicatePolicyTests
         Assert.Null(decision.ConflictingDocumentId);
     }
 
+    // ── Another request, registered as an ACTIVE source document: blocked (v2.229.10 L1) ────
+
+    [Fact]
+    public void The_same_file_registered_on_another_live_request_is_blocked()
+    {
+        // Registered as an active source document of a live request, the file is a debt already in
+        // flight — LEVEL 1 cross-request. No reading of it makes paying the same file twice correct.
+        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
+            "cccc3333", TwoDocuments(), null,
+            CrossRequestHashPresence.ActiveSourceDocumentOnLiveRequest);
+
+        Assert.True(decision.IsDuplicate);
+        Assert.Equal(DuplicateScope.OtherRequest, decision.Scope);
+        Assert.Equal(DuplicateOutcome.Block, decision.Outcome);
+    }
+
+    [Fact]
+    public void Same_request_still_outranks_an_active_cross_request_twin()
+    {
+        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
+            HashA, TwoDocuments(), null,
+            CrossRequestHashPresence.ActiveSourceDocumentOnLiveRequest);
+
+        Assert.Equal(DuplicateScope.SameRequest, decision.Scope);
+        Assert.Equal(DuplicateOutcome.Block, decision.Outcome);
+    }
+
     // ── Everything else is clear ────────────────────────────────────────────────────────────
 
     [Fact]
     public void An_unrelated_file_is_clear()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            "cccc3333", TwoDocuments(), null, existsOnAnotherRequest: false);
+            "cccc3333", TwoDocuments(), null, CrossRequestHashPresence.None);
 
         Assert.False(decision.IsDuplicate);
         Assert.Equal(DuplicateScope.None, decision.Scope);
@@ -154,7 +181,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     {
         // Never fall back to filenames: a renamed copy of one invoice is the same invoice, and two
         // unrelated documents are often both "factura.pdf".
-        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(hash, TwoDocuments(), null, false);
+        var decision = PaymentSourceDocumentDuplicatePolicy.Decide(hash, TwoDocuments(), null, CrossRequestHashPresence.None);
 
         Assert.False(decision.IsDuplicate);
     }
@@ -163,7 +190,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void Without_a_hash_a_known_cross_request_match_is_still_reported()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            null, TwoDocuments(), null, existsOnAnotherRequest: true);
+            null, TwoDocuments(), null, CrossRequestHashPresence.AttachmentOnly);
 
         Assert.Equal(DuplicateScope.OtherRequest, decision.Scope);
         Assert.Equal(DuplicateOutcome.Warn, decision.Outcome);
@@ -173,7 +200,7 @@ public class PaymentSourceDocumentDuplicatePolicyTests
     public void An_empty_request_blocks_nothing()
     {
         var decision = PaymentSourceDocumentDuplicatePolicy.Decide(
-            HashA, new List<DuplicateCandidateDocument>(), null, false);
+            HashA, new List<DuplicateCandidateDocument>(), null, CrossRequestHashPresence.None);
 
         Assert.False(decision.IsDuplicate);
     }

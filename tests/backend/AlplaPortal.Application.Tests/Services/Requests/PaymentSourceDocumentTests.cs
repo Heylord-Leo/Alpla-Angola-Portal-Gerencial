@@ -244,13 +244,15 @@ public class PaymentSourceDocumentValidatorTests
     // ── Classification, per document ──
 
     [Fact]
-    public void An_estimate_cannot_originate_a_payment_however_many_documents_there_are()
+    public void A_stray_estimate_validates_as_the_proforma_it_canonically_is()
     {
+        // v2.229.10: "Orçamento / Cotação" is no longer a competing classification — a commercial
+        // offer is the same payable origin as a Factura Pró-forma, so the stray legacy code passes
+        // validation instead of blocking the request it arrived on.
         var result = Validate(Doc(label: "Documento 1"), Doc(label: "Documento 2", type: "ESTIMATE"));
 
-        Assert.False(result.CanSubmit);
-        Assert.Contains(result.Problems, p =>
-            p.Label == "Documento 2" && p.Message.Contains("Orçamento"));
+        Assert.True(result.CanSubmit);
+        Assert.DoesNotContain(result.Problems, p => p.Label == "Documento 2");
     }
 
     [Fact]

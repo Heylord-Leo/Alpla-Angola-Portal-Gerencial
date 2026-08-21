@@ -15,6 +15,12 @@ import {
     buildOcrMismatchResult,
     resolveTransportErrorDetails,
     CLIENT_PROCESSING_ERROR_MESSAGE,
+    PRIMAVERA_FAMILY_LABELS,
+    PrimaveraPoParse,
+    looksLikeNif,
+    mentionsPrimaveraFamilyWithoutReference,
+    parsePrimaveraPoReference,
+    resolveAutoFillPoNumber,
 } from '../lib/ocrPoValidation';
 
 interface SupplierRegistrationCheck {
@@ -63,6 +69,8 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
     // Backend Overrides State
     const [backendOcrMismatch, setBackendOcrMismatch] = useState<{ details: string } | null>(null);
+    /** Positively identified Primavera PO reference (deterministic parse), for review display. */
+    const [detectedPoReference, setDetectedPoReference] = useState<PrimaveraPoParse | null>(null);
     const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
     const [overrideDuplicateConfirmed, setOverrideDuplicateConfirmed] = useState(false);
     const [duplicateOverrideComment, setDuplicateOverrideComment] = useState('');
@@ -155,14 +163,41 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         // Step 2: processing a successful (HTTP 200) response. Any exception here means the
         // extraction itself worked — it must never be reported as an unreadable/unsupported document.
         try {
-            const { extractedTotal, extractedSupplier, extractedPoNumber, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
+            const { extractedTotal, extractedSupplier, extractedSupplierNif, extractedPoNumber,
+                extractedPoReference, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
                 extractOcrHeaderSuggestions(ocrData);
 
-            if (extractedPoNumber && !purchaseOrderNumber) {
-                setPurchaseOrderNumber(extractedPoNumber);
+            // ── Primavera-aware PO number (positive identification, never numeric guessing) ──
+            // The old behavior auto-filled the raw generic documentNumber, which on Primavera
+            // POs was frequently the SUPPLIER NIF (e.g. 5001713205) — poisoning the field and
+            // firing false duplicates. Now: a positively parsed ECF/ECF10/ECF11 reference (or a
+            // letter-bearing supplier reference) may auto-fill; fiscal numbers never do.
+            const knownNifs = [extractedSupplierNif];
+            const autoFill = resolveAutoFillPoNumber(extractedPoReference || extractedPoNumber, knownNifs);
+            const detectedParse = autoFill?.parse
+                ?? parsePrimaveraPoReference(extractedPoReference || extractedPoNumber);
+
+            if (autoFill && !purchaseOrderNumber) {
+                setPurchaseOrderNumber(autoFill.value);
+            }
+            setDetectedPoReference(detectedParse);
+
+            const poWarnings: string[] = [];
+            if (!autoFill && extractedPoNumber && !purchaseOrderNumber) {
+                poWarnings.push(
+                    looksLikeNif(extractedPoNumber)
+                        ? `O número extraído (${extractedPoNumber}) parece ser um NIF e foi ignorado. ` +
+                          'Verifique a referência da P.O no documento (formato ECF/ECF10/ECF11 AAAA/NNN) e insira-a manualmente.'
+                        : `Não foi possível identificar a referência da P.O automaticamente. Insira-a manualmente.`);
+            }
+            if (mentionsPrimaveraFamilyWithoutReference(extractedPoNumber) && !detectedParse) {
+                poWarnings.push('O documento parece ser uma P.O Primavera, mas a referência completa ' +
+                    '(família + ano/sequência) não foi lida. Revise e insira manualmente.');
             }
 
-            const { hasMismatches, details } = buildOcrMismatchResult(extractedTotal, expectedTotalAmount, extractedSupplier, expectedSupplierName);
+            const mismatchBase = buildOcrMismatchResult(extractedTotal, expectedTotalAmount, extractedSupplier, expectedSupplierName);
+            const hasMismatches = mismatchBase.hasMismatches || poWarnings.length > 0;
+            const details = [...poWarnings, ...mismatchBase.details];
 
             setOcrResult({
                 hasMismatches,
@@ -468,9 +503,21 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                     setPurchaseOrderNumber(e.target.value);
                                     setDuplicateWarning(null); // clear warning if user changes PO number
                                 }}
-                                placeholder="Ex: PO-2024-001"
+                                placeholder="Ex: ECF11 2026/421"
                                 style={inputStyle}
                             />
+                            {detectedPoReference && (
+                                <p style={{
+                                    margin: '6px 0 0', fontSize: '0.75rem',
+                                    color: 'var(--color-text-muted)', fontWeight: 600
+                                }}>
+                                    P.O Primavera detectada: <strong>{detectedPoReference.display}</strong>
+                                    {' '}— família <strong>{detectedPoReference.family}</strong>
+                                    {PRIMAVERA_FAMILY_LABELS[detectedPoReference.family]
+                                        ? <> ({PRIMAVERA_FAMILY_LABELS[detectedPoReference.family]})</>
+                                        : null}. Revise antes de registrar.
+                                </p>
+                            )}
                             {duplicateWarning && (
                                 <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px' }}>
                                     <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>

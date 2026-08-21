@@ -14,6 +14,9 @@ public static class ExtractionMapper
     public static OcrExtractionResultDto MapToLegacyOcrResult(
         ExtractionResultDto internalResult, string? fileName = null)
     {
+        // Deterministic Primavera PO identification (v2.229.12 groundwork), parsed once.
+        var poReference = PrimaveraPoReference.TryParse(internalResult.Header?.DocumentNumber);
+
         var integrationDto = new OcrIntegrationDto
         {
             HeaderSuggestions = new OcrHeaderSuggestionsDto
@@ -27,7 +30,32 @@ public static class ExtractionMapper
                 DueDate = new OcrValueDto<string> { Value = internalResult.Header?.DueDate, Status = "recommended" },
                 CurrencyCode = new OcrValueDto<string> { Value = internalResult.Header?.Currency, Status = "recommended" },
                 TotalAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.GrandTotal ?? internalResult.Header?.TotalAmount ?? 0, Status = "recommended" },
+                // v2.229.10 monetary reconciliation: the DECLARED subtotal (provider "totalAmount"
+                // = net after discounts, before tax) travels separately from the grand total, so a
+                // supplier-stated net is never lost to line-derived reconstruction downstream.
+                NetAmount = internalResult.Header?.TotalAmount is decimal declaredNet && declaredNet > 0
+                    ? new OcrValueDto<decimal> { Value = declaredNet, Status = "recommended" }
+                    : null,
+                // Tax is derived (grand − net), only when both are present and the difference is
+                // non-negative — the provider has no explicit document-level tax field.
+                TaxAmount = internalResult.Header?.GrandTotal is decimal declaredGrand
+                            && internalResult.Header?.TotalAmount is decimal declaredSub
+                            && declaredSub > 0 && declaredGrand >= declaredSub
+                    ? new OcrValueDto<decimal> { Value = declaredGrand - declaredSub, Status = "recommended" }
+                    : null,
                 DiscountAmount = new OcrValueDto<decimal> { Value = internalResult.Header?.DiscountAmount ?? 0, Status = "recommended" },
+                // The ECF / ECF10 / ECF11 grammar is parsed server-side over the extracted
+                // document number, so consumers receive a POSITIVELY identified reference —
+                // never a bare numeric field that might be the supplier's NIF.
+                PurchaseOrderReference = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Display, Status = "recommended" }
+                    : null,
+                PurchaseOrderReferenceCanonical = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Canonical, Status = "recommended" }
+                    : null,
+                PurchaseOrderFamily = poReference != null
+                    ? new OcrValueDto<string> { Value = poReference.Family, Status = "recommended" }
+                    : null,
                 PaymentCondition = !string.IsNullOrWhiteSpace(internalResult.Header?.PaymentConditionType) 
                     ? new OcrValueDto<string> { Value = internalResult.Header.PaymentConditionType, Status = internalResult.Header.PaymentConditionConfidence >= 0.7m ? "recommended" : "suggested" }
                     : null,

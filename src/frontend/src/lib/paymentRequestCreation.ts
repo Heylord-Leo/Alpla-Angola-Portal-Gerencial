@@ -2,6 +2,7 @@ import { PaymentSourceDocumentDto, SavePaymentSourceDocumentDto } from '../types
 import { OcrDraft } from '../types';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { ClassificationConflictState, EMPTY_CONFLICT, OcrDocumentClassification } from './documentClassificationDecision';
+import { normalizeDocumentType } from './sourceDocumentType';
 
 /**
  * Creating a PAYMENT request that carries several source documents takes more than one call: the
@@ -127,6 +128,18 @@ export interface TemporaryPaymentDocument {
      */
     supplierInternalCompany: { id: number; name: string } | null;
 
+    /**
+     * A PROBABLE existing supplier the backend matcher found when the document's supplier could
+     * not be resolved exactly (typically: same name, different NIF — a misread or changed fiscal
+     * number). Surfaced so the user can review and USE the existing supplier instead of being
+     * steered into creating a twin. Never auto-applied, never overwrites master data.
+     */
+    probableSupplier: { id: number; name: string; taxId: string | null } | null;
+
+    /** The customer/billed-company NIF read off the document. Display-only evidence — compared
+     *  against the selected company's registered NIF at review time, never persisted. */
+    billedCompanyTaxId: string | null;
+
     plantId: number | null;
 
     sourceDocumentType: string | null;
@@ -210,6 +223,135 @@ export function itemsTotalOf(items: TemporaryPaymentItem[]): number {
     return Math.round(items.reduce((s, i) => s + (i.totalAmount ?? 0), 0) * 100) / 100;
 }
 
+// ── Declared document totals and rounding-residual reconciliation (v2.229.10) ───────────────
+//
+// A supplier document's declared Net/Tax/Gross are documentary evidence. When the triplet is
+// internally consistent, it is authoritative — line arithmetic exists to validate it, never to
+// silently overwrite it. The cent-level gap between the declared gross and the VAT-inclusive
+// line sum (the inevitable artifact of per-line rounding) is attributed deterministically to the
+// LAST eligible line, so ONE monetary truth flows downstream:
+// Σ(item totals) == document gross == group total == expected/paid amount.
+//
+// Mirrors the tested reference implementation `PaymentRoundingResidual` (backend Domain).
+
+/** Strict internal-consistency bound for a declared triplet: cent arithmetic only — never the
+ *  far looser 0.1% financial-integrity tolerance. */
+export const DECLARED_TRIPLET_CONSISTENCY_TOLERANCE = 0.01;
+
+/** Maximum residual attributable to rounding, per line. Each line's total is rounded at most to
+ *  the cent, so per-line rounding can explain at most one cent per line. */
+export const PER_LINE_RESIDUAL_CAP = 0.01;
+
+/** The document-level totals the supplier actually declared, as read by the extraction. */
+export interface DeclaredDocumentTotals {
+    net: number | null;
+    tax: number | null;
+    gross: number | null;
+}
+
+export function readDeclaredTotals(raw?: OcrExtractionEnvelope | null): DeclaredDocumentTotals {
+    const h = (raw?.integration?.headerSuggestions ?? {}) as Record<string, unknown>;
+    return {
+        net: numOf(h.netAmount),
+        tax: numOf(h.taxAmount) ?? numOf(h.ivaAmount),
+        gross: numOf(h.grandTotal) ?? numOf(h.totalAmount)
+    };
+}
+
+/**
+ * Whether the declared triplet may be trusted as documentary truth. Positive net and gross,
+ * with net + tax = gross to the cent (a missing tax is derived as gross − net, so it is
+ * consistent by construction). A triplet that fails this is NOT rescued by any wider tolerance —
+ * it falls back to line-derived values and the ordinary mismatch handling.
+ */
+export function isConsistentDeclaredTriplet(t: DeclaredDocumentTotals): boolean {
+    if (t.net == null || t.gross == null) return false;
+    if (t.net <= 0 || t.gross <= 0) return false;
+    const tax = t.tax ?? Math.round((t.gross - t.net) * 100) / 100;
+    if (tax < 0) return false;
+    return Math.abs(t.net + tax - t.gross) <= DECLARED_TRIPLET_CONSISTENCY_TOLERANCE + 1e-9;
+}
+
+/** Disclosure metadata for an applied residual — what the muted UI note reports. */
+export interface RoundingAdjustment {
+    /** Signed residual, e.g. +0.01 or −0.01. */
+    amount: number;
+    lineTempId: string;
+    /** 1-based position in document order, for "linha N" wording. */
+    lineNumber: number;
+}
+
+export interface RoundingAllocationResult {
+    /** The lines with the residual embodied on the adjusted line. Input order preserved. */
+    items: TemporaryPaymentItem[];
+    /** Null when nothing was (or could be) adjusted. */
+    adjustment: RoundingAdjustment | null;
+}
+
+/**
+ * Reconciles canonical line totals against the document's declared gross (MODEL 2).
+ *
+ * <p>Pure, deterministic and idempotent: integer-cent arithmetic (no floating-point drift), and
+ * reconciling an already-reconciled set yields residual 0 and returns the input untouched. Input
+ * totals must be the canonical per-line values — the callers guarantee that, because the editor
+ * recomputes a line's total from its components on every change.</p>
+ *
+ * <p>Only the selected line's <c>totalAmount</c> changes. Quantity, unit price, discount and tax
+ * rate are extracted commercial components and are never altered. When the residual exceeds
+ * <c>PER_LINE_RESIDUAL_CAP × eligible lines</c>, nothing is adjusted — a 100-AOA gap must never
+ * be disguised as rounding, whatever the percentage tolerance would forgive.</p>
+ */
+export function allocateRoundingResidual(
+    items: TemporaryPaymentItem[],
+    declaredGross: number | null | undefined
+): RoundingAllocationResult {
+    if (!declaredGross || declaredGross <= 0 || items.length === 0) {
+        return { items, adjustment: null };
+    }
+
+    const toCents = (v: number) => Math.round(v * 100);
+    const residualCents = toCents(declaredGross) -
+        items.reduce((s, i) => s + toCents(i.totalAmount ?? 0), 0);
+
+    if (residualCents === 0) return { items, adjustment: null };
+
+    const eligibleCount = items.filter(i => (i.totalAmount ?? 0) > 0).length;
+    if (eligibleCount === 0 ||
+        Math.abs(residualCents) > Math.round(PER_LINE_RESIDUAL_CAP * 100) * eligibleCount) {
+        return { items, adjustment: null };
+    }
+
+    // Last eligible line in document order whose total survives the adjustment positive.
+    for (let i = items.length - 1; i >= 0; i--) {
+        const current = items[i].totalAmount ?? 0;
+        if (current <= 0) continue;
+
+        const adjusted = (toCents(current) + residualCents) / 100;
+        if (adjusted <= 0) continue;
+
+        const next = items.slice();
+        next[i] = { ...items[i], totalAmount: adjusted };
+        return {
+            items: next,
+            adjustment: {
+                amount: residualCents / 100,
+                lineTempId: items[i].tempId,
+                lineNumber: i + 1
+            }
+        };
+    }
+
+    return { items, adjustment: null };
+}
+
+function numOf(value: unknown): number | null {
+    const v = typeof value === 'object' && value !== null && 'value' in (value as any)
+        ? (value as any).value : value;
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
 let counter = 0;
 /** Collision-proof without a uuid dependency: monotonic counter plus the clock. */
 export function newTempId(prefix = 'tmp'): string {
@@ -234,6 +376,8 @@ export function createTemporaryDocument(
         supplierTaxIdSnapshot: null,
         supplierExtraction: null,
         supplierInternalCompany: null,
+        probableSupplier: null,
+        billedCompanyTaxId: null,
         plantId: null,
         sourceDocumentType: null,
         documentNumber: null,
@@ -320,8 +464,12 @@ export function toCreatePayload(document: TemporaryPaymentDocument): SavePayment
         ocrEvidenceJson: document.classification ? JSON.stringify(document.classification) : null,
         ocrConflictingEvidenceJson: document.classification?.conflictingEvidence?.length
             ? JSON.stringify(document.classification.conflictingEvidence) : null,
+        // Compared in canonical form: an OCR "Orçamento/Cotação" reading confirmed as
+        // Factura Pró-forma is agreement, not a user override.
         classificationSource:
-            suggestion && suggestion === document.sourceDocumentType ? 'OCR_CONFIRMED' : 'USER_SELECTED',
+            suggestion && document.sourceDocumentType
+                && normalizeDocumentType(suggestion) === normalizeDocumentType(document.sourceDocumentType)
+                ? 'OCR_CONFIRMED' : 'USER_SELECTED',
         classificationSuggestionSource: document.classification
             ? (document.classification.isFallback ? 'FALLBACK' : 'OCR')
             : null,
@@ -392,6 +540,51 @@ export function summariseFailures(documents: TemporaryPaymentDocument[]) {
 export function temporaryEstablishedCurrency(documents: TemporaryPaymentDocument[]): string | null {
     return documents.find(d => !!d.currency)?.currency ?? null;
 }
+
+// ── Review-time candidate matching (v2.229.10 L4 flow) ──────────────────────────────────────
+
+/** One existing commercial document the backend considers a candidate match. */
+export interface SourceDocumentCandidate {
+    /** RELATED_DOCUMENT | AMBIGUOUS_MATCH | STRONG_BUSINESS_DUPLICATE | SEMANTIC_DUPLICATE */
+    classification: string;
+    /** ALLOW | AMBIGUOUS | BLOCK — what persistence would decide. */
+    verdict: string;
+    reason?: string | null;
+    matchingFields: string[];
+    conflictingFields: string[];
+    requestVisible: boolean;
+    requestId?: string | null;
+    requestNumber?: string | null;
+    documentId?: string | null;
+    sequenceNumber?: number | null;
+    existing?: {
+        supplierName?: string | null;
+        supplierTaxId?: string | null;
+        documentNumber?: string | null;
+        documentDate?: string | null;
+        currency?: string | null;
+        grossAmount?: number | null;
+    } | null;
+}
+
+export interface SourceDocumentCandidatesResult {
+    normalizedDocumentNumber?: string | null;
+    topClassification?: string | null;
+    candidates: SourceDocumentCandidate[];
+}
+
+/** Portuguese labels for the stable field codes the backend reports. */
+export const CANDIDATE_FIELD_LABELS: Record<string, string> = {
+    DOCUMENT_NUMBER: 'Nº do documento',
+    SUPPLIER: 'Fornecedor',
+    SUPPLIER_NAME: 'Nome do fornecedor',
+    SUPPLIER_NIF: 'NIF do fornecedor',
+    DOCUMENT_DATE: 'Data do documento',
+    CURRENCY: 'Moeda',
+    GROSS_AMOUNT: 'Total',
+    COMPANY: 'Empresa',
+    CONTENT: 'Conteúdo (itens)'
+};
 
 // ── Adapter: one card component for both stages ─────────────────────────────────────────────
 
@@ -522,6 +715,10 @@ export interface ExtractedDocumentFields {
     supplierExtraction: SupplierExtractionSnapshot | null;
     /** The ALPLA legal entity the reading resolved to, as decided by the SERVER's match. */
     internalCompany: { id: number; name: string } | null;
+    /** Probable existing supplier (backend DuplicateSuspected candidate). Never auto-applied. */
+    probableSupplier: { id: number; name: string; taxId: string | null } | null;
+    /** Customer/billed-company NIF read off the document. Display-only evidence. */
+    billedCompanyTaxId: string | null;
 }
 
 /**
@@ -551,14 +748,30 @@ export function fromOcrDraft(
         itemCatalogCode: i.itemCatalogCode ?? null
     }));
 
-    // The document's stated grand total is authoritative; net and IVA are derived from the lines so
-    // the three numbers agree with each other rather than with three different readings.
-    const gross = draft.totalAmount > 0 ? draft.totalAmount : null;
-    const net = items.length > 0
-        ? Math.round(items.reduce(
-            (s, i) => s + Math.max(0, (i.quantity * i.unitPrice) - (i.discountAmount ?? 0)), 0) * 100) / 100
-        : null;
-    const tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
+    // v2.229.10 monetary reconciliation: the DECLARED document totals are authoritative when the
+    // triplet is internally consistent — line arithmetic validates them, it does not overwrite
+    // them. Only when the document declared nothing (or an inconsistent triplet) are net and IVA
+    // reconstructed from the lines, which is per-line-rounded and can legitimately differ from
+    // the supplier's own document-level arithmetic by a cent.
+    const declared = readDeclaredTotals(raw);
+    const declaredIsAuthoritative = isConsistentDeclaredTriplet(declared);
+
+    let gross: number | null;
+    let net: number | null;
+    let tax: number | null;
+
+    if (declaredIsAuthoritative) {
+        gross = declared.gross;
+        net = declared.net;
+        tax = declared.tax ?? Math.round((declared.gross! - declared.net!) * 100) / 100;
+    } else {
+        gross = draft.totalAmount > 0 ? draft.totalAmount : null;
+        net = items.length > 0
+            ? Math.round(items.reduce(
+                (s, i) => s + Math.max(0, (i.quantity * i.unitPrice) - (i.discountAmount ?? 0)), 0) * 100) / 100
+            : null;
+        tax = gross != null && net != null ? Math.round((gross - net) * 100) / 100 : null;
+    }
 
     // The legacy mapper falls back to 'EUR' when the document names no currency
     // (`currencyCode || currency || 'EUR'`), which is harmless in a form the user is already
@@ -592,6 +805,20 @@ export function fromOcrDraft(
                 name: draft.supplierMatch.internalCompany.name
             }
             : null,
+        // The matcher's DuplicateSuspected candidates used to be silently discarded here — which
+        // is exactly how "CONSULTIT with a misread NIF" became "criar fornecedor". The first
+        // candidate is carried as a PROBABLE supplier for the user to review; nothing is selected
+        // or created automatically.
+        probableSupplier: draft.supplierMatch?.status === 'DuplicateSuspected' &&
+                          Array.isArray(draft.supplierMatch?.candidates) &&
+                          draft.supplierMatch.candidates.length > 0
+            ? {
+                id: draft.supplierMatch.candidates[0].id,
+                name: draft.supplierMatch.candidates[0].name,
+                taxId: draft.supplierMatch.candidates[0].taxId ?? null
+            }
+            : null,
+        billedCompanyTaxId: text(header?.billedCompanyTaxId?.value) ?? null,
         // Only what the document actually carried — an absent field stays null and the registration
         // form shows it empty rather than inventing a value.
         supplierExtraction: {
@@ -648,6 +875,8 @@ export function extractDocumentFields(
         // This path never consulted the supplier matcher, so it has nothing to report. The server
         // still refuses an internal supplier at persistence and at submission.
         internalCompany: null,
+        probableSupplier: null,
+        billedCompanyTaxId: text(h.billedCompanyTaxId) ?? null,
         supplierName: text(h.supplierName),
         supplierTaxId: text(h.supplierTaxId),
         documentNumber: text(h.documentNumber),
@@ -731,6 +960,8 @@ export function mergeExtraction(
             // Always replaces: it describes the FILE that was just read, not anything the user
             // typed, and a stale verdict from a previous file must not survive a re-read.
             supplierInternalCompany: extracted.internalCompany,
+            probableSupplier: extracted.probableSupplier,
+            billedCompanyTaxId: extracted.billedCompanyTaxId,
             documentNumber: take(document.documentNumber, extracted.documentNumber, 'documentNumber', 'Nº do documento'),
             documentDate: take(document.documentDate, extracted.documentDate, 'documentDate', 'Data do documento'),
             dueDate: document.dueDate ?? extracted.dueDate,

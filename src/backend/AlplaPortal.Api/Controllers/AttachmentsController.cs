@@ -497,7 +497,7 @@ public class AttachmentsController : BaseController
         if (string.IsNullOrWhiteSpace(hash)) return BadRequest();
 
         var scopedQuery = await GetScopedRequestsQuery();
-        
+
         var attachment = await _context.RequestAttachments
             .Include(a => a.Request)
             .Include(a => a.UploadedByUser)
@@ -506,21 +506,34 @@ public class AttachmentsController : BaseController
 
         if (attachment != null)
         {
-            // Calculate if the current user has access to that specific request
-            bool hasAccess = await scopedQuery.AnyAsync(r => r.Id == attachment.RequestId);
+            // v2.229.10 cross-request LEVEL 1: whether this hash is an ACTIVE source document of
+            // a LIVE request — the same discrimination the persistence guard enforces, so the
+            // wizard can hard-block (no override) exactly where creation would 409 anyway.
+            // Attachment-only reuse, voided documents and CANCELLED/REJECTED requests stay on
+            // the long-standing warn-and-decide path.
+            var activeTwin = await Helpers.PaymentSourceDocumentFileTwins
+                .FindActiveTwinAsync(_context, hash, excludeRequestId: null);
+
+            // When an active twin exists, IT is the request that matters — the metadata (and the
+            // access check that gates it) must describe the twin's request, not whichever
+            // attachment row happened to match first.
+            var subjectRequestId = activeTwin?.Request.Id ?? attachment.RequestId;
+            bool hasAccess = await scopedQuery.AnyAsync(r => r.Id == subjectRequestId);
 
             if (!hasAccess)
             {
                 // The binary duplicate is real, but the current user has no access to the
-                // original request — confirm the duplicate without disclosing ANY identifying
+                // original request — confirm the duplicate (and the blocking classification,
+                // which the frontend needs to refuse) without disclosing ANY identifying
                 // metadata about a request/document/user they cannot see.
-                return Ok(new { isDuplicate = true });
+                return Ok(new { isDuplicate = true, isActiveSourceDocument = activeTwin != null });
             }
 
             return Ok(new {
                 isDuplicate = true,
-                requestNumber = attachment.Request.RequestNumber,
-                requestId = attachment.RequestId,
+                isActiveSourceDocument = activeTwin != null,
+                requestNumber = activeTwin?.Request.RequestNumber ?? attachment.Request.RequestNumber,
+                requestId = subjectRequestId,
                 uploadedBy = attachment.UploadedByUser?.FullName ?? "Usuário Desconhecido",
                 createdAtUtc = attachment.UploadedAtUtc
             });

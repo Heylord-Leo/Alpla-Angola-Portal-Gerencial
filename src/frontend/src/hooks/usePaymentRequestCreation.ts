@@ -3,6 +3,7 @@ import { ApiError, api } from '../lib/api';
 import {
     CreationPhase,
     TemporaryPaymentDocument,
+    allocateRoundingResidual,
     applyDocumentResult,
     derivePhase,
     pendingDocuments,
@@ -79,7 +80,16 @@ export function usePaymentRequestCreation() {
          */
         materialiseAttachments?: (
             requestId: string, docs: TemporaryPaymentDocument[]
-        ) => Promise<TemporaryPaymentDocument[]>
+        ) => Promise<TemporaryPaymentDocument[]>,
+        /**
+         * Duplicate hierarchy LEVEL 4: the backend refused this document because another one
+         * shares its supplier reference and the content evidence cannot decide. Resolves with the
+         * user's written reason (≥ 20 chars) to retry once with the audited override, or null to
+         * leave the document failed with the backend's explanation.
+         */
+        onAmbiguousDuplicate?: (
+            document: TemporaryPaymentDocument, detail: string, classification?: string | null
+        ) => Promise<string | null>
     ): Promise<CreationRunResult> => {
         if (isRunningRef.current) {
             return { ok: false, requestId: requestIdRef.current, allDocumentsPersisted: false };
@@ -130,10 +140,38 @@ export function usePaymentRequestCreation() {
 
                     working = applyDocumentResult(working, document.tempId, { persisted });
                 } catch (e: any) {
-                    // Document 1 keeps its persisted id — a later failure never undoes earlier work.
-                    working = applyDocumentResult(working, document.tempId, {
-                        error: e?.message ?? 'Não foi possível guardar este documento.'
-                    });
+                    // LEVEL 4 ambiguous duplicate: ask the user once, retry once with the audited
+                    // override. Any other failure — including a declined override — records the
+                    // backend's explanation on the document.
+                    let resolved = false;
+                    if (e instanceof ApiError && e.errorCode === 'DUPLICATE_AMBIGUOUS' && onAmbiguousDuplicate) {
+                        const reason = await onAmbiguousDuplicate(
+                            document, e.message, (e.details?.classification as string) ?? null);
+                        if (reason) {
+                            try {
+                                const persisted: PaymentSourceDocumentDto =
+                                    await api.requests.createSourceDocument(requestId, {
+                                        ...toCreatePayload(document),
+                                        duplicateOverrideAcknowledged: true,
+                                        duplicateOverrideReason: reason
+                                    });
+                                working = applyDocumentResult(working, document.tempId, { persisted });
+                                resolved = true;
+                            } catch (retryError: any) {
+                                working = applyDocumentResult(working, document.tempId, {
+                                    error: retryError?.message ?? 'Não foi possível guardar este documento.'
+                                });
+                                resolved = true;
+                            }
+                        }
+                    }
+
+                    if (!resolved) {
+                        // Document 1 keeps its persisted id — a later failure never undoes earlier work.
+                        working = applyDocumentResult(working, document.tempId, {
+                            error: e?.message ?? 'Não foi possível guardar este documento.'
+                        });
+                    }
                 }
 
                 onDocumentsChanged(working);
@@ -145,6 +183,16 @@ export function usePaymentRequestCreation() {
                 setPhase('SAVING_ITEMS');
 
                 for (const document of withItems) {
+                    // v2.229.10 monetary reconciliation (MODEL 2): what is PERSISTED is the
+                    // reconciled attribution — the document's cent-level rounding residual lands
+                    // on its last eligible line, so Σ(persisted item totals) equals the declared
+                    // document gross exactly. Client state stays canonical; the same pure rule
+                    // recomputes the same allocation on a retry, so a partially-persisted
+                    // document resumes with identical values.
+                    const reconciledTotals = new Map(
+                        allocateRoundingResidual(document.items, document.grossAmount)
+                            .items.map(i => [i.tempId, i.totalAmount]));
+
                     for (const item of document.items.filter(i => !i.persistedId)) {
                         try {
                             const created = await api.requests.createLineItem(requestId, {
@@ -156,7 +204,7 @@ export function usePaymentRequestCreation() {
                                 unitPrice: item.unitPrice,
                                 discountAmount: item.discountAmount,
                                 ivaRateId: item.ivaRateId,
-                                totalAmount: item.totalAmount,
+                                totalAmount: reconciledTotals.get(item.tempId) ?? item.totalAmount,
                                 itemCatalogId: item.itemCatalogId,
                                 // Mandatory for every PAYMENT item, and taken from the document the
                                 // item belongs to — not from the request. In a request holding two

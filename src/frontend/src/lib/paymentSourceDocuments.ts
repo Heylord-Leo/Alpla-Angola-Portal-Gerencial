@@ -3,7 +3,7 @@ import {
     PaymentSourceDocumentsSummaryDto,
     SavePaymentSourceDocumentDto
 } from '../types/paymentSourceDocument';
-import { documentTypeLabel } from './sourceDocumentType';
+import { documentTypeLabel, normalizeDocumentType } from './sourceDocumentType';
 import { evaluateClassificationConflict, OcrDocumentClassification } from './documentClassificationDecision';
 
 /**
@@ -221,7 +221,11 @@ export function toSavePayload(
         ocrEvidenceJson: classification ? JSON.stringify(classification) : null,
         ocrConflictingEvidenceJson: classification?.conflictingEvidence?.length
             ? JSON.stringify(classification.conflictingEvidence) : null,
-        classificationSource: suggestion && suggestion === selected ? 'OCR_CONFIRMED' : 'USER_SELECTED',
+        // Compared in canonical form: an OCR "Orçamento/Cotação" reading confirmed as
+        // Factura Pró-forma is agreement, not a user override.
+        classificationSource: suggestion && selected
+            && normalizeDocumentType(suggestion) === normalizeDocumentType(selected)
+            ? 'OCR_CONFIRMED' : 'USER_SELECTED',
         classificationSuggestionSource: classification
             ? (classification.isFallback ? 'FALLBACK' : 'OCR')
             : null,

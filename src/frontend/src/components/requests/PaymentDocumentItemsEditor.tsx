@@ -4,11 +4,11 @@ import { CatalogItemAutocomplete } from '../CatalogItemAutocomplete';
 import { IvaRate, Unit } from '../../types';
 import {
     TemporaryPaymentItem,
+    allocateRoundingResidual,
     computeItemTotal,
     createTemporaryItem,
     itemsTotalOf
 } from '../../lib/paymentRequestCreation';
-import { itemsTolerance } from '../../lib/paymentDocumentComposition';
 import { formatCurrencyAO } from '../../lib/utils';
 import { MoneyInput } from '../ui/MoneyInput';
 
@@ -48,10 +48,20 @@ export function PaymentDocumentItemsEditor({
             return { ...next, totalAmount: computeItemTotal(next, ivaPercentOf(next.ivaRateId)) };
         }));
 
-    const total = itemsTotalOf(items);
+    // v2.229.10 monetary reconciliation: state keeps every line CANONICAL (its own arithmetic);
+    // the cent-level rounding residual against the document's declared total is a derived view,
+    // recomputed here on every render — which is what makes it survive any edit for free. The
+    // adjusted line total and the footer sum shown below therefore always agree with the
+    // document total whenever the difference is attributable to per-line rounding.
+    const allocation = allocateRoundingResidual(items, documentTotal);
+    const displayItems = allocation.items;
+    const total = itemsTotalOf(displayItems);
     const stated = documentTotal ?? 0;
-    const mismatch = stated > 0 && items.length > 0 &&
-                     Math.abs(total - stated) > itemsTolerance(stated);
+
+    // A residual the allocation refused (larger than rounding can explain) stays VISIBLE — never
+    // silently absorbed by a percentage tolerance.
+    const mismatch = stated > 0 && items.length > 0 && !allocation.adjustment &&
+                     Math.round(Math.abs(total - stated) * 100) !== 0;
 
     const cell: React.CSSProperties = { padding: '4px 6px', verticalAlign: 'top' };
     const input: React.CSSProperties = {
@@ -105,7 +115,7 @@ export function PaymentDocumentItemsEditor({
                             <th style={{ ...cell, textAlign: 'right', width: '100px', fontWeight: 800 }}>P. UNIT</th>
                             <th style={{ ...cell, textAlign: 'center', width: '90px', fontWeight: 800 }}>IVA</th>
                             <th style={{ ...cell, textAlign: 'right', width: '100px', fontWeight: 800 }}>DESC.</th>
-                            <th style={{ ...cell, textAlign: 'right', width: '110px', fontWeight: 800 }}>TOTAL</th>
+                            <th style={{ ...cell, textAlign: 'right', width: '110px', fontWeight: 800 }}>TOTAL c/ IVA</th>
                             {!readOnly && <th style={{ ...cell, width: '36px' }} />}
                         </tr>
                     </thead>
@@ -139,7 +149,7 @@ export function PaymentDocumentItemsEditor({
                                     )}
                                 </td>
                             </tr>
-                        ) : items.map(item => (
+                        ) : displayItems.map(item => (
                             <tr key={item.tempId} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                 <td style={cell}>
                                     <CatalogItemAutocomplete
@@ -261,7 +271,7 @@ export function PaymentDocumentItemsEditor({
                     <tfoot>
                         <tr style={{ backgroundColor: 'var(--color-bg-page)', fontWeight: 800 }}>
                             <td colSpan={6} style={{ ...cell, textAlign: 'right', padding: '10px 8px' }}>
-                                SOMA DOS ITENS ({currency ?? ''}):
+                                SOMA DOS ITENS (c/ IVA) ({currency ?? ''}):
                             </td>
                             <td style={{
                                 ...cell, textAlign: 'right', padding: '10px 8px',
@@ -274,6 +284,20 @@ export function PaymentDocumentItemsEditor({
                     </tfoot>
                 </table>
             </div>
+
+            {/* An applied rounding residual is disclosed once, at document level — never as a badge
+                on the line. The line total already includes it. */}
+            {allocation.adjustment && (
+                <p style={{
+                    margin: 0, fontSize: '0.72rem', color: 'var(--color-text-muted)'
+                }}>
+                    Soma dos itens inclui ajuste de arredondamento de{' '}
+                    {allocation.adjustment.amount > 0 ? '+' : '−'}
+                    {formatCurrencyAO(Math.abs(allocation.adjustment.amount))}
+                    {' '}(linha {allocation.adjustment.lineNumber}) para igualar o total declarado
+                    no documento.
+                </p>
+            )}
 
             {mismatch && (
                 <p role="alert" style={{

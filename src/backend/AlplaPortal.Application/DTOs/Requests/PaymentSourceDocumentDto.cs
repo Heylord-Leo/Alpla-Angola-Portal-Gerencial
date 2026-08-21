@@ -153,6 +153,17 @@ public class SavePaymentSourceDocumentDto
     /// creation is keyed: an ordinary field edit must stay repeatable.
     /// </summary>
     public string? CreationIdempotencyKey { get; set; }
+
+    // ── Duplicate hierarchy LEVEL 4 (v2.229.10) ──
+
+    /// <summary>
+    /// The user saw the ambiguous-duplicate refusal (same supplier reference, insufficient content
+    /// evidence to prove duplicate or distinct) and explicitly chose to proceed. Never implied.
+    /// </summary>
+    public bool? DuplicateOverrideAcknowledged { get; set; }
+
+    /// <summary>Mandatory written reason (≥ 20 chars) accompanying the acknowledgement. Audited.</summary>
+    public string? DuplicateOverrideReason { get; set; }
 }
 
 /// <summary>Everything the payment screen needs about a request's origin documents.</summary>
@@ -214,6 +225,79 @@ public class CheckSourceDocumentDuplicateDto
 
     /// <summary>Set when replacing an attachment: that document cannot conflict with itself.</summary>
     public Guid? ReplacingDocumentId { get; set; }
+}
+
+/// <summary>
+/// Asks which existing commercial documents an incoming document probably corresponds to, BEFORE
+/// anything is persisted (review-time preflight, v2.229.10 L4 candidate matching). Advisory only:
+/// the persistence guard re-runs the same rule engine and remains authoritative.
+/// </summary>
+public class MatchSourceDocumentCandidatesDto
+{
+    public Guid? ExcludeRequestId { get; set; }
+    public Guid? ExcludeDocumentId { get; set; }
+
+    public int? CompanyId { get; set; }
+    public int? SupplierId { get; set; }
+    public string? SupplierName { get; set; }
+    public string? SupplierTaxId { get; set; }
+    public string? DocumentNumber { get; set; }
+    public string? DocumentSeries { get; set; }
+    public DateTime? DocumentDate { get; set; }
+    public string? Currency { get; set; }
+    public decimal? GrossAmount { get; set; }
+
+    // ── Source-document (OCR) evidence, when it differs from the accepted draft values ──
+    //
+    // Two concepts that must never collapse: the ACCEPTED draft value (what the user kept) and
+    // the SOURCE evidence (what the physical document says). Candidate matching asks "does this
+    // PAPER already exist?", so when evidence is present it wins for matching — while the draft
+    // values remain untouched and authoritative for persistence. Null means "no divergent
+    // reading", never "no value".
+    public string? OcrSupplierTaxId { get; set; }
+    public string? OcrDocumentNumber { get; set; }
+    public DateTime? OcrDocumentDate { get; set; }
+    public string? OcrCurrency { get; set; }
+    public decimal? OcrGrossAmount { get; set; }
+}
+
+/// <summary>The values of an existing candidate, disclosed only when the user may see its request.</summary>
+public class SourceDocumentCandidateValuesDto
+{
+    public string? SupplierName { get; set; }
+    public string? SupplierTaxId { get; set; }
+    public string? DocumentNumber { get; set; }
+    public DateTime? DocumentDate { get; set; }
+    public string? Currency { get; set; }
+    public decimal? GrossAmount { get; set; }
+}
+
+public class SourceDocumentCandidateDto
+{
+    /// <summary>RELATED_DOCUMENT, AMBIGUOUS_MATCH, STRONG_BUSINESS_DUPLICATE or SEMANTIC_DUPLICATE.</summary>
+    public string Classification { get; set; } = string.Empty;
+    /// <summary>ALLOW, AMBIGUOUS (justified override) or BLOCK — what persistence would decide.</summary>
+    public string Verdict { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public List<string> MatchingFields { get; set; } = new();
+    public List<string> ConflictingFields { get; set; } = new();
+
+    /// <summary>False when the candidate's request is outside the user's scope — the candidate is
+    /// still reported (the signal must survive) but nothing identifying is disclosed.</summary>
+    public bool RequestVisible { get; set; }
+    public Guid? RequestId { get; set; }
+    public string? RequestNumber { get; set; }
+    public Guid? DocumentId { get; set; }
+    public int? SequenceNumber { get; set; }
+    public SourceDocumentCandidateValuesDto? Existing { get; set; }
+}
+
+public class SourceDocumentCandidatesResultDto
+{
+    public string? NormalizedDocumentNumber { get; set; }
+    /// <summary>The strongest classification found, or null when no candidate qualified.</summary>
+    public string? TopClassification { get; set; }
+    public List<SourceDocumentCandidateDto> Candidates { get; set; } = new();
 }
 
 public class SourceDocumentDuplicateResultDto

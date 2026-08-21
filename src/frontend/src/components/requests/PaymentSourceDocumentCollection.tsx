@@ -23,6 +23,7 @@ import {
     ValidationIssue
 } from '../../lib/paymentSourceDocuments';
 import { PaymentSourceDocumentCard } from './PaymentSourceDocumentCard';
+import { DuplicateOverrideDialog } from './DuplicateOverrideDialog';
 import { PaymentDocumentSummaryCard } from './PaymentDocumentSummaryCard';
 import { AddPaymentDocumentChoice } from './AddPaymentDocumentChoice';
 import { InfoModal } from '../ui/InfoModal';
@@ -109,6 +110,13 @@ export function PaymentSourceDocumentCollection({
     const [pendingRemoval, setPendingRemoval] = useState<PaymentSourceDocumentDto | null>(null);
     const [pendingReplace, setPendingReplace] = useState<PaymentSourceDocumentDto | null>(null);
     const [conflictDialog, setConflictDialog] = useState<PaymentSourceDocumentConflictDto | null>(null);
+    /**
+     * Duplicate hierarchy LEVEL 4: the backend refused the save because another document shares
+     * this supplier reference and the content evidence cannot decide. Resolved by an explicit,
+     * justified confirmation — never by asking the user to falsify the supplier's real reference.
+     */
+    const [duplicateOverride, setDuplicateOverride] =
+        useState<{ documentId: string; detail: string; classification: string | null } | null>(null);
     const [showIssues, setShowIssues] = useState(false);
 
     /** Guards the Add button against a double click creating two documents. */
@@ -227,16 +235,44 @@ export function PaymentSourceDocumentCollection({
     const lockedCurrency = useMemo(() => establishedCurrency(documents), [documents]);
 
     /** Persists one document. Only this card shows its own saving and error state. */
-    const save = async (document: PaymentSourceDocumentDto) => {
+    const save = async (document: PaymentSourceDocumentDto, duplicateReason?: string) => {
         const ui = uiState[document.id] ?? EMPTY_UI;
         patchUi(document.id, { isSaving: true, saveError: null });
 
         try {
-            const result = await api.requests.updateSourceDocument(
-                requestId, document.id,
-                toSavePayload(document, ui.ocr.classification, ui.conflict.acknowledged, ui.conflict.justification));
+            const payload = toSavePayload(
+                document, ui.ocr.classification, ui.conflict.acknowledged, ui.conflict.justification);
+            if (duplicateReason) {
+                payload.duplicateOverrideAcknowledged = true;
+                payload.duplicateOverrideReason = duplicateReason;
+            }
+
+            const result = await api.requests.updateSourceDocument(requestId, document.id, payload);
 
             if ('status' in result && result.status === 409) {
+                const code = (result as any).code as string | undefined;
+
+                // LEVEL 4 — ambiguous duplicate: openable, justified override.
+                if (code === 'DUPLICATE_AMBIGUOUS') {
+                    setDuplicateOverride({
+                        documentId: document.id,
+                        detail: (result as any).detail ?? 'Outro documento partilha esta referência.',
+                        classification: (result as any).classification ?? null
+                    });
+                    patchUi(document.id, { isSaving: false });
+                    return;
+                }
+
+                // LEVEL 1/2 — proven duplicate: a hard refusal shown on the card, not a
+                // concurrency situation to reload out of.
+                if (code === 'DUPLICATE_SEMANTIC' || code === 'DUPLICATE_FILE_CROSS_REQUEST') {
+                    patchUi(document.id, {
+                        isSaving: false,
+                        saveError: (result as any).detail ?? 'Documento duplicado.'
+                    });
+                    return;
+                }
+
                 setConflictDialog(result as PaymentSourceDocumentConflictDto);
                 patchUi(document.id, { isSaving: false });
                 return;
@@ -680,6 +716,20 @@ export function PaymentSourceDocumentCollection({
                     variant="warning"
                     onConfirm={() => void confirmReplace()}
                     onCancel={() => setPendingReplace(null)}
+                />
+            )}
+
+            {/* Duplicate hierarchy LEVEL 4: proceed only with an explicit, audited justification. */}
+            {duplicateOverride && (
+                <DuplicateOverrideDialog
+                    detail={duplicateOverride.detail}
+                    classification={duplicateOverride.classification}
+                    onCancel={() => setDuplicateOverride(null)}
+                    onConfirm={reason => {
+                        const target = documents.find(d => d.id === duplicateOverride.documentId);
+                        setDuplicateOverride(null);
+                        if (target) void save(target, reason);
+                    }}
                 />
             )}
 

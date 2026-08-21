@@ -41,14 +41,19 @@ public class DocumentObligationResolverTests
     }
 
     [Fact]
-    public void An_estimate_cannot_initiate_a_payment()
+    public void The_legacy_estimate_code_resolves_as_proforma_and_may_pay()
     {
+        // v2.229.10: "Orçamento / Cotação" is no longer a competing operational classification.
+        // A commercial offer is the same payable origin as a Factura Pró-forma, so the stray code
+        // canonicalizes instead of blocking the request it arrived on.
         var o = Payment(RequestConstants.SourceDocumentTypes.Estimate);
 
-        Assert.False(o.CanInitiatePayment);
-        Assert.True(o.BlocksProgression);
+        Assert.Equal(RequestConstants.SourceDocumentTypes.Proforma, o.SourceDocumentType);
+        Assert.True(o.CanInitiatePayment);
+        Assert.False(o.BlocksProgression);
         Assert.False(o.IsFiscal);
-        Assert.Contains("não fiscal", o.BlockingReason!);
+        Assert.True(o.RequiresOperationInvoice);
+        Assert.True(o.RequiresSeparateFiscalReceipt);
     }
 
     [Fact]

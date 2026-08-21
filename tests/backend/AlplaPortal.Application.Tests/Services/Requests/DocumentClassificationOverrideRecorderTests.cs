@@ -65,6 +65,41 @@ public class DocumentClassificationOverrideRecorderTests
         Assert.False(result.ShouldRecord);
     }
 
+    [Fact]
+    public void An_estimate_suggestion_against_a_proforma_selection_is_agreement()
+    {
+        // v2.229.10: "Orçamento / Cotação" and "Factura Pró-forma" are two names for the same
+        // payable origin. OCR reading one while the user selects the other is agreement — no
+        // acknowledgement, no justification, no audit row — even at high confidence.
+        var result = DocumentClassificationOverrideRecorder.Evaluate(
+            Request(suggested: "ESTIMATE", selected: "PROFORMA",
+                    confidence: 0.95m, acknowledged: false, justification: null));
+
+        Assert.False(result.ShouldRecord);
+        Assert.Null(result.RejectionReason);
+
+        Assert.False(DocumentClassificationOverrideRecorder.RequiresJustification(
+            "ESTIMATE", "PROFORMA", 0.95m));
+    }
+
+    [Fact]
+    public void A_genuine_invoice_versus_proforma_contradiction_still_demands_the_full_ritual()
+    {
+        // Canonicalizing the commercial offer must not soften real protection: a fiscal Factura
+        // read as PROFORMA still understates fiscal reality and owes a written reason.
+        Assert.True(DocumentClassificationOverrideRecorder.RequiresJustification(
+            "INVOICE", "PROFORMA", 0.4m));
+        Assert.True(DocumentClassificationOverrideRecorder.RequiresJustification(
+            "ADVANCE_INVOICE", "PROFORMA", 0.4m));
+        Assert.True(DocumentClassificationOverrideRecorder.RequiresJustification(
+            "INVOICE_RECEIPT", "PROFORMA", 0.4m));
+
+        var refused = DocumentClassificationOverrideRecorder.Evaluate(
+            Request(suggested: "INVOICE", selected: "PROFORMA", acknowledged: false));
+        Assert.False(refused.ShouldRecord);
+        Assert.NotNull(refused.RejectionReason);
+    }
+
     // ── Admissibility ──
 
     [Fact]

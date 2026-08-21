@@ -80,6 +80,7 @@ out.txt
 test_results.txt
 error.txt
 workflow_analysis.md
+scripts/db/po-evidence-out/
 
 # Arquivos de backup comprimidos
 *.zip

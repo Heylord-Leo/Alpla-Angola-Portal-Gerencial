@@ -4,7 +4,255 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.229.9
+v2.229.12
+
+## [Documentation only] - 2026-08-21
+
+### Historical PO/Supplier Integrity Repair Campaign — closed
+
+- The historical PO/supplier data-integrity repair campaign was **completed in PROD** via
+  operator-executed, guarded `sqlcmd` scripts (see
+  [HISTORICAL-PO-SUPPLIER-INTEGRITY-REPAIR-2026-08.md](HISTORICAL-PO-SUPPLIER-INTEGRITY-REPAIR-2026-08.md)
+  for the full auditable close-out: repairs completed, cases intentionally left untouched,
+  safety controls, and script inventory).
+- **No application deployment was involved** — the PROD application version did not change
+  (PROD remained on v2.229.9; TEST on v2.229.12). This entry is documentation only: no code,
+  schema, or migration change.
+- Primavera `2026A` letter-suffixed year-series parser support recorded as **backlog only**
+  ([BACKLOG-PRIMAVERA-PO-PARSER.md](BACKLOG-PRIMAVERA-PO-PARSER.md)); not implemented.
+
+## [v2.229.12] - 2026-08-20
+
+### Primavera P.O Identification Hardening
+
+Two blocking defects in the Purchase Order flow motivated this release: approved PAYMENT
+requests reaching the Buyer as "REGISTRAR P.O (FORNECEDOR NÃO DEFINIDO)" dead-ends
+(REQ-31/07/2026-193), and Primavera P.O extraction confusing a supplier fiscal number with the
+P.O number (NIF 5001713205 stored as a P.O). No DB migration; no historical data modified.
+
+#### Added — Primavera P.O identification
+
+- **Deterministic family detection** for the three official Primavera purchase-order layouts:
+  ECF (material de stock), ECF10 (material diverso/escritório), ECF11 (serviços), recognized
+  across formatting variants (`ECF11 2026/421`, `ECF11 2026-421`, title-prefixed forms).
+- **Canonical identity** per reference: `ECF-YYYY-N` / `ECF10-YYYY-N` / `ECF11-YYYY-N`
+  (computed, never stored — no schema change).
+- The Buyer modal **no longer takes the P.O number blindly from generic OCR `documentNumber`**:
+  a positively parsed Primavera reference auto-fills and is displayed with its family
+  ("P.O Primavera detectada"); otherwise only letter-bearing non-NIF values are eligible, and
+  bare numerics never auto-fill.
+- **NIF values can never become P.O numbers** — neither by extraction auto-fill nor by manual
+  entry: supplier and ALPLA legal-entity fiscal numbers (and any 10-digit NIF-shaped value) are
+  rejected with an actionable message; a real Primavera reference never trips this backstop.
+- Extraction surfaces `purchaseOrderReference` / canonical / family from the positive parse for
+  recognized Primavera PDFs (server-side, mirrored by the frontend parser).
+
+#### Changed — P.O duplicate detection
+
+- Primavera duplicates compare by **canonical identity scoped to the legal entity/company**:
+  same canonical in the same company keeps the existing justified, audited override; the same
+  canonical in the other legal entity is **informational only** (Plástico and SOPRO run
+  independent Primavera sequences) and never blocks or demands justification.
+- Non-Primavera references (FT/FP/FA/PP/FTC-style) keep the existing conservative global
+  fallback under loose normalization; a family is never invented for family-less values
+  (e.g. `2026/107` never matches `ECF 2026/107`).
+
+#### Fixed — supplier integrity
+
+- PAYMENT final approval now **refuses** requests with no structured supplier anywhere (header
+  or source documents), before any mutation — the flow can no longer silently create a
+  WAITING_PO group with undefined supplier.
+- Registering a P.O against a supplier-less legacy group is refused, and the Buyer now sees an
+  **actionable integrity panel** explaining the legacy data problem instead of the dead-end
+  "Fornecedor não definido" registration button.
+
+#### Added — historical integrity tooling (read-only)
+
+- Read-only dry-run reports under `scripts/db/`: supplier-less legacy PO groups
+  (deterministic-vs-manual classification) and suspicious historical P.O numbers (NIF-as-PO,
+  family-less and bare-numeric shapes). **The release itself modifies no historical data**;
+  historical corrections require explicit authorization and source-document evidence.
+
+## [v2.229.11] - 2026-08-20
+
+### L4 Candidate Document Matching
+
+TEST acceptance of v2.229.10 with real CONSULTIT documents showed that duplicate detection was
+still hash- and supplier-gated: a document whose supplier failed to resolve (misread NIF) — or
+whose physical bytes differed — was silently treated as NEW, and the review screen never warned
+about probable existing documents. This release makes duplicate/ambiguity detection
+candidate-based. No DB migration; Release 4 lifecycle untouched.
+
+#### Added — document duplicate and ambiguity detection
+
+- **Business-document candidate matching independent of the file hash**: the search anchors on
+  the normalized document number across this request and all live requests; supplier identity
+  became weighed evidence (SupplierId/NIF = strong, exact normalized name = probable) instead of
+  an absolute prerequisite — supplier resolution failures no longer prevent detection.
+- **Review-time detection**: a read-only candidate preflight
+  (`POST /api/v1/payment-source-documents/match-candidates`, same assembly + rule engine as the
+  persistence guard) feeds the creation composer with a severity-styled panel: comparison table
+  (existing vs uploaded), conflicting fields highlighted, requests named only when the user may
+  open them (the duplicate signal survives without identifying metadata otherwise).
+- **Explicit classification ladder**: SEMANTIC_DUPLICATE (identical content under the existing
+  L2 rules — hard block) · STRONG_BUSINESS_DUPLICATE (same probable supplier + reference + date +
+  currency + total in a different file — high-severity, justified audited override) ·
+  AMBIGUOUS_MATCH (strong candidate with conflicting NIF/date/etc., or unprovable content —
+  justified override) · RELATED_DOCUMENT (same reference, materially different total —
+  informational, frictionless) · genuinely new (conservative candidate floor: number match plus
+  supplier-probable or ≥2 of date/currency/total; number-only coincidences are nothing).
+  **Different SHA ≠ new commercial document**: regenerated, re-scanned or re-exported PDFs are
+  matched by commercial identity, and content-fingerprint inequality can never outrank the
+  complete commercial identity (requires review rather than frictionless acceptance).
+
+#### Added — supplier matching
+
+- Probable existing suppliers (matcher `DuplicateSuspected`) are surfaced during document review
+  ("Possível fornecedor existente", OCR NIF vs registered NIF side-by-side) with
+  **"Usar fornecedor existente"** — selecting the existing supplier without overwriting master
+  data and without auto-creating twins; "Criar fornecedor" remains for genuinely new suppliers.
+- The documentary supplier NIF (OCR snapshot) stays independent from the selected Portal
+  supplier and remains visible as conflicting evidence.
+
+#### Added — OCR evidence preservation
+
+- Review-time matching evaluates the OCR/source-document evidence separately from the accepted
+  draft values: when the user keeps a value ("manteve X / o documento indica Y"), the candidate
+  comparison still uses what the document actually says — a retained draft date/total can no
+  longer mask a modified document. Accepted values stay untouched and remain what persistence
+  validates. Customer/billed-company NIF discrepancy remains review-time only, shown when the
+  OCR provider extracts it.
+
+#### Fixed — reliability
+
+- EF Core SQL translation regression introduced during candidate-search development (a filter
+  composed over a record projection): the query now uses simple translatable predicates with the
+  projection as the final operator, all normalization after materialization — pinned with SQL
+  Server translation regression tests (`ToQueryString`), since the InMemory test provider cannot
+  catch translation failures.
+- Unexpected duplicate-validation failures now fail CLOSED with a concise user-facing message
+  ("Não foi possível validar o documento neste momento…") while the full detail goes to the
+  server log; genuine verdicts (`DUPLICATE_AMBIGUOUS`/`DUPLICATE_SEMANTIC`) are unaffected.
+
+#### Known limitations
+
+- Customer-NIF discrepancy is review-time only and depends on the OCR provider extracting the
+  billed-company NIF; there is no persistence-stage enforcement.
+- Proposal validity/date semantic consistency validation is not part of this release.
+- Legacy attachments without business-field data remain covered by file-hash duplicate detection
+  only, not full business-identity matching.
+- The candidate search materializes the bounded live-document set before normalized-number
+  filtering; SQL-side normalized-reference optimization is future work.
+- Post-creation detail editing receives authoritative duplicate feedback at save-time (409 with
+  the same classifications) rather than the creation-time preflight panel.
+
+## [v2.229.10] - 2026-08-18
+
+### Document Intake Hardening
+
+The authenticated PROD walkthrough surfaced two intake defects: (A) OCR reading a supplier
+proposal as "Orçamento / Cotação" while the payment screen only offers "Factura Pró-forma"
+manufactured a false classification contradiction (checkbox + justification for agreeing with
+the document); (B) duplicate detection hard-blocked on supplier + document number alone, so
+CONSULTIT's legitimate reuse of the proposal reference `ONP_18910_v3` across four materially
+different proposals (Decoder, CCTV Viana01, CCTV Viana02, Reestruturação do Bastidor) could not
+be registered without falsifying real supplier references. No DB migration; Release 4 closure
+status unchanged; PROD untouched (Stage 2 remains pending).
+
+#### Fixed
+
+- **Canonical taxonomy — every commercial offer is a Factura Pró-forma**:
+  `SourceDocumentTypes.Normalize` (and the frontend mirror `normalizeDocumentType`) folds the
+  legacy `ESTIMATE` code into `PROFORMA`, exactly as `FINAL_INVOICE` → `INVOICE`. ESTIMATE left
+  `ValidValues` and every dropdown; `IsValid` judges the canonical form so stray legacy values
+  stay interpretable; the obligation resolver's separate Estimate branch is gone (a commercial
+  offer carries proforma obligations and may initiate payment). The OpenAI classification prompt
+  and `DocumentClassificationFallback` (ORÇAMENTO/COTAÇÃO/PROPOSTA COMERCIAL/QUOTATION keywords,
+  prefix ORC) now produce PROFORMA directly. Raw OCR titles and evidence JSON are preserved
+  verbatim. OCR-Orçamento + user-Pró-forma is agreement: no modal, no acknowledgement, no
+  override row (`OCR_CONFIRMED` path). INVOICE/ADVANCE_INVOICE/INVOICE_RECEIPT vs PROFORMA keep
+  the full conflict ritual, including the always-high-risk fiscal-understatement rule.
+- **Duplicate hierarchy (LEVELS 1–4)** in `PaymentSourceDocumentDuplicateHierarchy` +
+  `PaymentSourceDocumentFingerprint` (deterministic, order-independent SHA-256 item fingerprint;
+  reference normalization sees through `_`/`-`/`.`/space styling; no OCR calls, no fuzzy
+  matching): identical file hash blocks within-request AND — new — across live requests when the
+  file is already an active source document (`DUPLICATE_FILE_CROSS_REQUEST`, other request named
+  only when visible to the user); same reference + same company + same currency + totals within
+  the FinancialIntegrity tolerance + identical item fingerprint blocks as a proven semantic
+  duplicate (`DUPLICATE_SEMANTIC`, no override); materially different documents (company,
+  currency, gross, content) register silently; header equality without provable content evidence
+  refuses with `DUPLICATE_AMBIGUOUS` until the user explicitly confirms with a written reason
+  (≥ 20 chars) — audited in the request timeline (`DOCUMENTO_DUPLICADO_POTENCIAL_CONFIRMADO`,
+  idempotent per attachment/twin pair). Applies to create AND update, in the request-detail
+  composer and the creation wizard (shared `DuplicateOverrideDialog`). Cancelled/rejected
+  requests and voided documents are never blocking evidence.
+
+#### Fixed (follow-up: monetary reconciliation — declared totals + rounding residual)
+
+- **Declared document totals are authoritative documentary evidence.** The TEST walkthrough of
+  CONSULTIT CCTV Viana02 (declared Net 3,011,866.27 / IVA 421,661.28 / Gross 3,433,527.55)
+  showed the Portal silently rebuilding all three from per-line-rounded arithmetic
+  (3,011,866.26 / 421,661.28 / 3,433,527.54). OCR read the document correctly; the values were
+  discarded by normalization. Now: `ExtractionMapper` forwards the declared net (`netAmount`)
+  and derived tax (`taxAmount` = grand − subtotal, when sane) alongside the grand total;
+  `mapOcrResultToDraft` keeps the declared total when the line-derived recomputation agrees
+  within per-line rounding (≤ 0.01 × lines); `fromOcrDraft` prefers the declared triplet when
+  internally consistent (|net + tax − gross| ≤ 0.01 — the strict documentary rule, never the
+  0.1% integrity tolerance). Inconsistent triplets fall back to line-derived values and the
+  existing mismatch handling.
+- **One monetary truth (MODEL 2 — deterministic rounding-residual allocation).** The cent-level
+  residual between the declared gross and the VAT-inclusive line sum is attributed to the LAST
+  eligible line (only `TotalAmount`; quantity/price/discount/rate untouched), capped at
+  0.01 × line count — a 100 AOA gap is never disguised as rounding, whatever the percentage
+  tolerance would forgive. Persisted item totals therefore sum exactly to the document gross,
+  and downstream — `Request.EstimatedTotalAmount`, `PaymentGroupPlan`/`RequestPoGroup.TotalAmount`,
+  `ExpectedOperationInvoiceTotal`, payment amounts — all carry the supplier's declared
+  3,433,527.55. Reference implementation `PaymentRoundingResidual` (Domain, tested); frontend
+  mirrors it (`allocateRoundingResidual`), applied as a derived view in the items editor (survives
+  every edit by recomputation) and at line-item persistence. Duplicate fingerprints stay
+  deterministic (same read → same allocation → same hash).
+- **Item-grid labels made honest**: column "TOTAL c/ IVA", footer "SOMA DOS ITENS (c/ IVA)"; when
+  a residual was allocated, one muted document-level note ("Soma dos itens inclui ajuste de
+  arredondamento de +0,01 (linha N)…") — no per-line badges. A non-allocatable residual now
+  shows the mismatch banner instead of being silently absorbed by tolerance.
+
+#### Fixed (acceptance fix: cross-request exact-file twins hard-block in the wizard)
+
+- TEST acceptance found the creation wizard still offering the legacy overrideable
+  "Documento Já Existente" warning (countdown + "Estou Ciente, Prosseguir") for a file that is an
+  ACTIVE source document of a LIVE request — a case persistence refuses with
+  `DUPLICATE_FILE_CROSS_REQUEST` anyway, after the user had wasted the whole OCR-and-review
+  effort. `GET /attachments/check-duplicate` now additionally reports
+  `isActiveSourceDocument`, computed by the SAME shared query as the persistence guard
+  (`PaymentSourceDocumentFileTwins` — voided documents and CANCELLED/REJECTED requests are never
+  blocking evidence), with the existing privacy rule intact (no request metadata for users who
+  cannot open the request — the block signal alone travels). The wizard hard-blocks that case
+  with "Ficheiro já utilizado noutro pedido" (Fechar / Ver pedido existente; no proceed, no
+  countdown, no justification). Attachment-only reuse, quotation/PO flows (`BuyerItemsList`,
+  `QuotationEntry`) and the within-request block keep their existing behavior verbatim. Pinned:
+  a crafted create carrying valid L4 override fields still 409s on a cross-request file twin —
+  LEVEL 1 can never be overridden.
+- **Legacy pre-Release-3 twins now count (MODEL B)**: TEST acceptance showed the hard block not
+  firing for REQ-21/07/2026-116 — correctly, under the original rule: that request predates the
+  `PaymentSourceDocuments` table (born 2026-08-04), so its proforma exists only as a
+  source-TYPED legacy attachment and the twin detector reported false. The shared discrimination
+  (`PaymentSourceDocumentFileTwins`) now recognizes a second shape: a `PROFORMA` /
+  `PAYMENT_SOURCE_DOCUMENT`-typed attachment on a live request **with no document row at all**
+  (when a row exists it remains the sole authority — a voided document stays inactive evidence).
+  Generic supporting attachments (receipts, POs, payment proofs, quotation files) stay on the
+  warn tier. Preflight and persistence extend together — a legacy twin now also 409s at
+  creation. No frontend change needed (the wizard already branches on the flag).
+
+#### Unchanged by design
+
+- One request = one legal company: `Request.CompanyId` semantics, the Plant.CompanyId
+  validation and the plant-mismatch guard are untouched — a document can be documentary-distinct
+  because it targets another ALPLA company and still be refused in a request of a different
+  company.
+- RequestType QUOTATION, the Quotation entity and quotation management (the declared-total
+  precedence also reaches the quotation prefill, in the already-audited direction: the declared
+  OCR total was and remains the integrity baseline).
+- Release 4 Post-Payment Completion: no behavior change; `CompletionEnabled` stays false in PROD.
 
 ## [v2.229.9] - 2026-08-18
 

@@ -49,8 +49,39 @@ public class OcrHeaderSuggestionsDto
     [JsonPropertyName("grandTotal")]
     public OcrValueDto<decimal>? TotalAmount { get; set; }
 
+    /// <summary>
+    /// The document's DECLARED net subtotal (after discounts, before tax), forwarded separately
+    /// (v2.229.10 monetary reconciliation) so the declared value is never lost to line-derived
+    /// reconstruction. Null when the document did not state one.
+    /// </summary>
+    [JsonPropertyName("netAmount")]
+    public OcrValueDto<decimal>? NetAmount { get; set; }
+
+    /// <summary>
+    /// The document's tax amount: grand total − net subtotal, derived only when both are present
+    /// and numerically sane. Null otherwise — never a guess.
+    /// </summary>
+    [JsonPropertyName("taxAmount")]
+    public OcrValueDto<decimal>? TaxAmount { get; set; }
+
     [JsonPropertyName("discountAmount")]
     public OcrValueDto<decimal>? DiscountAmount { get; set; }
+
+    /// <summary>
+    /// Positively identified Primavera purchase-order reference (deterministic ECF/ECF10/ECF11
+    /// parse over the extracted fields), display form, e.g. "ECF11 2026/421". Null when no
+    /// reference parsed — a consumer must never fall back to a bare numeric documentNumber.
+    /// </summary>
+    [JsonPropertyName("purchaseOrderReference")]
+    public OcrValueDto<string>? PurchaseOrderReference { get; set; }
+
+    /// <summary>Canonical identity of the reference above, e.g. "ECF11-2026-421".</summary>
+    [JsonPropertyName("purchaseOrderReferenceCanonical")]
+    public OcrValueDto<string>? PurchaseOrderReferenceCanonical { get; set; }
+
+    /// <summary>The Primavera document family (ECF / ECF10 / ECF11) of the reference above.</summary>
+    [JsonPropertyName("purchaseOrderFamily")]
+    public OcrValueDto<string>? PurchaseOrderFamily { get; set; }
 
     [JsonPropertyName("vendorAddress")]
     public OcrValueDto<string>? VendorAddress { get; set; }
