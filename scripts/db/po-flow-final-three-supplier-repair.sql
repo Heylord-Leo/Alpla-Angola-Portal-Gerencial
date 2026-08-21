@@ -3,17 +3,16 @@
 -- ███  EXPLICIT AUTHORIZATION REQUIRED  ███
 -- ███  ENVIRONMENT MUST BE VERIFIED BEFORE EXECUTION  ███
 -- ============================================================================
--- FINAL FIVE HISTORICAL SUPPLIER REPAIR (allow-list: EXACTLY five requests)
+-- FINAL THREE HISTORICAL SUPPLIER REPAIR (allow-list: EXACTLY three requests)
 --
 --   REQ-16/07/2026-084 -> 53  REALVITUR ANGOLA, LIMITADA            (NIF 5417089079, company 1)
 --   REQ-29/07/2026-178 -> 66  IMPORAFRICA VEICULOS LDA              (NIF 5417231983, company 1)
---   REQ-31/07/2026-193 -> 45  FIDELIDADE ANGOLA-COMP. DE SEGUROS    (NIF 5417061590, company 1)
---   REQ-31/07/2026-194 -> 45  FIDELIDADE ANGOLA-COMP. DE SEGUROS    (NIF 5417061590, company 2)
 --   REQ-12/08/2026-245 -> 159 MUSOLAND-MUNDO DAS SOLUCOES-ACESS.CONS.(SU),LDA (NIF 5417386740, company 1)
 --
--- REQ-31/07/2026-200 was REMOVED from this package: it drifted to PO_ISSUED in
--- live PROD and is handled by the dedicated po-flow-req200-supplier-po-* package.
--- This script supersedes the retired po-flow-final-six-supplier-repair-* trio.
+-- REQ-193/REQ-194 were REMOVED (drifted in live PROD to ADVANCE_PAYMENT_REQUIRED
+-- with registered PO values -> handled by po-flow-req193-194-supplier-po-*).
+-- REQ-200 (PO_ISSUED drift) is handled by po-flow-req200-supplier-po-*.
+-- This script supersedes the retired po-flow-final-five-supplier-repair-* trio.
 --
 -- Evidence: HUMAN CONFIRMATION of each request's stored source document (review
 -- closed 2026-08-20). Filenames and OCR were NOT used as supplier-identity
@@ -27,20 +26,19 @@
 -- status, group status, PurchaseOrderNumber, totals, attachments, supplier master
 -- or RegistrationStatus, workflow/payment/finance/quotation state.
 --
--- OPERATIONAL WARNING (reported by the preflight; NOT a blocking guard): suppliers
--- 45 and 159 are RegistrationStatus = DRAFT — REGISTER_PO may remain blocked for
--- them until their master registration completes. The historical repair proceeds
--- regardless.
+-- OPERATIONAL WARNING (reported by the preflight; NOT a blocking guard): supplier
+-- 159 is RegistrationStatus = DRAFT — REGISTER_PO may remain blocked for it until
+-- its master registration completes. The historical repair proceeds regardless.
 --
--- SINGLE TRANSACTION over all five rows — all-or-nothing. Any guard failure on ANY
--- row aborts the entire repair. Idempotent: all five already repaired =>
+-- SINGLE TRANSACTION over all three rows — all-or-nothing. Any guard failure on
+-- ANY row aborts the entire repair. Idempotent: all three already repaired =>
 -- ALREADY_REPAIRED, no writes, no duplicate audit rows; a MIX of repaired and
 -- unrepaired => abort for manual review (no silent completion of the remainder).
 --
 -- Usage:
---   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-five-supplier-repair.sql -v actor="<admin user guid>"
+--   sqlcmd -S <instance> -d Portal-Gerencial-Test -E -b -i po-flow-final-three-supplier-repair.sql -v actor="<admin user guid>"
 --   (rehearse on a restored clone copy first; then, with authorization, -d Portal-Gerencial)
--- Rollback: po-flow-final-five-supplier-repair-rollback.sql
+-- Rollback: po-flow-final-three-supplier-repair-rollback.sql
 -- ============================================================================
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -84,8 +82,6 @@ DECLARE @targets TABLE (
 INSERT INTO @targets VALUES
  (N'REQ-16/07/2026-084', '886c0d0e-80d8-4ebe-8272-e4fa3304f5c3', 1, 53,  N'5417089079',  971392.00, '37fa585d-674f-47b1-b621-248dd845f5b0', N'78f0d3a0d0e26f421fadb0602566dea03affa43a05102c39fe4765da96791746', N'[HIST-SUPPLIER-REQ-084]'),
  (N'REQ-29/07/2026-178', '3d67213e-daba-4615-a0fc-108b19ea1a3e', 1, 66,  N'5417231983',  164167.67, '4831f40f-73d4-41a7-99a8-74c9492acf54', N'18c4299ed825509ff0c4f1a52ff6b498f3f90409bf50e2041ccaf0bc2a8c18a9', N'[HIST-SUPPLIER-REQ-178]'),
- (N'REQ-31/07/2026-193', 'f20b272f-00d9-4a31-a9fc-948ac4d30f8c', 1, 45,  N'5417061590', 3661359.15, '9d68c416-9152-4766-a3e1-45b4ba24099e', N'297a2686dac84a16cf7c719836de9b6d3d062781bbf53324de889edfd551fdf2', N'[HIST-SUPPLIER-REQ-193]'),
- (N'REQ-31/07/2026-194', 'a535dabd-ea4e-4749-ab0f-1da3d136fd4f', 2, 45,  N'5417061590', 1050755.95, '44b9e0da-8baf-44aa-a833-fa992084a12d', N'08cca7aa13599b4e10eabe599a50c014f44a6b52ad94bf08270a0def269a5c96', N'[HIST-SUPPLIER-REQ-194]'),
  (N'REQ-12/08/2026-245', 'fe684497-448f-471a-8461-377ba3dc47c5', 1, 159, N'5417386740',  239400.00, '6f5f7e9c-8899-45ba-93de-63fa47b922bf', N'f55d286e8342b4264cb298add5811f76ecd44443901e3fa3af3b949fac74e02e', N'[HIST-SUPPLIER-REQ-245]');
 
 BEGIN TRANSACTION;
@@ -113,15 +109,15 @@ BEGIN TRY
          WHERE g.SupplierId = t.ExpectedSupplierId
            AND g.SupplierNifSnapshot = t.ExpectedSupplierNif);
 
-    IF @repaired = 5 AND @pending = 0
+    IF @repaired = 3 AND @pending = 0
     BEGIN
-        PRINT 'ALREADY_REPAIRED: all five groups already carry the expected suppliers — nothing written, no duplicate audit rows.';
+        PRINT 'ALREADY_REPAIRED: all three groups already carry the expected suppliers — nothing written, no duplicate audit rows.';
         COMMIT TRANSACTION;
     END
-    ELSE IF @pending <> 5
+    ELSE IF @pending <> 3
     BEGIN
         PRINT CONCAT('ABORTED (MANUAL_REVIEW_REQUIRED): pending=', @pending, ' repaired=', @repaired,
-                     ' of 5 — mixed or unexpected state. No partial repair is ever performed. Nothing written, rolled back.');
+                     ' of 3 — mixed or unexpected state. No partial repair is ever performed. Nothing written, rolled back.');
         ROLLBACK TRANSACTION;
     END
     -- ── Every guard must pass on every row, or the WHOLE repair aborts ──
@@ -170,9 +166,9 @@ BEGIN TRY
         JOIN Suppliers s ON s.Id = t.ExpectedSupplierId
         WHERE g.SupplierId IS NULL;
 
-        IF @@ROWCOUNT <> 5
+        IF @@ROWCOUNT <> 3
         BEGIN
-            PRINT 'ABORTED: UPDATE affected a row count different from 5 — rolled back, nothing persisted.';
+            PRINT 'ABORTED: UPDATE affected a row count different from 3 — rolled back, nothing persisted.';
             ROLLBACK TRANSACTION;
         END
         ELSE
@@ -194,14 +190,14 @@ BEGIN TRY
             JOIN Requests r  ON r.RequestNumber = t.RequestNumber
             JOIN Suppliers s ON s.Id = t.ExpectedSupplierId;
 
-            IF @@ROWCOUNT <> 5
+            IF @@ROWCOUNT <> 3
             BEGIN
-                PRINT 'ABORTED: audit insert affected a row count different from 5 — rolled back, nothing persisted.';
+                PRINT 'ABORTED: audit insert affected a row count different from 3 — rolled back, nothing persisted.';
                 ROLLBACK TRANSACTION;
             END
             ELSE
             BEGIN
-                PRINT 'REPAIRED: all five historical groups now carry their human-confirmed suppliers (5 audit rows written).';
+                PRINT 'REPAIRED: all three historical groups now carry their human-confirmed suppliers (3 audit rows written).';
                 COMMIT TRANSACTION;
             END
         END
@@ -220,6 +216,5 @@ FROM RequestPoGroups g
 JOIN Requests r         ON r.Id = g.RequestId
 JOIN RequestStatuses rs ON rs.Id = r.StatusId
 WHERE g.Id IN ('886c0d0e-80d8-4ebe-8272-e4fa3304f5c3','3d67213e-daba-4615-a0fc-108b19ea1a3e',
-               'f20b272f-00d9-4a31-a9fc-948ac4d30f8c','a535dabd-ea4e-4749-ab0f-1da3d136fd4f',
                'fe684497-448f-471a-8461-377ba3dc47c5')
 ORDER BY r.RequestNumber;
