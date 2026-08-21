@@ -34,12 +34,13 @@ public class StatusAggregationService : IStatusAggregationService
         _postPaymentOptions = postPaymentOptions?.Value;
     }
 
-    public async Task AggregateRequestStatusAsync(Guid requestId, CancellationToken cancellationToken = default)
+    public async Task AggregateRequestStatusAsync(Guid requestId, Guid actorUserId, CancellationToken cancellationToken = default)
     {
         var request = await _context.Requests
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
             .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
             .Include(r => r.PoGroups)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
@@ -88,7 +89,26 @@ public class StatusAggregationService : IStatusAggregationService
 
         if (statusEntity != null && request.StatusId != statusEntity.Id)
         {
+            // v2.230.0 — no silent Request.StatusId writers: every aggregate transition leaves a
+            // RequestStatusHistories row. The REQ-23/07/2026-140 regression was only invisible
+            // because this exact write path recorded nothing.
+            var previousStatusId = request.StatusId;
+            var previousStatusCode = request.Status?.Code ?? "";
             request.StatusId = statusEntity.Id;
+            request.UpdatedAtUtc = DateTime.UtcNow;
+
+            _context.RequestStatusHistories.Add(new Domain.Entities.RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = requestId,
+                ActorUserId = actorUserId,
+                ActionTaken = "STATUS_SYNC",
+                PreviousStatusId = previousStatusId,
+                NewStatusId = statusEntity.Id,
+                Comment = $"Status agregado automaticamente a partir dos grupos operacionais: {previousStatusCode} → {result.StatusCode}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+
             await _context.SaveChangesAsync(cancellationToken);
         }
     }

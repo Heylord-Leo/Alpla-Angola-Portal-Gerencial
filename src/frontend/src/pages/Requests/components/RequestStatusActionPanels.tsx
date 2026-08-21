@@ -66,6 +66,12 @@ export interface RequestStatusActionPanelsProps {
     /** Readiness-derived replacement for the WAITING_RECEIPT header text (null while the
      *  readiness read model has not loaded). */
     completionGuidance?: { responsible: string; nextAction: string } | null;
+
+    /** v2.230.0 — multi-unit requests: the header's FLUXOS ATIVOS / PRÓXIMAS AÇÕES block is
+     *  authoritative; the legacy single-status "Responsável atual / Próxima ação" pair would
+     *  contradict it (e.g. "Não definido" for PO_PARTIALLY_UPLOADED). Hides ONLY that text
+     *  pair — every action button in the panel remains. */
+    hideLegacyGuidance?: boolean;
 }
 
 export function RequestStatusActionPanels({
@@ -79,7 +85,8 @@ export function RequestStatusActionPanels({
     navigate, onDrawerClose,
     getRequestGuidance,
     suppressLegacyFinalize = false,
-    completionGuidance = null
+    completionGuidance = null,
+    hideLegacyGuidance = false
 }: RequestStatusActionPanelsProps) {
     // The legacy WAITING_RECEIPT wording ("Anexar recibo do fornecedor e finalizar pedido")
     // only applies to requests the legacy FinalizeRequest path still governs.
@@ -147,6 +154,7 @@ export function RequestStatusActionPanels({
                         </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                        {!hideLegacyGuidance ? (
                         <div style={{ display: 'flex', gap: '24px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Responsável atual</span>
@@ -161,6 +169,11 @@ export function RequestStatusActionPanels({
                                 </span>
                             </div>
                         </div>
+                        ) : (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                            Consulte "Fluxos Ativos" e "Progresso por Grupo" — este pedido possui múltiplos grupos operacionais.
+                        </span>
+                        )}
 
                         {/* ADDED: Operational Actions Buttons (Only visible to BUYER mode) */}
                         {/* Buyer actions */}

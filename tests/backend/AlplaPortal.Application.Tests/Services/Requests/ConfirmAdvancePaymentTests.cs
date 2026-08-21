@@ -303,7 +303,10 @@ public class ConfirmAdvancePaymentTests
         });
         Assert.IsType<OkObjectResult>(result);
 
-        var history = await ctx.RequestStatusHistories.AsNoTracking().Where(h => h.RequestId == seed.RequestId).ToListAsync();
+        // v2.230.0: the parent-status aggregation now writes its own audited STATUS_SYNC row —
+        // this test's contract is "exactly one row FOR THE CONFIRM ACTION".
+        var history = await ctx.RequestStatusHistories.AsNoTracking()
+            .Where(h => h.RequestId == seed.RequestId && h.ActionTaken != "STATUS_SYNC").ToListAsync();
         var row = Assert.Single(history);
 
         Assert.Equal("ADVANCE_PAYMENT_COMPLETED", row.ActionTaken);
@@ -350,7 +353,8 @@ public class ConfirmAdvancePaymentTests
         });
         Assert.IsType<OkObjectResult>(result);
 
-        var row = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId);
+        var row = await ctx.RequestStatusHistories.AsNoTracking()
+            .SingleAsync(h => h.RequestId == seed.RequestId && h.ActionTaken != "STATUS_SYNC"); // v2.230.0: aggregation transitions are now audited
         Assert.Contains("Lote #1", row.Comment);
         Assert.DoesNotContain("GroupId", row.Comment);
     }

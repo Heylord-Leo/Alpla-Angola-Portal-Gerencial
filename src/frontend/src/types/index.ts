@@ -11,6 +11,11 @@ export interface RequestListItemDto {
     /** Group-aware display override (RequestGroupDisplayStateCalculator) — null means "no override", fall back to statusName. */
     displayStatusCode?: string | null;
     displayStatusName?: string | null;
+    /** v2.230.0 multi-group summary (computed by GetRequests). unitSummary is null for
+     *  single-unit requests — those rows keep the current appearance. */
+    activeUnitCount?: number;
+    unitSummary?: string | null;
+    responsibleRoles?: string[];
     requestTypeId: number;
     requestTypeName: string;
     requestTypeCode: string;
@@ -870,6 +875,24 @@ export interface TimelineStepDto {
 
 export interface RequestTimelineDto {
     steps: TimelineStepDto[];
+    /** v2.230.0 — per-lot progress timelines; present only for multi-lot QUOTATION requests. */
+    lots?: LotTimelineDto[] | null;
+}
+
+/** One logical lot (ApprovalBatch and/or its RequestPoGroup) with its own progress timeline. */
+export interface LotTimelineDto {
+    unitType: 'BATCH' | 'GROUP';
+    unitId: string;
+    /** Real ApprovalBatch.BatchNumber (own or origin batch); null for legacy/batchless groups. */
+    lotNumber?: number | null;
+    label: string;
+    supplierName?: string | null;
+    totalAmount: number;
+    currencyCode?: string | null;
+    purchaseOrderNumber?: string | null;
+    statusCode: string;
+    statusLabel: string;
+    steps: TimelineStepDto[];
 }
 
 export interface DashboardSummaryDto {
@@ -1563,3 +1586,61 @@ export interface OcrDocumentClassificationDto {
      */
     isFallback?: boolean;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2.230.0 — Multi-Group Request Workflow projection (GET /requests/{id}/workflow-projection).
+// Mirrors AlplaPortal.Domain.Services.RequestWorkflowProjectionBuilder (camelCase serialization).
+// Read-only, computed server-side, never persisted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface WorkflowNextAction {
+    unitType: 'BATCH' | 'GROUP';
+    unitId: string;
+    unitLabel: string;
+    actionType: string;
+    label: string;
+    responsibleRole: string;
+    priority: number;
+}
+
+export interface WorkflowResponsibility {
+    role: string;
+    unitCount: number;
+}
+
+export interface WorkflowUnit {
+    unitType: 'BATCH' | 'GROUP';
+    unitId: string;
+    label: string;
+    supplierId?: number | null;
+    supplierName?: string | null;
+    totalAmount: number;
+    currencyCode?: string | null;
+    itemCount: number;
+    itemLineNumbers: number[];
+    batchNumber?: number | null;
+    statusCode: string;
+    statusLabel: string;
+    approvalState: 'COMPLETE' | 'IN_PROGRESS' | 'ADJUSTMENT';
+    purchaseOrderNumber?: string | null;
+    poState: 'PENDING' | 'CORRECTION' | 'ISSUED' | 'NOT_APPLICABLE';
+    paymentState: 'PENDING' | 'ADVANCE_IN_PROGRESS' | 'SCHEDULED' | 'COMPLETE' | 'NOT_STARTED';
+    receivingState: 'PENDING' | 'IN_PROGRESS' | 'COMPLETE' | 'NOT_STARTED';
+    completionState: 'COMPLETE' | 'WAITING_FISCAL_RECEIPT' | 'NOT_STARTED';
+    responsibleRole: string;
+    nextAction?: WorkflowNextAction | null;
+}
+
+export interface WorkflowAggregateDisplay {
+    statusCode: string;
+    label: string;
+}
+
+export interface RequestWorkflowProjection {
+    aggregateDisplay: WorkflowAggregateDisplay;
+    units: WorkflowUnit[];
+    responsibilities: WorkflowResponsibility[];
+    nextActions: WorkflowNextAction[];
+    warnings: string[];
+}
+

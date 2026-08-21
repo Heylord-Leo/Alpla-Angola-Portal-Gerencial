@@ -29,7 +29,9 @@ import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
 import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
 import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
-import { RequestActionHeader, BreadcrumbItem, OperationalGuidance } from './components/RequestActionHeader';
+import { RequestActionHeader, BreadcrumbItem, OperationalGuidance, MultiUnitGuidance } from './components/RequestActionHeader';
+import { RequestGroupProgress } from './components/RequestGroupProgress';
+import { buildActiveFlows, resolveDrawerBadgeOverride, resolveSingleUnitGuidance, effectivePanelStatus } from '../../lib/workflowProjection';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
@@ -170,6 +172,48 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         hasPlantScope: plants.length > 0,
         hasDepartmentScope: departments.length > 0
     });
+
+    // ── v2.230.0: Multi-Group Request Workflow projection (read-only, server-computed) ──
+    // Fetched for QUOTATION requests; drives the multi-unit header (FLUXOS ATIVOS / PRÓXIMAS
+    // AÇÕES), the "Progresso por Grupo" panel and the superseded-batch diagnostics. Fetch
+    // failure falls back to the legacy single-status guidance — never blocks the page.
+    const [workflowProjection, setWorkflowProjection] = useState(null);
+    useEffect(() => {
+        let cancelled = false;
+        if (!id || requestTypeCode !== 'QUOTATION') { setWorkflowProjection(null); return; }
+        api.requests.getWorkflowProjection(id)
+            .then(p => { if (!cancelled) setWorkflowProjection(p); })
+            .catch(() => { if (!cancelled) setWorkflowProjection(null); });
+        return () => { cancelled = true; };
+    }, [id, requestTypeCode, status]);
+
+    const multiUnitGuidance: MultiUnitGuidance | null = useMemo(() => {
+        if (!workflowProjection || workflowProjection.units.length <= 1) return null;
+        const primary = workflowProjection.nextActions[0] ?? null;
+        return {
+            activeFlows: buildActiveFlows(workflowProjection),
+            primaryAction: primary
+                ? { label: primary.label, unitLabel: primary.unitLabel, responsibleRole: primary.responsibleRole }
+                : null,
+            extraActionCount: Math.max(0, workflowProjection.nextActions.length - 1),
+        };
+    }, [workflowProjection]);
+
+    // v2.230.0 historical compatibility — projection drives the drawer for >= 1 unit:
+    // single-unit QUOTATION requests derive badge/guidance/panel status from the operational
+    // unit (identical strings for healthy requests; the unit's truth for stale scalars).
+    // Class-A unit-less requests, PAYMENT and terminal states keep the legacy scalar path.
+    const singleUnitGuidance = useMemo(
+        () => resolveSingleUnitGuidance(workflowProjection, status),
+        [workflowProjection, status]);
+    const drawerBadgeOverride = useMemo(
+        () => resolveDrawerBadgeOverride(workflowProjection, status),
+        [workflowProjection, status]);
+    const panelStatus = useMemo(
+        () => (requestTypeCode === 'QUOTATION' && workflowProjection)
+            ? effectivePanelStatus(workflowProjection, status || '')
+            : (status || ''),
+        [workflowProjection, status, requestTypeCode]);
 
     // Release 3: the PAYMENT source-document collection. Held here rather than in the hook because
     // the summary is the authoritative source of totals and canSubmit, and the section owns it.
@@ -337,7 +381,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 statusBadgeColor === 'green' ? 'success' :
                 statusBadgeColor || 'neutral'
             }`} style={{ marginLeft: '8px' }}>
-                {statusFullName}
+                {drawerBadgeOverride?.label ?? statusFullName}
             </span>
         ),
         contextBadges: (
@@ -447,8 +491,11 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             </>
         ),
         operationalGuidance: (status
-            ? (status === 'WAITING_RECEIPT' && release4Guidance) || getRequestGuidance(status, requestTypeCode || '')
+            ? (status === 'WAITING_RECEIPT' && release4Guidance)   // Release-4 completion lifecycle stays most specific
+              || singleUnitGuidance                                 // projection truth for one reliable unit
+              || getRequestGuidance(status, requestTypeCode || '')  // legacy scalar fallback (class-A, PAYMENT)
             : null) as OperationalGuidance | null,
+        multiUnitGuidance,
         feedback,
         onCloseFeedback: () => setFeedback(prev => ({ ...prev, message: null })),
         isDrawerMode: !!onDrawerClose
@@ -467,7 +514,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             <RequestActionHeader {...headerProps}>
                 <RequestStatusActionPanels
                     requestId={id}
-                    status={status}
+                    status={panelStatus}
                     requestTypeCode={requestTypeCode}
                     isBuyer={isBuyer}
                     isAreaApprover={isAreaApprover}
@@ -487,11 +534,23 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getRequestGuidance={getRequestGuidance}
                     suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
                     completionGuidance={release4Guidance}
+                    hideLegacyGuidance={!!multiUnitGuidance || !!singleUnitGuidance}
                 />
             </RequestActionHeader>
 
             {requestTypeCode === 'QUOTATION' && (
                 <RequestGroupDisplaySummary poGroups={poGroups || []} fallbackStatusName={statusFullName || ''} />
+            )}
+
+            {/* v2.230.0 — Progresso por Grupo (multi-unit requests) + superseded-batch diagnostics.
+                Single-unit requests without warnings render nothing here (compatibility rule). */}
+            {requestTypeCode === 'QUOTATION' && workflowProjection &&
+                (workflowProjection.units.length >= 1 ||
+                 ((user?.roles?.includes('System Administrator') ?? false) && workflowProjection.warnings.length > 0)) && (
+                <RequestGroupProgress
+                    projection={workflowProjection}
+                    showWarnings={user?.roles?.includes('System Administrator') ?? false}
+                />
             )}
 
             {/* Form Card */}

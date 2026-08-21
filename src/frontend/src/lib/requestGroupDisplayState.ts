@@ -122,6 +122,11 @@ export function resolveParentDisplayStatus(
  * status never renders as blank.
  */
 export const GROUP_STATUS_LABELS: Record<string, string> = {
+    // v2.230.0 — pre-PO lifecycle labels: the multi-group summary/progress views can show
+    // groups before their P.O. exists; a raw enum (WAITING_PO) must never reach the user.
+    PENDING: 'Aguardando Ativação',
+    WAITING_PO: 'Aguardando P.O.',
+    WAITING_PO_CORRECTION: 'Devolvido para Compras',
     PO_ISSUED: 'P.O. Emitida',
     PAYMENT_REQUEST_SENT: 'Pedido de Pagamento Enviado',
     ADVANCE_PAYMENT_REQUIRED: 'Adiantamento Pendente',

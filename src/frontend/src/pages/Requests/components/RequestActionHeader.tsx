@@ -13,6 +13,17 @@ export interface OperationalGuidance {
     nextAction: string;
 }
 
+/** v2.230.0 — multi-unit workflow context rendered instead of the single
+ *  Responsável/Próxima Ação pair when a request has several active units. */
+export interface MultiUnitGuidance {
+    /** Role-keyed rollup lines, e.g. "Financeiro: 1 grupo — p.o emitida". */
+    activeFlows: string[];
+    /** Highest-priority action, PT copy. */
+    primaryAction: { label: string; unitLabel: string; responsibleRole: string } | null;
+    /** Count of additional pending actions beyond the primary one. */
+    extraActionCount: number;
+}
+
 interface RequestActionHeaderProps {
     breadcrumbs: BreadcrumbItem[];
     title: string;
@@ -22,6 +33,8 @@ interface RequestActionHeaderProps {
     primaryActions?: React.ReactNode;
     secondaryActions?: React.ReactNode;
     operationalGuidance?: OperationalGuidance | null;
+    /** When present (multi-unit request), replaces the single Responsável/Próxima Ação strip. */
+    multiUnitGuidance?: MultiUnitGuidance | null;
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
     children?: React.ReactNode;
@@ -37,6 +50,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
     primaryActions,
     secondaryActions,
     operationalGuidance,
+    multiUnitGuidance,
     feedback,
     onCloseFeedback,
     children,
@@ -134,8 +148,49 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
                 </div>
             </div>
 
+            {/* Row 3 (multi-unit): FLUXOS ATIVOS + PRÓXIMAS AÇÕES */}
+            {multiUnitGuidance && (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    borderRadius: '8px',
+                    borderLeft: '4px solid var(--color-primary)',
+                    fontSize: '0.75rem',
+                    marginBottom: '12px',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem', paddingTop: '2px' }}>Fluxos Ativos:</span>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                            {multiUnitGuidance.activeFlows.map((flow, i) => (
+                                <span key={i} style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{flow}</span>
+                            ))}
+                        </div>
+                    </div>
+                    {multiUnitGuidance.primaryAction && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem' }}>Próximas Ações:</span>
+                            <span style={{ fontWeight: 700, fontStyle: 'italic', color: 'var(--color-text-main)' }}>
+                                "{multiUnitGuidance.primaryAction.label}" — {multiUnitGuidance.primaryAction.unitLabel}
+                            </span>
+                            <span style={{ fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase', fontSize: '0.65rem' }}>
+                                ({multiUnitGuidance.primaryAction.responsibleRole})
+                            </span>
+                            {multiUnitGuidance.extraActionCount > 0 && (
+                                <span style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>
+                                    + {multiUnitGuidance.extraActionCount} {multiUnitGuidance.extraActionCount > 1 ? 'outras ações' : 'outra ação'}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Row 3: Operational Context (Compact Strip) */}
-            {operationalGuidance && (
+            {!multiUnitGuidance && operationalGuidance && (
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',

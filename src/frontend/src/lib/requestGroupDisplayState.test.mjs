@@ -219,3 +219,23 @@ describe('resolveSafeStatusLabel', () => {
         assert.equal(result, 'Pagamentos em andamento');
     });
 });
+
+// v2.230.0 — pre-PO lifecycle labels: the multi-group summary/progress views show groups before
+// their P.O. exists; a raw enum (WAITING_PO) must never reach the user.
+describe('GROUP_STATUS_LABELS pre-PO coverage (v2.230.0)', () => {
+    test('pre-PO statuses have Portuguese labels', () => {
+        assert.equal(resolveGroupStatusLabel('PENDING'), 'Aguardando Ativação');
+        assert.equal(resolveGroupStatusLabel('WAITING_PO'), 'Aguardando P.O.');
+        assert.equal(resolveGroupStatusLabel('WAITING_PO_CORRECTION'), 'Devolvido para Compras');
+    });
+
+    test('every operational lifecycle status used by the workflow projection is labelled (no raw enums)', () => {
+        const lifecycle = ['PENDING', 'WAITING_PO', 'WAITING_PO_CORRECTION', 'PO_ISSUED',
+            'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_COMPLETED',
+            'WAITING_SUPPLIER_DELIVERY', 'PAYMENT_REQUEST_SENT', 'PAYMENT_SCHEDULED',
+            'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'WAITING_RECONCILIATION', 'IN_FOLLOWUP', 'COMPLETED'];
+        for (const code of lifecycle) {
+            assert.notEqual(resolveGroupStatusLabel(code), code, `raw enum leaked for ${code}`);
+        }
+    });
+});

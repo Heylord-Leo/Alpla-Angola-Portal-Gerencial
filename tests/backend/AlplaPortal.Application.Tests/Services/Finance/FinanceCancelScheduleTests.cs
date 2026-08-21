@@ -713,7 +713,7 @@ public class FinanceCancelScheduleTests
         var result = await controller.CancelSchedule(seed.RequestId, new CancelSchedulePaymentDto { RequestPoGroupId = seed.GroupId, Reason = reason });
 
         Assert.IsType<OkResult>(result);
-        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId);
+        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId && h.ActionTaken != "STATUS_SYNC"); // v2.230.0: aggregation transitions are now audited
         Assert.Contains("12345678901234567890", history.Comment); // stored trimmed
         Assert.DoesNotContain("  12345678901234567890  ", history.Comment);
     }
@@ -823,7 +823,7 @@ public class FinanceCancelScheduleTests
         });
         Assert.IsType<OkResult>(result);
 
-        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId);
+        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId && h.ActionTaken != "STATUS_SYNC"); // v2.230.0: aggregation transitions are now audited
         Assert.Contains("HOTEL STATION", history.Comment);
         Assert.Contains("Moeda: AOA", history.Comment);
         Assert.DoesNotContain("[--- |", history.Comment);
@@ -865,7 +865,7 @@ public class FinanceCancelScheduleTests
         });
         Assert.IsType<OkResult>(result);
 
-        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId);
+        var history = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == seed.RequestId && h.ActionTaken != "STATUS_SYNC"); // v2.230.0: aggregation transitions are now audited
         Assert.Contains("[--- | Moeda: --- |", history.Comment);
     }
 

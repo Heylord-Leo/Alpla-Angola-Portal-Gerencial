@@ -356,6 +356,12 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao validar artigo no Primavera.');
             return response.json();
         },
+        /** v2.230.0 — Multi-Group Request Workflow projection (read-only, computed server-side). */
+        getWorkflowProjection: async (requestId: string): Promise<import('../types').RequestWorkflowProjection> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/workflow-projection`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a projeção do fluxo do pedido.');
+            return response.json();
+        },
         getDashboardSummary: async (): Promise<DashboardSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário do dashboard.');

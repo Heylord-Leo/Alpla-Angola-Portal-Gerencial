@@ -12,6 +12,7 @@ import { ModernRequestTimeline } from './ModernRequestTimeline';
 import { ModernTooltip } from '../../../../components/ui/ModernTooltip';
 import { getRequestGuidance, getUrgencyStyle } from '../../../../lib/utils';
 import { resolveSafeStatusLabel } from '../../../../lib/requestGroupDisplayState';
+import { resolveListAggregateLabel } from '../../../../lib/workflowProjection';
 
 // ── Status Badge ──────────────────────────────────────────
 const STATUS_THEME: Record<string, { bg: string; fg: string; border: string; icon: any }> = {
@@ -334,6 +335,13 @@ export function RequestsTableWidget({
                                                 <p style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', margin: '2px 0 0', fontWeight: 500, textTransform: 'none' }}>
                                                     {req.departmentName || 'Desconhecido'}
                                                 </p>
+                                                {/* v2.230.0 — multi-group summary line (null for single-unit rows) */}
+                                                {req.unitSummary && (
+                                                    <p style={{ fontSize: '0.65rem', color: 'var(--color-primary)', margin: '3px 0 0', fontWeight: 700, maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                       title={req.unitSummary}>
+                                                        {req.unitSummary}
+                                                    </p>
+                                                )}
                                             </td>
                                             {/* Tipo */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
@@ -424,14 +432,24 @@ export function RequestsTableWidget({
                                             {/* Status */}
                                             <td style={{ padding: '12px 20px', border: 'none' }}>
                                                 <ModernTooltip content={
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                        <div><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Situação Atual</div><div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{guidance.responsible}</div></div>
-                                                        <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px' }}><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>Próxima Ação</div><div style={{ fontSize: '0.8rem', fontWeight: 600, fontStyle: 'italic', color: 'var(--color-text-main)' }}>{guidance.nextAction}</div></div>
-                                                    </div>
+                                                    (req.activeUnitCount ?? 0) > 1 ? (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            <div><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Responsáveis</div><div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{(req.responsibleRoles || []).slice(0, 2).join(' · ') || 'Sem ação'}{(req.responsibleRoles?.length ?? 0) > 2 ? ` +${(req.responsibleRoles!.length - 2)}` : ''}</div></div>
+                                                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px' }}><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>Grupos</div><div style={{ fontSize: '0.8rem', fontWeight: 600, fontStyle: 'italic', color: 'var(--color-text-main)' }}>{req.unitSummary}</div></div>
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                            <div><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Situação Atual</div><div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-primary)' }}>{guidance.responsible}</div></div>
+                                                            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px' }}><div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>Próxima Ação</div><div style={{ fontSize: '0.8rem', fontWeight: 600, fontStyle: 'italic', color: 'var(--color-text-main)' }}>{guidance.nextAction}</div></div>
+                                                        </div>
+                                                    )
                                                 } side="top" align="start">
                                                     <StatusBadge
                                                         statusCode={req.statusCode || 'DRAFT'}
-                                                        label={resolveSafeStatusLabel(req.statusCode, req.statusName, req.displayStatusName)}
+                                                        label={resolveListAggregateLabel(
+                                                            req.activeUnitCount,
+                                                            req.displayWorkflowState,
+                                                            resolveSafeStatusLabel(req.statusCode, req.statusName, req.displayStatusName))}
                                                     />
                                                 </ModernTooltip>
                                             </td>

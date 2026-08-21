@@ -58,7 +58,7 @@ public class StatusAggregationServiceTests
         await context.SaveChangesAsync();
 
         // Act
-        await service.AggregateRequestStatusAsync(request.Id);
+        await service.AggregateRequestStatusAsync(request.Id, Guid.NewGuid());
 
         // Assert
         // One group already issued its PO, the other still needs a PO (correction) — the request
@@ -83,7 +83,7 @@ public class StatusAggregationServiceTests
         context.RequestPoGroups.AddRange(group1, group2);
         await context.SaveChangesAsync();
 
-        await service.AggregateRequestStatusAsync(request.Id);
+        await service.AggregateRequestStatusAsync(request.Id, Guid.NewGuid());
 
         var updatedRequest = await context.Requests.FirstOrDefaultAsync(r => r.Id == request.Id);
         Assert.Equal(4, updatedRequest.StatusId); // PaymentRequestSent
@@ -114,9 +114,51 @@ public class StatusAggregationServiceTests
         
         await context.SaveChangesAsync();
 
-        await service.AggregateRequestStatusAsync(request.Id);
+        await service.AggregateRequestStatusAsync(request.Id, Guid.NewGuid());
 
         var updatedRequest = await context.Requests.FirstOrDefaultAsync(r => r.Id == request.Id);
         Assert.Equal(17, updatedRequest.StatusId); // Completed
+    }
+
+    // ── v2.230.0: no silent aggregate writers (REQ-23/07/2026-140) ──
+
+    [Fact]
+    public async Task EveryAggregateTransition_WritesAnAuditedStatusSyncHistoryRow()
+    {
+        var context = GetInMemoryDbContext();
+        var service = new StatusAggregationService(context, NullLogger<StatusAggregationService>.Instance);
+        var actorId = Guid.NewGuid();
+
+        var request = new Request { Id = Guid.NewGuid(), Title = "Test", StatusId = 1 }; // FinalApproved
+        var group = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.PoIssued };
+        context.Requests.Add(request);
+        context.RequestPoGroups.Add(group);
+        await context.SaveChangesAsync();
+
+        await service.AggregateRequestStatusAsync(request.Id, actorId);
+
+        var history = Assert.Single(await context.RequestStatusHistories
+            .Where(h => h.RequestId == request.Id).ToListAsync());
+        Assert.Equal("STATUS_SYNC", history.ActionTaken);
+        Assert.Equal(actorId, history.ActorUserId);
+        Assert.Equal(1, history.PreviousStatusId);
+        Assert.Equal(3, history.NewStatusId); // PoIssued
+    }
+
+    [Fact]
+    public async Task NoTransition_WritesNoHistoryRow()
+    {
+        var context = GetInMemoryDbContext();
+        var service = new StatusAggregationService(context, NullLogger<StatusAggregationService>.Instance);
+
+        var request = new Request { Id = Guid.NewGuid(), Title = "Test", StatusId = 3 }; // already PoIssued
+        var group = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, Status = RequestConstants.Statuses.PoIssued };
+        context.Requests.Add(request);
+        context.RequestPoGroups.Add(group);
+        await context.SaveChangesAsync();
+
+        await service.AggregateRequestStatusAsync(request.Id, Guid.NewGuid());
+
+        Assert.Empty(await context.RequestStatusHistories.Where(h => h.RequestId == request.Id).ToListAsync());
     }
 }

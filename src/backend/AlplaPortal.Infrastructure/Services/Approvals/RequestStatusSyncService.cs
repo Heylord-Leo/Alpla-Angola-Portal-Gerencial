@@ -31,6 +31,7 @@ public class RequestStatusSyncService : IRequestStatusSyncService
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
             .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
             .Include(r => r.PoGroups)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == requestId);
@@ -104,6 +105,7 @@ public class RequestStatusSyncService : IRequestStatusSyncService
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
             .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
             .Include(r => r.PoGroups)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == requestId);
@@ -129,6 +131,21 @@ public class RequestStatusSyncService : IRequestStatusSyncService
         // PAYMENT requests: return legacy status code as-is
         if (requestTypeCode != RequestConstants.Types.Quotation)
             return currentStatusCode;
+
+        // v2.230.0 — terminal request states are authoritative over any group/batch mixture:
+        // a CANCELLED/REJECTED request must display as such regardless of historical groups.
+        if (currentStatusCode is "CANCELLED" or "REJECTED")
+            return currentStatusCode;
+
+        // v2.230.0 — superseded batches (REQ-23/07/2026-140 class: still in an approval state
+        // but every item already processed by another active operational unit) never drive the
+        // ACTIVE display state. They stay visible in history and admin diagnostics only —
+        // without this, a single stale AREA_ADJUSTMENT batch kept a PO_ISSUED request labelled
+        // "Processamento Parcial" forever. Same policy the aggregate calculator uses.
+        var activeLineItemsForPolicy = lineItems.Where(li => !li.IsDeleted).ToList();
+        batches = batches
+            .Where(b => !SupersededBatchPolicy.IsSuperseded(b, activeLineItemsForPolicy, poGroups))
+            .ToList();
 
         // No batches exist yet, and no closed items — use legacy status
         if (batches.Count == 0 && lineItems.All(li =>
@@ -202,9 +219,23 @@ public class RequestStatusSyncService : IRequestStatusSyncService
             if (activePoGroups.Count > 0 && completedGroups.Count == activePoGroups.Count)
                 return allClosed > 0 ? "COMPLETED_WITH_CLOSURES" : "FULLY_COMPLETED";
 
-            // Case 2: PO groups exist but some still in progress — return least-advanced group status
+            // Case 2: PO groups exist but some still in progress.
+            // v2.230.0 — when the in-progress groups SPAN the PO gate (one still waiting for
+            // its P.O. while another is already in the financial/receiving track), the request
+            // is genuinely mid-flight on two structurally different tracks: report
+            // MIXED_PROCESSING instead of the least-advanced label, which understated the
+            // state ("Aguardando P.O." for a request that also has a payment scheduled).
+            // Groups all on the SAME side of the gate keep the least-advanced status — the
+            // post-gate mixed labels are the group-aware display override's responsibility
+            // (RequestGroupDisplayStateCalculator, mirrored in TS), not this projection's.
             if (activePoGroups.Count > 0 && inProgressGroups.Count > 0)
             {
+                var spansPoGate =
+                    inProgressGroups.Any(g => !SupersededBatchPolicy.HasCrossedPoGate(g)) &&
+                    inProgressGroups.Any(SupersededBatchPolicy.HasCrossedPoGate);
+                if (spansPoGate)
+                    return "MIXED_PROCESSING";
+
                 var lowestGroup = inProgressGroups
                     .OrderBy(g => PoGroupPriority(g.Status))
                     .First();
