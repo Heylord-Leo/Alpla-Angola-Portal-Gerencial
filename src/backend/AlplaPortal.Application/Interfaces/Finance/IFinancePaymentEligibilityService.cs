@@ -29,8 +29,27 @@ public interface IFinancePaymentEligibilityService
     /// <summary>Mirrors FinanceController.MarkAsPaid's guard exactly (branches on request type, same as the endpoint).</summary>
     bool CanPay(string requestTypeCode, string requestStatusCode, string? groupStatus);
 
-    /// <summary>Mirrors FinanceController.ReturnForAdjustment's parent-status guard exactly.</summary>
+    /// <summary>Mirrors FinanceController.ReturnForAdjustment's parent-status guard exactly. Retained
+    /// for backward compatibility / legacy single-group requests; new code should prefer the
+    /// group-scoped <see cref="CanReturnGroup"/>.</summary>
     bool CanReturn(string? requestStatusCode);
+
+    /// <summary>
+    /// Group-scoped return eligibility: whether THIS RequestPoGroup may be returned to the Buyer for
+    /// P.O. correction, judged from the group's OWN status only (PO_ISSUED or PAYMENT_SCHEDULED). A
+    /// sibling group's lifecycle (e.g. already PAYMENT_COMPLETED) never affects this answer, so a
+    /// multi-group request can return one group without touching the others.
+    /// </summary>
+    bool CanReturnGroup(string? groupStatus);
+
+    /// <summary>
+    /// The financial-mutation actions (SCHEDULE, PAY, CANCEL_SCHEDULE, RETURN) available for ONE
+    /// RequestPoGroup, derived exclusively from that group's own status. This is the per-group source
+    /// of truth the multi-group UI and the mutation endpoints share: a paid sibling can never suppress
+    /// or add an action here. ADD_NOTE / ADD_PROOF are request-level document actions and are NOT
+    /// included — they are resolved by <see cref="Evaluate"/>.
+    /// </summary>
+    IReadOnlyList<string> EvaluateGroupActions(string requestTypeCode, string requestStatusCode, string? groupStatus);
 
     /// <summary>
     /// Mirrors FinanceController.CancelSchedule's guard exactly. Eligible only for a group whose

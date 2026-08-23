@@ -152,4 +152,11 @@ public class FinanceActionRequestDto
     /// DEC-110: Mandatory when action is PAY. The actual amount disbursed.
     /// </summary>
     public decimal? ActualPaidAmount { get; set; }
+    /// <summary>
+    /// Group-scoped Return for Adjustment (v2.230.0): the RequestPoGroup to return to the Buyer for
+    /// P.O. correction. Optional for backward compatibility — when omitted and the request has exactly
+    /// one active group, that group is used; when omitted on a multi-group request the endpoint
+    /// rejects the call so a sibling can never be regressed implicitly.
+    /// </summary>
+    public Guid? RequestPoGroupId { get; set; }
 }

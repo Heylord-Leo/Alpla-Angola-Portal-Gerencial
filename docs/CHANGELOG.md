@@ -4,7 +4,58 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.230.0
+v2.231.0
+
+## [v2.231.0] - 2026-08-23
+
+### Finance Payment Obligations Redesign & Multi-Group Hardening
+
+Finance is now **obligation-aware**: the Request is a visual container and each `RequestPoGroup` is an
+independent financial obligation, judged in isolation so a paid obligation can never suppress or
+regress a sibling. A new group-aware projection replaces the request-level payment view, and a
+campaign of correctness fixes hardens every RequestPayment writer against the request-scoped
+`(RequestId, PaymentType, PaymentSequence)` uniqueness. **No DB migration; no schema change; the
+unique index is unchanged; no historical data modified.**
+
+#### Added — Finance obligations redesign
+
+- **`GET /api/v1/finance/obligations`** — a pure Finance obligation projection
+  (`FinanceObligationProjectionBuilder`): one row per active `RequestPoGroup` grouped under its Request
+  container, with action class, next action, operational state, due date (only from a scheduled
+  payment) and amount.
+- **Redesigned `/finance/payments`** — action-centric, per-group actions with one primary action plus
+  a standard kebab (Details, Add Note); professional Finance terminology; newest/oldest ordering;
+  search by supplier **NIF** (and request number, supplier, P.O., title); **Company / Plant /
+  Department** filters with a **Company→Plant** dependency, an advanced-filter hierarchy and an
+  active-filter count; and a **note indicator** with hover tooltip.
+
+#### Fixed — Finance correctness
+
+- **Per-group eligibility** — Finance actions are the union of each group's own eligibility; a paid
+  sibling no longer hides a still-actionable group's Schedule/Pay/Return (REQ-100).
+- **Group-scoped Return for Adjustment** — only the named group returns to `WAITING_PO_CORRECTION`;
+  the request scalar is re-derived by aggregation and siblings are never touched.
+- **Request-scoped `PaymentSequenceAllocator`** — every `RequestPayment` writer now allocates the next
+  sequence across the whole request per PaymentType, fixing duplicate-key failures when scheduling a
+  second group, registering a second advance, or creating a reconciliation remaining balance (and
+  never reusing a CANCELLED sequence).
+- **Direct-pay ledger** — paying a group directly from `PO_ISSUED` now creates its `FINAL_BALANCE`
+  ledger row, so reconciliation's `actualPaidSum` and the obligations projection no longer undercount
+  the paid group.
+- **Reconciliation `CreatedByUserId`** — the remaining-balance payment is attributed to the
+  authenticated actor (fixes an FK failure on SQL).
+- **Reconcile ↔ post-payment-completion concurrency** — reconciliation status-history rows are added
+  through the DbSet (not the un-loaded navigation), avoiding an EF change-tracking mis-track that
+  raised a `DbUpdateConcurrencyException` when post-payment completion is enabled.
+
+#### Developer tooling
+
+- **Finance DEV Regression Harness** (`DevFinanceFixtureController`) — a permanent, DEV-only tool that
+  seeds/inspects/resets deterministic `ZZTEST-FIN-*` scenarios and drives the real Finance endpoints
+  for regression testing. Triple-gated: `#if DEBUG` + `Environment.IsDevelopment()` + explicit
+  `DevFixtures:FinanceEnabled` opt-in (404 otherwise). Documented in
+  `docs/FINANCE_DEV_REGRESSION_HARNESS.md`, with maintenance triggers at high-risk Finance integration
+  points.
 
 ## [v2.230.0] - 2026-08-21
 
