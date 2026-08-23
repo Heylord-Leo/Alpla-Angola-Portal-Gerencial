@@ -724,6 +724,10 @@ public class FinanceController : BaseController
                     PaymentConditionCode = g.PaymentConditionCode,
                     AdvancePaymentPercent = g.AdvancePaymentPercent,
                     Status = g.Status,
+                    // Per-group Finance actions — derived from THIS group's own status only, so the
+                    // multi-group UI gates each card's buttons here (never on the request-level
+                    // AvailableFinanceActions). A paid sibling can no longer suppress this group.
+                    FinanceActions = _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).ToList(),
                     Payments = g.Payments.Select(p => new RequestPaymentDto
                     {
                         Id = p.Id,
@@ -771,8 +775,319 @@ public class FinanceController : BaseController
                 PageSize = pageSize
             },
             // Note: We leave Summary empty here to avoid recalculating; frontend calls /summary anyway
-            Summary = new FinanceSummaryDto() 
+            Summary = new FinanceSummaryDto()
         });
+    }
+
+    /// <summary>
+    /// Phase 3/4: Finance obligations projection — one row per RequestPoGroup (the independent
+    /// financial unit), grouped under its Request container (Option C). Answers "what to do now,
+    /// for which supplier, for how much, by when". Reuses the same finance scope/inclusion and the
+    /// per-group eligibility as GetPayments; adds no workflow state. The legacy /payments endpoint
+    /// is untouched for backward compatibility.
+    /// </summary>
+    [HttpGet("obligations")]
+    public async Task<ActionResult<FinanceObligationsResponseDto>> GetObligations(
+        [FromQuery] string? search = null,
+        [FromQuery] string? currencyCode = null,
+        [FromQuery] string? actionClass = null,
+        [FromQuery] bool overdueOnly = false,
+        [FromQuery] bool dueTodayOnly = false,
+        [FromQuery] bool actionableOnly = false,
+        [FromQuery] int? plantId = null,
+        [FromQuery] int? departmentId = null,
+        [FromQuery] int? companyId = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var scopedQuery = await GetScopedRequestsQuery();
+        var today = DateTime.UtcNow.Date;
+
+        var financeStatuses = new[]
+        {
+            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted,
+            RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid,
+            RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup,
+            RequestConstants.Statuses.Completed, RequestConstants.Statuses.PoPartiallyUploaded
+        };
+        var financeGroupStatuses = new[]
+        {
+            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.AdvancePaymentRequired,
+            RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted,
+            RequestConstants.Statuses.WaitingSupplierDelivery, RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted,
+            RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.Completed
+        };
+
+        var query = scopedQuery.Where(r =>
+            (financeStatuses.Contains(r.Status!.Code)
+                && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
+            || (r.RequestType!.Code == RequestConstants.Types.Quotation
+                && r.PoGroups.Any(g => financeGroupStatuses.Contains(g.Status))));
+
+        // Organizational filters (server-side, before pagination). These scope BOTH the list and the
+        // summary cards — the cards reflect the current org/search scope; action-card selection only
+        // filters the list further.
+        if (plantId.HasValue) query = query.Where(r => r.PlantId == plantId.Value);
+        if (departmentId.HasValue) query = query.Where(r => r.DepartmentId == departmentId.Value);
+        if (companyId.HasValue) query = query.Where(r => r.CompanyId == companyId.Value);
+
+        var loaded = await query
+            .Include(r => r.Status).Include(r => r.RequestType).Include(r => r.Supplier)
+            .Include(r => r.Requester).Include(r => r.Plant).Include(r => r.Department)
+            .Include(r => r.Quotations).Include(r => r.Currency)
+            .Include(r => r.PoGroups).ThenInclude(g => g.Payments)
+            .Include(r => r.PoGroups).ThenInclude(g => g.Supplier)
+            .AsSplitQuery()
+            .ToListAsync();
+
+        // Build one obligation per non-cancelled group. Each group is judged in isolation.
+        var allObligations = new List<(FinanceObligationDto Dto, Guid RequestId)>();
+        var containersById = new Dictionary<Guid, FinanceObligationContainerDto>();
+
+        foreach (var r in loaded)
+        {
+            var activeGroups = r.PoGroups.Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled).ToList();
+            if (activeGroups.Count == 0) continue;
+
+            var reqInput = new FinanceObligationProjectionBuilder.RequestInput(
+                r.Id, r.RequestNumber ?? string.Empty, r.RequestType!.Code, r.Title,
+                r.Department?.Name, r.Plant?.Name);
+
+            var container = new FinanceObligationContainerDto
+            {
+                RequestId = r.Id,
+                RequestNumber = r.RequestNumber ?? string.Empty,
+                RequestTypeCode = r.RequestType.Code,
+                Title = r.Title,
+                Department = r.Department?.Name,
+                Plant = r.Plant?.Name,
+                CreatedAtUtc = r.CreatedAtUtc,
+                SupplierCount = activeGroups.Select(g => g.SupplierId ?? (int?)null).Where(x => x.HasValue).Distinct().Count()
+            };
+
+            foreach (var g in activeGroups)
+            {
+                var supplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
+                    g.SupplierNameSnapshot, r.SelectedQuotationId.HasValue,
+                    r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
+                    r.Supplier?.Name);
+                var currency = FinanceGroupDisplayResolver.ResolveCurrencyCode(
+                    g.CurrencyCode, r.SelectedQuotationId.HasValue,
+                    r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
+                    r.Currency?.Code);
+
+                var groupInput = new FinanceObligationProjectionBuilder.GroupInput(
+                    g.Id, g.SupplierId, supplierName, g.SupplierNifSnapshot, g.Supplier?.TaxId, g.Status,
+                    g.PurchaseOrderNumber, currency, g.TotalAmount,
+                    _eligibility.EvaluateGroupActions(r.RequestType.Code, r.Status!.Code, g.Status),
+                    g.Payments.Select(p => new FinanceObligationProjectionBuilder.PaymentInput(
+                        p.Id, p.PaymentType, p.PaymentStatus, p.PlannedAmount, p.ActualPaidAmount,
+                        p.ScheduledDateUtc, p.PaidDateUtc, p.PaymentProofAttachmentId.HasValue, p.CurrencyCode)).ToList());
+
+                var o = FinanceObligationProjectionBuilder.Build(reqInput, groupInput, today);
+                var dto = new FinanceObligationDto
+                {
+                    RequestId = o.RequestId, RequestNumber = o.RequestNumber, RequestTypeCode = o.RequestTypeCode,
+                    RequestTitle = o.RequestTitle, Department = o.Department, Plant = o.Plant,
+                    RequestPoGroupId = o.RequestPoGroupId, SupplierId = o.SupplierId, SupplierName = o.SupplierName,
+                    SupplierNif = o.SupplierNif, SupplierTaxId = o.SupplierTaxId, GroupStatusCode = o.GroupStatusCode,
+                    GroupStatusLabel = o.GroupStatusLabel, OperationalStateLabel = o.OperationalStateLabel,
+                    PurchaseOrderNumber = o.PurchaseOrderNumber, CurrencyCode = o.CurrencyCode, GroupAmount = o.GroupAmount,
+                    PaymentId = o.PaymentId, PaymentType = o.PaymentType, ScheduledDateUtc = o.ScheduledDateUtc,
+                    PlannedAmount = o.PlannedAmount, ActualPaidAmount = o.ActualPaidAmount, PaidDateUtc = o.PaidDateUtc,
+                    HasPaymentProof = o.HasPaymentProof, FinanceActions = o.FinanceActions.ToList(),
+                    ActionClass = o.ActionClass, ActionClassLabel = o.ActionClassLabel, NextActionLabel = o.NextActionLabel,
+                    ResponsibleRole = o.ResponsibleRole, DueDate = o.DueDate, IsOverdue = o.IsOverdue,
+                    OverdueDays = o.OverdueDays, IsDueToday = o.IsDueToday, ObligationAmount = o.ObligationAmount
+                };
+                container.Obligations.Add(dto);
+                allObligations.Add((dto, r.Id));
+            }
+
+            container.TotalsByCurrency = SumByCurrency(container.Obligations.Select(x => (x.CurrencyCode, x.ObligationAmount)));
+            container.ExpandByDefault = container.Obligations.Count > 1;
+            containersById[r.Id] = container;
+        }
+
+        // ── Search / currency narrowing (applies to BOTH summary and list) ──
+        // Matches request number, supplier name, P.O., title, AND the supplier NIF — both the group's
+        // SupplierNifSnapshot and the canonical Supplier.TaxId — with digits-only normalization so a
+        // pasted NIF ("5401126913" or "5401 126 913") matches regardless of punctuation.
+        static string DigitsOnly(string? v) => v == null ? "" : new string(v.Where(char.IsLetterOrDigit).ToArray());
+        var searchDigits = DigitsOnly(search);
+        bool MatchesSearch(FinanceObligationDto o)
+        {
+            if (string.IsNullOrWhiteSpace(search)) return true;
+            var s = search.Trim().ToLowerInvariant();
+            if ((o.RequestNumber?.ToLowerInvariant().Contains(s) ?? false)
+                || (o.SupplierName?.ToLowerInvariant().Contains(s) ?? false)
+                || (o.PurchaseOrderNumber?.ToLowerInvariant().Contains(s) ?? false)
+                || (o.RequestTitle?.ToLowerInvariant().Contains(s) ?? false)) return true;
+            // NIF / TaxId (only when the term carries digits, to avoid matching everything on empty)
+            return searchDigits.Length > 0 &&
+                (DigitsOnly(o.SupplierNif).Contains(searchDigits) || DigitsOnly(o.SupplierTaxId).Contains(searchDigits));
+        }
+        bool MatchesCurrency(FinanceObligationDto o) =>
+            string.IsNullOrWhiteSpace(currencyCode) || string.Equals(o.CurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase);
+
+        var scoped = allObligations.Where(x => MatchesSearch(x.Dto) && MatchesCurrency(x.Dto)).Select(x => x.Dto).ToList();
+
+        // ── Summary: over the search/currency-scoped set, ALL classes (cards are the filter entry points) ──
+        var summary = BuildObligationSummary(scoped);
+
+        // ── List filters (actionClass / overdue / dueToday / actionableOnly) ──
+        bool MatchesListFilter(FinanceObligationDto o)
+        {
+            if (!string.IsNullOrWhiteSpace(actionClass) && !string.Equals(o.ActionClass, actionClass, StringComparison.OrdinalIgnoreCase)) return false;
+            if (overdueOnly && !o.IsOverdue) return false;
+            if (dueTodayOnly && !o.IsDueToday) return false;
+            if (actionableOnly && !(o.ActionClass == FinanceActionClasses.NeedsScheduling || o.ActionClass == FinanceActionClasses.NeedsPayment || o.ActionClass == FinanceActionClasses.FiscalDocumentPending)) return false;
+            return true;
+        }
+
+        // Requests that have ≥1 obligation matching the list filter are included; the container keeps
+        // ALL its (search/currency-scoped) obligations for reconciliation context (paid siblings stay visible).
+        var matchingRequestIds = scoped.Where(MatchesListFilter).Select(o => o.RequestId).ToHashSet();
+
+        var containers = containersById.Values
+            .Where(c => matchingRequestIds.Contains(c.RequestId))
+            .Select(c =>
+            {
+                // Keep only obligations that passed search/currency; order actionable-first inside the container.
+                var kept = c.Obligations.Where(o => MatchesSearch(o) && MatchesCurrency(o))
+                    .OrderBy(ObligationUrgencyRank).ThenBy(o => o.DueDate ?? DateTime.MaxValue).ToList();
+                c.Obligations = kept;
+                c.TotalsByCurrency = SumByCurrency(kept.Select(x => (x.CurrencyCode, x.ObligationAmount)));
+                return c;
+            })
+            .ToList();
+
+        // ── Sort containers. Default = newest first (Request creation date); FE exposes newest/oldest.
+        //    The other keys stay available for existing callers. Intra-container obligations already
+        //    order actionable-first (above), independent of the container sort. ──
+        IEnumerable<FinanceObligationContainerDto> ordered = (sortBy?.ToLowerInvariant()) switch
+        {
+            "oldest" => containers.OrderBy(c => c.CreatedAtUtc).ThenBy(c => c.RequestNumber),
+            "amount" => containers.OrderByDescending(c => c.Obligations.Sum(o => o.ObligationAmount)),
+            "supplier" => containers.OrderBy(c => c.Obligations.FirstOrDefault()?.SupplierName ?? ""),
+            "duedate" => containers.OrderBy(c => c.Obligations.Min(o => o.DueDate ?? DateTime.MaxValue)),
+            "urgency" => containers
+                .OrderBy(c => c.Obligations.Min(ObligationUrgencyRank))
+                .ThenBy(c => c.Obligations.Min(o => o.DueDate ?? DateTime.MaxValue))
+                .ThenBy(c => c.RequestNumber),
+            // default + "newest"
+            _ => containers.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.RequestNumber)
+        };
+        var orderedList = ordered.ToList();
+
+        var totalContainers = orderedList.Count;
+        var pageItems = orderedList.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        // ── Attach request-level Finance-note metadata (minimal: count + latest) — ONLY for the
+        //    current page, batched, never loading full histories into rows. Same visibility model as
+        //    the request itself (inclusion already gated by GetScopedRequestsQuery). ──
+        var pageRequestIds = pageItems.Select(c => c.RequestId).ToList();
+        if (pageRequestIds.Count > 0)
+        {
+            var noteRows = await _context.RequestStatusHistories
+                .AsNoTracking()
+                .Where(h => pageRequestIds.Contains(h.RequestId) && h.ActionTaken == "NOTA_FINANCEIRA")
+                .Select(h => new { h.RequestId, h.Comment, h.CreatedAtUtc, ActorName = h.ActorUser != null ? h.ActorUser.FullName : null })
+                .ToListAsync();
+            foreach (var grp in noteRows.GroupBy(n => n.RequestId))
+            {
+                var c = pageItems.FirstOrDefault(x => x.RequestId == grp.Key);
+                if (c == null) continue;
+                var latest = grp.OrderByDescending(n => n.CreatedAtUtc).First();
+                var text = latest.Comment ?? string.Empty;
+                const string prefix = "Nota de Finanças: ";
+                if (text.StartsWith(prefix)) text = text.Substring(prefix.Length);
+                if (text.Length > 280) text = text.Substring(0, 280) + "…";
+                c.HasNotes = true;
+                c.NoteCount = grp.Count();
+                c.LatestNoteText = text;
+                c.LatestNoteAtUtc = latest.CreatedAtUtc;
+                c.LatestNoteActorName = latest.ActorName;
+            }
+        }
+
+        return Ok(new FinanceObligationsResponseDto
+        {
+            PagedResult = new PagedResult<FinanceObligationContainerDto>
+            {
+                Items = pageItems,
+                TotalCount = totalContainers,
+                Page = page,
+                PageSize = pageSize
+            },
+            Summary = summary
+        });
+    }
+
+    // Lower = more urgent. Drives default container/obligation ordering.
+    private static int ObligationUrgencyRank(FinanceObligationDto o)
+    {
+        if (o.IsOverdue) return 0;
+        if (o.IsDueToday) return 1;
+        return o.ActionClass switch
+        {
+            FinanceActionClasses.NeedsPayment => 2,
+            FinanceActionClasses.NeedsScheduling => 3,
+            FinanceActionClasses.FiscalDocumentPending => 4,
+            FinanceActionClasses.InReceivingFollowup => 5,
+            FinanceActionClasses.PaidWaitingReceiving => 6,
+            FinanceActionClasses.Completed => 7,
+            _ => 8
+        };
+    }
+
+    private static List<FinanceCurrencyAmountDto> SumByCurrency(IEnumerable<(string? Currency, decimal Amount)> rows) =>
+        rows.GroupBy(x => string.IsNullOrWhiteSpace(x.Currency) ? "—" : x.Currency!)
+            .Select(g => new FinanceCurrencyAmountDto { CurrencyCode = g.Key, Amount = g.Sum(x => x.Amount) })
+            .OrderByDescending(c => c.Amount).ToList();
+
+    private static FinanceObligationCardDto Card(string actionClass, IEnumerable<FinanceObligationDto> obligations, Func<FinanceObligationDto, bool> predicate)
+    {
+        var matched = obligations.Where(predicate).ToList();
+        return new FinanceObligationCardDto
+        {
+            ActionClass = actionClass,
+            Label = FinanceActionClasses.Label(actionClass),
+            Count = matched.Count,
+            AmountsByCurrency = SumByCurrency(matched.Select(o => (o.CurrencyCode, o.ObligationAmount)))
+        };
+    }
+
+    private static FinanceObligationSummaryDto BuildObligationSummary(List<FinanceObligationDto> obligations)
+    {
+        var actionable = obligations.Where(o =>
+            o.ActionClass == FinanceActionClasses.NeedsScheduling
+            || o.ActionClass == FinanceActionClasses.NeedsPayment
+            || o.ActionClass == FinanceActionClasses.FiscalDocumentPending).ToList();
+
+        return new FinanceObligationSummaryDto
+        {
+            NeedsScheduling = Card(FinanceActionClasses.NeedsScheduling, obligations, o => o.ActionClass == FinanceActionClasses.NeedsScheduling),
+            NeedsPayment = Card(FinanceActionClasses.NeedsPayment, obligations, o => o.ActionClass == FinanceActionClasses.NeedsPayment),
+            DueToday = new FinanceObligationCardDto
+            {
+                ActionClass = "DUE_TODAY", Label = "Vence Hoje",
+                Count = obligations.Count(o => o.IsDueToday),
+                AmountsByCurrency = SumByCurrency(obligations.Where(o => o.IsDueToday).Select(o => (o.CurrencyCode, o.ObligationAmount)))
+            },
+            Overdue = new FinanceObligationCardDto
+            {
+                ActionClass = "OVERDUE", Label = "Atrasados",
+                Count = obligations.Count(o => o.IsOverdue),
+                AmountsByCurrency = SumByCurrency(obligations.Where(o => o.IsOverdue).Select(o => (o.CurrencyCode, o.ObligationAmount)))
+            },
+            PaidWaitingReceiving = Card(FinanceActionClasses.PaidWaitingReceiving, obligations, o => o.ActionClass == FinanceActionClasses.PaidWaitingReceiving),
+            ActionableTotal = actionable.Count,
+            ActionableAmountsByCurrency = SumByCurrency(actionable.Select(o => (o.CurrencyCode, o.ObligationAmount)))
+        };
     }
 
     [HttpGet("history")]
@@ -1109,12 +1424,12 @@ public class FinanceController : BaseController
             : RequestConstants.Statuses.PaymentScheduled;
 
         var paymentType = group.Status == RequestConstants.Statuses.AdvancePaymentRequired ? RequestPayment.PaymentTypes.Advance : RequestPayment.PaymentTypes.FinalBalance;
-        // Computed rather than hardcoded to 1: a prior CancelSchedule for this group/type leaves its
-        // RequestPayment row at PaymentSequence=1 with PaymentStatus=CANCELLED (preserved for audit,
-        // never reused) — a subsequent schedule must land on the next sequence to avoid colliding
-        // with the unique index on (RequestId, PaymentType, PaymentSequence). No-op for the ordinary
-        // first-time case (Max of an empty set is 0, so this still yields 1).
-        var nextSequence = group.Payments.Where(p => p.PaymentType == paymentType).Select(p => p.PaymentSequence).DefaultIfEmpty(0).Max() + 1;
+        // REQUEST-scoped sequence via the canonical allocator (the unique index is
+        // (RequestId, PaymentType, PaymentSequence)). A per-group Max() would restart at 1 for each
+        // sibling group and collide; the allocator also counts group-less payments (e.g. a
+        // reconciliation remaining-balance row) and preserves CANCELLED sequences without reuse.
+        var nextSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
+            .NextSequenceAsync(_context, r.Id, paymentType);
 
         var payment = new RequestPayment
         {
@@ -1337,12 +1652,45 @@ public class FinanceController : BaseController
         group.Status = paidStatus.Code;
         group.UpdatedAtUtc = DateTime.UtcNow;
 
-        var payment = await _context.RequestPayments.FirstOrDefaultAsync(p => p.RequestPoGroupId == group.Id && p.PaymentType == RequestPayment.PaymentTypes.FinalBalance);
+        // Ledger completeness. Complete the group's ACTIVE FINAL_BALANCE row when one exists (the
+        // scheduled path — unchanged). Otherwise CREATE the row: a direct pay from PO_ISSUED previously
+        // left NO RequestPayment, which undercounts reconciliation's actualPaidSum and starves the
+        // obligations projection of the paid amount/proof. A CANCELLED or already-COMPLETED row is never
+        // revived — its sequence is preserved and the new payment lands on the next request-scoped
+        // sequence via the canonical allocator.
+        // MAINTENANCE TRIGGER: Finance payment mutations MUST be validated against the Finance DEV
+        // Regression Harness (ZZTEST-FIN-*) — docs/FINANCE_DEV_REGRESSION_HARNESS.md.
+        var payment = await _context.RequestPayments.FirstOrDefaultAsync(p =>
+            p.RequestPoGroupId == group.Id
+            && p.PaymentType == RequestPayment.PaymentTypes.FinalBalance
+            && p.PaymentStatus != RequestPayment.PaymentStatuses.Cancelled
+            && p.PaymentStatus != RequestPayment.PaymentStatuses.Completed);
         if (payment != null) {
             payment.ActualPaidAmount = requestDto.ActualPaidAmount;
             payment.PaidDateUtc = requestDto.PaidDate;
             payment.PaymentStatus = RequestPayment.PaymentStatuses.Completed;
             payment.PaymentProofAttachmentId = requestDto.PaymentProofAttachmentId;
+        }
+        else {
+            var finalBalanceSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
+                .NextSequenceAsync(_context, r.Id, RequestPayment.PaymentTypes.FinalBalance);
+            payment = new RequestPayment
+            {
+                RequestId = r.Id,
+                RequestPoGroupId = group.Id,
+                PaymentType = RequestPayment.PaymentTypes.FinalBalance,
+                PaymentSequence = finalBalanceSequence,
+                PlannedAmount = group.TotalAmount,
+                ActualPaidAmount = requestDto.ActualPaidAmount,
+                PaidDateUtc = requestDto.PaidDate,
+                PaidByUserId = CurrentUserId,
+                PaymentStatus = RequestPayment.PaymentStatuses.Completed,
+                PaymentProofAttachmentId = requestDto.PaymentProofAttachmentId,
+                CurrencyCode = group.CurrencyCode ?? "---",
+                CreatedByUserId = CurrentUserId,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestPayments.Add(payment);
         }
 
         var attachment = await _context.RequestAttachments.FindAsync(requestDto.PaymentProofAttachmentId);
@@ -1494,45 +1842,93 @@ public class FinanceController : BaseController
     [HttpPost("{id:guid}/return")]
     public async Task<IActionResult> ReturnForAdjustment(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
-        var r = await _context.Requests.Include(req => req.Status).FirstOrDefaultAsync(req => req.Id == id);
+        // v2.230.0: Return for Adjustment is now GROUP-scoped. It moves ONE RequestPoGroup back to
+        // WAITING_PO_CORRECTION and lets StatusAggregationService derive the request scalar — a
+        // further-ahead sibling group (e.g. already PAYMENT_COMPLETED) is never touched or regressed.
+        var r = await _context.Requests
+            .Include(req => req.PoGroups)
+                .ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.Status)
+            .Include(req => req.RequestType)
+            .Include(req => req.Supplier)
+            .Include(req => req.Currency)
+            .Include(req => req.Quotations)
+            .FirstOrDefaultAsync(req => req.Id == id);
         if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
 
-        // Source-status guard: only allow return from operational statuses where PO has been registered
-        // Note: Returning from PAYMENT_SCHEDULED intentionally invalidates the prior scheduling.
-        //       After correction, Finance must re-evaluate from PO_ISSUED.
-        // Delegates to IFinancePaymentEligibilityService.CanReturn — the same predicate GetPayments uses.
-        var allowedReturnStatuses = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" };
-        if (r.Status == null || !_eligibility.CanReturn(r.Status.Code))
+        // Resolve the target group: explicit RequestPoGroupId, or the sole active group for
+        // backward-compatible single-group callers. A multi-group request MUST name the group so a
+        // sibling can never be regressed implicitly.
+        var activeGroups = r.PoGroups.Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled).ToList();
+        RequestPoGroup? group;
+        if (requestDto.RequestPoGroupId.HasValue)
+        {
+            group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId.Value);
+            if (group == null)
+                return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Grupo P.O não encontrado neste pedido.", Status = 400 });
+        }
+        else if (activeGroups.Count == 1)
+        {
+            group = activeGroups[0];
+        }
+        else
         {
             return BadRequest(new ProblemDetails
             {
-                Title = "Ação Inválida",
-                Detail = $"A devolução para correção de P.O só é permitida quando o pedido está nos status: {string.Join(", ", allowedReturnStatuses)}. Status atual: {r.Status?.Code ?? "desconhecido"}.",
+                Title = "Grupo Obrigatório",
+                Detail = "Este pedido possui múltiplos grupos operacionais. Informe o grupo específico a devolver para correção da P.O.",
                 Status = 400
             });
         }
 
-        var returnStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.WaitingPoCorrection);
-        if (returnStatus == null) return StatusCode(500, "Status de destino não configurado no sistema.");
+        // Source-status guard: group-scoped. Only PO_ISSUED / PAYMENT_SCHEDULED groups may be returned.
+        // Returning from PAYMENT_SCHEDULED intentionally invalidates the prior scheduling; after
+        // correction Finance re-evaluates from PO_ISSUED.
+        var allowedReturnStatuses = new[] { "PO_ISSUED", "PAYMENT_SCHEDULED" };
+        if (!_eligibility.CanReturnGroup(group.Status))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Ação Inválida",
+                Detail = $"A devolução para correção de P.O só é permitida quando o grupo está nos status: {string.Join(", ", allowedReturnStatuses)}. Status atual do grupo: {group.Status}.",
+                Status = 400
+            });
+        }
 
-        var oldStatus = r.Status;
-        r.StatusId = returnStatus.Id;
+        var displaySupplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
+            group.SupplierNameSnapshot,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
+            r.Supplier?.Name);
+        var displayCurrencyCode = FinanceGroupDisplayResolver.ResolveCurrencyCode(
+            group.CurrencyCode,
+            r.SelectedQuotationId.HasValue,
+            r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
+            r.Currency?.Code);
+
+        // Change ONLY the target group; the request scalar is derived by aggregation afterwards
+        // (no scalar-only manual override, so siblings are never masked or regressed).
+        group.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+        group.UpdatedAtUtc = DateTime.UtcNow;
+        r.UpdatedAtUtc = DateTime.UtcNow;
+
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
             RequestId = id,
             ActorUserId = CurrentUserId,
             ActionTaken = "FINANCE_RETURN_ADJUSTMENT",
-            PreviousStatusId = oldStatus?.Id,
-            NewStatusId = returnStatus.Id,
-            Comment = $"Devolvido por Finanças para ajuste: {requestDto.Notes}",
+            PreviousStatusId = r.StatusId,
+            NewStatusId = r.StatusId, // scalar is recomputed by aggregation below, not set here
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
+                + $" Grupo devolvido por Finanças para correção da P.O (GroupId: {group.Id}). Motivo: {requestDto.Notes}",
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        r.StatusId = returnStatus.Id;
-        r.UpdatedAtUtc = DateTime.UtcNow;
-
         await _context.SaveChangesAsync();
+
+        // Derive the request scalar from the current group set — sibling groups are respected.
+        await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
 
         // [TEMPORARY NON-CENTRAL HOOK]
         try

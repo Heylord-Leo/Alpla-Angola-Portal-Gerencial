@@ -9,6 +9,16 @@ import {
     toggleSort,
     canScheduleGroupStatus,
     canPayGroupStatus,
+    canReturnGroupStatus,
+    resolveGroupFinanceButtons,
+    resolveObligationRowFlags,
+    resolveObligationActionPlan,
+    obligationActionLabel,
+    resolveNoteTooltip,
+    FINANCE_DEFAULT_SORT,
+    FINANCE_CLEAR_KEYS,
+    FINANCE_SORT_OPTIONS,
+    countAdvancedFilters,
     isAdvanceGroupStatus,
     resolveAttachmentUploadParams,
     resolveParentDisplayStatus,
@@ -497,5 +507,174 @@ describe('resolveAdvancePaymentDetails', () => {
         const result = resolveAdvancePaymentDetails([{ paymentType: 'FINAL_BALANCE', plannedAmount: 100 }]);
         assert.equal(result.paidDateUtc, null);
         assert.equal(result.actualPaidAmount, null);
+    });
+});
+
+describe('resolveGroupFinanceButtons (v2.230.0 per-group gating)', () => {
+    test('prefers server financeActions — PO_ISSUED group exposes schedule/pay/return', () => {
+        const r = resolveGroupFinanceButtons({ status: 'PO_ISSUED', financeActions: ['SCHEDULE', 'PAY', 'RETURN'] });
+        assert.deepEqual(r, { schedule: true, pay: true, cancelSchedule: false, return: true });
+    });
+
+    test('paid sibling exposes no buttons (empty server array is authoritative)', () => {
+        const r = resolveGroupFinanceButtons({ status: 'PAYMENT_COMPLETED', financeActions: [] });
+        assert.deepEqual(r, { schedule: false, pay: false, cancelSchedule: false, return: false });
+    });
+
+    test('scheduled group exposes pay + cancel + return (not schedule)', () => {
+        const r = resolveGroupFinanceButtons({ status: 'PAYMENT_SCHEDULED', financeActions: ['PAY', 'CANCEL_SCHEDULE', 'RETURN'] });
+        assert.deepEqual(r, { schedule: false, pay: true, cancelSchedule: true, return: true });
+    });
+
+    test('REQ-100 shape: each group judged independently — a paid sibling never suppresses the actionable one', () => {
+        const paid = resolveGroupFinanceButtons({ status: 'PAYMENT_COMPLETED', financeActions: [] });
+        const actionable = resolveGroupFinanceButtons({ status: 'PO_ISSUED', financeActions: ['SCHEDULE', 'PAY', 'RETURN'] });
+        assert.equal(paid.pay, false);
+        assert.equal(actionable.schedule, true);
+        assert.equal(actionable.pay, true);
+        assert.equal(actionable.return, true);
+    });
+
+    test('fallback to status when financeActions absent', () => {
+        const r = resolveGroupFinanceButtons({ status: 'PO_ISSUED' });
+        assert.equal(r.schedule, true);
+        assert.equal(r.pay, true);
+        assert.equal(r.return, true);
+        assert.equal(r.cancelSchedule, false);
+    });
+
+    test('WAITING_PO group is never Finance-actionable (Buyer responsibility)', () => {
+        const server = resolveGroupFinanceButtons({ status: 'WAITING_PO', financeActions: [] });
+        const fallback = resolveGroupFinanceButtons({ status: 'WAITING_PO' });
+        assert.deepEqual(server, { schedule: false, pay: false, cancelSchedule: false, return: false });
+        assert.deepEqual(fallback, { schedule: false, pay: false, cancelSchedule: false, return: false });
+    });
+});
+
+describe('canReturnGroupStatus', () => {
+    test('PO_ISSUED and PAYMENT_SCHEDULED only', () => {
+        assert.equal(canReturnGroupStatus('PO_ISSUED'), true);
+        assert.equal(canReturnGroupStatus('PAYMENT_SCHEDULED'), true);
+        assert.equal(canReturnGroupStatus('PAYMENT_COMPLETED'), false);
+        assert.equal(canReturnGroupStatus('WAITING_PO'), false);
+        assert.equal(canReturnGroupStatus(null), false);
+    });
+});
+
+describe('resolveObligationRowFlags (Phase 4 row visual state)', () => {
+    test('paid obligation is muted with no finance buttons', () => {
+        const f = resolveObligationRowFlags({ actionClass: 'PAID_WAITING_RECEIVING', isOverdue: false });
+        assert.deepEqual(f, { isPaid: true, isNoFinance: false, isOverdue: false, muted: true });
+    });
+    test('overdue NEEDS_PAYMENT flagged overdue, not muted', () => {
+        const f = resolveObligationRowFlags({ actionClass: 'NEEDS_PAYMENT', isOverdue: true });
+        assert.equal(f.isOverdue, true);
+        assert.equal(f.muted, false);
+        assert.equal(f.isPaid, false);
+    });
+    test('WAITING_PO (NO_FINANCE_ACTION) flagged as no-finance, not muted', () => {
+        const f = resolveObligationRowFlags({ actionClass: 'NO_FINANCE_ACTION', isOverdue: false });
+        assert.equal(f.isNoFinance, true);
+        assert.equal(f.isPaid, false);
+    });
+    test('NEEDS_SCHEDULING is a normal actionable row', () => {
+        const f = resolveObligationRowFlags({ actionClass: 'NEEDS_SCHEDULING', isOverdue: false });
+        assert.deepEqual(f, { isPaid: false, isNoFinance: false, isOverdue: false, muted: false });
+    });
+    test('COMPLETED counts as paid/muted', () => {
+        const f = resolveObligationRowFlags({ actionClass: 'COMPLETED', isOverdue: false });
+        assert.equal(f.isPaid, true);
+        assert.equal(f.muted, true);
+    });
+});
+
+describe('resolveObligationActionPlan (Phase-4 action hierarchy: 1 primary + kebab)', () => {
+    test('PO_ISSUED → primary Agendar; kebab Detalhes, Obs, Pagar, Devolver', () => {
+        const p = resolveObligationActionPlan({ groupStatusCode: 'PO_ISSUED', financeActions: ['SCHEDULE', 'PAY', 'RETURN'] });
+        assert.deepEqual(p.primary, { action: 'SCHEDULE', label: 'Agendar pagamento' });
+        assert.deepEqual(p.menu, ['DETAILS', 'NOTE', 'PAY', 'RETURN']);
+    });
+    test('PAYMENT_SCHEDULED → primary Pagar; kebab Detalhes, Obs, Cancelar, Devolver', () => {
+        const p = resolveObligationActionPlan({ groupStatusCode: 'PAYMENT_SCHEDULED', financeActions: ['PAY', 'CANCEL_SCHEDULE', 'RETURN'] });
+        assert.deepEqual(p.primary, { action: 'PAY', label: 'Pagar' });
+        assert.deepEqual(p.menu, ['DETAILS', 'NOTE', 'CANCEL_SCHEDULE', 'RETURN']);
+    });
+    test('ADVANCE_PAYMENT_REQUIRED → primary Agendar adiantamento; kebab has Pagar adiantamento', () => {
+        const p = resolveObligationActionPlan({ groupStatusCode: 'ADVANCE_PAYMENT_REQUIRED', financeActions: ['SCHEDULE', 'PAY'] });
+        assert.deepEqual(p.primary, { action: 'SCHEDULE', label: 'Agendar adiantamento' });
+        assert.deepEqual(p.menu, ['DETAILS', 'NOTE', 'PAY']);
+        assert.equal(obligationActionLabel('PAY', true), 'Pagar adiantamento');
+    });
+    test('PAYMENT_COMPLETED → no primary; kebab only Detalhes + Adicionar observação', () => {
+        const p = resolveObligationActionPlan({ groupStatusCode: 'PAYMENT_COMPLETED', financeActions: [] });
+        assert.equal(p.primary, null);
+        assert.deepEqual(p.menu, ['DETAILS', 'NOTE']);
+    });
+    test('WAITING_PO → no primary; kebab only Detalhes + Adicionar observação', () => {
+        const p = resolveObligationActionPlan({ groupStatusCode: 'WAITING_PO', financeActions: [] });
+        assert.equal(p.primary, null);
+        assert.deepEqual(p.menu, ['DETAILS', 'NOTE']);
+    });
+    test('multi-group independence: paid sibling and actionable sibling produce different plans', () => {
+        const paid = resolveObligationActionPlan({ groupStatusCode: 'PAYMENT_COMPLETED', financeActions: [] });
+        const actionable = resolveObligationActionPlan({ groupStatusCode: 'PO_ISSUED', financeActions: ['SCHEDULE', 'PAY', 'RETURN'] });
+        assert.equal(paid.primary, null);
+        assert.equal(actionable.primary.action, 'SCHEDULE');
+        assert.ok(actionable.menu.includes('RETURN'));
+        assert.ok(!paid.menu.includes('RETURN'));
+    });
+    test('menu labels are advance-aware and correct', () => {
+        assert.equal(obligationActionLabel('DETAILS', false), 'Detalhes');
+        assert.equal(obligationActionLabel('NOTE', false), 'Adicionar observação');
+        assert.equal(obligationActionLabel('CANCEL_SCHEDULE', false), 'Cancelar agendamento');
+        assert.equal(obligationActionLabel('RETURN', false), 'Devolver para ajuste');
+    });
+});
+
+describe('Phase-5 helpers (sort defaults, clear keys, note tooltip)', () => {
+    test('default sort is newest', () => {
+        assert.equal(FINANCE_DEFAULT_SORT, 'newest');
+        assert.deepEqual(FINANCE_SORT_OPTIONS.map(o => o.value), ['newest', 'oldest']);
+    });
+    test('clear keys reset every filter AND sort (so sort returns to default)', () => {
+        for (const k of ['search', 'actionClass', 'currencyCode', 'companyId', 'plantId', 'departmentId', 'actionableOnly', 'overdueOnly', 'dueTodayOnly', 'sortBy']) {
+            assert.ok(FINANCE_CLEAR_KEYS.includes(k), `missing ${k}`);
+        }
+    });
+    test('note tooltip hidden when no notes', () => {
+        assert.equal(resolveNoteTooltip({ hasNotes: false, noteCount: 0 }), null);
+        assert.equal(resolveNoteTooltip({ hasNotes: true, noteCount: 0, latestNoteText: null }), null);
+    });
+    test('single note → "Observação" + text, no extra', () => {
+        const t = resolveNoteTooltip({ hasNotes: true, noteCount: 1, latestNoteText: 'Verificar câmbio' });
+        assert.equal(t.title, 'Observação');
+        assert.equal(t.body, 'Verificar câmbio');
+        assert.equal(t.extra, null);
+    });
+    test('multiple notes → "Última observação" + latest + count of previous', () => {
+        const t = resolveNoteTooltip({ hasNotes: true, noteCount: 3, latestNoteText: 'Última nota' });
+        assert.equal(t.title, 'Última observação');
+        assert.equal(t.body, 'Última nota');
+        assert.equal(t.extra, '+2 observações anteriores');
+    });
+    test('exactly two notes → singular "anterior"', () => {
+        const t = resolveNoteTooltip({ hasNotes: true, noteCount: 2, latestNoteText: 'X' });
+        assert.equal(t.extra, '+1 observação anterior');
+    });
+});
+
+describe('countAdvancedFilters (Mais filtros badge)', () => {
+    test('none active → 0', () => {
+        assert.equal(countAdvancedFilters({}), 0);
+    });
+    test('counts company, plant, department, currency, actionable, overdue', () => {
+        assert.equal(countAdvancedFilters({ companyId: 1 }), 1);
+        assert.equal(countAdvancedFilters({ companyId: 1, plantId: 2 }), 2);
+        assert.equal(countAdvancedFilters({ companyId: 1, departmentId: 3, currencyCode: 'AOA' }), 3);
+        assert.equal(countAdvancedFilters({ companyId: 1, plantId: 2, departmentId: 3, currencyCode: 'EUR', actionableOnly: true, overdueOnly: true }), 6);
+    });
+    test('does NOT count primary-toolbar controls (search/situação/ordenar are not passed here)', () => {
+        // Only advanced fields are inputs; actionClass/search/sort are excluded by construction.
+        assert.equal(countAdvancedFilters({ actionableOnly: false, overdueOnly: false }), 0);
     });
 });

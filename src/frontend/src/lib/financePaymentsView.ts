@@ -131,6 +131,137 @@ export function canCancelScheduleGroupStatus(status: string | null | undefined):
     return status != null && CANCELLABLE_SCHEDULE_GROUP_STATUSES.includes(status);
 }
 
+/** Phase-5 obligations-list defaults/keys, shared with the page so tests can assert them. */
+export const FINANCE_DEFAULT_SORT = 'newest';
+export const FINANCE_SORT_OPTIONS = [
+    { value: 'newest', label: 'Mais recentes' },
+    { value: 'oldest', label: 'Mais antigos' },
+] as const;
+/** Every filter/sort URL param cleared by "Limpar" (sort then resets to the default newest-first). */
+export const FINANCE_CLEAR_KEYS = ['search', 'actionClass', 'currencyCode', 'companyId', 'plantId', 'departmentId', 'actionableOnly', 'overdueOnly', 'dueTodayOnly', 'sortBy'] as const;
+
+/** Number of ADVANCED filters currently active (drives the "Mais filtros (N)" badge). Search,
+ *  Situação financeira and Ordenar live in the primary toolbar and are NOT counted here. */
+export function countAdvancedFilters(f: {
+    companyId?: number | string | null; plantId?: number | string | null; departmentId?: number | string | null;
+    currencyCode?: string | null; actionableOnly?: boolean; overdueOnly?: boolean;
+}): number {
+    let n = 0;
+    if (f.companyId) n++;
+    if (f.plantId) n++;
+    if (f.departmentId) n++;
+    if (f.currencyCode) n++;
+    if (f.actionableOnly) n++;
+    if (f.overdueOnly) n++;
+    return n;
+}
+
+/**
+ * Compact tooltip content for a container's Finance note indicator. Returns null when there are no
+ * notes (so the icon is hidden). One tooltip per request container (notes are request-level), so a
+ * multi-group request never shows a duplicated note icon.
+ */
+export function resolveNoteTooltip(container: { hasNotes?: boolean; noteCount?: number; latestNoteText?: string | null }):
+    { title: string; body: string; extra: string | null } | null {
+    if (!container.hasNotes || !container.latestNoteText) return null;
+    const count = container.noteCount ?? 1;
+    return {
+        title: count > 1 ? 'Última observação' : 'Observação',
+        body: container.latestNoteText,
+        extra: count > 1 ? `+${count - 1} ${count - 1 === 1 ? 'observação anterior' : 'observações anteriores'}` : null,
+    };
+}
+
+export type ObligationActionCode = 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE' | 'DETAILS';
+export interface ObligationActionPlan {
+    /** The single inline primary Finance mutation (or null when there is none, e.g. paid/WAITING_PO). */
+    primary: { action: 'SCHEDULE' | 'PAY'; label: string } | null;
+    /** Kebab menu items, in the canonical order: Detalhes, Adicionar observação, secondary finance
+     *  actions, correction/destructive last. */
+    menu: ObligationActionCode[];
+}
+
+/**
+ * Action hierarchy for one obligation (Phase-4 polish): exactly ONE primary inline button, every
+ * other authorized action in the kebab. Derived solely from the backend-authorized financeActions
+ * (never invents an action) plus the group's advance/normal flavor for labels.
+ */
+export function resolveObligationActionPlan(o: { groupStatusCode?: string | null; financeActions?: string[] | null }): ObligationActionPlan {
+    const acts = o.financeActions ?? [];
+    const advance = isAdvanceGroupStatus(o.groupStatusCode);
+
+    let primary: ObligationActionPlan['primary'] = null;
+    if (acts.includes('SCHEDULE')) primary = { action: 'SCHEDULE', label: advance ? 'Agendar adiantamento' : 'Agendar pagamento' };
+    else if (acts.includes('PAY')) primary = { action: 'PAY', label: advance ? 'Pagar adiantamento' : 'Pagar' };
+
+    const menu: ObligationActionCode[] = ['DETAILS', 'NOTE'];
+    if (acts.includes('PAY') && primary?.action !== 'PAY') menu.push('PAY');   // Pagar available but not primary (PO_ISSUED / advance)
+    if (acts.includes('CANCEL_SCHEDULE')) menu.push('CANCEL_SCHEDULE');
+    if (acts.includes('RETURN')) menu.push('RETURN');                          // correction — always last
+    return { primary, menu };
+}
+
+/** PT label for an obligation action, advance-aware. */
+export function obligationActionLabel(code: ObligationActionCode, advance: boolean): string {
+    switch (code) {
+        case 'DETAILS': return 'Detalhes';
+        case 'NOTE': return 'Adicionar observação';
+        case 'PAY': return advance ? 'Pagar adiantamento' : 'Pagar';
+        case 'SCHEDULE': return advance ? 'Agendar adiantamento' : 'Agendar pagamento';
+        case 'CANCEL_SCHEDULE': return 'Cancelar agendamento';
+        case 'RETURN': return 'Devolver para ajuste';
+    }
+}
+
+/**
+ * Visual flags for one Finance obligation row (Phase 4): paid/post-payment rows are de-emphasized
+ * with no mutation buttons, NO_FINANCE_ACTION rows show a Buyer/waiting message, overdue rows get
+ * the red urgency treatment. Derived purely from the obligation's action class + overdue flag.
+ */
+export function resolveObligationRowFlags(o: { actionClass?: string | null; isOverdue?: boolean | null }): {
+    isPaid: boolean; isNoFinance: boolean; isOverdue: boolean; muted: boolean;
+} {
+    const isPaid = o.actionClass === 'PAID_WAITING_RECEIVING' || o.actionClass === 'COMPLETED';
+    const isNoFinance = o.actionClass === 'NO_FINANCE_ACTION';
+    const isOverdue = !!o.isOverdue;
+    return { isPaid, isNoFinance, isOverdue, muted: isPaid };
+}
+
+/** Mirrors FinancePaymentEligibilityService.CanReturnGroup's ReturnableGroupStatuses. */
+const RETURNABLE_GROUP_STATUSES = ['PO_ISSUED', 'PAYMENT_SCHEDULED'];
+export function canReturnGroupStatus(status: string | null | undefined): boolean {
+    return status != null && RETURNABLE_GROUP_STATUSES.includes(status);
+}
+
+/**
+ * The Finance buttons a single multi-group card should render, gated on THIS group only.
+ * Prefers the backend-computed `financeActions` (authoritative per-group action list from
+ * FinancePaymentEligibilityService.EvaluateGroupActions); falls back to the mirrored local status
+ * predicates when the field is absent (older payloads / safety). A paid sibling group can never
+ * affect this result — that is the request-100 fix.
+ */
+export function resolveGroupFinanceButtons(group: { status?: string | null; financeActions?: string[] | null }): {
+    schedule: boolean; pay: boolean; cancelSchedule: boolean; return: boolean;
+} {
+    const actions = group.financeActions;
+    if (Array.isArray(actions)) {
+        // Server truth (an empty array is a legitimate "no actions" answer).
+        return {
+            schedule: actions.includes('SCHEDULE'),
+            pay: actions.includes('PAY'),
+            cancelSchedule: actions.includes('CANCEL_SCHEDULE'),
+            return: actions.includes('RETURN'),
+        };
+    }
+    // Fallback: derive from the group's own status (mirrors the backend lists).
+    return {
+        schedule: canScheduleGroupStatus(group.status),
+        pay: canPayGroupStatus(group.status),
+        cancelSchedule: canCancelScheduleGroupStatus(group.status),
+        return: canReturnGroupStatus(group.status),
+    };
+}
+
 export interface SoleGroupActionLabels {
     scheduleLabel: string;
     payLabel: string;

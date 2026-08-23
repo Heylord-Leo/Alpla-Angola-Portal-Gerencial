@@ -10,6 +10,10 @@ namespace AlplaPortal.Infrastructure.Services.Finance;
 /// found in FinanceController's mutation endpoints (SchedulePayment/MarkAsPaid/ReturnForAdjustment)
 /// at the time this service was written - if one of those endpoints' rules changes, update the
 /// matching predicate here, not a second copy in GetPayments.
+///
+/// MAINTENANCE TRIGGER: changes to per-group eligibility or the multi-group Finance projection MUST
+/// be validated against the Finance DEV Regression Harness (ZZTEST-FIN-*) —
+/// docs/FINANCE_DEV_REGRESSION_HARNESS.md.
 /// </summary>
 public class FinancePaymentEligibilityService : IFinancePaymentEligibilityService
 {
@@ -67,6 +71,14 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         RequestConstants.Statuses.PaymentScheduled
     };
 
+    // Group-scoped return: the group's OWN status is authoritative. Same two states as the legacy
+    // parent guard, but read from the group so one group can be returned without regressing siblings.
+    private static readonly string[] ReturnableGroupStatuses =
+    {
+        RequestConstants.Statuses.PoIssued,
+        RequestConstants.Statuses.PaymentScheduled
+    };
+
     // Mirrors FinanceController.CancelSchedule's guard. Group-status-only, no type-branching:
     // both statuses are always genuinely written values (never a legacy default like PENDING),
     // so the group's own status is always authoritative — a group that has already moved on to
@@ -114,9 +126,24 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         return requestStatusCode != null && ReturnableParentStatuses.Contains(requestStatusCode);
     }
 
+    public bool CanReturnGroup(string? groupStatus)
+    {
+        return groupStatus != null && ReturnableGroupStatuses.Contains(groupStatus);
+    }
+
     public bool CanCancelSchedule(string? groupStatus)
     {
         return groupStatus != null && CancellableScheduledGroupStatuses.Contains(groupStatus);
+    }
+
+    public IReadOnlyList<string> EvaluateGroupActions(string requestTypeCode, string requestStatusCode, string? groupStatus)
+    {
+        var actions = new List<string>();
+        if (CanSchedule(requestTypeCode, requestStatusCode, groupStatus)) actions.Add(FinancePaymentActionCodes.Schedule);
+        if (CanPay(requestTypeCode, requestStatusCode, groupStatus)) actions.Add(FinancePaymentActionCodes.Pay);
+        if (CanCancelSchedule(groupStatus)) actions.Add(FinancePaymentActionCodes.CancelSchedule);
+        if (CanReturnGroup(groupStatus)) actions.Add(FinancePaymentActionCodes.Return);
+        return actions;
     }
 
     public FinanceActionEligibilityResult Evaluate(FinanceEligibilityInput input)
@@ -124,62 +151,41 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         var actions = new List<string>();
         var reasons = new Dictionary<string, string>();
 
-        if (!input.IsPaid)
+        // v2.230.0 correctness fix: financial-mutation eligibility is the UNION of each group's OWN
+        // per-group actions. A request-level "IsPaid" flag no longer suppresses actions — a paid
+        // sibling group can never hide a still-actionable sibling's SCHEDULE/PAY/CANCEL/RETURN.
+        // (IsPaid still drives the request-level ADD_PROOF affordance below; it is a document action,
+        // not a financial mutation.)
+        var union = new HashSet<string>();
+        foreach (var g in input.PoGroups)
         {
-            var canSchedule = input.PoGroups.Any(g => CanSchedule(input.RequestTypeCode, input.RequestStatusCode, g.GroupStatus));
-            if (canSchedule)
-            {
-                actions.Add(FinancePaymentActionCodes.Schedule);
-            }
-            else
-            {
-                reasons[FinancePaymentActionCodes.Schedule] = input.PoGroups.Count == 0
-                    ? FinancePaymentUnavailableReasons.NoPoGroup
-                    : FinancePaymentUnavailableReasons.NoGroupInSchedulableState;
-            }
-
-            var canPay = input.RequestTypeCode == RequestConstants.Types.Quotation
-                ? input.PoGroups.Any(g => CanPay(input.RequestTypeCode, input.RequestStatusCode, g.GroupStatus))
-                : CanPay(input.RequestTypeCode, input.RequestStatusCode, null);
-            if (canPay)
-            {
-                actions.Add(FinancePaymentActionCodes.Pay);
-            }
-            else
-            {
-                reasons[FinancePaymentActionCodes.Pay] = input.RequestTypeCode == RequestConstants.Types.Quotation && input.PoGroups.Count == 0
-                    ? FinancePaymentUnavailableReasons.NoPoGroup
-                    : FinancePaymentUnavailableReasons.ParentOrGroupStatusNotEligibleForPay;
-            }
-
-            if (CanReturn(input.RequestStatusCode))
-            {
-                actions.Add(FinancePaymentActionCodes.Return);
-            }
-            else
-            {
-                reasons[FinancePaymentActionCodes.Return] = FinancePaymentUnavailableReasons.ParentStatusNotEligibleForReturn;
-            }
-
-            var canCancelSchedule = input.PoGroups.Any(g => CanCancelSchedule(g.GroupStatus));
-            if (canCancelSchedule)
-            {
-                actions.Add(FinancePaymentActionCodes.CancelSchedule);
-            }
-            else
-            {
-                reasons[FinancePaymentActionCodes.CancelSchedule] = input.PoGroups.Count == 0
-                    ? FinancePaymentUnavailableReasons.NoPoGroup
-                    : FinancePaymentUnavailableReasons.NoGroupCurrentlyScheduled;
-            }
+            foreach (var a in EvaluateGroupActions(input.RequestTypeCode, input.RequestStatusCode, g.GroupStatus))
+                union.Add(a);
         }
-        else
+
+        // Legacy fallback: a request with no reconstructible group at all (e.g. an old PAYMENT-type
+        // row) is still judged from the parent status — exactly as before. SCHEDULE/CANCEL_SCHEDULE
+        // deliberately require a real group (never offered with zero groups, matching the historical
+        // NoPoGroup behaviour); PAY and RETURN remain parent-status-driven for PAYMENT.
+        if (input.PoGroups.Count == 0)
         {
-            reasons[FinancePaymentActionCodes.Schedule] = FinancePaymentUnavailableReasons.AlreadyPaid;
-            reasons[FinancePaymentActionCodes.Pay] = FinancePaymentUnavailableReasons.AlreadyPaid;
-            reasons[FinancePaymentActionCodes.Return] = FinancePaymentUnavailableReasons.AlreadyPaid;
-            reasons[FinancePaymentActionCodes.CancelSchedule] = FinancePaymentUnavailableReasons.AlreadyPaid;
+            if (CanPay(input.RequestTypeCode, input.RequestStatusCode, null)) union.Add(FinancePaymentActionCodes.Pay);
+            if (CanReturn(input.RequestStatusCode)) union.Add(FinancePaymentActionCodes.Return);
         }
+
+        void Emit(string code, string absentReason)
+        {
+            if (union.Contains(code)) actions.Add(code);
+            else reasons[code] = absentReason;
+        }
+
+        Emit(FinancePaymentActionCodes.Schedule, input.PoGroups.Count == 0
+            ? FinancePaymentUnavailableReasons.NoPoGroup : FinancePaymentUnavailableReasons.NoGroupInSchedulableState);
+        Emit(FinancePaymentActionCodes.Pay, input.PoGroups.Count == 0
+            ? FinancePaymentUnavailableReasons.NoPoGroup : FinancePaymentUnavailableReasons.ParentOrGroupStatusNotEligibleForPay);
+        Emit(FinancePaymentActionCodes.Return, FinancePaymentUnavailableReasons.ParentStatusNotEligibleForReturn);
+        Emit(FinancePaymentActionCodes.CancelSchedule, input.PoGroups.Count == 0
+            ? FinancePaymentUnavailableReasons.NoPoGroup : FinancePaymentUnavailableReasons.NoGroupCurrentlyScheduled);
 
         actions.Add(FinancePaymentActionCodes.AddNote);
 

@@ -509,4 +509,103 @@ public class FinancePaymentEligibilityServiceTests
 
         Assert.DoesNotContain(FinancePaymentActionCodes.AddProof, result.Actions);
     }
+
+    // ── v2.230.0 per-group eligibility (multi-group correctness) ──────────────
+
+    [Fact]
+    public void EvaluateGroupActions_QuotationPoIssued_ExposesSchedulePayReturn()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PoIssued);
+        Assert.Contains(FinancePaymentActionCodes.Schedule, actions);
+        Assert.Contains(FinancePaymentActionCodes.Pay, actions);
+        Assert.Contains(FinancePaymentActionCodes.Return, actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.CancelSchedule, actions);
+    }
+
+    [Fact]
+    public void EvaluateGroupActions_PaymentCompletedGroup_ExposesNothing()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentCompleted);
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void EvaluateGroupActions_PaymentScheduledGroup_ExposesPayAndCancel_NotSchedule()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentScheduled);
+        Assert.Contains(FinancePaymentActionCodes.Pay, actions);
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, actions);
+        Assert.Contains(FinancePaymentActionCodes.Return, actions); // PAYMENT_SCHEDULED is returnable
+        Assert.DoesNotContain(FinancePaymentActionCodes.Schedule, actions);
+    }
+
+    [Fact]
+    public void EvaluateGroupActions_WaitingPoGroup_ExposesNothing_BuyerResponsibility()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, RequestConstants.PoGroupStatuses.WaitingPo, RequestConstants.PoGroupStatuses.WaitingPo);
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void Evaluate_TwoGroups_APaid_BPoIssued_BRetainsScheduleAndPay()
+    {
+        // REQ-20/07/2026-100: NCR PAYMENT_COMPLETED + ITEC PO_ISSUED. The paid sibling must NOT
+        // suppress the actionable sibling. Request-level union now contains SCHEDULE + PAY + RETURN.
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Quotation,
+            RequestStatusCode = RequestConstants.Statuses.PoIssued,
+            IsPaid = true, // request-level paid signal — must no longer suppress the sibling
+            HasProof = true,
+            PoGroups = new List<FinancePoGroupEligibilityInput>
+            {
+                Group(RequestConstants.Statuses.PaymentCompleted),
+                Group(RequestConstants.Statuses.PoIssued)
+            }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.Schedule, result.Actions);
+        Assert.Contains(FinancePaymentActionCodes.Pay, result.Actions);
+        Assert.Contains(FinancePaymentActionCodes.Return, result.Actions);
+
+        // And per-group: the paid group exposes nothing, the PO_ISSUED group exposes the actions.
+        Assert.Empty(_sut.EvaluateGroupActions(input.RequestTypeCode, input.RequestStatusCode, RequestConstants.Statuses.PaymentCompleted));
+        var actionable = _sut.EvaluateGroupActions(input.RequestTypeCode, input.RequestStatusCode, RequestConstants.Statuses.PoIssued);
+        Assert.Contains(FinancePaymentActionCodes.Schedule, actionable);
+        Assert.Contains(FinancePaymentActionCodes.Pay, actionable);
+    }
+
+    [Fact]
+    public void Evaluate_TwoGroups_APaid_BScheduled_BRetainsPayAndCancel()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Quotation,
+            RequestStatusCode = RequestConstants.Statuses.PaymentScheduled,
+            IsPaid = true,
+            HasProof = true,
+            PoGroups = new List<FinancePoGroupEligibilityInput>
+            {
+                Group(RequestConstants.Statuses.PaymentCompleted),
+                Group(RequestConstants.Statuses.PaymentScheduled)
+            }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.Pay, result.Actions);
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+    }
+
+    [Fact]
+    public void CanReturnGroup_OnlyPoIssuedAndPaymentScheduled()
+    {
+        Assert.True(_sut.CanReturnGroup(RequestConstants.Statuses.PoIssued));
+        Assert.True(_sut.CanReturnGroup(RequestConstants.Statuses.PaymentScheduled));
+        Assert.False(_sut.CanReturnGroup(RequestConstants.Statuses.PaymentCompleted));
+        Assert.False(_sut.CanReturnGroup(RequestConstants.PoGroupStatuses.WaitingPo));
+        Assert.False(_sut.CanReturnGroup(null));
+    }
 }

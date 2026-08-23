@@ -311,6 +311,85 @@ export interface RequestPoGroupDto {
     lineItemCount: number;
     attachmentCount: number;
     payments?: RequestPaymentDto[];
+    /** v2.230.0 — per-group Finance actions (SCHEDULE/PAY/CANCEL_SCHEDULE/RETURN) computed from
+     *  this group's own status by the Finance payments list. Gates the multi-group card buttons. */
+    financeActions?: string[];
+}
+
+// ── Finance obligations projection (Phase 3/4) ──
+export interface FinanceCurrencyAmountDto { currencyCode: string; amount: number; }
+export interface FinanceObligationDto {
+    requestId: string;
+    requestNumber: string;
+    requestTypeCode: string;
+    requestTitle?: string | null;
+    department?: string | null;
+    plant?: string | null;
+    requestPoGroupId: string;
+    supplierId?: number | null;
+    supplierName?: string | null;
+    supplierNif?: string | null;
+    supplierTaxId?: string | null;
+    groupStatusCode: string;
+    groupStatusLabel: string;
+    operationalStateLabel: string;
+    purchaseOrderNumber?: string | null;
+    currencyCode?: string | null;
+    groupAmount: number;
+    paymentId?: number | null;
+    paymentType?: string | null;
+    scheduledDateUtc?: string | null;
+    plannedAmount?: number | null;
+    actualPaidAmount?: number | null;
+    paidDateUtc?: string | null;
+    hasPaymentProof: boolean;
+    financeActions: string[];
+    actionClass: string;
+    actionClassLabel: string;
+    nextActionLabel?: string | null;
+    responsibleRole: string;
+    dueDate?: string | null;
+    isOverdue: boolean;
+    overdueDays: number;
+    isDueToday: boolean;
+    obligationAmount: number;
+}
+export interface FinanceObligationContainerDto {
+    requestId: string;
+    requestNumber: string;
+    requestTypeCode: string;
+    title?: string | null;
+    department?: string | null;
+    plant?: string | null;
+    supplierCount: number;
+    createdAtUtc: string;
+    expandByDefault: boolean;
+    totalsByCurrency: FinanceCurrencyAmountDto[];
+    obligations: FinanceObligationDto[];
+    hasNotes: boolean;
+    noteCount: number;
+    latestNoteText?: string | null;
+    latestNoteAtUtc?: string | null;
+    latestNoteActorName?: string | null;
+}
+export interface FinanceObligationCardDto {
+    actionClass: string;
+    label: string;
+    count: number;
+    amountsByCurrency: FinanceCurrencyAmountDto[];
+}
+export interface FinanceObligationSummaryDto {
+    needsScheduling: FinanceObligationCardDto;
+    needsPayment: FinanceObligationCardDto;
+    dueToday: FinanceObligationCardDto;
+    overdue: FinanceObligationCardDto;
+    paidWaitingReceiving: FinanceObligationCardDto;
+    actionableTotal: number;
+    actionableAmountsByCurrency: FinanceCurrencyAmountDto[];
+}
+export interface FinanceObligationsResponseDto {
+    pagedResult: PagedResult<FinanceObligationContainerDto>;
+    summary: FinanceObligationSummaryDto;
 }
 
 export interface RequestStatusHistoryDto {

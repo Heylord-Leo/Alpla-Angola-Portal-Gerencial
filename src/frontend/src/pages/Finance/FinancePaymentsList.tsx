@@ -1,224 +1,139 @@
-import React from 'react';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, ReactNode, CSSProperties } from 'react';
 import { api } from '../../lib/api';
-import { FinanceListResponseDto } from '../../types';
-import { useSearchParams, useLocation } from 'react-router-dom';
-import { Check, Clock, AlertTriangle, FileText, MessageSquare, ChevronLeft, ChevronRight, Search, X, XCircle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
-import { KebabMenu } from '../../components/ui/KebabMenu';
-import { ModernTooltip } from '../../components/ui/ModernTooltip';
+import { FinanceObligationsResponseDto, FinanceObligationDto, FinanceObligationContainerDto, FinanceCurrencyAmountDto } from '../../types';
+import { useSearchParams } from 'react-router-dom';
+import { Check, Clock, Search, X, CalendarClock, AlertTriangle, FileText, CreditCard, AlertCircle, CheckCircle2, Eye, MessageSquare, StickyNote, XCircle, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
 import { logger } from '../../lib/logger';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { StandardTable } from '../../components/ui/StandardTable';
+import { KPICard } from '../../components/ui/KPICard';
+import { KebabMenu, KebabOption } from '../../components/ui/KebabMenu';
+import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
-import { useTablePreferences } from '../../hooks/useTablePreferences';
-import { shouldShowSchedule, shouldShowPay, shouldShowCancelSchedule, resolveSingleGroupRowActions, hasMultipleOperationalGroups, toggleSort, SortConfig, canScheduleGroupStatus, canPayGroupStatus, canCancelScheduleGroupStatus, isAdvanceGroupStatus, resolveAttachmentUploadParams, resolveParentDisplayStatus, resolveScheduledPaymentDetails, resolveAdvancePaymentDetails, resolveSoleGroupActionLabels, GROUP_STATUS_LABELS } from '../../lib/financePaymentsView';
+import { isAdvanceGroupStatus, resolveAttachmentUploadParams, resolveObligationRowFlags, resolveObligationActionPlan, obligationActionLabel, ObligationActionCode, FINANCE_DEFAULT_SORT, FINANCE_SORT_OPTIONS, FINANCE_CLEAR_KEYS, resolveNoteTooltip, countAdvancedFilters } from '../../lib/financePaymentsView';
 
-// The visual "Vencimento / Status" header cell covers two independent sortable dimensions
-// (needbydateutc, statuscode) — each gets its own inline sort trigger within that one cell,
-// since the underlying table keeps them as a single visual column for data density.
-const SIMPLE_SORT_COLUMNS: { label: string; key: string; align?: 'right' }[] = [
-    { label: 'Identificação', key: 'requestnumber' },
-    { label: 'Fornecedor', key: 'suppliername' },
-];
-const AMOUNT_SORT_COLUMN = { label: 'Valor', key: 'amount', align: 'right' as const };
-const DUE_DATE_SORT_KEY = 'needbydateutc';
-const STATUS_SORT_KEY = 'statuscode';
+// ── Card → filter mapping (work queues) ──
+type CardKey = 'needsScheduling' | 'needsPayment' | 'dueToday' | 'overdue' | 'paidWaitingReceiving';
 
-function SortIcon({ sortConfig, columnKey }: { sortConfig: SortConfig; columnKey: string }) {
-    if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} style={{ opacity: 0.3 }} />;
-    return sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+const formatMoney = (amount: number, currency?: string | null) =>
+    `${(currency || '—')} ${amount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function CurrencyTotals({ amounts, muted = false }: { amounts: FinanceCurrencyAmountDto[]; muted?: boolean }) {
+    if (!amounts || amounts.length === 0) return <span style={{ opacity: 0.5 }}>—</span>;
+    return (
+        <span style={{ color: muted ? 'var(--color-text-muted)' : 'inherit' }}>
+            {amounts.map((a, i) => (
+                <span key={a.currencyCode}>{i > 0 ? ' · ' : ''}{formatMoney(a.amount, a.currencyCode)}</span>
+            ))}
+        </span>
+    );
 }
 
 export default function FinancePaymentsList() {
-    const [data, setData] = useState<FinanceListResponseDto | null>(null);
+    const [data, setData] = useState<FinanceObligationsResponseDto | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
-    const location = useLocation();
 
-    // --- Persistent Preferences (URL-sync pattern) ---
-    const { preferences: savedPrefs, setPreferences: persistPrefs, resetPreferences } = useTablePreferences('finance-payments', {
-        pageSize: 20,
-    });
-
-    // On mount: if URL has no filter params but we have saved preferences, hydrate URL
-    const hasHydratedUrl = useRef(false);
-    useEffect(() => {
-        if (hasHydratedUrl.current) return;
-        hasHydratedUrl.current = true;
-
-        const hasExistingUrlFilters =
-            searchParams.has('statusCodes') ||
-            searchParams.has('currencyCode') ||
-            searchParams.has('search') ||
-            searchParams.has('searchSupplier') || // legacy — still honored if a bookmarked URL carries only the old key
-            searchParams.has('sortBy') ||
-            searchParams.has('pageSize');
-
-        if (!hasExistingUrlFilters && savedPrefs.filters) {
-            const p = new URLSearchParams(searchParams);
-            let anySet = false;
-            if (savedPrefs.filters.statusCodes) { p.set('statusCodes', savedPrefs.filters.statusCodes); anySet = true; }
-            if (savedPrefs.filters.currencyCode) { p.set('currencyCode', savedPrefs.filters.currencyCode); anySet = true; }
-            const savedSearch = savedPrefs.filters.search || savedPrefs.filters.searchSupplier;
-            if (savedSearch) { p.set('search', savedSearch); anySet = true; }
-            if (savedPrefs.sort?.key) { p.set('sortBy', savedPrefs.sort.key); p.set('isDescending', String(savedPrefs.sort.direction === 'desc')); anySet = true; }
-            if (savedPrefs.pageSize && savedPrefs.pageSize !== 20) { p.set('pageSize', savedPrefs.pageSize.toString()); anySet = true; }
-            if (anySet) {
-                p.set('page', '1');
-                setSearchParams(p, { replace: true });
-            }
-        }
-    }, []); // Only on mount
-
-    const filter = searchParams.get('filter') || undefined;
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
-    const statusCodes = searchParams.get('statusCodes') || undefined;
+    const search = searchParams.get('search') || undefined;
     const currencyCode = searchParams.get('currencyCode') || undefined;
-    // 'search' is the current general (request number OR supplier) search term; 'searchSupplier'
-    // is read only as a fallback so old bookmarked URLs keep working.
-    const search = searchParams.get('search') || searchParams.get('searchSupplier') || undefined;
-    const sortBy = searchParams.get('sortBy') || undefined;
-    const isDescending = searchParams.get('isDescending') === 'true';
-    const sortConfig: SortConfig = { key: sortBy || null, direction: isDescending ? 'desc' : 'asc' };
+    const actionClass = searchParams.get('actionClass') || undefined;
+    const overdueOnly = searchParams.get('overdueOnly') === 'true';
+    const dueTodayOnly = searchParams.get('dueTodayOnly') === 'true';
+    const actionableOnly = searchParams.get('actionableOnly') === 'true';
+    const sortBy = searchParams.get('sortBy') || FINANCE_DEFAULT_SORT;
+    const companyId = searchParams.get('companyId') ? parseInt(searchParams.get('companyId')!) : undefined;
+    const plantId = searchParams.get('plantId') ? parseInt(searchParams.get('plantId')!) : undefined;
+    const departmentId = searchParams.get('departmentId') ? parseInt(searchParams.get('departmentId')!) : undefined;
 
-    const [flashedRequestId, setFlashedRequestId] = useState<string | null>(location.state?.flashRequestId || null);
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
-
-    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null; groupId: string | null; expectedAmount?: number }>({ show: false, action: null, requestId: null, groupId: null });
+    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null; groupId: string | null; expectedAmount?: number; obligation?: FinanceObligationDto }>({ show: false, action: null, requestId: null, groupId: null });
     const [processing, setProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
-
-    // Debounced search input — same 500ms pattern as RequestsDashboard. Kept in sync with the URL
-    // 'search' param both ways: typing debounces into the URL, and external changes (clear button,
-    // preference hydration) update the input.
     const [searchInput, setSearchInput] = useState(search || '');
+    const [showMoreFilters, setShowMoreFilters] = useState(!!(companyId || plantId || departmentId));
+    const [companies, setCompanies] = useState<any[]>([]);
+    const [plants, setPlants] = useState<any[]>([]);
+    const [departments, setDepartments] = useState<any[]>([]);
 
     useEffect(() => {
-        setSearchInput(search || '');
-    }, [search]);
-
+        api.lookups.getCompanies().then(setCompanies).catch(() => {});
+        api.lookups.getDepartments().then(setDepartments).catch(() => {});
+    }, []);
     useEffect(() => {
+        api.lookups.getPlants(companyId).then(setPlants).catch(() => {});
+    }, [companyId]);
+
+    useEffect(() => { setSearchInput(search || ''); }, [search]);
+    const firstSearch = useRef(true);
+    useEffect(() => {
+        if (firstSearch.current) { firstSearch.current = false; return; }
         const handler = setTimeout(() => {
-            if (searchInput !== (search || '')) {
-                handleSetParam('search', searchInput);
-            }
+            if (searchInput !== (search || '')) setParam('search', searchInput);
         }, 500);
         return () => clearTimeout(handler);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchInput]);
 
-    useEffect(() => {
-        loadData();
-    }, [filter, page, pageSize, statusCodes, currencyCode, search, sortBy, isDescending]);
-
-    useEffect(() => {
-        if (flashedRequestId) {
-            window.history.replaceState({}, document.title);
-            setTimeout(() => {
-                const el = document.getElementById(`payment-row-${flashedRequestId}`);
-                if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                } else {
-                    setFeedback({ type: 'info' as FeedbackType, message: 'Este pedido pode ainda não estar visível nesta lista. Verifique se o P.O. já foi registado ou ajuste os filtros.' });
-                }
-            }, 300);
-
-            const timer = setTimeout(() => setFlashedRequestId(null), 5000);
-            return () => clearTimeout(timer);
-        }
-    }, [flashedRequestId]);
+    useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, pageSize, search, currencyCode, actionClass, overdueOnly, dueTodayOnly, actionableOnly, sortBy, companyId, plantId, departmentId]);
 
     const loadData = () => {
-        api.finance.getPayments(filter, page, pageSize, undefined, statusCodes, currencyCode, search, sortBy, isDescending).then(res => setData(res));
+        api.finance.getObligations({ page, pageSize, search, currencyCode, actionClass, overdueOnly, dueTodayOnly, actionableOnly, sortBy, companyId, plantId, departmentId })
+            .then(setData)
+            .catch(err => setFeedback({ type: 'error', message: err?.message || 'Falha ao carregar obrigações.' }));
     };
 
-    const handleSetParam = (key: string, value: string) => {
-        const newParams = new URLSearchParams(searchParams);
-        if (value) newParams.set(key, value);
-        else newParams.delete(key);
-        if (key === 'search') newParams.delete('searchSupplier'); // new key supersedes the legacy one going forward
-        newParams.set('page', '1');
-        setSearchParams(newParams);
-        // Sync to localStorage
-        syncParamsToPrefs(newParams);
-    };
-
-    const handleSort = (key: string) => {
-        const next = toggleSort(sortConfig, key);
-        const newParams = new URLSearchParams(searchParams);
-        newParams.set('sortBy', next.key || '');
-        newParams.set('isDescending', String(next.direction === 'desc'));
-        newParams.set('page', '1');
-        setSearchParams(newParams);
-        syncParamsToPrefs(newParams);
-    };
-
-    const syncParamsToPrefs = (params: URLSearchParams) => {
-        const sortKey = params.get('sortBy');
-        persistPrefs({
-            pageSize: parseInt(params.get('pageSize') || '20'),
-            filters: {
-                statusCodes: params.get('statusCodes') || undefined,
-                currencyCode: params.get('currencyCode') || undefined,
-                search: params.get('search') || undefined,
-            },
-            sort: sortKey ? { key: sortKey, direction: params.get('isDescending') === 'true' ? 'desc' : 'asc' } : undefined,
-        });
-    };
-
-    const handlePageChange = (newPage: number) => {
-        const newParams = new URLSearchParams(searchParams);
-        newParams.set('page', newPage.toString());
-        setSearchParams(newParams);
-    };
-
-    const handlePageSizeChange = (newPageSize: number) => {
-        const newParams = new URLSearchParams(searchParams);
-        newParams.set('pageSize', newPageSize.toString());
-        newParams.set('page', '1');
-        setSearchParams(newParams);
-        syncParamsToPrefs(newParams);
-    };
-
-    // Resolves the specific RequestPoGroup being acted on. Eligibility, routing (normal vs.
-    // advance), and default amounts must all come from THIS group's own status/payments — never
-    // from the parent request's aggregated statusCode or a sibling group.
-    const findActingGroup = (requestId: string | null, groupId: string | null): any => {
-        if (!requestId || !groupId) return undefined;
-        const requestItem = data?.pagedResult?.items.find(i => i.id === requestId);
-        return requestItem?.poGroups?.find((g: any) => g.id === groupId);
-    };
-
-    // Read-only summary shown in the Cancel-schedule confirmation modal, sourced from the acting
-    // group's own currently-Scheduled payment row (works identically for normal and advance
-    // groups) — never from the parent request's aggregated fields.
-    const resolveCancelScheduleContext = (requestId: string | null, groupId: string | null) => {
-        const poGroup = findActingGroup(requestId, groupId);
-        if (!poGroup) return undefined;
-        const scheduledPayment = poGroup.payments?.find((p: any) => p.paymentStatus === 'SCHEDULED');
-        return {
-            supplierName: poGroup.supplierNameSnapshot || '---',
-            amount: scheduledPayment?.plannedAmount ?? poGroup.totalAmount ?? 0,
-            currencyCode: poGroup.currencyCode || 'AOA',
-            scheduledDateUtc: scheduledPayment?.scheduledDateUtc ?? null,
-        };
-    };
-
-    const handleActionClick = (requestId: string, groupId: string, action: FinanceActionType) => {
-        // Compute expected amount from the acting group's own planned/scheduled payment, or
-        // fall back to the group's total. A PLANNED advance payment (created at PO registration,
-        // before any scheduling) must supply its PlannedAmount here too — not just a SCHEDULED one.
-        let expectedAmount: number | undefined = undefined;
-        const poGroup = findActingGroup(requestId, groupId);
-        if (poGroup) {
-            const plannedOrScheduledPayment = poGroup.payments?.find((p: any) =>
-                (p.paymentStatus === 'PLANNED' || p.paymentStatus === 'SCHEDULED') && p.plannedAmount > 0);
-            expectedAmount = plannedOrScheduledPayment?.plannedAmount || poGroup.totalAmount || undefined;
+    // Apply one or MORE param changes atomically — a single URLSearchParams + one setSearchParams.
+    // (Two sequential setParam calls each rebuild from the same stale `searchParams`, so the second
+    // clobbers the first — that was the company/plant bug: selecting a company then clearing plant
+    // discarded the company. Always co-change dependent params through setParams.)
+    const setParams = (updates: Record<string, string | boolean | undefined>) => {
+        const p = new URLSearchParams(searchParams);
+        for (const [key, value] of Object.entries(updates)) {
+            if (value === undefined || value === '' || value === false) p.delete(key);
+            else p.set(key, String(value));
         }
-        setActionModal({ show: true, action, requestId, groupId, expectedAmount });
+        p.set('page', '1');
+        setSearchParams(p);
+    };
+    const setParam = (key: string, value: string | boolean | undefined) => setParams({ [key]: value });
+
+    // Cards act as mutually-exclusive work-queue filters (overdue/dueToday are urgency overlays).
+    const selectCard = (card: CardKey) => {
+        const p = new URLSearchParams(searchParams);
+        ['actionClass', 'overdueOnly', 'dueTodayOnly'].forEach(k => p.delete(k));
+        const already =
+            (card === 'needsScheduling' && actionClass === 'NEEDS_SCHEDULING') ||
+            (card === 'needsPayment' && actionClass === 'NEEDS_PAYMENT') ||
+            (card === 'paidWaitingReceiving' && actionClass === 'PAID_WAITING_RECEIVING') ||
+            (card === 'overdue' && overdueOnly) ||
+            (card === 'dueToday' && dueTodayOnly);
+        if (!already) {
+            if (card === 'needsScheduling') p.set('actionClass', 'NEEDS_SCHEDULING');
+            else if (card === 'needsPayment') p.set('actionClass', 'NEEDS_PAYMENT');
+            else if (card === 'paidWaitingReceiving') p.set('actionClass', 'PAID_WAITING_RECEIVING');
+            else if (card === 'overdue') p.set('overdueOnly', 'true');
+            else if (card === 'dueToday') p.set('dueTodayOnly', 'true');
+        }
+        p.set('page', '1');
+        setSearchParams(p);
+    };
+
+    const clearFilters = () => {
+        const p = new URLSearchParams(searchParams);
+        FINANCE_CLEAR_KEYS.forEach(k => p.delete(k)); // includes sortBy → resets to default newest-first
+        p.set('page', '1');
+        setSearchParams(p);
+    };
+
+    // ── Action dispatcher — Detalhes opens the drawer; every mutation (incl. NOTE) opens the modal ──
+    const onObligationAction = (o: FinanceObligationDto, code: ObligationActionCode) => {
+        if (code === 'DETAILS') { setDrawerRequestId(o.requestId); return; }
+        const action = code as FinanceActionType; // 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE'
+        const expectedAmount = (o.plannedAmount && o.plannedAmount > 0 ? o.plannedAmount : o.groupAmount) || undefined;
+        setActionModal({ show: true, action, requestId: o.requestId, groupId: o.requestPoGroupId, expectedAmount, obligation: o });
         setFeedback({ type: 'success', message: null });
     };
 
@@ -226,558 +141,341 @@ export default function FinancePaymentsList() {
         if (!actionModal.requestId) return;
         setProcessing(true);
         setFeedback({ type: 'success', message: null });
-
         try {
-            const actingGroup = findActingGroup(actionModal.requestId, actionModal.groupId);
-            const isAdvance = isAdvanceGroupStatus(actingGroup?.status);
+            const isAdvance = isAdvanceGroupStatus(actionModal.obligation?.groupStatusCode);
 
             if (action === 'SCHEDULE' && payload.date) {
-                const scheduleUploadParams = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
-                if (scheduleUploadParams) {
-                    await api.attachments.upload(actionModal.requestId, [payload.file!], scheduleUploadParams.typeCode, scheduleUploadParams.poGroupId);
-                }
-                if (isAdvance) {
-                    await api.requests.scheduleAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, scheduledDate: new Date(payload.date).toISOString(), comment: payload.notes || "Adiantamento agendado via portal" });
-                } else {
-                    await api.finance.schedulePayment(actionModal.requestId, actionModal.groupId!, new Date(payload.date).toISOString(), payload.notes || "Agendado via portal");
-                }
+                const up = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
+                if (up) await api.attachments.upload(actionModal.requestId, [payload.file!], up.typeCode, up.poGroupId);
+                if (isAdvance) await api.requests.scheduleAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, scheduledDate: new Date(payload.date).toISOString(), comment: payload.notes || 'Adiantamento agendado via portal' });
+                else await api.finance.schedulePayment(actionModal.requestId, actionModal.groupId!, new Date(payload.date).toISOString(), payload.notes || 'Agendado via portal');
             } else if (action === 'PAY') {
-                let attachmentId: string | undefined = undefined;
-                const payUploadParams = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
-                if (payUploadParams) {
-                    const uploadResult = await api.attachments.upload(actionModal.requestId, [payload.file!], payUploadParams.typeCode, payUploadParams.poGroupId);
-                    if (uploadResult && uploadResult.length > 0) {
-                        attachmentId = uploadResult[0].id;
-                    }
+                let attachmentId: string | undefined;
+                const up = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
+                if (up) {
+                    const res = await api.attachments.upload(actionModal.requestId, [payload.file!], up.typeCode, up.poGroupId);
+                    if (res && res.length > 0) attachmentId = res[0].id;
                 }
                 const actualPaidAmount = payload.amount ? parseFloat(payload.amount) : undefined;
-                const paymentDateUtc = payload.date ? new Date(payload.date).toISOString() : undefined;
-                if (isAdvance) {
-                    await api.requests.confirmAdvancePayment(actionModal.requestId, {
-                        requestPoGroupId: actionModal.groupId!, 
-                        actualPaidAmount: actualPaidAmount || 0, 
-                        paidDate: paymentDateUtc!,
-                        comment: payload.notes || "Adiantamento liquidado via portal",
-                        paymentProofAttachmentId: attachmentId
-                    });
-                } else {
-                    await api.finance.markAsPaid(actionModal.requestId, actionModal.groupId!, attachmentId!, actualPaidAmount!, paymentDateUtc!, payload.notes || "Liquidado via portal");
-                }
+                const paidDate = payload.date ? new Date(payload.date).toISOString() : undefined;
+                if (isAdvance) await api.requests.confirmAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, actualPaidAmount: actualPaidAmount || 0, paidDate: paidDate!, comment: payload.notes || 'Adiantamento liquidado via portal', paymentProofAttachmentId: attachmentId });
+                else await api.finance.markAsPaid(actionModal.requestId, actionModal.groupId!, attachmentId!, actualPaidAmount!, paidDate!, payload.notes || 'Liquidado via portal');
             } else if (action === 'RETURN' && payload.notes) {
-                await api.finance.returnForAdjustment(actionModal.requestId, payload.notes);
+                await api.finance.returnForAdjustment(actionModal.requestId, payload.notes, actionModal.groupId ?? undefined);
             } else if (action === 'NOTE' && payload.notes) {
                 await api.finance.addNote(actionModal.requestId, payload.notes);
             } else if (action === 'CANCEL_SCHEDULE' && payload.notes) {
                 await api.finance.cancelSchedule(actionModal.requestId, actionModal.groupId!, payload.notes);
             }
-
             setActionModal({ show: false, action: null, requestId: null, groupId: null });
             loadData();
         } catch (err: any) {
-            console.error(err);
-            const errorMessage = err instanceof Error ? err.message : (err?.response?.data?.message || "Falha ao executar ação.");
-            
-            // Log to administration logs
-            logger.error(`Erro ao executar ação financeira: ${actionModal.action} no pedido ${actionModal.requestId}. Detalhes: ${errorMessage}`, err, 'Global');
-            
-            setFeedback({ type: 'error', message: errorMessage });
-        } finally {
-            setProcessing(false);
-        }
+            const msg = err instanceof Error ? err.message : (err?.response?.data?.message || 'Falha ao executar ação.');
+            logger.error(`Erro ação financeira ${actionModal.action} pedido ${actionModal.requestId}: ${msg}`, err, 'Global');
+            setFeedback({ type: 'error', message: msg });
+        } finally { setProcessing(false); }
     };
 
-    if (!data) return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando Pagamentos...</div>;
+    if (!data) return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold' }}>Carregando obrigações...</div>;
 
-    const getBadgeStyle = (color: string) => {
-        return {
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontWeight: 800,
-            fontSize: '0.75rem',
-            backgroundColor: `var(--color-${color}-100, #f1f5f9)`,
-            color: `var(--color-${color}-800, #334155)`,
-            border: `1px solid var(--color-${color}-300, #cbd5e1)`,
-            textTransform: 'uppercase' as any
-        };
-    };
+    const s = data.summary;
+    const totalPages = Math.max(1, Math.ceil(data.pagedResult.totalCount / pageSize));
 
-    const getStatusTooltip = (code: string, name: string) => {
-        switch (code) {
-            case 'DRAFT': return 'Pedido em rascunho. Não enviado.';
-            case 'WAITING_QUOTATION': return 'Aguardando área de compras cotar valores do mercado.';
-            case 'IN_ADJUSTMENT': return 'Devolvido para ajustes de informações ou anexos.';
-            case 'WAITING_AREA_APPROVAL': return 'Aguardando aprovação do gestor de área.';
-            case 'WAITING_FINAL_APPROVAL': return 'Aguardando aprovação da diretoria.';
-            case 'WAITING_PO': return 'Aguardando emissão e envio do PO.';
-            case 'WAITING_PAYMENT': return 'Aguardando tesouraria planejar ou realizar pagamento.';
-            case 'PAYMENT_SCHEDULED': return 'Pagamento agendado para data futura.';
-            case 'PAID':
-            case 'PAYMENT_COMPLETED': return 'O pagamento foi liquidado e aprovado.';
-            case 'IN_FOLLOWUP': return 'Pagamento ok. Aguardando recebimento físico dos itens.';
-            case 'CANCELLED': return 'Pedido foi cancelado e sem prosseguimento.';
-            case 'WAITING_RECEIPT': return 'Pagamento realizado. Aguardando Recibo Fiscal do Fornecedor (Fatura, Recibo ou VD) para finalizar.';
-            default: return `Status atual: ${name}`;
-        }
-    };
+    const cards: { key: CardKey; label: string; count: number; amounts: FinanceCurrencyAmountDto[]; color: string; icon: ReactNode; selected: boolean }[] = [
+        { key: 'needsScheduling', label: 'Aguardando Agendamento', count: s.needsScheduling.count, amounts: s.needsScheduling.amountsByCurrency, color: '#0284c7', icon: <Clock size={20} />, selected: actionClass === 'NEEDS_SCHEDULING' },
+        { key: 'needsPayment', label: 'Pagamento Pendente', count: s.needsPayment.count, amounts: s.needsPayment.amountsByCurrency, color: '#d97706', icon: <CreditCard size={20} />, selected: actionClass === 'NEEDS_PAYMENT' },
+        { key: 'dueToday', label: 'Vencimento Hoje', count: s.dueToday.count, amounts: s.dueToday.amountsByCurrency, color: '#ea580c', icon: <CalendarClock size={20} />, selected: dueTodayOnly },
+        { key: 'overdue', label: 'Pagamentos Vencidos', count: s.overdue.count, amounts: s.overdue.amountsByCurrency, color: '#ef4444', icon: <AlertCircle size={20} />, selected: overdueOnly },
+        { key: 'paidWaitingReceiving', label: 'Pagos / Aguardando Recebimento', count: s.paidWaitingReceiving.count, amounts: s.paidWaitingReceiving.amountsByCurrency, color: '#16a34a', icon: <CheckCircle2 size={20} />, selected: actionClass === 'PAID_WAITING_RECEIVING' },
+    ];
 
     return (
         <PageContainer>
-            <style>{`
-                @keyframes flashRedAlert {
-                    0% { background-color: transparent; }
-                    10% { background-color: rgba(239, 68, 68, 0.2); }
-                    50% { background-color: rgba(239, 68, 68, 0.05); }
-                    90% { background-color: rgba(239, 68, 68, 0.2); }
-                    100% { background-color: transparent; }
-                }
-                .flash-red-row {
-                    animation: flashRedAlert 5s ease-out forwards;
-                }
-            `}</style>
             <PageHeader
-                title="Obrigações & Pagamentos"
-                actions={
-                    filter ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fff7ed', padding: '6px 12px', border: '2px solid #f97316', borderRadius: 'var(--radius-md, 6px)', fontWeight: 800, color: '#c2410c' }}>
-                            <span>Filtro Ativo: {filter.toUpperCase()}</span>
-                            <button
-                                onClick={() => {
-                                    const p = new URLSearchParams(searchParams);
-                                    p.delete('filter');
-                                    p.set('page', '1');
-                                    setSearchParams(p);
-                                }}
-                                style={{ background: 'transparent', border: 'none', color: '#c2410c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px', borderRadius: '4px' }}
-                                title="Remover filtro"
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(194, 65, 12, 0.1)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                    ) : undefined
-                }
+                title="OBRIGAÇÕES & PAGAMENTOS"
+                subtitle="Finanças · Priorize pagamentos, acompanhe vencimentos e trate cada fornecedor de forma independente."
             />
 
-            <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', alignItems: 'flex-end', backgroundColor: '#fff', padding: '16px 20px', borderRadius: 'var(--radius-lg, 8px)', border: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Status</label>
-                    <select
-                        value={statusCodes || ''}
-                        onChange={(e) => handleSetParam('statusCodes', e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '220px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
-                    >
-                        <option value="">Todos os status</option>
-                        <option value="PAID,PAYMENT_COMPLETED">Pagos</option>
-                        <option value="PAYMENT_SCHEDULED">Agendados</option>
-                        <option value="PO_ISSUED">P.O Emitida</option>
-                        <option value="ADVANCE_PAYMENT_REQUIRED">Ag. Adiantamento</option>
-                        <option value="ADVANCE_PAYMENT_COMPLETED,WAITING_SUPPLIER_DELIVERY">Adiantamento Pago</option>
-                        <option value="WAITING_RECONCILIATION">Em Reconciliação</option>
-                    </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Moeda</label>
-                    <select
-                        value={currencyCode || ''}
-                        onChange={(e) => handleSetParam('currencyCode', e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '150px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
-                    >
-                        <option value="">Todas</option>
-                        <option value="AOA">AOA (Kwanzas)</option>
-                        <option value="USD">USD (Dólares)</option>
-                        <option value="EUR">EUR (Euros)</option>
-                        <option value="ZAR">ZAR (Rands)</option>
-                    </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '250px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Buscar</label>
-                    <div style={{ position: 'relative' }}>
-                        <input
-                            type="text"
-                            placeholder="Buscar por pedido ou fornecedor..."
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
-                            style={{ padding: '8px 12px', paddingLeft: '36px', borderRadius: 'var(--radius-md, 6px)', border: '1px solid var(--color-border)', width: '100%', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)' }}
-                        />
-                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-                    </div>
-                </div>
-                {(statusCodes || currencyCode || search) && (
-                    <button
-                        onClick={() => {
-                            setSearchInput('');
-                            const p = new URLSearchParams(searchParams);
-                            p.delete('statusCodes'); p.delete('currencyCode'); p.delete('search'); p.delete('searchSupplier'); p.set('page', '1');
-                            setSearchParams(p);
-                            resetPreferences();
-                        }}
-                        style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', textTransform: 'uppercase' }}
-                    >
-                        Limpar
-                    </button>
-                )}
-            </div>
-
-            <StandardTable isEmpty={!data.pagedResult || data.pagedResult.items.length === 0}>
-                <thead>
-                    <tr>
-                        {SIMPLE_SORT_COLUMNS.map(col => (
-                            <th
-                                key={col.key}
-                                onClick={() => handleSort(col.key)}
-                                style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    {col.label}
-                                    <SortIcon sortConfig={sortConfig} columnKey={col.key} />
-                                </div>
-                            </th>
-                        ))}
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span onClick={() => handleSort(DUE_DATE_SORT_KEY)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    Vencimento
-                                    <SortIcon sortConfig={sortConfig} columnKey={DUE_DATE_SORT_KEY} />
-                                </span>
-                                <span style={{ opacity: 0.4 }}>/</span>
-                                <span onClick={() => handleSort(STATUS_SORT_KEY)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    Status
-                                    <SortIcon sortConfig={sortConfig} columnKey={STATUS_SORT_KEY} />
-                                </span>
-                            </div>
-                        </th>
-                        <th
-                            onClick={() => handleSort(AMOUNT_SORT_COLUMN.key)}
-                            style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {AMOUNT_SORT_COLUMN.label}
-                                <SortIcon sortConfig={sortConfig} columnKey={AMOUNT_SORT_COLUMN.key} />
-                            </div>
-                        </th>
-                        <th style={{ padding: '16px', fontWeight: 900, textTransform: 'uppercase', textAlign: 'right' }}>Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                                        {data.pagedResult.items.map((item, i) => {
-                        // CANCELLED groups are kept for historical display only — they never count as
-                        // "operational" here, so a lone CANCELLED group alongside one real group still
-                        // renders as a single-group row (see resolveOperationalGroups / DEC-149).
-                        const hasMultipleGroups = hasMultipleOperationalGroups(item.poGroups);
-                        // Only overrides the parent badge for multi-group rows — the raw persisted
-                        // Request.Status is unambiguous for a single group (no aggregation to second-guess),
-                        // so single-group rows keep showing item.statusName exactly as before.
-                        const parentDisplayStatus = hasMultipleGroups
-                            ? resolveParentDisplayStatus(item.poGroups, item.statusName)
-                            : null;
-
-                        return (
-                        <React.Fragment key={item.id}>
-                            <tr id={`payment-row-${item.id}`} className={flashedRequestId === item.id.toString() ? 'flash-red-row' : ''} style={{ borderBottom: hasMultipleGroups ? 'none' : '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                                    <div style={{ fontWeight: 800, color: 'var(--color-primary)' }}>{item.requestNumber}</div>
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>{item.plantName}</div>
-                                </td>
-                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                                    <div style={{ fontWeight: 700 }}>{hasMultipleGroups ? 'Vários Fornecedores' : item.supplierName}</div>
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Req: {item.requesterName}</div>
-                                </td>
-                                <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                                    <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                        <ModernTooltip content={
-                                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                                                {parentDisplayStatus
-                                                    ? 'Fornecedores em estágios diferentes do fluxo de pagamento.'
-                                                    : getStatusTooltip(item.statusCode, item.statusName)}
-                                            </div>
-                                        } side="top">
-                                            <span style={{ ...getBadgeStyle(item.statusBadgeColor), cursor: 'help' }}>{parentDisplayStatus?.label ?? item.statusName}</span>
-                                        </ModernTooltip>
-
-                                        {!hasMultipleGroups && item.statusCode === 'ADVANCE_PAYMENT_REQUIRED' && (
-                                            <span style={{ backgroundColor: '#fdf4ff', color: '#c026d3', border: '1px solid #f5d0fe', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                                Adiantamento {item.advancePaymentPercent ? `(${item.advancePaymentPercent}%)` : ''}
-                                            </span>
-                                        )}
-                                        {!hasMultipleGroups && item.paymentCondition === 'ADVANCE_PAYMENT' && item.statusCode !== 'ADVANCE_PAYMENT_REQUIRED' && item.statusCode !== 'ADVANCE_PAYMENT_COMPLETED' && (
-                                            <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
-                                                Saldo Final
-                                            </span>
-                                        )}
-
-                                        {!hasMultipleGroups && item.paidDateUtc ? (
-                                            <ModernTooltip content={
-                                                <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data do pagamento: {new Date(item.paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
-                                            } side="top">
-                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
-                                                    <Check size={16} strokeWidth={3} /> Pago
-                                                </span>
-                                            </ModernTooltip>
-                                        ) : !hasMultipleGroups && item.scheduledDateUtc ? (
-                                            <ModernTooltip content={
-                                                <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Data de agendamento do pagamento: {new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</div>
-                                            } side="top">
-                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0369a1', fontWeight: 800, fontSize: '0.75rem', cursor: 'help' }}>
-                                                    <Clock size={16} strokeWidth={3} /> Agendado
-                                                </span>
-                                            </ModernTooltip>
-                                        ) : null}
-                                    </div>
-                                    {!hasMultipleGroups && item.needByDateUtc && (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.80rem', fontWeight: 600, color: '#64748b' }}>
-                                                Original: {new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                                            </div>
-                                            {(item.scheduledDateUtc || item.isOverdue || item.isDueSoon) && (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: item.isOverdue ? 800 : 700, color: item.isOverdue ? '#dc2626' : item.scheduledDateUtc ? '#0284c7' : item.isDueSoon ? '#d97706' : '#475569' }}>
-                                                    <Clock size={16} />
-                                                    {item.scheduledDateUtc ? `Agendado: ${new Date(item.scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : `Vence: ${new Date(item.needByDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
-                                                    {item.isOverdue && <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '0.75rem', fontWeight: 800 }}>Atrasado</span>}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {item.isMissingDocuments && (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
-                                            {item.missingDocumentTypes.map(type => {
-                                                const label = type === 'PO' ? 'Sem P.O.' : type === 'PROFORMA' ? 'Sem Proforma' : 'Sem comprovativo';
-                                                return (
-                                                    <div key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', backgroundColor: '#fff7ed', padding: '2px 8px', border: '1px solid #fdba74', borderRadius: '4px', width: 'fit-content' }}>
-                                                        <AlertTriangle size={12} /> {label}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </td>
-                                <td style={{ padding: '16px', fontWeight: 900, fontSize: '1.1rem', verticalAlign: 'top' }}>
-                                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: item.currencyCode || 'AOA' }).format(item.amount)}
-                                </td>
-                                <td style={{ padding: '16px', textAlign: 'right', verticalAlign: 'top' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                        {(() => {
-                                            // AvailableFinanceActions (from IFinancePaymentEligibilityService on the
-                                            // backend) is the sole eligibility source — never re-derived from
-                                            // poGroups.length here. A resolvable single-group id is only required to
-                                            // actually execute SCHEDULE/PAY; that's an execution/input concern, not a
-                                            // different eligibility policy (see resolveSingleGroupRowActions).
-                                            const rowActions = resolveSingleGroupRowActions(item);
-                                            const bestEffortGroupId = item.poGroups?.[0]?.id || '';
-                                            // Label terminology comes from the resolved SOLE group's own status —
-                                            // never the parent request status — matching the multi-group cards'
-                                            // isAdvanceGroupStatus branching exactly (see the "Pagamentos por
-                                            // Fornecedor" panel below).
-                                            const soleGroupStatus = item.poGroups?.find((g: any) => g.id === rowActions.groupId)?.status;
-                                            const { scheduleLabel, payLabel, cancelScheduleLabel } = resolveSoleGroupActionLabels(soleGroupStatus);
-                                            return (
-                                                <KebabMenu options={[
-                                                    ...(!hasMultipleGroups && shouldShowSchedule(item) ? [{ label: scheduleLabel, icon: <Clock size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'SCHEDULE') }] : []),
-                                                    ...(!hasMultipleGroups && shouldShowPay(item) ? [{ label: payLabel, icon: <Check size={16} />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'PAY') }] : []),
-                                                    ...(!hasMultipleGroups && shouldShowCancelSchedule(item) ? [{ label: cancelScheduleLabel, icon: <XCircle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), rowActions.groupId!, 'CANCEL_SCHEDULE') }] : []),
-                                                    { label: 'Detalhes', icon: <FileText size={16} />, onClick: () => setDrawerRequestId(item.id.toString()) },
-                                                    ...(item.availableFinanceActions.includes('ADD_NOTE') ? [{ label: 'Adicionar Observação', icon: <MessageSquare size={16} />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'NOTE') }] : []),
-                                                    ...(!hasMultipleGroups && item.availableFinanceActions.includes('RETURN') ? [{ label: 'Devolver para ajuste', icon: <AlertTriangle size={16} color="#dc2626" />, onClick: () => handleActionClick(item.id.toString(), bestEffortGroupId, 'RETURN') }] : [])
-                                                ]} />
-                                            );
-                                        })()}
-                                    </div>
-                                </td>
-                            </tr>
-                            
-                            {hasMultipleGroups && (
-                                <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                                    <td colSpan={5} style={{ padding: '0 16px 16px 16px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '8px', border: '1px dashed var(--color-border)' }}>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Pagamentos por Fornecedor</div>
-                                            {item.poGroups.map(group => (
-                                                <div key={group.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{group.supplierNameSnapshot}</div>
-                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
-                                                                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(group.totalAmount)}
-                                                            </span>
-                                                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#334155', backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '12px' }}>
-                                                                {GROUP_STATUS_LABELS[group.status] ?? group.status}
-                                                            </span>
-                                                        </div>
-                                                        {group.status === 'PAYMENT_SCHEDULED' && (() => {
-                                                            const { scheduledDateUtc, plannedAmount } = resolveScheduledPaymentDetails(group.payments);
-                                                            if (!scheduledDateUtc && plannedAmount == null) return null;
-                                                            return (
-                                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                                    {scheduledDateUtc && `Agendado para ${new Date(scheduledDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
-                                                                    {scheduledDateUtc && plannedAmount != null && ' · '}
-                                                                    {plannedAmount != null && `Previsto: ${new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(plannedAmount)}`}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                        {group.status === 'ADVANCE_PAYMENT_COMPLETED' && (() => {
-                                                            const { paidDateUtc, actualPaidAmount } = resolveAdvancePaymentDetails(group.payments);
-                                                            if (!paidDateUtc && actualPaidAmount == null && group.advancePaymentPercent == null) return null;
-                                                            return (
-                                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                                    {paidDateUtc && `Pago em ${new Date(paidDateUtc).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`}
-                                                                    {paidDateUtc && actualPaidAmount != null && ' · '}
-                                                                    {actualPaidAmount != null && `Montante: ${new Intl.NumberFormat('pt-AO', { style: 'currency', currency: group.currencyCode || 'AOA' }).format(actualPaidAmount)}`}
-                                                                    {group.advancePaymentPercent != null && ` · ${group.advancePaymentPercent}% adiantamento`}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        {/* Eligibility and label are computed from THIS group's own status only —
-                                                            never from item.statusCode (the parent's aggregated status) or a sibling
-                                                            group. See financePaymentsView.ts's canScheduleGroupStatus/canPayGroupStatus/
-                                                            isAdvanceGroupStatus, which mirror the backend's canonical eligibility lists. */}
-                                                        {item.availableFinanceActions.includes('SCHEDULE') && canScheduleGroupStatus(group.status) && (
-                                                            <button
-                                                                onClick={() => handleActionClick(item.id, group.id, 'SCHEDULE')}
-                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #0369a1', backgroundColor: '#f0f9ff', color: '#0369a1', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                                                            >
-                                                                <Clock size={14} /> {resolveSoleGroupActionLabels(group.status).scheduleLabel}
-                                                            </button>
-                                                        )}
-                                                        {item.availableFinanceActions.includes('PAY') && canPayGroupStatus(group.status) && (
-                                                            <button
-                                                                onClick={() => handleActionClick(item.id, group.id, 'PAY')}
-                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #15803d', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                                                            >
-                                                                <Check size={14} /> {resolveSoleGroupActionLabels(group.status).payLabel}
-                                                            </button>
-                                                        )}
-                                                        {item.availableFinanceActions.includes('CANCEL_SCHEDULE') && canCancelScheduleGroupStatus(group.status) && (
-                                                            <button
-                                                                onClick={() => handleActionClick(item.id, group.id, 'CANCEL_SCHEDULE')}
-                                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #dc2626', backgroundColor: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                                                            >
-                                                                <XCircle size={14} /> {resolveSoleGroupActionLabels(group.status).cancelScheduleLabel}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </React.Fragment>
-                        );
-                    })}
-                    {data.pagedResult.items.length === 0 && (
-                        <tr>
-                            <td colSpan={5} style={{ padding: '40px', textAlign: 'center', fontWeight: 600, color: '#64748b' }}>
-                                Nenhum pagamento localizado para os critérios informados.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </StandardTable>
-
-            {data.pagedResult && data.pagedResult.totalCount > 0 && (
-                <div style={{
-                    padding: '12px 20px',
-                    backgroundColor: '#FAFAFA',
-                    border: '1px solid var(--color-border)',
-                    borderTop: 'none',
-                    borderBottomLeftRadius: 'var(--radius-lg, 8px)',
-                    borderBottomRightRadius: 'var(--radius-lg, 8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    color: 'var(--color-text-muted)',
-                    flexWrap: 'wrap',
-                    gap: '32px',
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>Pág:</span>
-                        <select
-                            value={pageSize.toString()}
-                            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                            style={{
-                                padding: '2px 6px',
-                                fontSize: '0.75rem',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: 'var(--radius-sm, 4px)',
-                                backgroundColor: 'var(--color-bg-surface, #fff)',
-                                color: 'var(--color-text-main, #0f172a)',
-                            }}
-                        >
-                            <option value="20">20</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span>
-                            Mostrando {data.pagedResult.items.length > 0 ? (page - 1) * pageSize + 1 : 0} - {Math.min(page * pageSize, data.pagedResult.totalCount)} de {data.pagedResult.totalCount}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button
-                                disabled={page === 1}
-                                onClick={() => handlePageChange(page - 1)}
-                                style={{
-                                    padding: '6px',
-                                    border: '1px solid var(--color-border)',
-                                    borderRadius: 'var(--radius-sm, 4px)',
-                                    backgroundColor: 'var(--color-bg-surface, #fff)',
-                                    cursor: page === 1 ? 'default' : 'pointer',
-                                    opacity: page === 1 ? 0.4 : 1,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'var(--color-text-main, #0f172a)',
-                                }}
-                            >
-                                <ChevronLeft size={14} />
-                            </button>
-                            <span style={{ fontWeight: 700 }}>
-                                {page} / {Math.ceil(data.pagedResult.totalCount / pageSize) > 0 ? Math.ceil(data.pagedResult.totalCount / pageSize) : 1}
-                            </span>
-                            <button
-                                disabled={page >= Math.ceil(data.pagedResult.totalCount / pageSize)}
-                                onClick={() => handlePageChange(page + 1)}
-                                style={{
-                                    padding: '6px',
-                                    border: '1px solid var(--color-border)',
-                                    borderRadius: 'var(--radius-sm, 4px)',
-                                    backgroundColor: 'var(--color-bg-surface, #fff)',
-                                    cursor: page >= Math.ceil(data.pagedResult.totalCount / pageSize) ? 'default' : 'pointer',
-                                    opacity: page >= Math.ceil(data.pagedResult.totalCount / pageSize) ? 0.4 : 1,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'var(--color-text-main, #0f172a)',
-                                }}
-                            >
-                                <ChevronRight size={14} />
-                            </button>
-                        </div>
-                    </div>
+            {feedback.message && (
+                <div style={{ margin: '8px 0', padding: '10px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600,
+                    backgroundColor: feedback.type === 'error' ? '#fef2f2' : '#f0fdf4', color: feedback.type === 'error' ? '#b91c1c' : '#15803d',
+                    border: `1px solid ${feedback.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>
+                    {feedback.message}
+                    <button onClick={() => setFeedback({ type: 'success', message: null })} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}><X size={14} /></button>
                 </div>
             )}
+
+            {/* ── Work-queue cards (KPICard standard, per docs/ui/kpi_cards.md) ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '16px', margin: '16px 0 20px' }}>
+                {cards.map(c => (
+                    <div key={c.key} style={{ position: 'relative' }}>
+                        <KPICard
+                            title={c.label}
+                            value={c.count}
+                            icon={c.icon}
+                            color={c.color}
+                            borderColor={c.selected ? c.color : undefined}
+                            bgColor={c.selected ? `${c.color}0F` : undefined}
+                            subtitle={<span style={{ fontSize: '0.8rem', fontWeight: 600 }}><CurrencyTotals amounts={c.amounts} /></span>}
+                            onClick={() => selectCard(c.key)}
+                            style={{ ['--kpi-padding' as any]: '16px', ['--kpi-value-size' as any]: '1.9rem', ['--kpi-icon-size' as any]: '34px' }}
+                        />
+                        {c.selected && (
+                            <span aria-hidden style={{ position: 'absolute', top: 10, right: 10, width: 9, height: 9, borderRadius: '50%', backgroundColor: c.color, boxShadow: `0 0 0 3px ${c.color}33` }} />
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* ── Filter toolbar (primary row + advanced panel) ── */}
+            {(() => {
+                const ctrl: CSSProperties = { padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', fontSize: '0.85rem', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)', height: '38px' };
+                const advCount = countAdvancedFilters({ companyId, plantId, departmentId, currencyCode, actionableOnly, overdueOnly });
+                return (
+                <div style={{ marginBottom: '16px' }}>
+                    {/* PRIMARY TOOLBAR: Search (widest) · Situação financeira · Ordenar · Mais filtros · Limpar */}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ position: 'relative', flex: '1 1 320px', minWidth: '240px', maxWidth: '520px' }}>
+                            <Search size={15} style={{ position: 'absolute', left: 11, top: 11, opacity: 0.4 }} />
+                            <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Buscar nº, fornecedor, NIF, P.O. ou título..."
+                                style={{ ...ctrl, width: '100%', padding: '8px 10px 8px 32px' }} />
+                        </div>
+                        <select value={actionClass || ''} onChange={e => setParam('actionClass', e.target.value || undefined)} style={{ ...ctrl, borderColor: actionClass ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                            <option value="">Situação financeira: todas</option>
+                            <option value="NEEDS_SCHEDULING">Aguardando Agendamento</option>
+                            <option value="NEEDS_PAYMENT">Pagamento Pendente</option>
+                            <option value="FISCAL_DOCUMENT_PENDING">Documento Fiscal Pendente</option>
+                            <option value="PAID_WAITING_RECEIVING">Pagos / Aguardando Recebimento</option>
+                        </select>
+                        <select value={sortBy} onChange={e => setParam('sortBy', e.target.value === FINANCE_DEFAULT_SORT ? undefined : e.target.value)} style={ctrl} title="Ordenar">
+                            {FINANCE_SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Ordenar: {o.label}</option>)}
+                        </select>
+                        <button onClick={() => setShowMoreFilters(v => !v)}
+                            style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600, borderColor: (showMoreFilters || advCount > 0) ? 'var(--color-primary)' : 'var(--color-border)', color: advCount > 0 ? 'var(--color-primary)' : 'var(--color-text-main)' }}>
+                            <SlidersHorizontal size={15} /> Mais filtros{advCount > 0 ? ` (${advCount})` : ''}
+                        </button>
+                        {(advCount > 0 || actionClass || search) && (
+                            <button onClick={clearFilters} style={{ ...ctrl, background: 'none', cursor: 'pointer', fontWeight: 600, color: 'var(--color-text-muted)' }}>Limpar filtros</button>
+                        )}
+                    </div>
+                    {/* ADVANCED PANEL — Empresa · Planta · Departamento · Moeda · toggles */}
+                    {showMoreFilters && (
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.02)' }}>
+                            <select value={companyId ?? ''}
+                                onChange={e => setParams({ companyId: e.target.value || undefined, plantId: undefined })} // atomic: company + clear plant
+                                style={{ ...ctrl, borderColor: companyId ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                                <option value="">Empresa: todas</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                            <select value={plantId ?? ''} onChange={e => setParam('plantId', e.target.value || undefined)} style={{ ...ctrl, borderColor: plantId ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                                <option value="">Planta: todas</option>
+                                {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <select value={departmentId ?? ''} onChange={e => setParam('departmentId', e.target.value || undefined)} style={{ ...ctrl, borderColor: departmentId ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                                <option value="">Departamento: todos</option>
+                                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            </select>
+                            <select value={currencyCode || ''} onChange={e => setParam('currencyCode', e.target.value || undefined)} style={{ ...ctrl, borderColor: currencyCode ? 'var(--color-primary)' : 'var(--color-border)' }}>
+                                <option value="">Moeda: todas</option>
+                                <option value="AOA">AOA</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="ZAR">ZAR</option>
+                            </select>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={actionableOnly} onChange={e => setParam('actionableOnly', e.target.checked)} /> Só acionáveis
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', color: overdueOnly ? 'var(--color-status-red)' : 'inherit' }}>
+                                <input type="checkbox" checked={overdueOnly} onChange={e => setParam('overdueOnly', e.target.checked)} /> Apenas vencidos
+                            </label>
+                        </div>
+                    )}
+                </div>
+                );
+            })()}
+
+            {/* ── Obligation containers ── */}
+            {data.pagedResult.items.length === 0 ? (
+                <div style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-muted)', fontWeight: 600 }}>Nenhuma obrigação pendente 🎉</div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {data.pagedResult.items.map(container => (
+                        <ContainerCard key={container.requestId} container={container}
+                            onOpenRequest={setDrawerRequestId}
+                            onAction={onObligationAction} />
+                    ))}
+                </div>
+            )}
+
+            {/* ── Pagination ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '18px', fontSize: '0.82rem' }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>{data.pagedResult.totalCount} pedido(s)</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button disabled={page <= 1} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page - 1)); setSearchParams(p); }}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'none', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.4 : 1 }}>Anterior</button>
+                    <span>Página {page} de {totalPages}</span>
+                    <button disabled={page >= totalPages} onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page + 1)); setSearchParams(p); }}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'none', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.4 : 1 }}>Próxima</button>
+                </div>
+            </div>
 
             <FinanceActionModal
                 show={actionModal.show}
                 action={actionModal.action}
-                isAdvance={isAdvanceGroupStatus(findActingGroup(actionModal.requestId, actionModal.groupId)?.status)}
-                expectedAmount={actionModal.expectedAmount}
-                cancelScheduleContext={actionModal.action === 'CANCEL_SCHEDULE' ? resolveCancelScheduleContext(actionModal.requestId, actionModal.groupId) : undefined}
-                onClose={() => setActionModal({ show: false, action: null, requestId: null, groupId: null })}
-                onConfirm={handleConfirmAction}
+                isAdvance={isAdvanceGroupStatus(actionModal.obligation?.groupStatusCode)}
                 processing={processing}
                 feedback={feedback}
+                expectedAmount={actionModal.expectedAmount}
+                cancelScheduleContext={actionModal.obligation ? {
+                    supplierName: actionModal.obligation.supplierName || '—',
+                    amount: actionModal.obligation.plannedAmount ?? actionModal.obligation.obligationAmount ?? 0,
+                    currencyCode: actionModal.obligation.currencyCode || 'AOA',
+                    scheduledDateUtc: actionModal.obligation.scheduledDateUtc ?? null,
+                } : undefined}
+                onConfirm={handleConfirmAction}
+                onClose={() => setActionModal({ show: false, action: null, requestId: null, groupId: null })}
                 onCloseFeedback={() => setFeedback({ type: 'success', message: null })}
             />
 
-            <RequestDrawerPresentation
-                isOpen={!!drawerRequestId}
-                requestId={drawerRequestId}
-                onClose={() => setDrawerRequestId(null)}
-            />
+            <RequestDrawerPresentation requestId={drawerRequestId} isOpen={!!drawerRequestId} onClose={() => setDrawerRequestId(null)} />
         </PageContainer>
+    );
+}
+
+// ── One Request container with its obligation rows (Option C) ──
+function ContainerCard({ container, onOpenRequest, onAction }: {
+    container: FinanceObligationContainerDto;
+    onOpenRequest: (id: string) => void;
+    onAction: (o: FinanceObligationDto, code: ObligationActionCode) => void;
+}) {
+    const multi = container.obligations.length > 1;
+    return (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', backgroundColor: 'var(--color-bg-surface)', boxShadow: 'var(--shadow-sm)' }}>
+            {/* Container header — distinct but not another oversized card */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px 16px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.035)', borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <button onClick={() => onOpenRequest(container.requestId)}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                            {container.requestNumber}
+                        </button>
+                        <NoteIndicator container={container} />
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '440px' }}>{container.title || '—'}</span>
+                        {multi && (
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-primary)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.08)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+                                {container.supplierCount || container.obligations.length} fornecedores
+                            </span>
+                        )}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                        {[container.department, container.plant].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.8rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <CurrencyTotals amounts={container.totalsByCurrency} />
+                </div>
+            </div>
+            <div>
+                {container.obligations.map(o => <ObligationRow key={o.requestPoGroupId} o={o} onAction={onAction} />)}
+            </div>
+        </div>
+    );
+}
+
+// Subtle request-level Finance-note indicator with hover preview (notes are request-level).
+function NoteIndicator({ container }: { container: FinanceObligationContainerDto }) {
+    const tip = resolveNoteTooltip(container);
+    if (!tip) return null;
+    return (
+        <ModernTooltip content={
+            <div style={{ maxWidth: 320 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{tip.title}</div>
+                <div style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>{tip.body}</div>
+                {tip.extra && <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 6 }}>{tip.extra}</div>}
+            </div>
+        }>
+            <span aria-label="Observação de Finanças" style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-status-amber)', cursor: 'default' }}>
+                <StickyNote size={14} />
+            </span>
+        </ModernTooltip>
+    );
+}
+
+function ObligationRow({ o, onAction }: { o: FinanceObligationDto; onAction: (o: FinanceObligationDto, code: ObligationActionCode) => void }) {
+    const plan = resolveObligationActionPlan({ groupStatusCode: o.groupStatusCode, financeActions: o.financeActions });
+    const advance = isAdvanceGroupStatus(o.groupStatusCode);
+    const { isPaid: paid, isNoFinance: noFinance, isOverdue: overdue } = resolveObligationRowFlags(o);
+
+    const menuIcon = (code: ObligationActionCode): ReactNode => {
+        switch (code) {
+            case 'DETAILS': return <Eye size={14} />;
+            case 'NOTE': return <MessageSquare size={14} />;
+            case 'PAY': return <Check size={14} />;
+            case 'CANCEL_SCHEDULE': return <XCircle size={14} />;
+            case 'RETURN': return <RotateCcw size={14} />;
+            default: return null;
+        }
+    };
+    const menuOptions: KebabOption[] = plan.menu.map(code => ({
+        label: obligationActionLabel(code, advance),
+        icon: menuIcon(code),
+        onClick: () => onAction(o, code),
+    }));
+
+    return (
+        <div style={{
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.7fr) auto', gap: '12px', alignItems: 'center',
+            padding: '12px 16px', borderBottom: '1px solid var(--color-border)',
+            borderLeft: overdue ? '3px solid var(--color-status-red)' : '3px solid transparent',
+            opacity: paid ? 0.68 : 1,
+            backgroundColor: overdue ? 'rgba(var(--color-status-rejected-rgb), 0.05)' : 'transparent'
+        }}>
+            {/* 1 · Supplier (+ secondary status chip) */}
+            <div style={{ minWidth: 0 }}>
+                <ModernTooltip content={o.supplierName || 'Fornecedor não definido'}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {paid && <Check size={13} style={{ color: 'var(--color-status-green)', marginRight: 4, verticalAlign: '-2px' }} />}
+                        {o.supplierName || 'Fornecedor não definido'}
+                    </div>
+                </ModernTooltip>
+                <span style={{ display: 'inline-block', marginTop: '3px', fontSize: '0.66rem', fontWeight: 600, color: overdue ? 'var(--color-status-red)' : 'var(--color-text-muted)', backgroundColor: overdue ? 'rgba(var(--color-status-rejected-rgb), 0.1)' : 'rgba(0,0,0,0.04)', padding: '1px 7px', borderRadius: 'var(--radius-full)' }}>
+                    {o.operationalStateLabel}
+                </span>
+            </div>
+            {/* 2 · PO */}
+            <div style={{ fontSize: '0.8rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {o.purchaseOrderNumber
+                    ? <span style={{ fontWeight: 600 }}><FileText size={12} style={{ opacity: 0.5, marginRight: 4, verticalAlign: '-1px' }} />{o.purchaseOrderNumber}</span>
+                    : <span style={{ color: 'var(--color-text-muted)' }}>Sem P.O.</span>}
+            </div>
+            {/* 3 · Due date */}
+            <div style={{ fontSize: '0.8rem' }}>
+                {o.dueDate
+                    ? <span style={{ color: overdue ? 'var(--color-status-red)' : 'var(--color-text-main)', fontWeight: overdue ? 700 : 500 }}>
+                        <CalendarClock size={12} style={{ opacity: 0.5, marginRight: 4, verticalAlign: '-1px' }} />
+                        {new Date(o.dueDate).toLocaleDateString('pt-AO')}
+                        {overdue && <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700 }}>Vencido há {o.overdueDays} {o.overdueDays === 1 ? 'dia' : 'dias'}</span>}
+                        {o.isDueToday && <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-status-orange)' }}>Vence hoje</span>}
+                      </span>
+                    : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+            </div>
+            {/* 4 · Amount */}
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{formatMoney(o.obligationAmount, o.currencyCode)}</div>
+            {/* 5 · NEXT ACTION (primary semantic field) */}
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: overdue ? 'var(--color-status-red)' : (paid || noFinance ? 'var(--color-text-muted)' : 'var(--color-text-main)'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {noFinance && <AlertTriangle size={13} style={{ color: 'var(--color-status-amber)', marginRight: 4, verticalAlign: '-2px' }} />}
+                    {o.nextActionLabel || '—'}
+                </div>
+                <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>{o.responsibleRole}</div>
+            </div>
+            {/* 6 · Actions — one primary inline, the rest in the kebab */}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                {plan.primary && (
+                    <button onClick={() => onAction(o, plan.primary!.action)}
+                        style={{ padding: '7px 14px', borderRadius: 'var(--radius-md)', border: 'none', backgroundColor: 'var(--color-primary)', color: '#fff', fontWeight: 600, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        {plan.primary.action === 'SCHEDULE' ? <Clock size={14} /> : <CreditCard size={14} />} {plan.primary.label}
+                    </button>
+                )}
+                <KebabMenu options={menuOptions} />
+            </div>
+        </div>
     );
 }

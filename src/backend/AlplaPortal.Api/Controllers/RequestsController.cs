@@ -7017,12 +7017,19 @@ public class RequestsController : BaseController
 
             finalComment += $"\n[Condição de Pagamento: {paymentCondition} — {advancePercent}%]";
 
+            // REQUEST-scoped sequence via the canonical allocator: two sibling groups of the same
+            // request each requiring an advance must land on distinct sequences (the unique index is
+            // (RequestId, PaymentType, PaymentSequence)) — hardcoding 1 collided on the 2nd group.
+            // MAINTENANCE TRIGGER: validate via Finance DEV Regression Harness (ZZTEST-FIN-ADV).
+            var advanceSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
+                .NextSequenceAsync(_context, request.Id, RequestPayment.PaymentTypes.Advance);
+
             var advancePayment = new RequestPayment
             {
                 RequestId = request.Id,
                 RequestPoGroupId = poGroup.Id,
                 PaymentType = RequestPayment.PaymentTypes.Advance,
-                PaymentSequence = 1,
+                PaymentSequence = advanceSequence,
                 PlannedPercent = advancePercent,
                 PlannedAmount = Math.Round(poGroup.TotalAmount * (advancePercent!.Value / 100m), 2),
                 CurrencyCode = poGroup.CurrencyCode ?? "AOA",
@@ -7448,20 +7455,39 @@ public class RequestsController : BaseController
 
             if (activeReconciliation.DifferenceAmount > 0)
             {
+                // REQUEST-scoped sequence via the canonical allocator. This remaining-balance row is
+                // group-less (RequestId only); if the request already owns a FINAL_BALANCE (on any
+                // group), the entity default of 1 would collide on (RequestId, PaymentType,
+                // PaymentSequence). The allocator counts all FINAL_BALANCE rows of the request, so this
+                // lands on the next free sequence and never reuses a CANCELLED one.
+                // MAINTENANCE TRIGGER: validate via Finance DEV Regression Harness (ZZTEST-FIN-RECON).
+                var finalBalanceSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
+                    .NextSequenceAsync(_context, request.Id, RequestPayment.PaymentTypes.FinalBalance);
+
                 var finalBalancePayment = new RequestPayment
                 {
                     RequestId = request.Id,
                     PaymentType = RequestPayment.PaymentTypes.FinalBalance,
+                    PaymentSequence = finalBalanceSequence,
                     PaymentStatus = RequestPayment.PaymentStatuses.Planned,
                     PlannedAmount = activeReconciliation.DifferenceAmount.Value,
+                    // Required non-null FK (FK_RequestPayments_Users_CreatedByUserId): attribute the row
+                    // to the authenticated reconciling actor — same actor used for this endpoint's audit.
+                    CreatedByUserId = actorId,
                     CreatedAtUtc = DateTime.UtcNow
                 };
                 _context.RequestPayments.Add(finalBalancePayment);
 
                 var waitingPaymentStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentRequestSent);
                 
-                request.StatusHistories.Add(new RequestStatusHistory
+                // Add via the DbSet (not request.StatusHistories) — the established pattern used by
+                // MarkAsPaid/SchedulePayment/ReturnForAdjustment. Adding through the un-loaded
+                // StatusHistories navigation, combined with the PostPaymentCompletion Phase-1 hook that
+                // runs tracking queries before this single SaveChanges, mis-tracked the new row as
+                // Modified (→ UPDATE of a non-existent row → DbUpdateConcurrencyException).
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
                 {
+                    Id = Guid.NewGuid(),
                     RequestId = request.Id,
                     PreviousStatusId = request.StatusId,
                     NewStatusId = waitingPaymentStatus!.Id,
@@ -7477,8 +7503,10 @@ public class RequestsController : BaseController
             {
                 var finalizedStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted);
                 
-                request.StatusHistories.Add(new RequestStatusHistory
+                // Same pattern fix as the remaining-balance branch above: add via the DbSet.
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
                 {
+                    Id = Guid.NewGuid(),
                     RequestId = request.Id,
                     PreviousStatusId = request.StatusId,
                     NewStatusId = finalizedStatus!.Id,

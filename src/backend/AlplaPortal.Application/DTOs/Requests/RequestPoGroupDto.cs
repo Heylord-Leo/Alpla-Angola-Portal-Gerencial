@@ -30,8 +30,16 @@ public class RequestPoGroupDto
     public int LineItemCount { get; set; }
 
     public int AttachmentCount { get; set; }
-    
+
     public List<RequestPaymentDto> Payments { get; set; } = new();
+
+    /// <summary>
+    /// Finance mutation actions available for THIS group, derived from its own status only
+    /// (SCHEDULE / PAY / CANCEL_SCHEDULE / RETURN). Populated by the Finance payments list; the
+    /// multi-group UI gates each group's buttons on this list, never on the request-level
+    /// AvailableFinanceActions. Empty/omitted where the surface does not compute it.
+    /// </summary>
+    public List<string> FinanceActions { get; set; } = new();
 }
 
 public class RequestPaymentDto

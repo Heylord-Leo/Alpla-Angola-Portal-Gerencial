@@ -2103,6 +2103,25 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pagamentos.');
             return response.json();
         },
+        /** Phase 3/4 — obligation-centric Finance projection (one row per RequestPoGroup, grouped by request). */
+        getObligations: async (opts: { page?: number; pageSize?: number; search?: string; currencyCode?: string; actionClass?: string; overdueOnly?: boolean; dueTodayOnly?: boolean; actionableOnly?: boolean; plantId?: number; departmentId?: number; companyId?: number; sortBy?: string } = {}): Promise<import('../types').FinanceObligationsResponseDto> => {
+            const params = new URLSearchParams();
+            params.append('page', String(opts.page ?? 1));
+            params.append('pageSize', String(opts.pageSize ?? 20));
+            if (opts.search) params.append('search', opts.search);
+            if (opts.currencyCode) params.append('currencyCode', opts.currencyCode);
+            if (opts.actionClass) params.append('actionClass', opts.actionClass);
+            if (opts.overdueOnly) params.append('overdueOnly', 'true');
+            if (opts.dueTodayOnly) params.append('dueTodayOnly', 'true');
+            if (opts.actionableOnly) params.append('actionableOnly', 'true');
+            if (opts.plantId) params.append('plantId', String(opts.plantId));
+            if (opts.departmentId) params.append('departmentId', String(opts.departmentId));
+            if (opts.companyId) params.append('companyId', String(opts.companyId));
+            if (opts.sortBy) params.append('sortBy', opts.sortBy);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/obligations?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar obrigações financeiras.');
+            return response.json();
+        },
         getHistory: async (page: number = 1, pageSize: number = 20, search?: string, actionType?: string): Promise<PagedResult<FinanceHistoryItemDto>> => {
             const params = new URLSearchParams();
             params.append('page', page.toString());
@@ -2150,11 +2169,14 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao adicionar nota.');
         },
-        returnForAdjustment: async (id: string, notes: string): Promise<void> => {
+        returnForAdjustment: async (id: string, notes: string, requestPoGroupId?: string): Promise<void> => {
+            // v2.230.0: group-scoped. Pass requestPoGroupId for multi-group requests so only that
+            // group is returned; omitting it is accepted only for single-group requests (backend
+            // resolves the sole active group).
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/return`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ notes })
+                body: JSON.stringify({ notes, requestPoGroupId })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
         },
