@@ -2,7 +2,34 @@
 
 ## Current Version
 
-v2.230.0
+v2.231.0
+
+## [v2.231.0] - 2026-08-23
+
+### Finance Payment Obligations Redesign & Multi-Group Hardening
+
+- Finance is now obligation-aware: the Request is a container and each RequestPoGroup is an
+  independent financial obligation. A new `GET /api/v1/finance/obligations` projection (per-group
+  action class, next action, operational state, due date, amount) drives a redesigned
+  `/finance/payments` screen — per-group actions, one primary action plus a standard kebab (Details,
+  Add Note), professional Finance terminology, newest/oldest ordering, search by supplier NIF,
+  Company/Plant/Department filters with Company→Plant dependency and an advanced-filter hierarchy with
+  active-filter count, and a note indicator with hover tooltip. A paid obligation can never suppress
+  or regress a sibling.
+- Finance correctness: group-scoped Return for Adjustment (only the named group returns to
+  WAITING_PO_CORRECTION; the request scalar is re-derived by aggregation, siblings untouched); a
+  canonical request-scoped PaymentSequenceAllocator fixes multi-group scheduling, advance-payment and
+  reconciliation remaining-balance sequence collisions on the `(RequestId, PaymentType,
+  PaymentSequence)` unique index; direct payment from PO_ISSUED now creates its FINAL_BALANCE ledger
+  row so reconciliation `actualPaidSum` no longer undercounts; reconciliation payments carry a valid
+  CreatedByUserId; and reconciliation status-history writes go through the DbSet to avoid an EF
+  change-tracking concurrency error when post-payment completion is enabled.
+- Developer tooling: a permanent Finance DEV Regression Harness (`DevFinanceFixtureController`,
+  deterministic `ZZTEST-FIN-*` scenarios) guarded by `#if DEBUG` + Development environment + explicit
+  `DevFixtures:FinanceEnabled` opt-in, documented in `docs/FINANCE_DEV_REGRESSION_HARNESS.md`, with
+  maintenance triggers at high-risk Finance integration points.
+- No schema or migration changes; the PaymentSequence unique index is unchanged; no historical data
+  modified.
 
 ## [v2.230.0] - 2026-08-21
 
