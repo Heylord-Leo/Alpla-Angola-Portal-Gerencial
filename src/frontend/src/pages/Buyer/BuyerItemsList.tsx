@@ -36,112 +36,17 @@ import { SavedQuotationDto, IvaRate, Unit, OcrDraft, OcrDraftItem, Reconciliatio
 import { useOcrProcessor } from '../../hooks/useOcrProcessor';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
 import { useTablePreferences } from '../../hooks/useTablePreferences';
-import { isFiscalDocument, normalizeDocumentType } from '../../lib/sourceDocumentType';
-import {
-    ClassificationConflictState,
-    EMPTY_CONFLICT,
-    OcrDocumentClassification,
-    buildClassificationPayload
-} from '../../lib/documentClassificationDecision';
-
-/** Rehydrates the stored evidence blob, tolerating anything that is not the shape we wrote. */
-function parseClassificationEvidence(json?: string | null): Partial<OcrDocumentClassification> {
-    if (!json) return {};
-    try {
-        const parsed = JSON.parse(json);
-        return parsed && typeof parsed === 'object' ? parsed as Partial<OcrDocumentClassification> : {};
-    } catch {
-        return {};
-    }
-}
+// Manual quotation-entry seed fix (Option A): eligible requested items seed as priceable quotation
+// rows (reconciliationStatus unset), not NOT_QUOTED. See manualQuotationDraft.ts.
+import { buildManualQuotationDraftItems } from './QuotationWizard/manualQuotationDraft';
+// Stage 2A-R: reusable stateless wizard-handler facade (single-source orchestration). It also owns the
+// edit-draft rehydration (incl. parseClassificationEvidence) and the manual/OCR open logic.
+import { createBuyerQuotationWizardController } from './QuotationWizard/buyerQuotationWizardController';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 const ALLOWED_EXTENSIONS_MSG = "PDF, JPG, JPEG, PNG, DOC, DOCX, XLS e XLSX";
 
-// ── Ambiguous-save read-back reconciliation (SaveQuotation create path only) ───────────────
-//
-// A network error / 5xx / timeout on SaveQuotation does not prove the create failed: EF Core's
-// SaveChangesAsync wraps the write in one atomic transaction, and a client-side timeout can fire
-// after the server has already committed. This is a FRONTEND-ONLY, BEST-EFFORT heuristic to
-// detect that case — it is not a substitute for true idempotency (no CreationIdempotencyKey
-// exists on Quotation yet; see the separate recommendation to mirror RequestLineItem's existing
-// CreationIdempotencyKey pattern). It can only reduce false "save failed" reports; it cannot
-// eliminate the ambiguity with certainty.
-const AMBIGUOUS_SAVE_CLOCK_SKEW_TOLERANCE_MS = 60_000;
-
-/**
- * Best-effort match for a quotation created by an ambiguous SaveQuotation attempt.
- *
- * IMPORTANT: a request may legitimately hold MULTIPLE quotations from the same supplier (the
- * one-quotation-per-supplier restriction was removed from the backend — see SaveQuotation).
- * This function must never assume "same supplier" implies "the one I'm looking for" — supplier
- * match narrows the candidate set, it does not by itself confirm identity.
- *
- * Matching rules (in order):
- *  1. Must belong to the request being edited (implicit — `quotations` is that request's list).
- *  2. Must NOT be in the pre-attempt snapshot (i.e. must be new since the attempt started).
- *  3. supplierId must match exactly.
- *  4. createdAtUtc must be at/after (attemptStartedAtUtc - clock-skew tolerance).
- *  5. If the draft has a proformaAttachmentId, it must match EXACTLY — this is the strongest
- *     signal available (a stable per-upload GUID) and, when present, is treated as decisive: no
- *     fallback to the weaker heuristic below, to avoid matching an unrelated same-supplier
- *     quotation from a different document.
- *  6. When proformaAttachmentId is absent (manual/no-attachment drafts), fall back to a WEAKER
- *     heuristic: supplier + snapshot-exclusion + recency (1-4 above) narrow the candidates, then
- *     totalAmount/documentNumber are used only as corroboration — never as the sole identity
- *     criterion. If exactly one candidate remains with no corroboration, it is accepted only
- *     because it is the sole survivor of ALL the filters above (new, this supplier, this time
- *     window) — not because "one supplier = one quotation" is assumed anywhere. If multiple
- *     uncorroborated candidates remain (now a realistic case, since a supplier may have several
- *     concurrent quotations), the match is deliberately refused rather than guessed — the caller
- *     falls back to showing the original error and letting the buyer retry/check manually.
- */
-function findAmbiguousSaveMatch(
-    quotations: SavedQuotationDto[],
-    snapshot: AmbiguousSavePreAttemptSnapshot,
-    draft: OcrDraft
-): SavedQuotationDto | null {
-    const attemptStartMs = new Date(snapshot.attemptStartedAtUtc).getTime() - AMBIGUOUS_SAVE_CLOCK_SKEW_TOLERANCE_MS;
-
-    const candidates = quotations.filter(q =>
-        !snapshot.existingQuotationIds.has(q.id) &&
-        q.supplierId === draft.supplierId &&
-        new Date(q.createdAtUtc as any).getTime() >= attemptStartMs
-    );
-
-    if (candidates.length === 0) return null;
-
-    if (draft.proformaAttachmentId) {
-        return candidates.find(q => q.proformaAttachmentId === draft.proformaAttachmentId) || null;
-    }
-
-    const corroborated = candidates.find(q =>
-        (typeof q.totalAmount === 'number' && Math.abs(q.totalAmount - (draft.totalAmount || 0)) < 0.01) ||
-        (!!draft.documentNumber && !!q.documentNumber && q.documentNumber.trim() === draft.documentNumber.trim())
-    );
-    if (corroborated) return corroborated;
-
-    return candidates.length === 1 ? candidates[0] : null;
-}
-
-/**
- * Re-fetches the request and looks for a quotation matching the ambiguous attempt. Never throws:
- * a failure to confirm is reported the same as "no match found" — callers must not assume
- * success without a positive match.
- */
-async function tryReconcileAmbiguousSave(
-    requestId: string,
-    draft: OcrDraft,
-    snapshot: AmbiguousSavePreAttemptSnapshot
-): Promise<SavedQuotationDto | null> {
-    try {
-        const freshRequest = await api.requests.get(requestId);
-        return findAmbiguousSaveMatch(freshRequest.quotations || [], snapshot, draft);
-    } catch {
-        return null;
-    }
-}
 
 // Step 9: Highlight animation
 const highlightStyles = `
@@ -270,65 +175,6 @@ const RequestGroupSkeleton: React.FC = () => {
 };
 
 
-/** Single source of truth for the quotation save/preview wire payload — used by BOTH the save call
- * and the authoritative reconcile-preview so the two never diverge for the same draft. */
-function buildQuotationPayload(draft: OcrDraft, conflict: ClassificationConflictState = EMPTY_CONFLICT) {
-    // The classification and the reasoning behind it travel together — the backend re-derives
-    // whether this was an override and refuses an unconfirmed one.
-    const classification = buildClassificationPayload(
-        draft.documentType, draft.documentClassification, conflict);
-
-    return {
-        source: 'OCR',
-        supplierId: draft.supplierId,
-        supplierNameSnapshot: draft.supplierNameSnapshot,
-        documentNumber: draft.documentNumber,
-        documentDate: draft.documentDate ? new Date(draft.documentDate).toISOString() : undefined,
-        // Post-Payment Completion (Release 2): the wizard has always collected "Tipo de Documento
-        // da Cotação" but the value was dropped before reaching the API. It is now persisted, and
-        // the winning quotation's value becomes the PO group's Final Invoice obligation.
-        // Mapped to the canonical domain value ('FINAL' → 'FINAL_INVOICE').
-        documentType: normalizeDocumentType(draft.documentType),
-        documentTypeSource: classification.source,
-        documentTypeOcrSuggestion: classification.suggestion,
-        documentTypeOcrConfidence: classification.confidence,
-        documentTypeEvidenceJson: classification.evidenceJson,
-        documentTypeTitleFound: classification.titleFound,
-        documentTypeConflictingEvidenceJson: classification.conflictingEvidenceJson,
-        documentTypeSuggestionSource: classification.suggestionSource,
-        classificationConflictAcknowledged: classification.acknowledged,
-        classificationJustification: classification.justification,
-        currency: draft.currency || 'AOA',
-        discountAmount: draft.discountAmount || 0,
-        totalAmount: draft.totalAmount || 0,
-        proformaAttachmentId: draft.proformaAttachmentId,
-        items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED', 'IGNORED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({
-            mappedRequestLineItemId: i.mappedRequestLineItemId,
-            lineNumber: idx + 1,
-            description: i.description || '',
-            quantity: i.quantity || 0,
-            unitPrice: i.unitPrice || 0,
-            discountAmount: i.discountAmount || 0,
-            ivaRateId: i.ivaRateId || null || 1,
-            unitId: i.unitId || null,
-            lineTotal: i.totalPrice || 0,
-            itemCatalogId: i.itemCatalogId || null,
-            reconciliationStatus: i.reconciliationStatus,
-            reconciliationJustification: i.reconciliationJustification || null,
-            originalReconciliationJustification: i.reconciliationJustification || null,
-            // ── Financial Reconciliation: OCR-original baseline + line adjustment reason ──
-            lineOrigin: i.lineOrigin || (i.ocrOriginalLineTotal != null ? 'OCR' : 'MANUAL'),
-            ocrOriginalQuantity: i.ocrOriginalQuantity ?? null,
-            ocrOriginalUnitPrice: i.ocrOriginalUnitPrice ?? null,
-            ocrOriginalDiscountAmount: i.ocrOriginalDiscountAmount ?? null,
-            ocrOriginalIvaRatePercent: i.ocrOriginalIvaRatePercent ?? null,
-            ocrOriginalUnitText: i.ocrOriginalUnitText ?? null,
-            ocrOriginalUnitId: i.ocrOriginalUnitId ?? null,
-            ocrOriginalLineTotal: i.ocrOriginalLineTotal ?? null,
-            lineAdjustmentJustification: i.lineAdjustmentJustification || null
-        }))
-    };
-}
 
 export function BuyerItemsList() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -547,199 +393,23 @@ export function BuyerItemsList() {
     // then skipped for the rest of this submission (the normal save still proceeds unblocked).
     const preAttemptSnapshotRef = useRef<AmbiguousSavePreAttemptSnapshot | 'unavailable' | null>(null);
 
-    const handleWizardSaveQuotation = async (
-        draft: OcrDraft,
-        overridePayload?: { financialIntegrityOverride: boolean; overrideJustification: string }
-    ): Promise<
-        | { success: true }
-        | ({ success: false } & FinancialIntegrityCheckFailedDto)
-        | { success: false; residualUnexplained: true; reconciliation: any; detail: string }
-        | { success: false; error: string }
-    > => {
-        if (!wizardActiveRequest) return { success: false, error: 'No active request' };
-        try {
-            const payload = buildQuotationPayload(draft, quotationWizardState.classificationConflict);
-
-            setIsSaving(true);
-            const requestId = wizardActiveRequest.requestId;
-            const isEditing = quotationWizardState.isEditing;
-            const quotationId = quotationWizardState.editingQuotationId;
-
-            // OCR header total drives the reconciliation gate on BOTH create and update now.
-            const ocrTotalHeader = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
-                ? draft.ocrTotalAmount
-                : undefined;
-
-            if (isEditing && quotationId) {
-                const updateResult = await api.requests.updateQuotation(requestId, quotationId, {
-                    ...payload,
-                    ocrTotal: ocrTotalHeader,
-                    financialIntegrityOverride: overridePayload?.financialIntegrityOverride ?? false,
-                    overrideJustification: overridePayload?.overrideJustification
-                });
-                if (updateResult && 'residualUnexplained' in updateResult && updateResult.residualUnexplained) {
-                    return { success: false, residualUnexplained: true, reconciliation: updateResult.reconciliation, detail: updateResult.detail } as any;
-                }
-            } else {
-                // Baseline capture for ambiguous-save read-back reconciliation — a FRESH server
-                // read, taken once per logical submission, immediately before the first create
-                // attempt. Never re-fetched on a retry (override retry, controlled retry after an
-                // ambiguous failure): reusing the ORIGINAL baseline is what makes a quotation
-                // created by an earlier attempt in this sequence still detectable as "new". If the
-                // read itself fails, the normal save is NOT blocked — reconciliation is simply
-                // unavailable for this submission (see the 'unavailable' branch below).
-                if (preAttemptSnapshotRef.current === null) {
-                    try {
-                        const freshRequest = await api.requests.get(requestId);
-                        preAttemptSnapshotRef.current = {
-                            existingQuotationIds: new Set((freshRequest.quotations || []).map(q => q.id)),
-                            attemptStartedAtUtc: new Date().toISOString()
-                        };
-                    } catch (baselineError) {
-                        console.warn('[AmbiguousSave] Could not capture a fresh quotation baseline before save; ambiguous-save reconciliation will be skipped for this submission if the create call fails ambiguously.', baselineError);
-                        preAttemptSnapshotRef.current = 'unavailable';
-                    }
-                }
-                const preAttemptSnapshot = preAttemptSnapshotRef.current !== 'unavailable' ? preAttemptSnapshotRef.current : null;
-
-                // Only the creation endpoint enforces the Financial Integrity
-                // Gate (RequestsController.SaveQuotation), so ocrTotal is sent
-                // here only — never on updateQuotation. Guard against
-                // undefined/null/NaN/zero/non-numeric values: JSON.stringify
-                // drops an `undefined` property, so an invalid OCR total is
-                // simply omitted from the request body instead of sent as 0.
-                const ocrTotal = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
-                    ? draft.ocrTotalAmount
-                    : undefined;
-                // Override fields are only ever sent on the creation endpoint (SaveQuotation),
-                // never merged into `payload` itself — UpdateQuotation must never receive them.
-                let createResult: any;
-                try {
-                    createResult = await api.requests.saveQuotation(requestId, {
-                        ...payload,
-                        ocrTotal,
-                        financialIntegrityOverride: overridePayload?.financialIntegrityOverride ?? false,
-                        overrideJustification: overridePayload?.overrideJustification
-                    });
-                } catch (createError: any) {
-                    // Ambiguous-save resilience (create path only, frontend-only heuristic — see
-                    // findAmbiguousSaveMatch above). Only attempted for specific failure shapes
-                    // that could plausibly mean "the write succeeded but the response didn't
-                    // arrive": a network error, an HTTP 5xx, or the specific duplicate-supplier
-                    // 409 (NOT the Financial Integrity 409, which is a normal non-throwing return
-                    // above and never reaches this catch; NOT ordinary 400 validation; NOT 401/403;
-                    // NOT the unrelated "Ação Bloqueada" status-lock 409).
-                    const isNetworkError = createError?.status === 0 || createError?.status === undefined;
-                    const is5xx = typeof createError?.status === 'number' && createError.status >= 500 && createError.status < 600;
-                    const isDuplicateSupplierConflict = createError?.status === 409 &&
-                        createError?.details?.title === 'Regra de Negócio Violada';
-
-                    if ((isNetworkError || is5xx || isDuplicateSupplierConflict) && preAttemptSnapshot) {
-                        const matched = await tryReconcileAmbiguousSave(requestId, draft, preAttemptSnapshot);
-                        if (matched) {
-                            preAttemptSnapshotRef.current = null;
-                            await loadData();
-                            quotationWizardState.closeWizard();
-                            setWizardActiveRequest(null);
-                            setTemporaryWizardAttachmentIds([]);
-                            setFeedback({
-                                type: 'info',
-                                message: 'Cotação salva após interrupção da resposta: a resposta inicial foi interrompida, mas confirmámos que a cotação foi salva corretamente no servidor.'
-                            });
-                            return { success: true };
-                        }
-                    }
-
-                    // No confirmed match (read-back found nothing, read-back itself failed, or the
-                    // error wasn't ambiguous-eligible) — never assume success without a positive
-                    // match. Preserve the original error for the normal failure path below.
-                    throw createError;
-                }
-
-                // Financial Integrity Gate (create-only): the backend responds with HTTP 409 +
-                // a normal (non-throwing) payload shape when the quotation total diverges from
-                // the OCR-extracted total beyond tolerance and no override was supplied. Surface
-                // the structured variance data (not a collapsed string) so the wizard can render
-                // the override panel and retry with FinancialIntegrityOverride + OverrideJustification.
-                if (createResult && 'integrityCheckFailed' in createResult && createResult.integrityCheckFailed) {
-                    return {
-                        success: false,
-                        integrityCheckFailed: true,
-                        ocrOriginalTotal: createResult.ocrOriginalTotal,
-                        quotationTotal: createResult.quotationTotal,
-                        varianceAmount: createResult.varianceAmount,
-                        variancePercent: createResult.variancePercent,
-                        toleranceApplied: createResult.toleranceApplied,
-                        detail: createResult.detail
-                    };
-                }
-                // New signed-residual gate: unexplained document difference after explained line adjustments.
-                if (createResult && 'residualUnexplained' in createResult && createResult.residualUnexplained) {
-                    return { success: false, residualUnexplained: true, reconciliation: createResult.reconciliation, detail: createResult.detail } as any;
-                }
-            }
-
-            // "Não cotado nesta cotação" is deliberately document-scoped: it is
-            // saved inside the quotation payload above and never calls
-            // proposeNotQuoted / touches QuotationLifecycleStatus. Closing an
-            // item without quotation is a separate, explicit Buyer action
-            // ("Encerrar sem cotação" on the items table → closeNotQuoted).
-            preAttemptSnapshotRef.current = null;
-            await loadData();
-            quotationWizardState.closeWizard();
-            setWizardActiveRequest(null);
-            setTemporaryWizardAttachmentIds([]);
-            setFeedback({ type: 'success', message: isEditing ? 'Cotação atualizada com sucesso!' : 'Cotação registrada com sucesso!' });
-
-            return { success: true };
-        } catch (error: any) {
-            console.error('Error saving quotation from wizard:', error);
-            // `error` here is an ApiError (thrown by lib/api.ts's handleApiError), which exposes the
-            // structured backend message via `.message` directly (already resolved from
-            // errJson.detail || errJson.title || errJson.message) — NOT `.response.data.message`,
-            // an Axios shape this codebase's fetch-based client doesn't use. That mismatch always
-            // evaluated to undefined, discarding real backend details (e.g. the duplicate-supplier
-            // "Já existe uma cotação para este fornecedor..." message) in favor of the generic
-            // fallback below, which is now reserved for genuinely unstructured failures only.
-            return { success: false, error: error?.message || 'Erro ao salvar cotação.' };
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // The actual upload + OCR sequence, unchanged from before — extracted so it can be deferred
-    // until after an explicit "proceed anyway" confirmation on the file-duplicate warning below.
-    const _startWizardUpload = async (file: File) => {
-        if (!wizardActiveRequest) return;
-        setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
-        try {
-            // Quotation documents carry their own type — PROFORMA belongs to the payment workflow.
-            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'QUOTATION');
-            const attachmentId = uploadData[0].id;
-            setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
-            const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);
-            const initialDraft = await mapOcrResultToDraft(result, attachmentId);
-
-            quotationWizardState.setDraft(initialDraft);
-        } catch (error: any) {
-            console.error('Wizard OCR Error:', error);
-            setFeedback({ type: 'error', message: 'Erro ao processar documento via OCR.' });
-        } finally {
-            setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: false }));
-        }
-    };
-
-    // Authoritative reconciliation preview (read-only). Same payload builder as save (parity); sends
-    // the OCR header total and the editing quotation id (so the backend uses the immutable persisted
-    // baseline on edit). Throws on failure — the modal handles the error inline and offers a retry.
-    const handleReconcilePreview = async (draft: OcrDraft): Promise<any> => {
-        if (!wizardActiveRequest) throw new Error('No active request');
-        const ocrTotal = typeof draft.ocrTotalAmount === 'number' && Number.isFinite(draft.ocrTotalAmount) && draft.ocrTotalAmount > 0
-            ? draft.ocrTotalAmount : undefined;
-        const payload = { ...buildQuotationPayload(draft), ocrTotal };
-        return await api.requests.reconcilePreview(
-            wizardActiveRequest.requestId, payload, quotationWizardState.editingQuotationId || undefined);
-    };
+    // Stage 2A-R: the wizard orchestration handlers now live in ONE reusable, STATELESS facade. State
+    // ownership stays HERE — the controller receives our state/setters/refs/callbacks and is recreated
+    // each render, so its returned handlers behave exactly like the former inline ones. `onSaved` wraps
+    // loadData() (defined below) so ordering is unaffected. See buyerQuotationWizardController.ts.
+    const wizardController = createBuyerQuotationWizardController({
+        quotationWizardState,
+        wizardActiveRequest,
+        setWizardActiveRequest,
+        setIsSaving,
+        setIsProcessingOcr,
+        temporaryWizardAttachmentIds,
+        setTemporaryWizardAttachmentIds,
+        preAttemptSnapshotRef,
+        mapOcrResultToDraft,
+        onSaved: () => loadData(),
+        onFeedback: setFeedback,
+    });
 
     // Exact-file duplicate check (reconnects the existing, already-proven fileDuplicateWarning
     // flow — same computeFileHash()/checkDuplicate() sequence already used by RequestCreate.tsx)
@@ -759,7 +429,7 @@ export function BuyerItemsList() {
                     createdAtUtc: dupCheck.createdAtUtc,
                     uploadCallback: () => {
                         setFileDuplicateWarning(null);
-                        _startWizardUpload(file);
+                        wizardController.startWizardUpload(file);
                     }
                 });
                 return;
@@ -769,147 +439,9 @@ export function BuyerItemsList() {
             // with the upload as normal rather than blocking the buyer on an unrelated failure.
             console.error('Duplicate check failed', err);
         }
-        _startWizardUpload(file);
+        wizardController.startWizardUpload(file);
     };
 
-    const handleReplaceDocumentForWizard = async (attachmentId: string) => {
-        if (!wizardActiveRequest || !quotationWizardState.editingQuotationId) return false;
-        try {
-            await api.requests.updateQuotation(wizardActiveRequest.requestId, quotationWizardState.editingQuotationId, {
-                proformaAttachmentId: attachmentId
-            } as any);
-            return true;
-        } catch (err) {
-            return false;
-        }
-    };
-
-    // Upsert a requested line item (created or returned by the from-proforma workaround) into the
-    // active wizard request WITHOUT a full refetch, so the wizard draft and other steps are preserved.
-    const handleWizardLineItemUpserted = (item: any) => {
-        if (!item || !item.id) return;
-        setWizardActiveRequest((prev: any) => {
-            if (!prev) return prev;
-            const existing = prev.lineItems || [];
-            const mapped = {
-                id: item.id,
-                lineNumber: item.lineNumber,
-                description: item.description,
-                quantity: item.quantity,
-                unit: undefined,
-                unitId: item.unitId ?? null,
-                unitPrice: item.unitPrice ?? 0,
-                totalAmount: (item.unitPrice ?? 0) * (item.quantity ?? 1),
-                notes: null,
-                itemCatalogId: item.itemCatalogId ?? null,
-                lineItemStatusCode: undefined,
-                quotationLifecycleStatus: item.quotationLifecycleStatus,
-            };
-            const idx = existing.findIndex((li: any) => li.id === item.id);
-            const lineItems = idx >= 0
-                ? existing.map((li: any, i: number) => (i === idx ? { ...li, ...mapped } : li))
-                : [...existing, mapped];
-            return { ...prev, lineItems };
-        });
-    };
-
-    const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto) => {
-        // A genuinely new logical submission starts here — any ambiguous-save snapshot from a
-        // previous wizard session must not leak into this one.
-        preAttemptSnapshotRef.current = null;
-        setWizardActiveRequest(group);
-        if (editQuotation) {
-            const draft: OcrDraft = {
-                supplierId: editQuotation.supplierId || null,
-                supplierNameSnapshot: editQuotation.supplierNameSnapshot || '',
-                documentNumber: editQuotation.documentNumber || '',
-                documentDate: editQuotation.documentDate ? editQuotation.documentDate.split('T')[0] : '',
-                // Post-Payment Completion (Release 2): rehydrate the persisted classification so
-                // reopening a quotation does not silently drop it. Stored canonically
-                // ('FINAL_INVOICE'); the wizard's own select uses 'FINAL', so map it back.
-                documentType: editQuotation.documentType === 'FINAL_INVOICE'
-                    ? 'FINAL'
-                    : (editQuotation.documentType as OcrDraft['documentType']) || undefined,
-                // The reading that was recorded when this quotation was saved. Without it a reopened
-                // quotation would show no suggestion — and a classification that once contradicted
-                // the document could then be changed again with nothing to compare it against.
-                documentClassification: editQuotation.documentTypeOcrSuggestion
-                    ? {
-                        suggestedType: editQuotation.documentTypeOcrSuggestion,
-                        confidence: editQuotation.documentTypeOcrConfidence ?? null,
-                        indicatesFiscalDocument: isFiscalDocument(editQuotation.documentTypeOcrSuggestion),
-                        ...parseClassificationEvidence(editQuotation.documentTypeEvidenceJson)
-                    }
-                    : null,
-                currency: editQuotation.currency || 'AOA',
-                totalAmount: editQuotation.totalAmount || 0,
-                discountAmount: editQuotation.discountAmount || 0,
-                proformaAttachmentId: editQuotation.proformaAttachmentId || undefined,
-                items: editQuotation.items.map(item => ({
-                    mappedRequestLineItemId: item.mappedRequestLineItemId,
-                    lineNumber: item.lineNumber,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unitId: item.unitId || null,
-                    unitPrice: item.unitPrice,
-                    ivaRateId: item.ivaRateId || null,
-                    totalPrice: item.lineTotal,
-                    discountAmount: item.discountAmount || 0,
-                    itemCatalogId: item.itemCatalogId || null,
-                    // Use the persisted reconciliation status — the old binary
-                    // MAPPED/NOT_QUOTED reconstruction silently degraded
-                    // SUBSTITUTE/EXTRA_ITEM and flipped persisted NOT_QUOTED
-                    // items (which DO carry a mappedRequestLineItemId) to MAPPED.
-                    reconciliationStatus: (item.reconciliationStatus || (item.mappedRequestLineItemId ? 'MAPPED' : 'NOT_QUOTED')) as OcrDraftItem['reconciliationStatus'],
-                    reconciliationJustification: item.reconciliationJustification || null,
-                    // Persisted baseline for the untouched-legacy validation exemption (mirrors
-                    // the backend's legacy-vs-edited skip in RequestsController).
-                    originalReconciliationJustification: item.reconciliationJustification || null,
-                    // ── Financial Reconciliation: rehydrate the IMMUTABLE OCR baseline from persisted
-                    // columns so line-level change detection works on edit. A line with a baseline is
-                    // OCR-origin; without one it is legacy/manual (backend treats it accordingly). ──
-                    lineOrigin: (item.ocrOriginalLineTotal != null || item.ocrOriginalQuantity != null) ? 'OCR' : 'MANUAL',
-                    ocrOriginalQuantity: item.ocrOriginalQuantity ?? null,
-                    ocrOriginalUnitPrice: item.ocrOriginalUnitPrice ?? null,
-                    ocrOriginalDiscountAmount: item.ocrOriginalDiscountAmount ?? null,
-                    ocrOriginalIvaRatePercent: item.ocrOriginalIvaRatePercent ?? null,
-                    ocrOriginalUnitText: item.ocrOriginalUnitText ?? null,
-                    ocrOriginalUnitId: item.ocrOriginalUnitId ?? null,
-                    ocrOriginalLineTotal: item.ocrOriginalLineTotal ?? null,
-                    lineAdjustmentJustification: item.lineAdjustmentJustification || null
-                }))
-            };
-            quotationWizardState.openWizard('EDIT', draft, editQuotation.id, mode);
-        } else {
-            const initialDraft: OcrDraft = {
-                supplierId: null,
-                supplierNameSnapshot: '',
-                documentNumber: '',
-                documentDate: '',
-                currency: 'AOA',
-                totalAmount: 0,
-                discountAmount: 0,
-                // Only items still open for quotation (not already in a batch,
-                // approved, or formally handled as not-quoted) get a placeholder.
-                items: group.items
-                    .filter(isLineItemEligibleForQuotation)
-                    .map((i: any) => ({
-                        mappedRequestLineItemId: i.id,
-                        lineNumber: 0,
-                        description: i.description,
-                        quantity: i.quantity,
-                        unitId: i.unitId || null || null,
-                        unitPrice: 0,
-                        ivaRateId: null,
-                        totalPrice: 0,
-                        discountAmount: 0,
-                        itemCatalogId: null,
-                        reconciliationStatus: 'NOT_QUOTED'
-                    }))
-            };
-            quotationWizardState.openWizard('NEW', mode === 'UPLOAD' ? null : initialDraft, undefined, mode);
-        }
-    };
 
 
     ;
@@ -2450,7 +1982,7 @@ export function BuyerItemsList() {
                                                                                         return (
                                                                                             <>
                                                                                                 <button
-                                                                                        onClick={() => handleOpenWizard(group, q.sourceType === 'OCR' ? 'UPLOAD' : 'MANUAL', q)}
+                                                                                        onClick={() => wizardController.handleOpenWizard(group, q.sourceType === 'OCR' ? 'UPLOAD' : 'MANUAL', q)}
                                                                                         style={{
                                                                                             display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
                                                                                             backgroundColor: 'var(--color-bg-surface)', border: '1px solid #bae6fd', borderRadius: '4px',
@@ -2664,7 +2196,7 @@ export function BuyerItemsList() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <button
-                onClick={() => handleOpenWizard(group, 'UPLOAD')}
+                onClick={() => wizardController.handleOpenWizard(group, 'UPLOAD')}
                 style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
                     backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: '8px',
@@ -2681,7 +2213,7 @@ export function BuyerItemsList() {
             </button>
 
             <button
-                onClick={() => handleOpenWizard(group, 'MANUAL')}
+                onClick={() => wizardController.handleOpenWizard(group, 'MANUAL')}
                 style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '32px 24px',
                     backgroundColor: '#fdf4ff', border: '2px solid #f5d0fe', borderRadius: '8px',
@@ -3134,28 +2666,16 @@ export function BuyerItemsList() {
             <QuotationWizardModal
                 request={wizardActiveRequest}
                 wizardState={quotationWizardState}
-                onSaveQuotation={handleWizardSaveQuotation}
-                onReconcilePreview={handleReconcilePreview}
+                onSaveQuotation={wizardController.handleWizardSaveQuotation}
+                onReconcilePreview={wizardController.handleReconcilePreview}
                 isProcessingOcr={!!(wizardActiveRequest && isProcessingOcr[wizardActiveRequest.requestId])}
                 onUploadFile={handleUploadFileForWizard}
-                onCancelWizard={async () => {
-                    quotationWizardState.closeWizard();
-                    setWizardActiveRequest(null);
-                    preAttemptSnapshotRef.current = null;
-                    if (temporaryWizardAttachmentIds.length > 0) {
-                        try {
-                            await Promise.all(temporaryWizardAttachmentIds.map(id => api.attachments.delete(id)));
-                        } catch (err) {
-                            console.error('Error cleaning up temporary wizard attachments:', err);
-                        }
-                        setTemporaryWizardAttachmentIds([]);
-                    }
-                }}
-                onReplaceDocument={handleReplaceDocumentForWizard}
+                onCancelWizard={wizardController.onCancelWizard}
+                onReplaceDocument={wizardController.handleReplaceDocumentForWizard}
                 ivaRates={ivaRates}
                 units={units}
                 currencies={currencies}
-                onRequestLineItemUpserted={handleWizardLineItemUpserted}
+                onRequestLineItemUpserted={wizardController.handleWizardLineItemUpserted}
             />
 
         </PageContainer>

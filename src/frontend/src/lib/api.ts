@@ -6,6 +6,8 @@ import {
     VoidPaymentSourceDocumentDto,
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
+import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
+import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
 import { logger, FrontendComponentKey } from './logger';
@@ -609,6 +611,14 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao cancelar o pedido.');
             return response.json();
+        },
+        addNote: async (id: string, text: string): Promise<void> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/note`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao adicionar observação.');
         },
         duplicate: async (id: string): Promise<{ id: string; title: string; statusCode: string; createdAtUtc: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/duplicate`, {
@@ -2485,6 +2495,47 @@ export const api = {
         toggleActive: async (id: number): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/ap-notification-configs/${id}/toggle-active`, { method: 'PUT' });
             if (!response.ok) return handleApiError(response, 'Falha ao alternar estado da configuração.');
+            return response.json();
+        },
+    },
+
+    // Buyer operational queue (Phase 2). Request-level; consumes the canonical BuyerQueueController.
+    buyerQueue: {
+        getQueue: async (opts: BuyerQueueParams = {}): Promise<BuyerQueuePage> => {
+            const params = new URLSearchParams();
+            params.append('page', String(opts.page ?? 1));
+            params.append('pageSize', String(opts.pageSize ?? 20));
+            if (opts.query) params.append('query', opts.query);
+            if (opts.company) params.append('company', String(opts.company));
+            if (opts.plant) params.append('plant', String(opts.plant));
+            if (opts.department) params.append('department', String(opts.department));
+            if (opts.ownership) params.append('ownership', opts.ownership);
+            if (opts.operationalState) params.append('operationalState', opts.operationalState);
+            if (opts.priority) params.append('priority', opts.priority);
+            if (opts.deadline) params.append('deadline', opts.deadline);
+            if (opts.includeCompleted) params.append('includeCompleted', 'true');
+            if (opts.sort) params.append('sort', opts.sort);
+            if (opts.needLevel) params.append('needLevel', opts.needLevel);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/buyer/queue?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a fila de cotações.');
+            return response.json();
+        },
+        getSummary: async (opts: Pick<BuyerQueueParams, 'query' | 'company' | 'plant' | 'department' | 'ownership' | 'includeCompleted' | 'needLevel'> = {}): Promise<BuyerQueueSummary> => {
+            const params = new URLSearchParams();
+            if (opts.query) params.append('query', opts.query);
+            if (opts.company) params.append('company', String(opts.company));
+            if (opts.plant) params.append('plant', String(opts.plant));
+            if (opts.department) params.append('department', String(opts.department));
+            if (opts.ownership) params.append('ownership', opts.ownership);
+            if (opts.includeCompleted) params.append('includeCompleted', 'true');
+            if (opts.needLevel) params.append('needLevel', opts.needLevel);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/buyer/queue/summary?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar o resumo da fila.');
+            return response.json();
+        },
+        getWorkspace: async (requestId: string): Promise<BuyerWorkspace> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/buyer/requests/${requestId}/workspace`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar o workspace do pedido.');
             return response.json();
         },
     }

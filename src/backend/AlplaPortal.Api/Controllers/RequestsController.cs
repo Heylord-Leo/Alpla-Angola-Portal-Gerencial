@@ -1921,7 +1921,7 @@ public class RequestsController : BaseController
                     PurchaseOrderNumber = lot.PurchaseOrderNumber,
                     StatusCode = lot.StatusCode,
                     StatusLabel = lot.StatusLabel,
-                    Steps = lot.Steps.Select(s => new TimelineStepDto { Label = s.Label, State = s.State }).ToList()
+                    Steps = lot.Steps.Select(s => new TimelineStepDto { Label = s.Label, State = s.State, CompletedAt = s.At }).ToList()
                 }).ToList();
             }
         }
@@ -2998,20 +2998,66 @@ public class RequestsController : BaseController
         // Let's allow administrators to reassign, or buyers to self-assign if it's unassigned.
         var isSystemAdmin = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
         var isLocalManager = CurrentUserRoles.Contains(RoleConstants.LocalManager);
+        var isBuyer = CurrentUserRoles.Contains(RoleConstants.Buyer);
         var canReassign = isSystemAdmin || isLocalManager;
-        
+        var assigningOther = targetUserId.HasValue && targetUserId.Value != actorId;
+
+        // Security (Phase 1 fix): the actor's authority comes from their ROLE, never from an
+        // unauthenticated self-claim. Only a Buyer may take ownership of an unassigned request;
+        // only a coordinator (SysAdmin/LocalManager) may assign/reassign to another buyer.
+        // Previously ANY authenticated user could self-claim an unassigned request.
+        if (assigningOther)
+        {
+            if (!canReassign)
+            {
+                return StatusCode(403, new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Apenas coordenadores podem atribuir o pedido a outro comprador.",
+                    Status = 403
+                });
+            }
+        }
+        else if (!isBuyer)
+        {
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Apenas o papel de Comprador pode assumir a responsabilidade por um pedido.",
+                Status = 403
+            });
+        }
+
         if (request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Este pedido já está atribuído a outro comprador. O reencaminhamento só é permitido por coordenadores.", 
-                Status = 409 
+            return Conflict(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Este pedido já está atribuído a outro comprador. O reencaminhamento só é permitido por coordenadores.",
+                Status = 409
             });
         }
 
         var newBuyerId = targetUserId ?? actorId;
-        
+
+        // Security (Phase 1 fix): a reassignment target must actually be a Buyer — a coordinator
+        // cannot make an arbitrary user the buyer-of-record for a quotation.
+        if (assigningOther)
+        {
+            var targetIsBuyer = await _context.UserRoleAssignments
+                .Include(ura => ura.Role)
+                .AnyAsync(ura => ura.UserId == newBuyerId && ura.Role.RoleName == RoleConstants.Buyer);
+            if (!targetIsBuyer)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Atribuição Inválida",
+                    Detail = "O utilizador indicado não é um comprador e não pode ser responsável por cotações.",
+                    Status = 409
+                });
+            }
+        }
+
         if (request.BuyerId == newBuyerId)
         {
              return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
@@ -5068,55 +5114,36 @@ public class RequestsController : BaseController
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
 
         var currentStatusCode = request.Status!.Code;
-        if (request.IsCancelled || currentStatusCode == "CANCELLED" || currentStatusCode == "COMPLETED" || currentStatusCode == "REJECTED")
+
+        // Security (Phase 1 fix): who may attempt a cancel, and whether the actor is constrained to
+        // the Buyer rules, is derived from the actor's ROLE + ownership — never from the client's
+        // 'mode' query param (which was previously the only gate). 'mode' is now ignored for
+        // authorization.
+        var isSystemAdmin = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
+        var isLocalManager = CurrentUserRoles.Contains(RoleConstants.LocalManager);
+        var isBuyerRole = CurrentUserRoles.Contains(RoleConstants.Buyer);
+        var isOwner = request.RequesterId == actorId;
+        if (!isSystemAdmin && !isLocalManager && !isBuyerRole && !isOwner)
         {
-            return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O pedido já está num estado final e não pode ser cancelado.", Status = 409 });
+            return StatusCode(403, new ProblemDetails { Title = "Ação Bloqueada", Detail = "Você não tem permissão para cancelar este pedido.", Status = 403 });
         }
+        // A pure Buyer (not a coordinator, not the requester) is constrained to the Buyer rules.
+        var actorIsBuyerMode = isBuyerRole && !isSystemAdmin && !isLocalManager && !isOwner;
 
-        bool isBuyer = mode?.ToUpper() == "BUYER";
-        bool isQuotation = request.RequestType!.Code == "QUOTATION";
-        bool isPayment = request.RequestType!.Code == "PAYMENT";
+        var hasProformaOrQuotation = request.Attachments.Any(a =>
+            (a.AttachmentTypeCode == "PROFORMA" || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted);
+        var anyLineItemProcessed = request.LineItems.Any(li => !li.IsDeleted &&
+            (li.SupplierId.HasValue || !string.IsNullOrEmpty(li.SupplierName) ||
+             (li.LineItemStatus != null && li.LineItemStatus.Code != "WAITING_QUOTATION" && li.LineItemStatus.Code != "PENDING")));
+        var hasPaymentOperationalAttachment = request.Attachments.Any(a =>
+            (a.AttachmentTypeCode == "PO" || a.AttachmentTypeCode == "PAYMENT_SCHEDULE" || a.AttachmentTypeCode == "PAYMENT_PROOF") && !a.IsDeleted);
 
-        if (isQuotation)
+        var cancelEval = RequestCancellationEvaluator.Evaluate(new RequestCancellationEvaluator.Input(
+            request.RequestType!.Code, currentStatusCode, request.IsCancelled, actorIsBuyerMode,
+            request.SupplierId.HasValue, hasProformaOrQuotation, anyLineItemProcessed, hasPaymentOperationalAttachment));
+        if (!cancelEval.CanCancel)
         {
-            if (currentStatusCode != "DRAFT" && currentStatusCode != "WAITING_QUOTATION")
-            {
-                return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "Apenas pedidos em rascunho ou aguardando cotação podem ser cancelados.", Status = 409 });
-            }
-
-            if (currentStatusCode == "WAITING_QUOTATION")
-            {
-                bool hasBuyerProcessing = request.SupplierId.HasValue ||
-                    request.Attachments.Any(a => (a.AttachmentTypeCode == "PROFORMA" || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted) ||
-                    request.LineItems.Any(li => !li.IsDeleted && (li.SupplierId.HasValue || !string.IsNullOrEmpty(li.SupplierName) || (li.LineItemStatus != null && li.LineItemStatus.Code != "WAITING_QUOTATION" && li.LineItemStatus.Code != "PENDING")));
-
-                if (hasBuyerProcessing)
-                {
-                    return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O pedido já foi processado pelo comprador (fornecedor definido, proforma anexada ou itens atualizados) e não pode ser cancelado.", Status = 409 });
-                }
-            }
-            if (isBuyer && currentStatusCode != "WAITING_QUOTATION")
-            {
-                return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O comprador só pode cancelar pedidos neste momento que estejam aguardando cotação.", Status = 409 });
-            }
-        }
-        else if (isPayment)
-        {
-            if (isBuyer)
-            {
-                 return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O comprador não tem permissão para cancelar pedidos de pagamento.", Status = 409 });
-            }
-
-            var allowedStatuses = new[] { "DRAFT", "WAITING_AREA_APPROVAL", "AREA_ADJUSTMENT", "WAITING_FINAL_APPROVAL", "FINAL_ADJUSTMENT", "WAITING_COST_CENTER", "APPROVED" };
-            if (!allowedStatuses.Contains(currentStatusCode))
-            {
-                return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O pedido de pagamento já avançou para processamento operacional e não pode ser cancelado.", Status = 409 });
-            }
-
-            if (request.Attachments.Any(a => (a.AttachmentTypeCode == "PO" || a.AttachmentTypeCode == "PAYMENT_SCHEDULE" || a.AttachmentTypeCode == "PAYMENT_PROOF") && !a.IsDeleted))
-            {
-                return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = "O pedido possui evidências de processamento operacional (documentos anexados) e não pode ser cancelado.", Status = 409 });
-            }
+            return Conflict(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = cancelEval.BlockReason, Status = 409 });
         }
 
         // Apply IsCancelled boolean natively
@@ -5125,6 +5152,40 @@ public class RequestsController : BaseController
         var historyComment = $"Pedido cancelado por {user.FullName}. Motivo: {dto.Reason}";
 
         return await ApplyStatusChangeAndSyncItemsAsync(request, "CANCELLED", "CANCELLED", historyComment, "Pedido cancelado com sucesso.", actorId);
+    }
+
+    /// <summary>
+    /// Generic request-level note (Phase 2). Persists a RequestStatusHistory annotation with
+    /// ActionTaken = "OBSERVACAO" (NOT the Finance-specific "NOTA_FINANCEIRA"). Authorization is
+    /// scope-based: the actor must be able to see the request via GetScopedRequestsQuery — a note
+    /// cannot be created on a request outside the actor's plant/department scope. No status change.
+    /// </summary>
+    [HttpPost("{id:guid}/note")]
+    public async Task<IActionResult> AddNote(Guid id, [FromBody] RequestNoteDto dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Text))
+            return BadRequest(new ProblemDetails { Title = "Observação vazia", Detail = "O texto da observação é obrigatório.", Status = 400 });
+
+        var scoped = await GetScopedRequestsQuery();
+        var target = await scoped
+            .Select(r => new { r.Id, r.StatusId })
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (target == null)
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = id,
+            ActorUserId = CurrentUserId,
+            ActionTaken = RequestConstants.StatusHistoryActions.Note,
+            PreviousStatusId = target.StatusId,
+            NewStatusId = target.StatusId,
+            Comment = dto.Text.Trim(),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Observação adicionada." });
     }
 
     [HttpPost("validate-line")]
@@ -10333,9 +10394,13 @@ public class RequestsController : BaseController
     public async Task<IActionResult> CloseNotQuoted(Guid requestId, Guid lineItemId, [FromBody] CloseNotQuotedDto dto)
     {
         var actorId = CurrentUserId;
+        // Established Buyer-mutation policy (mirrors reuse-authorization + the buyer capability checks):
+        // System Administrator has an in-scope administrative override; a Buyer acts under ownership.
+        var isSysAdmin = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
+        var isBuyer = CurrentUserRoles.Contains(RoleConstants.Buyer);
 
-        // 1. Role check: Buyer only
-        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+        // 1. Role check: Buyer, or System Administrator (admin override)
+        if (!isBuyer && !isSysAdmin)
             return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem encerrar itens sem cotação.", Status = 403 });
 
         // 2. Load request with line items
@@ -10357,8 +10422,9 @@ public class RequestsController : BaseController
         if (request.RequestType?.Code != RequestConstants.Types.Quotation)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Esta ação é permitida apenas para pedidos de Cotação.", Status = 400 });
 
-        // 5. Buyer assignment check
-        if (request.BuyerId != null && request.BuyerId != actorId)
+        // 5. Buyer ownership check — the assigned Buyer (or an unassigned request) only. A System
+        // Administrator override bypasses ownership (already constrained to in-scope requests by step 3).
+        if (!isSysAdmin && request.BuyerId != null && request.BuyerId != actorId)
             return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Você não é o comprador atribuído a este pedido.", Status = 403 });
 
         // 6. Find the line item

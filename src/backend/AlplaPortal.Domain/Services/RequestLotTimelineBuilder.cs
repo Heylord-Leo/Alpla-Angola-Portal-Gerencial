@@ -8,7 +8,11 @@ namespace AlplaPortal.Domain.Services;
 /// Not an audit-event history: stages derive from the unit's current lifecycle state,
 /// no actors/comments/dates are attached and future stages are never fabricated.
 /// </summary>
-public sealed record LotTimelineStep(string Label, string State); // completed | current | pending | blocked
+// At = the lot-specific timestamp for THIS step, attached ONLY when a direct persisted event records the
+// transition (Phase 3E.2) — never inferred, never a generic Request.CreatedAt/UpdatedAt fallback. Null
+// means "no recorded timestamp": a reached step then renders "Data não registada", a future step
+// "Ainda não iniciado" — the presentation layer disambiguates via State.
+public sealed record LotTimelineStep(string Label, string State, DateTimeOffset? At = null); // completed | current | pending | blocked
 
 public sealed record LotTimeline(
     string UnitType,            // "BATCH" | "GROUP"
@@ -68,7 +72,7 @@ public static class RequestLotTimelineBuilder
                 unit.PurchaseOrderNumber,
                 unit.StatusCode,
                 unit.StatusLabel,
-                MapStages(unit)));
+                MapStages(request, unit)));
         }
         return lots;
     }
@@ -98,15 +102,19 @@ public static class RequestLotTimelineBuilder
     /// advance-payment track legitimately shows payment activity while the P.O. stage is
     /// still open (that is the domain truth of adiantamento-antes-da-P.O.).
     /// </summary>
-    public static IReadOnlyList<LotTimelineStep> MapStages(WorkflowUnit unit)
+    public static IReadOnlyList<LotTimelineStep> MapStages(Request request, WorkflowUnit unit)
     {
         if (unit.UnitType == "BATCH")
         {
             var approvals = unit.ApprovalState == "ADJUSTMENT" ? Blocked : Current;
+            // The batch-creation event IS the quotation→approval transition for this lot: quotation
+            // coverage was consolidated and the lot entered approval at ApprovalBatch.CreatedAtUtc.
+            var batch = request.ApprovalBatches.FirstOrDefault(b => b.Id == unit.UnitId);
+            var enteredApproval = AsOffset(batch?.CreatedAtUtc);
             return new[]
             {
-                new LotTimelineStep(StageQuotation, Done),
-                new LotTimelineStep(StageApprovals, approvals),
+                new LotTimelineStep(StageQuotation, Done, enteredApproval),
+                new LotTimelineStep(StageApprovals, approvals, enteredApproval),
                 new LotTimelineStep(StagePo, Pending),
                 new LotTimelineStep(StagePayment, Pending),
                 new LotTimelineStep(StageReceiving, Pending),
@@ -157,15 +165,25 @@ public static class RequestLotTimelineBuilder
 
         var completedState = unit.StatusCode == RequestConstants.PoGroupStatuses.Completed ? Done : Pending;
 
+        // Lot-specific timestamps ONLY from directly-recorded group events (no inference). Stages without
+        // a recorded event carry null and render as "Data não registada" (reached) / future label.
+        var group = request.PoGroups.FirstOrDefault(g => g.Id == unit.UnitId);
+        var receivingAt = receivingState == Done ? AsOffset(group?.OperationalReceiptCompletedAtUtc) : null;
+        var fiscalAt = fiscalState == Done ? AsOffset(group?.FiscalReceiptUploadedAtUtc) : null;
+        var completedAt = completedState == Done ? AsOffset(group?.CompletedAtUtc) : null;
+
         return new[]
         {
             new LotTimelineStep(StageQuotation, Done),
             new LotTimelineStep(StageApprovals, approvalsState),
             new LotTimelineStep(StagePo, poState),
             new LotTimelineStep(StagePayment, paymentState),
-            new LotTimelineStep(StageReceiving, receivingState),
-            new LotTimelineStep(StageFiscal, fiscalState),
-            new LotTimelineStep(StageCompleted, completedState),
+            new LotTimelineStep(StageReceiving, receivingState, receivingAt),
+            new LotTimelineStep(StageFiscal, fiscalState, fiscalAt),
+            new LotTimelineStep(StageCompleted, completedState, completedAt),
         };
     }
+
+    private static DateTimeOffset? AsOffset(DateTime? utc) =>
+        utc.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc)) : null;
 }

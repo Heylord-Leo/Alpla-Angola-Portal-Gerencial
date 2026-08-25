@@ -44,8 +44,10 @@ public class GroupBuilderServiceTests
             Supplier = supplier,
             Currency = "USD"
         };
-        var quotationItem1 = new QuotationItem { Id = Guid.NewGuid(), QuotationId = quotation.Id, Quotation = quotation };
-        var quotationItem2 = new QuotationItem { Id = Guid.NewGuid(), QuotationId = quotation.Id, Quotation = quotation };
+        // The PO-group total is derived from the awarded QuotationItem.LineTotal (GroupBuilderService),
+        // NOT from RequestLineItem.TotalAmount — the fixture must set the quotation-item line totals.
+        var quotationItem1 = new QuotationItem { Id = Guid.NewGuid(), QuotationId = quotation.Id, Quotation = quotation, LineTotal = 100 };
+        var quotationItem2 = new QuotationItem { Id = Guid.NewGuid(), QuotationId = quotation.Id, Quotation = quotation, LineTotal = 200 };
 
         var lineItem1 = new RequestLineItem { Id = Guid.NewGuid(), RequestId = request.Id, SelectedQuotationItemId = quotationItem1.Id, TotalAmount = 100 };
         var lineItem2 = new RequestLineItem { Id = Guid.NewGuid(), RequestId = request.Id, SelectedQuotationItemId = quotationItem2.Id, TotalAmount = 200 };

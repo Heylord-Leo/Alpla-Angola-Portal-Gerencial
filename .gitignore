@@ -87,3 +87,6 @@ scripts/db/po-evidence-out/
 
 # Pasta local de uploads/anexos gerados em desenvolvimento
 src/backend/AlplaPortal.Api/data/attachments/
+
+# Local agent configuration/memory — never part of the product diff
+.claude/
