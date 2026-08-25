@@ -1,5 +1,6 @@
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Interfaces;
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Approvals;
@@ -19,15 +20,42 @@ public class LookupsController : ControllerBase
     private readonly DepartmentManagerService _departmentManagers;
     private readonly ISupplierCreationService _supplierCreation;
     private readonly IInternalCompanyGuard _internalCompanies;
+    private readonly ISupplierCapabilityEvaluator _supplierCapabilities;
 
-    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers, ISupplierCreationService supplierCreation, IInternalCompanyGuard internalCompanies)
+    public LookupsController(ApplicationDbContext context, ILogger<LookupsController> logger, DepartmentManagerService departmentManagers, ISupplierCreationService supplierCreation, IInternalCompanyGuard internalCompanies, ISupplierCapabilityEvaluator supplierCapabilities)
     {
         _context = context;
         _logger = logger;
         _departmentManagers = departmentManagers;
         _supplierCreation = supplierCreation;
         _internalCompanies = internalCompanies;
+        _supplierCapabilities = supplierCapabilities;
     }
+
+    // ─── Phase 3D: Supplier Sheet authorization helpers ───
+    private Guid CurrentUserGuid =>
+        Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var g) ? g : Guid.Empty;
+
+    private IReadOnlyCollection<string> CurrentUserRoleNames =>
+        User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+
+    /// <summary>Resolve the caller's Supplier Sheet capabilities for one supplier (server-side authority).</summary>
+    private Task<SupplierSheetCapabilities> ResolveSupplierCapabilitiesAsync(int supplierId) =>
+        _supplierCapabilities.EvaluateAsync(supplierId, CurrentUserGuid, CurrentUserRoleNames);
+
+    /// <summary>
+    /// Read gate for the SECONDARY supplier reads (completeness / history) that are shared with the
+    /// approval center: allowed for anyone who may view the ficha (request-scoped for Buyer) OR for an
+    /// Area/Final Approver, who legitimately reads these while approving but has no ficha-edit surface.
+    /// </summary>
+    private async Task<bool> CanReadSupplierSecondaryAsync(int supplierId)
+    {
+        var roles = CurrentUserRoleNames;
+        if (roles.Contains(RoleConstants.AreaApprover) || roles.Contains(RoleConstants.FinalApprover)) return true;
+        var caps = await ResolveSupplierCapabilitiesAsync(supplierId);
+        return caps.CanView;
+    }
+
 
     [HttpGet("units")]
     public async Task<IActionResult> GetUnits([FromQuery] bool includeInactive = false)
@@ -1229,6 +1257,11 @@ public class LookupsController : ControllerBase
 
         if (supplier == null) return NotFound();
 
+        // Phase 3D: server-side view authority (request-scoped for Buyer). The resolved capability set is
+        // returned so the page/drawer can hide or read-only-present controls the caller cannot use.
+        var capabilities = await ResolveSupplierCapabilitiesAsync(id);
+        if (!capabilities.CanView) return Forbid();
+
         var result = new
         {
             supplier.Id,
@@ -1283,7 +1316,10 @@ public class LookupsController : ControllerBase
 
             // Document completeness
             requiredDocTypes = new[] { "CONTRIBUINTE", "CERTIDAO_COMERCIAL", "DIARIO_REPUBLICA", "ALVARA" },
-            uploadedDocTypes = supplier.Documents.Select(d => d.DocumentType).Distinct().ToList()
+            uploadedDocTypes = supplier.Documents.Select(d => d.DocumentType).Distinct().ToList(),
+
+            // Phase 3D — resolved capabilities (presentation only; every write re-checks server-side).
+            capabilities
         };
 
         return Ok(result);
@@ -1301,8 +1337,27 @@ public class LookupsController : ControllerBase
 
         var actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-        // NIF uniqueness guard on update
-        if (!string.IsNullOrWhiteSpace(dto.TaxId))
+        // Phase 3D: field-level authorization. A caller may only write the field groups their capability
+        // set permits (Buyer = operational-only). No edit capability at all → 403.
+        var caps = await ResolveSupplierCapabilitiesAsync(id);
+        if (!caps.CanEditAnyField) return Forbid();
+
+        // Explicit rejection (Layer B.1): if the payload ATTEMPTS to change a field group the caller may
+        // not edit, reject the whole request with 403 rather than silently applying a partial update. A
+        // field is an "attempt" only when a non-null value is supplied that differs from what is stored —
+        // so a form that merely echoes existing values, or omits a group, is not a violation. This
+        // guarantees no forbidden value is ever persisted and never returns a misleading success.
+        var violation = AlplaPortal.Api.Authorization.SupplierFichaFieldGuard.FindForbiddenMutation(entity, dto, caps);
+        if (violation != null)
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Title = "Alteração não permitida",
+                Detail = $"O seu perfil não pode alterar: {violation}.",
+                Status = StatusCodes.Status403Forbidden
+            });
+
+        // NIF uniqueness guard — only when the caller may actually change the NIF.
+        if (caps.CanEditTaxLegal && !string.IsNullOrWhiteSpace(dto.TaxId))
         {
             var existingByNif = await _context.Suppliers
                 .FirstOrDefaultAsync(s => s.TaxId == dto.TaxId.Trim() && s.Id != id);
@@ -1317,30 +1372,42 @@ public class LookupsController : ControllerBase
             }
         }
 
-        // Update fields
-        entity.Name = dto.Name?.Trim() ?? entity.Name;
-        entity.TaxId = dto.TaxId?.Trim();
-        entity.PrimaveraCode = dto.PrimaveraCode?.Trim().ToUpper();
-        entity.Address = dto.Address?.Trim();
+        // Identity master data (name + Primavera code).
+        if (caps.CanEditGeneralIdentity)
+        {
+            entity.Name = dto.Name?.Trim() ?? entity.Name;
+            entity.PrimaveraCode = dto.PrimaveraCode?.Trim().ToUpper();
+        }
+        if (caps.CanEditTaxLegal) entity.TaxId = dto.TaxId?.Trim();
+        if (caps.CanEditAddress) entity.Address = dto.Address?.Trim();
 
-        entity.ContactName1 = dto.ContactName1?.Trim();
-        entity.ContactRole1 = dto.ContactRole1?.Trim();
-        entity.ContactPhone1 = dto.ContactPhone1?.Trim();
-        entity.ContactEmail1 = dto.ContactEmail1?.Trim();
+        if (caps.CanEditContacts)
+        {
+            entity.ContactName1 = dto.ContactName1?.Trim();
+            entity.ContactRole1 = dto.ContactRole1?.Trim();
+            entity.ContactPhone1 = dto.ContactPhone1?.Trim();
+            entity.ContactEmail1 = dto.ContactEmail1?.Trim();
 
-        entity.ContactName2 = dto.ContactName2?.Trim();
-        entity.ContactRole2 = dto.ContactRole2?.Trim();
-        entity.ContactPhone2 = dto.ContactPhone2?.Trim();
-        entity.ContactEmail2 = dto.ContactEmail2?.Trim();
+            entity.ContactName2 = dto.ContactName2?.Trim();
+            entity.ContactRole2 = dto.ContactRole2?.Trim();
+            entity.ContactPhone2 = dto.ContactPhone2?.Trim();
+            entity.ContactEmail2 = dto.ContactEmail2?.Trim();
+        }
 
-        entity.BankAccountNumber = dto.BankAccountNumber?.Trim();
-        entity.BankIban = dto.BankIban?.Trim();
-        entity.BankSwift = dto.BankSwift?.Trim();
+        if (caps.CanEditBanking)
+        {
+            entity.BankAccountNumber = dto.BankAccountNumber?.Trim();
+            entity.BankIban = dto.BankIban?.Trim();
+            entity.BankSwift = dto.BankSwift?.Trim();
+        }
 
-        entity.PaymentTerms = dto.PaymentTerms?.Trim();
-        entity.PaymentMethod = dto.PaymentMethod?.Trim();
+        if (caps.CanEditCommercialTerms)
+        {
+            entity.PaymentTerms = dto.PaymentTerms?.Trim();
+            entity.PaymentMethod = dto.PaymentMethod?.Trim();
+        }
 
-        entity.Notes = dto.Notes?.Trim();
+        if (caps.CanEditObservations) entity.Notes = dto.Notes?.Trim();
 
         entity.UpdatedAtUtc = DateTime.UtcNow;
         entity.UpdatedByUserId = actorId;
@@ -1362,13 +1429,19 @@ public class LookupsController : ControllerBase
     /// Completeness validation enforced for transitions to PENDING_APPROVAL.
     /// </summary>
     [HttpPut("suppliers/{id}/status")]
-    [Authorize(Roles = "System Administrator,Buyer,Finance,Contracts,Local Manager")]
+    // Phase 3D security fix: governance lifecycle (suspend/block/reactivate) is NOT a Buyer or Local
+    // Manager capability. Both are removed from the role gate; the capability assertion below is
+    // defense-in-depth against any future gate widening.
+    [Authorize(Roles = "System Administrator,Finance,Contracts")]
     public async Task<IActionResult> UpdateSupplierStatus(int id, [FromBody] UpdateSupplierStatusDto dto)
     {
         var entity = await _context.Suppliers
             .Include(s => s.Documents.Where(d => !d.IsDeleted))
             .FirstOrDefaultAsync(s => s.Id == id);
         if (entity == null) return NotFound();
+
+        var statusCaps = await ResolveSupplierCapabilitiesAsync(id);
+        if (!statusCaps.CanChangeStatus) return Forbid();
 
         if (!Domain.Constants.SupplierConstants.AllowedTransitions.TryGetValue(entity.RegistrationStatus, out var validTargets) ||
             !validTargets.Contains(dto.NewStatus))
@@ -1428,6 +1501,9 @@ public class LookupsController : ControllerBase
     {
         var supplier = await _context.Suppliers.FindAsync(id);
         if (supplier == null) return NotFound();
+
+        var docCaps = await ResolveSupplierCapabilitiesAsync(id);
+        if (!docCaps.CanUploadDocuments) return Forbid();
 
         var validTypes = new[] { "CONTRIBUINTE", "CERTIDAO_COMERCIAL", "DIARIO_REPUBLICA", "ALVARA" };
         if (!validTypes.Contains(documentType))
@@ -1526,6 +1602,11 @@ public class LookupsController : ControllerBase
             .FirstOrDefaultAsync(d => d.Id == documentId && !d.IsDeleted);
         if (doc == null) return NotFound();
 
+        // Phase 3D: request-scoped view authority (documents are keyed only by id; resolve the owning
+        // supplier to apply the same access rule as the ficha).
+        var dlCaps = await ResolveSupplierCapabilitiesAsync(doc.SupplierId);
+        if (!dlCaps.CanView) return Forbid();
+
         var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
         var config = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
         var storageRes = AlplaPortal.Infrastructure.Helpers.PathResolutionHelper.ResolvePath(
@@ -1546,6 +1627,11 @@ public class LookupsController : ControllerBase
     {
         var doc = await _context.SupplierDocuments.FirstOrDefaultAsync(d => d.Id == documentId && !d.IsDeleted);
         if (doc == null) return NotFound();
+
+        // Phase 3D: deleting a compliance document is a distinct, more sensitive capability than upload
+        // (a Buyer may add documents but never delete them).
+        var delCaps = await ResolveSupplierCapabilitiesAsync(doc.SupplierId);
+        if (!delCaps.CanDeleteDocuments) return Forbid();
 
         var actorId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
         doc.IsDeleted = true;
@@ -1630,6 +1716,9 @@ public class LookupsController : ControllerBase
             .Include(s => s.Documents.Where(d => !d.IsDeleted))
             .FirstOrDefaultAsync(s => s.Id == id);
         if (entity == null) return NotFound();
+
+        var submitCaps = await ResolveSupplierCapabilitiesAsync(id);
+        if (!submitCaps.CanSubmitForApproval) return Forbid();
 
         // Only DRAFT, PENDING_COMPLETION, or ADJUSTMENT_REQUESTED can submit
         var submittable = new[] { "DRAFT", "PENDING_COMPLETION", "ADJUSTMENT_REQUESTED" };
@@ -1909,6 +1998,8 @@ public class LookupsController : ControllerBase
             .FirstOrDefaultAsync(s => s.Id == id);
         if (entity == null) return NotFound();
 
+        if (!await CanReadSupplierSecondaryAsync(id)) return Forbid();
+
         var report = BuildCompletenessReport(entity);
         return Ok(report);
     }
@@ -1922,6 +2013,8 @@ public class LookupsController : ControllerBase
     {
         var supplier = await _context.Suppliers.FindAsync(id);
         if (supplier == null) return NotFound();
+
+        if (!await CanReadSupplierSecondaryAsync(id)) return Forbid();
 
         var history = await _context.SupplierStatusHistories
             .Where(h => h.SupplierId == id)

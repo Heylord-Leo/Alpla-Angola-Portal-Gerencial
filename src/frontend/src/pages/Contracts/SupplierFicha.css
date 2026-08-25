@@ -492,6 +492,28 @@
   gap: 16px;
 }
 
+/* Phase 3D — drawer host layout (structural only; the page host is unaffected). In a narrow right-side
+   drawer the two-column grid collapses to a single readable column and the header is compacted. Field and
+   business behavior are identical to page mode. */
+.ficha-detail-container--drawer .ficha-detail-grid {
+  grid-template-columns: 1fr;
+}
+.ficha-detail-container--drawer {
+  padding: 20px 22px 28px;
+}
+/* The drawer chrome owns the close affordance (the top-right ✕), so the content's own back button is
+   redundant inside the drawer. */
+.ficha-detail-container--drawer .ficha-back-btn {
+  display: none;
+}
+/* Compact the shared header so the drawer does not show an oversized title. */
+.ficha-detail-container--drawer .ficha-detail-header {
+  padding-right: 40px; /* clear the drawer ✕ */
+}
+.ficha-detail-container--drawer .ficha-detail-title-row h1 {
+  font-size: 1.15rem;
+}
+
 .ficha-section {
   background: var(--color-bg-surface, #fff);
   border: 1px solid var(--color-border, #e5e7eb);

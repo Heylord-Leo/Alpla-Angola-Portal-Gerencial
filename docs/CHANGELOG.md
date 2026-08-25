@@ -4,7 +4,86 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.231.0
+v2.232.0
+
+## [v2.232.0] - 2026-08-25
+
+### Buyer Purchasing Cockpit — Request Queue, Workspace & Supplier Workflow
+
+A new, request-level Buyer experience replaces item-by-item work with a canonical queue and a dedicated
+per-request Workspace, brings quotation OCR/manual entry, approval and rework in-Workspace, migrates the
+"Desconsiderar item" decision, and adds a request-scoped Supplier Sheet drawer with a hardened backend
+authorization model. **No DB migration; no schema change; no historical data modified.** The classic
+`/buyer/items/classic` workbench is **intentionally retained** for the actions not yet migrated.
+
+#### Added — Buyer Queue
+
+- **Request-level Buyer queue** (`/buyer/items`, `GET /api/v1/buyer/queue`) driven by the canonical
+  `BuyerQueueProjectionBuilder`: operational state + server-authorized next-action model, priority/deadline
+  signals, ownership tabs (Todos / Meus Pedidos / Não Atribuídos), company/plant/department filters (with
+  Company→Plant dependency), search, sort, request-level pagination, and a KPI summary whose cards share
+  the exact list scope.
+- **Default Critical need-level filter** — a real server-side filter (not a sort): a fresh queue opens on
+  `CRITICO`; "Todos" is an explicit URL state; clearing filters restores Critical.
+- **"Meu pedido" ownership indicator** — a discreet badge on rows whose `buyerId` matches the current user
+  (canonical identity, never inferred from name); the buyer name remains visible.
+- **Request notes** (`OBSERVACAO` history, `POST /requests/{id}/note`) with a queue note indicator; distinct
+  from Finance's `NOTA_FINANCEIRA`.
+
+#### Added — Buyer Workspace
+
+- **Dedicated Buyer Workspace** (`/buyer/requests/{id}`, `GET /api/v1/buyer/requests/{id}/workspace`):
+  read model over the same projection — items & coverage, quotations & documents, lots & approvals,
+  involved-supplier intelligence, and a per-lot timeline.
+- **Direct quotation entry in-Workspace** — explicit **Importar Cotação** (OCR/document) and **Inserir
+  Manualmente** actions open the existing "REGISTRAR NOVA COTAÇÃO" Wizard directly (no classic navigation),
+  including PARTIAL_COVERAGE completion.
+- **Shared stateless quotation Wizard controller** (`buyerQuotationWizardController`) consumed by both the
+  classic screen and the Workspace — single source of the save/OCR/reconcile orchestration; Wizard internals
+  unchanged. Includes manual-entry correctness fixes (eligible items seeded as priceable rows from the
+  normalized line items).
+- **In-Workspace approval and rework hosts** reusing the existing approval-batch and batch-rework modals.
+- **"Desconsiderar item" / close-not-quoted in the Workspace** — the same shared modal and endpoint as
+  classic, exposed via a per-item kebab; eligibility (`item.canCloseNotQuoted`) is **server-computed** and
+  actor-aware (assigned Buyer, or a System Administrator override — matching the established mutation policy).
+  Closing an item sets `CLOSED_NOT_QUOTED`, excludes it from future quotation, and re-projects the parent
+  request from canonical workflow truth (a request is completed only in the true terminal case, never
+  because pending items were closed while downstream siblings remain).
+
+#### Added — Supplier Sheet in the Workspace
+
+- **Involved-supplier intelligence carousel** with a **"Ver Perfil Completo"** action opening a right-side
+  **Supplier Sheet drawer** — the SAME extracted `SupplierFichaDetailContent` the Contracts route hosts
+  (single form; no duplication), with a dirty-state / supplier-switch guard.
+- **Request-scoped Supplier capability model** (`ISupplierCapabilityEvaluator`, `RequestAccessScope`,
+  `SupplierFichaFieldGuard`): the backend is authoritative and returns resolved capabilities the UI consumes
+  (no role mapping in React). A Buyer may perform **operational edits only** (contacts, address, observations,
+  document upload) on suppliers involved in a request they are authorized to access, and may delete documents
+  and submit for approval **only** where policy permits; identity/tax/banking/commercial and governance
+  status changes are denied. Field-level writes are enforced server-side (403 on a forbidden change).
+
+#### Fixed / Hardened
+
+- **Supplier authorization hardening** — the governance status endpoint no longer accepts Buyer or Local
+  Manager; document upload and delete are distinct capabilities; supplier access is request-scoped via the
+  canonical `RequestAccessScope`.
+- **Per-lot vertical timeline** with **honest timestamp semantics** — real recorded timestamps where a
+  direct event exists (approval entry, receiving/fiscal/completion), **"Data não registada"** for a reached
+  stage with no recorded event, and **"Ainda não iniciado"** for future stages (never a fabricated date);
+  multi-lot timestamps are sibling-isolated.
+- **GroupBuilder stale-test correction** — a test fixture now sets `QuotationItem.LineTotal` to match the
+  production group-total contract (production logic unchanged).
+
+#### Tooling / Repository
+
+- **Buyer DEV regression harness** (`BuyerDevFixtureController`, synthetic `ZZTEST-BUY` scenarios) and a
+  Vitest suite for the Buyer pure-logic helpers.
+- **`.claude/` excluded** from the repository.
+
+#### Not in this release (intentional)
+
+- The **classic workbench is retained**, not retired. Editing an existing quotation, deleting a quotation,
+  removing a proforma/document, reuse authorization, and cancelling a batch remain classic-only.
 
 ## [v2.231.0] - 2026-08-23
 

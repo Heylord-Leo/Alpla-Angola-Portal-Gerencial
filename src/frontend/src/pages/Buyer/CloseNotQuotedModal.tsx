@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2, X, Ban } from 'lucide-react';
 import { api } from '../../lib/api';
+import { MIN_CLOSE_JUSTIFICATION_LENGTH as MIN_JUSTIFICATION_LENGTH, isCloseNotQuotedValid } from './closeNotQuoted';
 
 // Final Buyer decision — the item will no longer be considered in this
 // quotation process. Distinct from the Wizard's per-document "Não cotado
@@ -14,8 +15,6 @@ export const CLOSE_NOT_QUOTED_REASONS = [
     'Solicitante confirmou cancelamento',
     'Outro'
 ];
-
-const MIN_JUSTIFICATION_LENGTH = 20;
 
 interface CloseNotQuotedModalProps {
     isOpen: boolean;
@@ -49,7 +48,7 @@ export function CloseNotQuotedModal({
 
     if (!isOpen) return null;
 
-    const isValid = !!reason && justification.trim().length >= MIN_JUSTIFICATION_LENGTH;
+    const isValid = isCloseNotQuotedValid(reason, justification);
 
     const copy = isLastPendingItem
         ? {

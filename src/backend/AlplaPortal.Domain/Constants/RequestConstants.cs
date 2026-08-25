@@ -583,4 +583,14 @@ public static class RequestConstants
             return Math.Max(AbsoluteFloor, relativeTolerance);
         }
     }
+
+    /// <summary>
+    /// RequestStatusHistory.ActionTaken codes that are semantically NOTES/annotations (no status
+    /// transition). Distinct from Finance's legacy "NOTA_FINANCEIRA" — the generic request note uses
+    /// "OBSERVACAO" and is surfaced by the Buyer queue projection.
+    /// </summary>
+    public static class StatusHistoryActions
+    {
+        public const string Note = "OBSERVACAO";
+    }
 }

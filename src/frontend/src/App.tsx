@@ -31,6 +31,12 @@ const ApprovalCenter = React.lazy(() =>
 const BuyerItemsList = React.lazy(() =>
     import('./pages/Buyer/BuyerItemsList').then(m => ({ default: m.BuyerItemsList }))
 );
+const BuyerQueueList = React.lazy(() =>
+    import('./pages/Buyer/BuyerQueueList').then(m => ({ default: m.BuyerQueueList }))
+);
+const BuyerRequestWorkspace = React.lazy(() =>
+    import('./pages/Buyer/BuyerRequestWorkspace').then(m => ({ default: m.BuyerRequestWorkspace }))
+);
 const PurchasingLandingPage = React.lazy(() =>
     import('./pages/Purchasing/PurchasingLandingPage')
 );
@@ -296,7 +302,14 @@ function AppContent() {
                     <Route path="operation/:id" element={<Suspense fallback={<LoadingSkeleton />}><ReceivingOperation /></Suspense>} />
                 </Route>
                 
-                <Route path="/buyer/items" element={<AdminRoute allowedRoles={[ROLES.BUYER]}><Suspense fallback={<LoadingSkeleton />}><BuyerItemsList /></Suspense></AdminRoute>} />
+                <Route path="/buyer/items" element={<AdminRoute allowedRoles={[ROLES.BUYER]}><Suspense fallback={<LoadingSkeleton />}><BuyerQueueList /></Suspense></AdminRoute>} />
+                {/* Phase 2 migration bridge: the legacy Buyer workbench (add-quotation Wizard, batch
+                    composition, close-not-quoted, batch rework) stays reachable here until the
+                    dedicated /buyer/requests/{id} Workspace ships. The new queue deep-links to it. */}
+                <Route path="/buyer/items/classic" element={<AdminRoute allowedRoles={[ROLES.BUYER]}><Suspense fallback={<LoadingSkeleton />}><BuyerItemsList /></Suspense></AdminRoute>} />
+                {/* Phase 3B fix: LocalManager is authorized by the backend (request scope) but was blocked
+                    by the frontend guard. SystemAdministrator already passes via isAdmin; listing it is explicit. */}
+                <Route path="/buyer/requests/:requestId" element={<AdminRoute allowedRoles={[ROLES.BUYER, ROLES.LOCAL_MANAGER, ROLES.SYSTEM_ADMINISTRATOR]}><Suspense fallback={<LoadingSkeleton />}><BuyerRequestWorkspace /></Suspense></AdminRoute>} />
 
                 {/* Finance Workspace */}
                 <Route path="/finance" element={<AdminRoute allowedRoles={[ROLES.FINANCE]}><Suspense fallback={<LoadingSkeleton />}><FinanceLandingPage /></Suspense></AdminRoute>}>

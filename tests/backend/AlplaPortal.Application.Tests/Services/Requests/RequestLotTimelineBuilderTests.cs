@@ -45,7 +45,76 @@ public class RequestLotTimelineBuilderTests
         var request = MakeRequest("PO_ISSUED");
         request.PoGroups.Add(Group(groupStatus, po: po));
         var unit = RequestWorkflowProjectionBuilder.Build(request, "PO_ISSUED").Units.Single();
-        return RequestLotTimelineBuilder.MapStages(unit);
+        return RequestLotTimelineBuilder.MapStages(request, unit);
+    }
+
+    private static DateTimeOffset? StageAt(System.Collections.Generic.IReadOnlyList<LotTimelineStep> steps, string label) =>
+        steps.Single(s => s.Label == label).At;
+
+    // ── Phase 3E.2: lot-specific timestamps (direct events only; never fabricated) ──
+
+    [Fact]
+    public void BatchUnit_Approvals_CarriesBatchCreatedAt_AsEntryTimestamp()
+    {
+        var created = new DateTime(2026, 8, 24, 14, 32, 0, DateTimeKind.Utc);
+        var request = MakeRequest("WAITING_AREA_APPROVAL");
+        var batch = new ApprovalBatch { Id = Guid.NewGuid(), RequestId = request.Id, BatchNumber = 1, Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, CreatedAtUtc = created };
+        request.ApprovalBatches.Add(batch);
+        var unit = RequestWorkflowProjectionBuilder.Build(request, "WAITING_AREA_APPROVAL").Units.Single(u => u.UnitType == "BATCH");
+
+        var steps = RequestLotTimelineBuilder.MapStages(request, unit);
+        Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StageApprovals));
+        Assert.Equal(created, StageAt(steps, RequestLotTimelineBuilder.StageApprovals)!.Value.UtcDateTime);
+        // Future stages carry no timestamp.
+        Assert.Null(StageAt(steps, RequestLotTimelineBuilder.StagePayment));
+        Assert.Null(StageAt(steps, RequestLotTimelineBuilder.StageReceiving));
+    }
+
+    [Fact]
+    public void CompletedGroup_Receiving_Fiscal_Concluido_CarryTheirDirectEventTimestamps()
+    {
+        var recv = new DateTime(2026, 8, 20, 9, 0, 0, DateTimeKind.Utc);
+        var fiscal = new DateTime(2026, 8, 22, 10, 0, 0, DateTimeKind.Utc);
+        var done = new DateTime(2026, 8, 25, 11, 0, 0, DateTimeKind.Utc);
+        var request = MakeRequest("COMPLETED");
+        var g = Group(RequestConstants.PoGroupStatuses.Completed, po: "PO-1");
+        g.OperationalReceiptCompletedAtUtc = recv;
+        g.FiscalReceiptUploadedAtUtc = fiscal;
+        g.CompletedAtUtc = done;
+        request.PoGroups.Add(g);
+        var unit = RequestWorkflowProjectionBuilder.Build(request, "COMPLETED").Units.Single();
+
+        var steps = RequestLotTimelineBuilder.MapStages(request, unit);
+        Assert.Equal(recv, StageAt(steps, RequestLotTimelineBuilder.StageReceiving)!.Value.UtcDateTime);
+        Assert.Equal(fiscal, StageAt(steps, RequestLotTimelineBuilder.StageFiscal)!.Value.UtcDateTime);
+        Assert.Equal(done, StageAt(steps, RequestLotTimelineBuilder.StageCompleted)!.Value.UtcDateTime);
+    }
+
+    [Fact]
+    public void ReachedStage_WithNoRecordedEvent_CarriesNullTimestamp_NotAFabricatedDate()
+    {
+        // A group waiting for its P.O.: Approvals is completed but no per-lot approval-completion event is
+        // recorded → the timestamp is null (frontend shows "Data não registada"), never Request.CreatedAt.
+        var steps = StagesFor(RequestConstants.PoGroupStatuses.WaitingPo, po: null);
+        Assert.Equal("completed", StageState(steps, RequestLotTimelineBuilder.StageApprovals));
+        Assert.Null(StageAt(steps, RequestLotTimelineBuilder.StageApprovals));
+    }
+
+    [Fact]
+    public void MultiLot_TimestampsAreSiblingIsolated()
+    {
+        var t1 = new DateTime(2026, 8, 10, 8, 0, 0, DateTimeKind.Utc);
+        var t2 = new DateTime(2026, 8, 15, 16, 0, 0, DateTimeKind.Utc);
+        var request = MakeRequest("WAITING_AREA_APPROVAL");
+        request.ApprovalBatches.Add(new ApprovalBatch { Id = Guid.NewGuid(), RequestId = request.Id, BatchNumber = 1, Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, CreatedAtUtc = t1 });
+        request.ApprovalBatches.Add(new ApprovalBatch { Id = Guid.NewGuid(), RequestId = request.Id, BatchNumber = 2, Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, CreatedAtUtc = t2 });
+        var projection = RequestWorkflowProjectionBuilder.Build(request, "WAITING_AREA_APPROVAL");
+
+        var lots = RequestLotTimelineBuilder.BuildLots(request, projection);
+        Assert.Equal(2, lots.Count);
+        var byNumber = lots.ToDictionary(l => l.LotNumber);
+        Assert.Equal(t1, StageAt(byNumber[1].Steps, RequestLotTimelineBuilder.StageApprovals)!.Value.UtcDateTime);
+        Assert.Equal(t2, StageAt(byNumber[2].Steps, RequestLotTimelineBuilder.StageApprovals)!.Value.UtcDateTime);
     }
 
     // ── Historical compatibility (≥1-unit rule) ──
@@ -432,7 +501,7 @@ public class RequestLotTimelineBuilderTests
         request.ApprovalBatches.Add(batch);
         var unit = RequestWorkflowProjectionBuilder.Build(request, "WAITING_AREA_APPROVAL").Units.Single();
 
-        var steps = RequestLotTimelineBuilder.MapStages(unit);
+        var steps = RequestLotTimelineBuilder.MapStages(request, unit);
         Assert.Equal("blocked", StageState(steps, RequestLotTimelineBuilder.StageApprovals));
     }
 

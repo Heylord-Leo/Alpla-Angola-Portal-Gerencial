@@ -135,6 +135,8 @@ builder.Services.AddScoped<IRequestLineItemSubmissionValidator, RequestLineItemS
 // Phase 3 — shared supplier matching + DRAFT creation (general admin + contextual payment-OCR endpoints)
 builder.Services.AddScoped<IInternalCompanyGuard, InternalCompanyGuard>();
 builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
+// Phase 3D — centralized Supplier Sheet authorization (capability + request-scoped Buyer access).
+builder.Services.AddScoped<ISupplierCapabilityEvaluator, SupplierCapabilityEvaluator>();
 
 // Post-Payment Completion Workflow — Release 1 foundation.
 // The options bind to a section that ships with Enabled=false in every environment; when the
