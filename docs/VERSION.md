@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.231.0
+v2.232.0
+
+## [v2.232.0] - 2026-08-25
+
+### Buyer Purchasing Cockpit — Request Queue, Workspace & Supplier Workflow
+
+- Request-level Buyer queue (operational state + server-authorized next actions, ownership tabs,
+  company/plant/department/search/sort filters, request notes, pagination) with a default Critical
+  need-level filter and a "Meu pedido" ownership indicator.
+- Dedicated Buyer Workspace with direct OCR/manual quotation entry via a shared stateless Wizard
+  controller, in-Workspace approval and rework hosts, and the "Desconsiderar item" (CLOSED_NOT_QUOTED)
+  decision with actor-aware eligibility and canonical post-close re-projection.
+- Involved-supplier intelligence carousel + a request-scoped Supplier Sheet drawer reusing the extracted
+  `SupplierFichaDetailContent`, with a dirty-state guard, split document capabilities, and a hardened
+  backend Supplier capability model (System Administrator override + Buyer operational-only, request-scoped).
+- Per-lot vertical timeline with honest timestamp semantics ("Data não registada" vs "Ainda não iniciado",
+  no fabricated dates) and multi-lot isolation; Buyer DEV regression harness; GroupBuilder stale-test fix;
+  `.claude/` repository exclusion.
+- No schema/migration. The classic `/buyer/items/classic` workbench is intentionally retained for the
+  actions not yet migrated (edit/delete quotation, remove proforma, reuse authorization, cancel batch).
 
 ## [v2.231.0] - 2026-08-23
 
