@@ -45,8 +45,14 @@ interface Props {
     onSummaryChange?: (summary: PaymentSourceDocumentsSummaryDto | null) => void;
     /** Opens the existing attachment picker; resolves with the new attachment id, or null. */
     onRequestAttachment?: (purpose: 'NEW' | 'REPLACE', documentId?: string) => Promise<string | null>;
-    /** Renders the items belonging to one document. */
-    renderItems?: (document: PaymentSourceDocumentDto) => React.ReactNode;
+    /**
+     * Renders the items belonging to one document. Receives a <c>reload</c> helper so a renderer
+     * that persists a new item can refresh the collection and see it as a real, linked line.
+     */
+    renderItems?: (
+        document: PaymentSourceDocumentDto,
+        helpers: { reload: () => Promise<void>; readOnly: boolean }
+    ) => React.ReactNode;
     /**
      * Bubbles whether a document is mid-edit, so submission can refuse rather than send an approver
      * a request whose contents were still being typed.
@@ -580,7 +586,7 @@ export function PaymentSourceDocumentCollection({
                             </button>
                         )}
                     >
-                        {renderItems?.(d)}
+                        {renderItems?.(d, { reload, readOnly: effectiveReadOnly })}
                     </PaymentSourceDocumentCard>
                 );
             })}

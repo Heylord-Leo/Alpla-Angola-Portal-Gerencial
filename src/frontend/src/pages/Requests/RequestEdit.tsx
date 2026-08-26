@@ -618,6 +618,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         documentCount={sourceDocumentsSummary?.documents.length ?? 0}
                         plants={plants}
                         currencies={currencies.map(c => ({ code: c.code, name: c.symbol || c.code }))}
+                        units={units}
+                        ivaRates={ivaRates}
                         isOpen={sourceDocsOpen}
                         onToggle={() => setSourceDocsOpen(o => !o)}
                         canCreateSupplier={canCreateSupplier}
