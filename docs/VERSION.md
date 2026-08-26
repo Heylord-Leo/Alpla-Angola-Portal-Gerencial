@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.232.1
+v2.232.2
+
+## [v2.232.2] - 2026-08-26
+
+### Draft Delete — Classification-Override FK Cleanup
+
+Patch fix found during TEST acceptance of v2.232.1: a DRAFT hard-delete could still return HTTP 409
+after a PAYMENT source document and its items had been removed, because the append-only
+`DocumentClassificationOverride` audit row kept a `NoAction` FK to the request
+(`FK_DocumentClassificationOverrides_Requests_RequestId`). The DRAFT hard-delete now removes the
+request-scoped classification-override rows before deleting the request. DRAFT-only; submitted/
+non-DRAFT audit is untouched; no schema/migration, no FK/cascade change; the structured-409 fallback
+for genuinely unknown dependencies is preserved.
 
 ## [v2.232.1] - 2026-08-26
 

@@ -4,7 +4,30 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.1
+v2.232.2
+
+## [v2.232.2] - 2026-08-26
+
+### Draft Delete — Classification-Override FK Cleanup
+
+Focused patch found during TEST acceptance of v2.232.1. No schema/migration; backend-only.
+
+#### Fixed
+
+- Draft deletion could still fail with **HTTP 409** after PAYMENT source documents/items were removed,
+  because `DocumentClassificationOverrides` retained a `NoAction` FK to the request
+  (`FK_DocumentClassificationOverrides_Requests_RequestId`) — the append-only classification audit
+  survives the document's removal and then blocked the hard delete (REQ-20/08/2026-276).
+- DRAFT hard-delete now explicitly removes the request-scoped classification-override audit rows
+  before deleting the Request.
+
+#### Safety
+
+- DRAFT-only cleanup (the method already refuses every non-DRAFT status before reaching it).
+- Submitted / non-DRAFT classification audit remains untouched.
+- No schema/migration; no FK or cascade-behavior change.
+- The structured-409 fallback for genuinely unknown dependencies is preserved (the cleanup is added
+  before the unchanged `try/catch`).
 
 ## [v2.232.1] - 2026-08-26
 
