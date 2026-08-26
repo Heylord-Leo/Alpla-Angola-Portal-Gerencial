@@ -191,6 +191,120 @@ public class RequestLifecycleStabilizationTests
         Assert.IsType<NoContentResult>(await Build(ctx, admin, RoleConstants.SystemAdministrator).DeleteRequest(req2.Id));
     }
 
+    // ── Delete (Phase 4B.3): classification-override audit no longer blocks the DRAFT hard-delete ──
+    // A DocumentClassificationOverride is written when a source document is classified/overridden and
+    // survives the document's removal (append-only audit). Its RequestId→Requests FK is NoAction, so a
+    // DRAFT that ever classified a document could not be deleted (REQ-276) until the cleanup removes it.
+
+    private static void AddOverride(ApplicationDbContext ctx, Guid requestId, Guid actorId, string key) =>
+        ctx.DocumentClassificationOverrides.Add(new DocumentClassificationOverride
+        {
+            Id = Guid.NewGuid(), RequestId = requestId, Context = "PAYMENT_REQUEST",
+            SelectedType = "PROFORMA", Acknowledged = true, ActorUserId = actorId,
+            CreatedAtUtc = DateTime.UtcNow, IdempotencyKey = key
+        });
+
+    [Fact] // A
+    public async Task Delete_Draft_WithSourceDoc_Item_AndOverride_Succeeds()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var req = SeedDraft(ctx, creator, withSourceDocument: true);
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:A:" + req.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        var result = await Build(ctx, creator, RoleConstants.Buyer).DeleteRequest(req.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.False(await ctx.Requests.AnyAsync(r => r.Id == req.Id));
+        Assert.False(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == req.Id));
+    }
+
+    [Fact] // B — REQ-276: document classified then removed; PSD/items gone, override + attachment linger
+    public async Task Delete_Draft_RemovedSourceDoc_LingeringOverride_Succeeds()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var req = SeedDraft(ctx, creator, withSourceDocument: false);
+        ctx.Set<RequestAttachment>().Add(new RequestAttachment
+        {
+            Id = Guid.NewGuid(), RequestId = req.Id, FileName = "removed.pdf", FileExtension = ".pdf",
+            AttachmentTypeCode = RequestAttachment.TYPE_PAYMENT_SOURCE_DOCUMENT, UploadedByUserId = creator, UploadedAtUtc = DateTime.UtcNow
+        });
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:B:" + req.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        var result = await Build(ctx, creator, RoleConstants.Buyer).DeleteRequest(req.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.False(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == req.Id));
+    }
+
+    [Fact] // C
+    public async Task Delete_Draft_MultipleOverrides_AllRemovedBeforeRequest()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var req = SeedDraft(ctx, creator, withSourceDocument: true);
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:C1:" + req.Id.ToString("N"));
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:C2:" + req.Id.ToString("N"));
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:C3:" + req.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        Assert.IsType<NoContentResult>(await Build(ctx, creator, RoleConstants.Buyer).DeleteRequest(req.Id));
+        Assert.Equal(0, await ctx.DocumentClassificationOverrides.CountAsync(o => o.RequestId == req.Id));
+    }
+
+    [Fact] // D — non-DRAFT delete semantics unchanged; audit untouched (cleanup never reached)
+    public async Task Delete_NonDraft_WithOverride_Returns409_OverrideUntouched()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var req = SeedDraft(ctx, creator, withSourceDocument: false);
+        req.StatusId = 2; // WAITING_FINAL_APPROVAL
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:D:" + req.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        var result = await Build(ctx, creator, RoleConstants.Buyer).DeleteRequest(req.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.True(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == req.Id));
+        Assert.True(await ctx.Requests.AnyAsync(r => r.Id == req.Id));
+    }
+
+    [Fact] // E — authorization unchanged: non-creator/non-admin blocked, nothing written
+    public async Task Delete_ByNonCreatorNonAdmin_WithOverride_Returns403_NoWrite()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        var req = SeedDraft(ctx, creator, withSourceDocument: false);
+        AddOverride(ctx, req.Id, creator, "DC_OVERRIDE:E:" + req.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        var result = await Build(ctx, other, RoleConstants.Buyer).DeleteRequest(req.Id);
+
+        Assert.Equal(403, ((ObjectResult)result).StatusCode);
+        Assert.True(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == req.Id));
+        Assert.True(await ctx.Requests.AnyAsync(r => r.Id == req.Id));
+    }
+
+    [Fact] // F — the cleanup is scoped to this request; another request's audit is untouched
+    public async Task Delete_Draft_LeavesUnrelatedRequestOverridesIntact()
+    {
+        using var ctx = NewContext(); SeedStatuses(ctx);
+        var creator = Guid.NewGuid();
+        var reqDel = SeedDraft(ctx, creator, withSourceDocument: false);
+        var reqKeep = SeedDraft(ctx, creator, withSourceDocument: false);
+        AddOverride(ctx, reqDel.Id, creator, "DC_OVERRIDE:Fdel:" + reqDel.Id.ToString("N"));
+        AddOverride(ctx, reqKeep.Id, creator, "DC_OVERRIDE:Fkeep:" + reqKeep.Id.ToString("N"));
+        await ctx.SaveChangesAsync();
+
+        Assert.IsType<NoContentResult>(await Build(ctx, creator, RoleConstants.Buyer).DeleteRequest(reqDel.Id));
+        Assert.False(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == reqDel.Id));
+        Assert.True(await ctx.DocumentClassificationOverrides.AnyAsync(o => o.RequestId == reqKeep.Id));
+    }
+
     // ── QUOTATION final-approval status normalization (Fix 3) ──
 
     [Fact]

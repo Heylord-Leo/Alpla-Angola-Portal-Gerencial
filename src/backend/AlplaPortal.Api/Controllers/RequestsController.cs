@@ -6043,6 +6043,22 @@ public class RequestsController : BaseController
             _context.PaymentSourceDocuments.RemoveRange(sourceDocuments);
         }
 
+        // Classification-override audit rows (DocumentClassificationOverrides.RequestId → Requests is
+        // NoAction) are written when a source document is classified/overridden and, by design, survive
+        // the document's own removal — so a DRAFT that ever classified a document keeps a row that
+        // blocks the hard delete even after the document, its items and (visibly) everything else are
+        // gone. On a DRAFT hard-delete the request is obliterated, so its classification audit has
+        // nothing left to explain: remove those rows before the request. DRAFT-only by construction
+        // (this method already refused every non-DRAFT status above); submitted requests never reach
+        // here, so their audit is untouched.
+        var classificationOverrides = await _context.DocumentClassificationOverrides
+            .Where(o => o.RequestId == id)
+            .ToListAsync();
+        if (classificationOverrides.Any())
+        {
+            _context.DocumentClassificationOverrides.RemoveRange(classificationOverrides);
+        }
+
         // Handle Restrict delete on StatusHistories
         if (request.StatusHistories.Any())
         {
