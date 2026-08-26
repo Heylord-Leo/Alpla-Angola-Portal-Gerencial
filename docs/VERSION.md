@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.232.0
+v2.232.1
+
+## [v2.232.1] - 2026-08-26
+
+### Request Lifecycle Stabilization — Draft Recovery, PAYMENT P.O. Groups & Operational "Aguardando P.O." Display
+
+Patch release hardening the request lifecycle around the PAYMENT multi-source-document model and
+PO-group creation, recovering broken zero-item drafts, and making the user-facing status honest when
+the operational unit is at the P.O. gate — all **without any schema/DB migration and without any
+scalar status normalization**. Adds SysAdmin-only, idempotent tooling (dry-run report + explicit
+execute) to repair historical PAYMENT requests that were approved before the PO-group fix, plus a
+guarded DEV regression harness and an operator read-only candidate SQL report. No automatic repair;
+no startup/deploy hook; unsafe/downstream cases are forced to manual review.
 
 ## [v2.232.0] - 2026-08-25
 

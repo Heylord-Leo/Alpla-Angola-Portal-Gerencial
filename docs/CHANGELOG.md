@@ -4,7 +4,68 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.0
+v2.232.1
+
+## [v2.232.1] - 2026-08-26
+
+### Request Lifecycle Stabilization — Draft Recovery, PAYMENT P.O. Groups & Operational "Aguardando P.O." Display
+
+Hardens the request lifecycle around the PAYMENT multi-source-document model: fixes draft deletion,
+attachment visibility, legacy final-approval status, PAYMENT PO-group creation and zero-item draft
+recovery; makes the user-facing status read "Aguardando P.O." whenever the operational group is
+`WAITING_PO` (PAYMENT keeps its `APPROVED` scalar); and adds SysAdmin-only tooling to repair
+historical PAYMENT requests missing their PO groups. **No DB migration; no schema change; no scalar
+status normalization; no automatic or deploy-time repair; no historical data modified by this
+release.**
+
+#### Fixed
+
+- **Draft deletion failure** caused by the `PaymentSourceDocument` → attachment FK dependency: the
+  delete now removes the source-document graph (items → documents) in dependency order and returns a
+  structured 409 instead of a raw FK 500. Draft-only, creator/SysAdmin-guarded (403 otherwise).
+- **PAYMENT source-document attachments silently hidden** from the attachment UI: a read-only
+  "Documentos de origem / Outros" fallback surfaces any authorized attachment without a dedicated
+  card (incl. `PAYMENT_SOURCE_DOCUMENT`), with no duplication of files already shown.
+- **Legacy QUOTATION final approval** left the request on the stale `APPROVED` scalar instead of the
+  canonical `PO_REQUESTED` when active `WAITING_PO` groups exist (localized to the legacy
+  final-approval transition; PAYMENT unchanged, batch path unchanged).
+- **PAYMENT final approval failed to create PO groups** for multi-document requests because the group
+  builder read `request.LineItems` without them being loaded — leaving the Buyer with a P.O.
+  next-action label and no group to act on. The builder now loads line items (idempotent), so a
+  `WAITING_PO` group is created and the "Registrar P.O." action appears.
+- **Multi-document PAYMENT drafts with zero items were unrecoverable**: the persisted-document editor
+  never mounted an item editor, so a first item could not be added. Recovery is now possible and the
+  new line links to its `PaymentSourceDocument`.
+- **Misleading "Aprovado" badge** for a PAYMENT that is `APPROVED` with a `WAITING_PO` group: list,
+  detail header and "Para Minha Ação" now read **"Aguardando P.O."** — the scalar is never changed.
+
+#### Added
+
+- **Recoverable per-document PAYMENT item editor** (`PaymentSourceDocumentItemsPanel`) with an explicit
+  disabled-reason when the document's own required fields are incomplete, reusing the canonical
+  line-item API and validator.
+- **Group-aware operational display status**: one canonical server rule
+  (`ResolveSingleUnitBadgeOverride`) applied uniformly on list + detail so `WAITING_PO` reads
+  "Aguardando P.O." for both PAYMENT and QUOTATION, with no false positive when no group exists.
+- **Historical PAYMENT PO-group repair** — read-only dry-run report and candidate classifier
+  (`GET /api/v1/requests/admin/payment-po-repair/candidates`, `PaymentPoGroupRepairPlanner`).
+- **Explicit SysAdmin-only repair execution**
+  (`POST /api/v1/requests/admin/payment-po-repair/execute`) — explicit request ids only, one
+  transaction per request, reuses the canonical builder, keeps `APPROVED`, audits
+  `PAYMENT_PO_GROUP_REPAIRED`.
+- **Idempotent repair planning / safety classification** (`SAFE_TO_REPAIR` / `MANUAL_REVIEW` / `SKIP`).
+- **Guarded DEV repair regression harness** (`PaymentPoRepairDevFixtureController`, `#if DEBUG` +
+  Development env + `DevFixtures:PaymentPoRepairEnabled` opt-in; a 404/stub otherwise).
+- **Operator read-only candidate report** (`scripts/db/phase4b2_payment_po_repair_candidates.sql`,
+  SELECT-only) and **Phase 4B.2 operator runbook** (`docs/PHASE_4B2_REPAIR_ACCEPTANCE.md`).
+
+#### Security / Safety
+
+- No schema/DB migration.
+- No scalar status normalization (PAYMENT stays `APPROVED`; the operational truth lives on the group).
+- No automatic repair and no startup/deploy repair hook — repair runs only on an explicit SysAdmin call.
+- Unsafe/downstream-evidence cases are forced to `MANUAL_REVIEW` and never written.
+- Repair endpoints are SysAdmin-only (403 otherwise); the DEV harness is inert in TEST/PROD.
 
 ## [v2.232.0] - 2026-08-25
 
