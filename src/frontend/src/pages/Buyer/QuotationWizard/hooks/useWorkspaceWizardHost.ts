@@ -5,6 +5,7 @@ import { computeFileHash } from '../../../../lib/utils';
 import { useOcrProcessor } from '../../../../hooks/useOcrProcessor';
 import { useQuotationWizardState, QuotationWizardSource } from './useQuotationWizardState';
 import { createBuyerQuotationWizardController, WizardFeedback } from '../buyerQuotationWizardController';
+import { toWizardActiveRequest } from '../workspaceWizardRequest';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Buyer Workspace wizard host (Phase 3C.1 / Stage 2B-R). Workspace-LOCAL glue: it owns the same host
@@ -77,7 +78,9 @@ export function useWorkspaceWizardHost(opts: {
     const openAddQuotation = async (requestId: string, mode: QuotationWizardSource = 'MANUAL') => {
         try {
             const request = await api.requests.get(requestId);
-            controller.handleOpenWizard(request, mode);
+            // RequestDetailsDto exposes the request GUID as `id`, not `requestId`. Stamp the wizard's
+            // `requestId` contract from the GUID we opened for, so upload/OCR/save don't hit `/…/undefined`.
+            controller.handleOpenWizard(toWizardActiveRequest(request, requestId), mode);
         } catch (e: any) {
             opts.onFeedback({ type: 'error', message: e?.message || 'Falha ao abrir o assistente de cotação.' });
         }
