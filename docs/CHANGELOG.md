@@ -4,7 +4,29 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.2
+v2.232.3
+
+## [v2.232.3] - 2026-08-27
+
+### Buyer / Gestão de Cotações — "Importar Cotação" Fix
+
+Frontend-only patch. No backend / API / OCR / schema changes.
+
+#### Fixed
+
+- **Importar Cotação in the new Buyer Workspace** now works: the shared quotation wizard opens,
+  uploads, and runs OCR instead of failing.
+- **Request identity mapping** — the Workspace loaded a `RequestDetailsDto` (request GUID in `id`) and
+  passed it to a shared controller that expects `requestId`, so the attachment upload targeted
+  `/api/v1/attachments/upload/undefined` (HTTP 400). The Workspace now normalizes the identity once at
+  the host boundary, fixing upload / OCR / save / reconcile / cleanup together.
+- **Wizard lifecycle stability** — the shared `QuotationWizardModal` is rendered unconditionally
+  (self-gating on `wizardState.isOpen` internally) like the classic host, eliminating the mount
+  flicker/freeze the host-level conditional mount caused.
+
+#### Notes
+
+- The classic quotation tool ("Ferramenta clássica") is unchanged — it was the known-good baseline.
 
 ## [v2.232.2] - 2026-08-26
 
