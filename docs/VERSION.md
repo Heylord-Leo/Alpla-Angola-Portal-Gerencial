@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.232.2
+v2.232.3
+
+## [v2.232.3] - 2026-08-27
+
+### Buyer — New Workspace "Importar Cotação" Fix
+
+Patch fix for the NEW Buyer Workspace ("Gestão de Cotações") quotation import. Two frontend-only
+regressions: (1) the shared quotation wizard modal was mounted conditionally by the Workspace host,
+causing a mount flash/freeze; it is now rendered unconditionally (self-gating on `wizardState.isOpen`
+internally), matching the working classic host. (2) The Workspace passed the request GUID as `id`
+(RequestDetailsDto) where the shared controller expects `requestId`, so upload/OCR/save/reconcile
+targeted `/api/v1/attachments/upload/undefined` (HTTP 400); the Workspace now normalizes the identity
+once at the host boundary. The classic quotation tool is unchanged. No backend / API / OCR / schema
+changes.
 
 ## [v2.232.2] - 2026-08-26
 

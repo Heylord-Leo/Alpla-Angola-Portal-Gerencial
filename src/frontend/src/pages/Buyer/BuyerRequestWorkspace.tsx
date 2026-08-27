@@ -259,23 +259,26 @@ export function BuyerRequestWorkspace() {
         />
       )}
 
-      {/* In-Workspace Quotation Wizard — the SAME modal + shared controller the classic screen uses. */}
-      {wizardHost.wizardState.isOpen && (
-        <QuotationWizardModal
-          request={wizardHost.wizardActiveRequest}
-          wizardState={wizardHost.wizardState}
-          onSaveQuotation={wizardHost.controller.handleWizardSaveQuotation}
-          onReconcilePreview={wizardHost.controller.handleReconcilePreview}
-          isProcessingOcr={!!(wizardHost.wizardActiveRequest && wizardHost.isProcessingOcr[wizardHost.wizardActiveRequest.requestId])}
-          onUploadFile={wizardHost.onUploadFile}
-          onCancelWizard={wizardHost.controller.onCancelWizard}
-          onReplaceDocument={wizardHost.controller.handleReplaceDocumentForWizard}
-          ivaRates={wizardHost.ivaRates}
-          units={wizardHost.units}
-          currencies={wizardHost.currencies}
-          onRequestLineItemUpserted={wizardHost.controller.handleWizardLineItemUpserted}
-        />
-      )}
+      {/* In-Workspace Quotation Wizard — the SAME modal + shared controller the classic screen uses.
+          Rendered UNCONDITIONALLY (like BuyerItemsList): the modal is the single source of visibility
+          via wizardState.isOpen internally (it early-returns null when closed and owns its own mounted
+          + portal + body-scroll-lock lifecycle). A host-level `{isOpen && ...}` guard remounts the
+          modal on every open — causing the mount flash, the scroll-lock leak, and the disrupted OCR
+          flow that surfaced the generic "Erro ao processar documento via OCR." banner. */}
+      <QuotationWizardModal
+        request={wizardHost.wizardActiveRequest}
+        wizardState={wizardHost.wizardState}
+        onSaveQuotation={wizardHost.controller.handleWizardSaveQuotation}
+        onReconcilePreview={wizardHost.controller.handleReconcilePreview}
+        isProcessingOcr={!!(wizardHost.wizardActiveRequest && wizardHost.isProcessingOcr[wizardHost.wizardActiveRequest.requestId])}
+        onUploadFile={wizardHost.onUploadFile}
+        onCancelWizard={wizardHost.controller.onCancelWizard}
+        onReplaceDocument={wizardHost.controller.handleReplaceDocumentForWizard}
+        ivaRates={wizardHost.ivaRates}
+        units={wizardHost.units}
+        currencies={wizardHost.currencies}
+        onRequestLineItemUpserted={wizardHost.controller.handleWizardLineItemUpserted}
+      />
 
       {/* Duplicate-file protection preserved (same api.attachments.checkDuplicate decision), surfaced
           as a standard confirmation — NOT a copy of the classic 60-line modal/countdown. */}
