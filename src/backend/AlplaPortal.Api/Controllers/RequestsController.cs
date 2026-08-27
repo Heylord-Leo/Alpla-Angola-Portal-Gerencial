@@ -999,17 +999,22 @@ public class RequestsController : BaseController
 
         _logger.LogInformation("[PERF GetRequests] 7-ItemsQuery: {Elapsed}ms (page={Page}, pageSize={PageSize})", _sw.ElapsedMilliseconds, page, pageSize);
 
-        // ── Hydrate DisplayWorkflowState for QUOTATION requests ──
-        var quotationRequestIds = items
-            .Where(i => i.RequestTypeCode == RequestConstants.Types.Quotation)
+        // ── Hydrate group-aware display for QUOTATION and PAYMENT requests ──
+        // Phase 4B.2: PAYMENT is included so a payment whose operational group is WAITING_PO reads
+        // "Aguardando P.O." even though its scalar stays APPROVED (product OPTION B). The scalar is
+        // never changed — DisplayStatusCode/Name are display-only overrides. A PAYMENT with no
+        // groups yields no override (ResolveSingleUnitBadgeOverride returns null) and keeps "Aprovado".
+        var displayHydrationIds = items
+            .Where(i => i.RequestTypeCode == RequestConstants.Types.Quotation
+                     || i.RequestTypeCode == RequestConstants.Types.Payment)
             .Select(i => i.Id)
             .ToList();
 
-        if (quotationRequestIds.Any())
+        if (displayHydrationIds.Any())
         {
             var batchData = await _context.Requests
                 .AsNoTracking()
-                .Where(r => quotationRequestIds.Contains(r.Id))
+                .Where(r => displayHydrationIds.Contains(r.Id))
                 .Include(r => r.Status)
                 .Include(r => r.RequestType)
                 .Include(r => r.LineItems.Where(li => !li.IsDeleted))
@@ -1024,8 +1029,10 @@ public class RequestsController : BaseController
             {
                 if (lookup.TryGetValue(item.Id, out var data))
                 {
+                    // ComputeDisplayWorkflowState returns the scalar unchanged for PAYMENT; the
+                    // group-aware badge below is what surfaces the WAITING_PO operational truth.
                     item.DisplayWorkflowState = _statusSyncService.ComputeDisplayWorkflowState(
-                        RequestConstants.Types.Quotation,
+                        data.RequestType!.Code,
                         data.Status!.Code,
                         data.LineItems.ToList(),
                         data.ApprovalBatches.ToList(),
@@ -1065,12 +1072,6 @@ public class RequestsController : BaseController
                     }
                 }
             }
-        }
-
-        // PAYMENT requests: mirror status code
-        foreach (var item in items.Where(i => i.RequestTypeCode == RequestConstants.Types.Payment))
-        {
-            item.DisplayWorkflowState = item.StatusCode;
         }
 
         _swTotal.Stop();
@@ -1536,6 +1537,28 @@ public class RequestsController : BaseController
 
         // Compute DisplayWorkflowState (read-only, not persisted)
         request.DisplayWorkflowState = await _statusSyncService.ComputeDisplayWorkflowStateAsync(id);
+
+        // Phase 4B.2 — group-aware display badge (read-only). A request whose operational group is
+        // WAITING_PO reads "Aguardando P.O." on the detail header even when the scalar lags (PAYMENT
+        // keeps APPROVED). Same rule the list uses; the scalar (Status) is never changed.
+        var displayEntity = await _context.Requests
+            .AsNoTracking()
+            .Where(r => r.Id == id)
+            .Include(r => r.Status)
+            .Include(r => r.RequestType)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+            .Include(r => r.ApprovalBatches)
+                .ThenInclude(b => b.Items)
+            .Include(r => r.PoGroups)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync();
+
+        if (displayEntity != null)
+        {
+            var badge = ResolveGroupAwareDisplayBadge(displayEntity);
+            request.DisplayStatusCode = badge.Code;
+            request.DisplayStatusName = badge.Name;
+        }
 
         // Enrich with Selected Quotation data if applicable to avoid redundant subqueries in the projection
         if (request.SelectedQuotationId.HasValue)
@@ -5993,6 +6016,49 @@ public class RequestsController : BaseController
             });
         }
 
+        // Authorization: a draft may be deleted only by its creator or a System Administrator.
+        if (request.CreatedByUserId != CurrentUserId && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+        {
+            return StatusCode(403, new ProblemDetails
+            {
+                Title = "Acesso Negado",
+                Detail = "Apenas o autor do rascunho ou um administrador pode excluí-lo.",
+                Status = 403
+            });
+        }
+
+        // Remove the full dependency graph in an order that respects the Restrict/NoAction FKs the DB
+        // cascade does not cover. PaymentSourceDocument.AttachmentId → RequestAttachment and
+        // RequestLineItem.PaymentSourceDocumentId → PaymentSourceDocument are NoAction: if the source
+        // documents are not removed first, deleting the request's attachments throws a raw FK violation
+        // (the historical generic-500 on drafts that already registered a source document).
+        var sourceDocuments = await _context.PaymentSourceDocuments
+            .Where(psd => psd.RequestId == id)
+            .ToListAsync();
+        if (sourceDocuments.Any())
+        {
+            // Line items reference source documents (NoAction) — delete them before the documents.
+            if (request.LineItems.Any())
+                _context.RequestLineItems.RemoveRange(request.LineItems);
+            _context.PaymentSourceDocuments.RemoveRange(sourceDocuments);
+        }
+
+        // Classification-override audit rows (DocumentClassificationOverrides.RequestId → Requests is
+        // NoAction) are written when a source document is classified/overridden and, by design, survive
+        // the document's own removal — so a DRAFT that ever classified a document keeps a row that
+        // blocks the hard delete even after the document, its items and (visibly) everything else are
+        // gone. On a DRAFT hard-delete the request is obliterated, so its classification audit has
+        // nothing left to explain: remove those rows before the request. DRAFT-only by construction
+        // (this method already refused every non-DRAFT status above); submitted requests never reach
+        // here, so their audit is untouched.
+        var classificationOverrides = await _context.DocumentClassificationOverrides
+            .Where(o => o.RequestId == id)
+            .ToListAsync();
+        if (classificationOverrides.Any())
+        {
+            _context.DocumentClassificationOverrides.RemoveRange(classificationOverrides);
+        }
+
         // Handle Restrict delete on StatusHistories
         if (request.StatusHistories.Any())
         {
@@ -6023,10 +6089,25 @@ public class RequestsController : BaseController
             }
         }
 
-        // LineItems and Attachments will cascade delete based on EntityConfigurations.cs
+        // Remaining LineItems and Attachments cascade delete based on EntityConfigurations.cs
         _context.Requests.Remove(request);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // An unexpected dependency still references this draft (e.g. an entity not handled above).
+            // Never surface the raw SQL/exception text; return a structured, actionable conflict.
+            _logger.LogWarning(ex, "DeleteRequest: draft {RequestId} could not be deleted due to a remaining dependency.", id);
+            return Conflict(new ProblemDetails
+            {
+                Title = "Não foi possível excluir o rascunho",
+                Detail = "Este rascunho possui dependências que impedem a exclusão. Remova os documentos/itens associados e tente novamente, ou contacte o suporte.",
+                Status = 409
+            });
+        }
 
         return NoContent();
     }
@@ -6280,7 +6361,23 @@ public class RequestsController : BaseController
             await _context.SaveChangesAsync();
         }
 
-        return await ApplyStatusChangeAndSyncItemsAsync(request, targetStatusCode, action, historyComment, successMessage, actorId, overrideEventCode);
+        // Status normalization (Phase 4B): the batch final-approval path re-syncs via the canonical
+        // calculator and lands a QUOTATION on PO_REQUESTED ("Aguardando P.O."). This legacy request-wide
+        // path historically hard-set "APPROVED" and left it there. The calculator cannot promote it here
+        // because this path creates NO ApprovalBatch (cameFromBatchWorkflow == false → it preserves the
+        // scalar), so we set the SAME canonical post-final-approval state the batch path derives, but ONLY
+        // for a QUOTATION that now has active WAITING_PO groups. PAYMENT keeps "APPROVED" (its live state);
+        // a QUOTATION with no WAITING_PO group (e.g. all items closed-not-quoted) is left unchanged.
+        var effectiveTargetStatus = targetStatusCode;
+        if (action == "APPROVE" && request.RequestType!.Code == RequestConstants.Types.Quotation)
+        {
+            var hasWaitingPoGroup = await _context.RequestPoGroups
+                .AnyAsync(g => g.RequestId == id && g.Status == RequestConstants.PoGroupStatuses.WaitingPo);
+            if (hasWaitingPoGroup)
+                effectiveTargetStatus = RequestConstants.Statuses.PoRequested;
+        }
+
+        return await ApplyStatusChangeAndSyncItemsAsync(request, effectiveTargetStatus, action, historyComment, successMessage, actorId, overrideEventCode);
     }
 
     private async Task<IActionResult> ProcessAreaApproval(Guid id, string action, string targetStatusCode, ApprovalActionDto dto, string? overrideEventCode = null)
@@ -9506,12 +9603,283 @@ public class RequestsController : BaseController
     /// header, exactly as before. Nothing is backfilled: inventing a source document nobody recorded
     /// would manufacture a historical fact.</para>
     /// </summary>
+    // ── Phase 4B.2: historical PAYMENT PO-group repair (SysAdmin only) ────────────────────────
+    //
+    // Some PAYMENT requests were finally approved before the BuildPaymentPoGroupsAsync line-items
+    // fix and ended up APPROVED with ZERO PO groups — the Buyer sees a P.O. next-action label but no
+    // group to act on. These endpoints diagnose (dry-run, zero writes) and repair (explicit, audited,
+    // idempotent) by RE-RUNNING the same canonical builder normal final approval uses. The scalar is
+    // never changed (OPTION B): a repaired PAYMENT stays APPROVED; the WAITING_PO group carries the
+    // operational truth surfaced by the display projection.
+
+    /// <summary>
+    /// Read-only dry-run. Scans PAYMENT requests that are APPROVED with no PO groups (or inspects an
+    /// explicit set) and classifies each SAFE_TO_REPAIR / MANUAL_REVIEW / SKIP. Performs ZERO writes.
+    /// </summary>
+    [HttpGet("admin/payment-po-repair/candidates")]
+    public async Task<IActionResult> GetPaymentPoRepairCandidates([FromQuery] Guid[]? requestIds = null)
+    {
+        if (!CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, "Apenas o Administrador do Sistema pode executar este diagnóstico.");
+
+        List<Guid> ids;
+        if (requestIds != null && requestIds.Length > 0)
+        {
+            ids = requestIds.Distinct().ToList();
+        }
+        else
+        {
+            // The core candidate predicate: a live APPROVED payment with no groups at all.
+            ids = await _context.Requests
+                .Where(r => r.RequestType!.Code == RequestConstants.Types.Payment
+                         && r.Status!.Code == RequestConstants.Statuses.FinalApproved
+                         && !_context.RequestPoGroups.Any(g => g.RequestId == r.Id))
+                .Select(r => r.Id)
+                .ToListAsync();
+        }
+
+        var report = new List<PaymentPoRepairCandidateDto>();
+        foreach (var id in ids)
+        {
+            var candidate = await BuildRepairCandidateAsync(id);
+            if (candidate != null) report.Add(candidate);
+        }
+
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// Executes the repair for an EXPLICIT list of requests (never "repair all"). SysAdmin only,
+    /// one transaction per request, idempotent, keeps the scalar APPROVED, and audits each repair
+    /// as PAYMENT_PO_GROUP_REPAIRED. A request that is not SAFE_TO_REPAIR is reported, never written.
+    /// </summary>
+    [HttpPost("admin/payment-po-repair/execute")]
+    public async Task<IActionResult> ExecutePaymentPoRepair([FromBody] PaymentPoRepairExecuteRequestDto dto)
+    {
+        if (!CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, "Apenas o Administrador do Sistema pode executar esta reparação.");
+
+        if (dto?.RequestIds == null || dto.RequestIds.Count == 0)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Nenhum pedido selecionado",
+                Detail = "Indique explicitamente os pedidos a reparar — não existe reparação em massa.",
+                Status = 400
+            });
+
+        var actorId = CurrentUserId;
+        var results = new List<PaymentPoRepairResultDto>();
+
+        foreach (var requestId in dto.RequestIds.Distinct())
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var candidate = await BuildRepairCandidateAsync(requestId);
+                if (candidate == null)
+                {
+                    results.Add(new PaymentPoRepairResultDto
+                    {
+                        RequestId = requestId, Outcome = "NOT_FOUND",
+                        Message = "Pedido não encontrado."
+                    });
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                if (candidate.Classification != "SAFE_TO_REPAIR")
+                {
+                    results.Add(new PaymentPoRepairResultDto
+                    {
+                        RequestId = requestId, RequestNumber = candidate.RequestNumber,
+                        Classification = candidate.Classification,
+                        Outcome = candidate.Classification == "MANUAL_REVIEW" ? "MANUAL_REVIEW" : "SKIPPED",
+                        ScalarStatusCode = candidate.ScalarStatusCode,
+                        Message = candidate.Reason
+                    });
+                    await tx.RollbackAsync();   // nothing was written; make it explicit
+                    continue;
+                }
+
+                var request = await _context.Requests
+                    .Include(r => r.Status)
+                    .Include(r => r.RequestType)
+                    .FirstAsync(r => r.Id == requestId);
+
+                // The SAME canonical builder normal final approval uses — never a second rule.
+                await BuildPaymentPoGroupsAsync(request, actorId);
+                await _context.SaveChangesAsync();
+
+                var created = await _context.RequestPoGroups
+                    .CountAsync(g => g.RequestId == requestId
+                                  && g.Status == RequestConstants.PoGroupStatuses.WaitingPo);
+
+                // Audit — distinct from the builder's own GRUPOS_PAGAMENTO_CRIADOS entry. Scalar
+                // untouched, so Previous == New status id.
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = requestId,
+                    ActorUserId = actorId,
+                    ActionTaken = "PAYMENT_PO_GROUP_REPAIRED",
+                    PreviousStatusId = request.StatusId,
+                    NewStatusId = request.StatusId,
+                    Comment = $"Reparação de grupos de P.O. (histórico): {created} grupo(s) WAITING_PO criado(s). " +
+                              $"Estado do pedido mantido em {request.Status?.Code}.",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                results.Add(new PaymentPoRepairResultDto
+                {
+                    RequestId = requestId, RequestNumber = candidate.RequestNumber,
+                    Classification = candidate.Classification, Outcome = "REPAIRED",
+                    GroupsCreated = created, ScalarStatusCode = request.Status?.Code ?? "",
+                    Message = $"{created} grupo(s) criado(s). Estado mantido em {request.Status?.Code}."
+                });
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                _logger.LogError(ex, "PaymentPoRepair failed for Request {RequestId}", requestId);
+                results.Add(new PaymentPoRepairResultDto
+                {
+                    RequestId = requestId, Outcome = "ERROR",
+                    Message = "Falha ao reparar — a transação deste pedido foi revertida."
+                });
+            }
+        }
+
+        return Ok(results);
+    }
+
+    /// <summary>
+    /// Gathers the facts for one request and runs the pure repair planner. Read-only: computes the
+    /// expected group count from the plan builders (which only read) without persisting anything.
+    /// </summary>
+    private async Task<PaymentPoRepairCandidateDto?> BuildRepairCandidateAsync(Guid requestId)
+    {
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.RequestType)
+            .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+        if (request == null) return null;
+
+        var sourceDocs = await _context.PaymentSourceDocuments
+            .Where(d => d.RequestId == requestId && !d.IsVoided)
+            .ToListAsync();
+
+        var existingGroupCount = await _context.RequestPoGroups.CountAsync(g => g.RequestId == requestId);
+        var activeItems = request.LineItems.ToList();  // already filtered !IsDeleted by the include
+        var linkedCount = activeItems.Count(li => li.PaymentSourceDocumentId.HasValue);
+        var hasSupplierSource = request.SupplierId != null || sourceDocs.Any(d => d.SupplierId != null);
+
+        var hasPoEvidence = await _context.RequestAttachments.AnyAsync(a =>
+            a.RequestId == requestId && !a.IsDeleted && a.AttachmentTypeCode == RequestAttachment.TYPE_PO);
+
+        var downstreamTypes = new[]
+        {
+            RequestAttachment.TYPE_PO, RequestAttachment.TYPE_PAYMENT_PROOF,
+            RequestAttachment.TYPE_PAYMENT_SCHEDULE, RequestAttachment.TYPE_ADVANCE_PAYMENT_PROOF,
+            RequestAttachment.TYPE_OPERATION_INVOICE, RequestAttachment.TYPE_FISCAL_RECEIPT,
+            RequestAttachment.TYPE_RECEIPT, RequestAttachment.TYPE_RECEIVING_EVIDENCE
+        };
+        var hasDownstream =
+            await _context.RequestAttachments.AnyAsync(a =>
+                a.RequestId == requestId && !a.IsDeleted && downstreamTypes.Contains(a.AttachmentTypeCode))
+            || await _context.RequestPayments.AnyAsync(p => p.RequestId == requestId);
+
+        var input = new PaymentPoGroupRepairPlanner.Input(
+            RequestTypeCode: request.RequestType?.Code ?? "",
+            RequestStatusCode: request.Status?.Code ?? "",
+            FinalApprovalCompleted: request.ApprovedAtUtc != null,
+            ExistingGroupCount: existingGroupCount,
+            SourceDocumentCount: sourceDocs.Count,
+            ActiveLineItemCount: activeItems.Count,
+            LineItemsLinkedToDocumentsCount: linkedCount,
+            HasSupplierSource: hasSupplierSource,
+            HasDownstreamEvidence: hasDownstream);
+
+        var assessment = PaymentPoGroupRepairPlanner.Assess(input);
+
+        var expectedGroupCount = 0;
+        var groupingBasis = "—";
+        if (assessment.Verdict == PaymentPoGroupRepairPlanner.Classification.SafeToRepair)
+        {
+            // Read-only: the plan builders only query. Same fork the real builder takes.
+            var plan = sourceDocs.Count == 0
+                ? await BuildLegacyPaymentPlanAsync(request)
+                : await BuildDocumentPaymentPlanAsync(request, sourceDocs);
+            expectedGroupCount = plan.Count;
+            groupingBasis = sourceDocs.Count == 0
+                ? "Cabeçalho do pedido (fornecedor + moeda + condição de pagamento)"
+                : "Documentos de origem (fornecedor + moeda + condição + planta + tipo de documento)";
+        }
+
+        return new PaymentPoRepairCandidateDto
+        {
+            RequestId = request.Id,
+            RequestNumber = request.RequestNumber,
+            RequestTypeCode = request.RequestType?.Code ?? "",
+            ScalarStatusCode = request.Status?.Code ?? "",
+            FinalApprovalAtUtc = request.ApprovedAtUtc,
+            Model = assessment.Model.ToString(),
+            ActiveLineItemCount = activeItems.Count,
+            SourceDocumentCount = sourceDocs.Count,
+            LineItemsLinkedToDocumentsCount = linkedCount,
+            ExistingGroupCount = existingGroupCount,
+            ExpectedGroupCount = expectedGroupCount,
+            GroupingBasis = groupingBasis,
+            HasPoEvidence = hasPoEvidence,
+            HasDownstreamEvidence = hasDownstream,
+            Classification = assessment.Verdict switch
+            {
+                PaymentPoGroupRepairPlanner.Classification.SafeToRepair => "SAFE_TO_REPAIR",
+                PaymentPoGroupRepairPlanner.Classification.ManualReview => "MANUAL_REVIEW",
+                _ => "SKIP"
+            },
+            Reason = assessment.Reason
+        };
+    }
+
+    /// <summary>
+    /// Display-only, read-only group-aware status badge for a request (Phase 4B.2). Returns the
+    /// override (code, PT label) when the operational group truth differs from the persisted scalar —
+    /// e.g. a PAYMENT scalar APPROVED whose single group is WAITING_PO reads "Aguardando P.O." — and
+    /// (null, null) when the persisted status should stand (no groups, or the scalar already agrees).
+    /// Never persists, never used for permissions/eligibility/filtering. The multi-group finance
+    /// buckets win first (RequestGroupDisplayStateCalculator); the single-unit override supplies the
+    /// pre-P.O. stages (WAITING_PO) the bucket table intentionally omits.
+    /// </summary>
+    private static (string? Code, string? Name) ResolveGroupAwareDisplayBadge(Request data)
+    {
+        var groupDisplay = RequestGroupDisplayStateCalculator.Resolve(data.PoGroups.Select(g => g.Status));
+        if (groupDisplay.DisplayStatusCode != null)
+            return (groupDisplay.DisplayStatusCode, groupDisplay.DisplayStatusName);
+
+        var scalar = data.Status?.Code ?? "";
+        var projection = RequestWorkflowProjectionBuilder.Build(data, scalar);
+        var badgeOverride = RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride(projection, scalar);
+        return badgeOverride.HasValue ? (badgeOverride.Value.Code, badgeOverride.Value.Label) : (null, null);
+    }
+
     private async Task BuildPaymentPoGroupsAsync(Request request, Guid actorId)
     {
         var alreadyBuilt = await _context.RequestStatusHistories
             .AnyAsync(h => h.IdempotencyKey == PostPaymentIdempotencyKeys.PaymentGroupsBuilt(request.Id));
 
         if (alreadyBuilt) return;
+
+        // The caller (ProcessFinalApproval) loads the request without its line items, but the
+        // document plan (BuildDocumentPaymentPlanAsync) and the traceability stamping below both
+        // read request.LineItems. Without this explicit load the collection is empty, so a
+        // MULTI-DOCUMENT payment produces an EMPTY plan → zero PO groups → the Buyer never receives
+        // a WAITING_PO group and the "Registrar P.O." action can never appear. (The legacy
+        // header-only plan doesn't touch line items, which is why single-header payments worked.)
+        if (!_context.Entry(request).Collection(r => r.LineItems).IsLoaded)
+            await _context.Entry(request).Collection(r => r.LineItems).LoadAsync();
 
         var existingGroups = await _context.RequestPoGroups
             .Where(g => g.RequestId == request.Id)

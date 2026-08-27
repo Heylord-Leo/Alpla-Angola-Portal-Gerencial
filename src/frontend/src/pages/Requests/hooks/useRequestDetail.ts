@@ -527,7 +527,10 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             } else {
                 data = await api.requests.get(id!);
                 setStatus(data.statusCode);
-                setStatusFullName(data.statusName);
+                // Phase 4B.2: prefer the server's group-aware display label so a request whose
+                // operational group is WAITING_PO reads "Aguardando P.O." (PAYMENT keeps scalar
+                // APPROVED). Null means no override → the persisted status name stands.
+                setStatusFullName(data.displayStatusName ?? data.statusName);
                 setStatusBadgeColor(data.statusBadgeColor);
                 setLineItems(data.lineItems || []);
                 setRequestTypeCode(data.requestTypeCode);
@@ -944,7 +947,8 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
             // Reload request data to reflect status change and history
             const data = await api.requests.get(id);
             setStatus(data.statusCode);
-            setStatusFullName(data.statusName);
+            // Phase 4B.2: prefer the server group-aware display label (WAITING_PO → "Aguardando P.O.").
+            setStatusFullName(data.displayStatusName ?? data.statusName);
             setStatusBadgeColor(data.statusBadgeColor);
             setStatusHistory(data.statusHistory || []);
 

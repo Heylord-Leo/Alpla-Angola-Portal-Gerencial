@@ -93,7 +93,10 @@ public class MultiGroupLifecycleGuardTests
         ctx.RequestTypes.Add(new RequestType { Id = 1, Code = RequestConstants.Types.Quotation, Name = "Cotação" });
         ctx.RequestStatuses.AddRange(
             new RequestStatus { Id = 4, Code = "WAITING_FINAL_APPROVAL", Name = "Ag. Aprovação Final", DisplayOrder = 4 },
-            new RequestStatus { Id = 5, Code = "APPROVED", Name = "Aprovado", DisplayOrder = 5 });
+            new RequestStatus { Id = 5, Code = "APPROVED", Name = "Aprovado", DisplayOrder = 5 },
+            // Phase 4B: legacy QUOTATION final approval now normalizes the scalar to PO_REQUESTED (the
+            // canonical post-final-approval state the batch path already produces) when WAITING_PO groups exist.
+            new RequestStatus { Id = 6, Code = "PO_REQUESTED", Name = "Aguardando P.O.", DisplayOrder = 6 });
 
         var request = new Request
         {

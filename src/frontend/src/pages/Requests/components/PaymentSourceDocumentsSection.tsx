@@ -1,7 +1,9 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { api } from '../../../lib/api';
 import { PaymentSourceDocumentCollection } from '../../../components/requests/PaymentSourceDocumentCollection';
+import { PaymentSourceDocumentItemsPanel } from '../../../components/requests/PaymentSourceDocumentItemsPanel';
 import { PaymentSourceDocumentsSummaryDto } from '../../../types/paymentSourceDocument';
+import { IvaRate, Unit } from '../../../types';
 import { CollapsibleSection } from '../../../components/ui/CollapsibleSection';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
 import { computeFileHash, formatDateTime } from '../../../lib/utils';
@@ -21,6 +23,9 @@ interface Props {
 
     plants: Array<{ id: number; name: string }>;
     currencies: Array<{ code: string; name: string }>;
+    /** Item-entry lookups, for the per-document recovery editor (add first/next item). */
+    units: Unit[];
+    ivaRates: IvaRate[];
 
     isOpen: boolean;
     onToggle: () => void;
@@ -54,6 +59,8 @@ export function PaymentSourceDocumentsSection({
     hasSourceDocuments,
     plants,
     currencies,
+    units,
+    ivaRates,
     isOpen,
     onToggle,
     onSummaryChange,
@@ -279,6 +286,18 @@ export function PaymentSourceDocumentsSection({
                 onEditingStateChange={onEditingStateChange}
                 onSummaryChange={onSummaryChange}
                 onRequestAttachment={requestAttachment}
+                // Each persisted document gets an item editor — the recovery path for a document
+                // that ended up with zero linked items (it could not receive its first item before).
+                renderItems={(doc, { reload, readOnly: itemsReadOnly }) => (
+                    <PaymentSourceDocumentItemsPanel
+                        requestId={requestId}
+                        document={doc}
+                        units={units}
+                        ivaRates={ivaRates}
+                        readOnly={itemsReadOnly}
+                        onItemsPersisted={reload}
+                    />
+                )}
             />
 
             {/* The same file, already on this request. Nothing to weigh up, so nothing to confirm. */}

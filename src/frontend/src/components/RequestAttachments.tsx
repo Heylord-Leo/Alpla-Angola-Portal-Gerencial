@@ -3,6 +3,7 @@ import { FileText, Upload, Download, Trash2, AlertCircle, CheckCircle } from 'lu
 import { api } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { ConfirmationDialog } from './common/ConfirmationDialog';
+import { selectUnmappedAttachments } from './attachmentVisibility';
 
 interface Attachment {
     id: string;
@@ -371,6 +372,45 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                         </div>
                     );
                 })}
+
+                {/* Fallback bucket (Phase 4B): any authorized attachment whose type has no dedicated card
+                    (e.g. PAYMENT_SOURCE_DOCUMENT on a request not flagged multi-document) must still be
+                    visible — never counted-but-hidden. Read-only (download); excludes files already shown
+                    in the "Documentos de origem" section above to avoid duplication. */}
+                {(() => {
+                    const shownSourceIds = new Set(sourceDocuments.map(d => d.attachmentId).filter(Boolean) as string[]);
+                    const unmapped = selectUnmappedAttachments(activeAttachments, Object.keys(TYPE_LABELS), shownSourceIds);
+                    if (unmapped.length === 0) return null;
+                    return (
+                        <div key="__fallback_other" style={{
+                            padding: '16px', backgroundColor: 'var(--color-bg-page)',
+                            borderRadius: 'var(--radius-sm)', border: '2px solid var(--color-border)',
+                            display: 'flex', flexDirection: 'column', gap: '12px'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>
+                                Documentos de origem / Outros
+                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {unmapped.map(a => (
+                                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <FileText size={16} style={{ color: 'var(--color-text-muted)' }} />
+                                                <span style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.fileName}>{a.fileName}</span>
+                                            </div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginLeft: '24px', marginTop: '2px' }}>
+                                                {a.attachmentTypeCode} · enviado por {a.uploadedByName} em {formatDateTime(a.uploadedAtUtc)}
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleDownload(a.id, a.fileName)} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', marginLeft: '12px' }} title="Descarregar">
+                                            <Download size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );

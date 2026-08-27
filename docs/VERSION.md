@@ -2,7 +2,31 @@
 
 ## Current Version
 
-v2.232.0
+v2.232.2
+
+## [v2.232.2] - 2026-08-26
+
+### Draft Delete — Classification-Override FK Cleanup
+
+Patch fix found during TEST acceptance of v2.232.1: a DRAFT hard-delete could still return HTTP 409
+after a PAYMENT source document and its items had been removed, because the append-only
+`DocumentClassificationOverride` audit row kept a `NoAction` FK to the request
+(`FK_DocumentClassificationOverrides_Requests_RequestId`). The DRAFT hard-delete now removes the
+request-scoped classification-override rows before deleting the request. DRAFT-only; submitted/
+non-DRAFT audit is untouched; no schema/migration, no FK/cascade change; the structured-409 fallback
+for genuinely unknown dependencies is preserved.
+
+## [v2.232.1] - 2026-08-26
+
+### Request Lifecycle Stabilization — Draft Recovery, PAYMENT P.O. Groups & Operational "Aguardando P.O." Display
+
+Patch release hardening the request lifecycle around the PAYMENT multi-source-document model and
+PO-group creation, recovering broken zero-item drafts, and making the user-facing status honest when
+the operational unit is at the P.O. gate — all **without any schema/DB migration and without any
+scalar status normalization**. Adds SysAdmin-only, idempotent tooling (dry-run report + explicit
+execute) to repair historical PAYMENT requests that were approved before the PO-group fix, plus a
+guarded DEV regression harness and an operator read-only candidate SQL report. No automatic repair;
+no startup/deploy hook; unsafe/downstream cases are forced to manual review.
 
 ## [v2.232.0] - 2026-08-25
 

@@ -25,6 +25,15 @@ public class RequestDetailsDto
     /// </summary>
     public string? DisplayWorkflowState { get; set; }
 
+    /// <summary>
+    /// Group-aware display override (Phase 4B.2), mirroring RequestListItemDto. Null means "no
+    /// override" — the client falls back to StatusName. Never persisted, never used for
+    /// permissions/eligibility/filtering; exists so a request whose operational group is WAITING_PO
+    /// reads "Aguardando P.O." while the scalar (Status) stays untouched (PAYMENT keeps APPROVED).
+    /// </summary>
+    public string? DisplayStatusCode { get; set; }
+    public string? DisplayStatusName { get; set; }
+
     public int RequestTypeId { get; set; }
     public string RequestTypeName { get; set; } = string.Empty;
     public string RequestTypeCode { get; set; } = string.Empty;
