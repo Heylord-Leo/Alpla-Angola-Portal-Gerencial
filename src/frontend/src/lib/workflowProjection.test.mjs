@@ -9,6 +9,7 @@ import {
     resolveDrawerBadgeOverride,
     resolveSingleUnitGuidance,
     effectivePanelStatus,
+    isOperationalPanelStatus,
 } from './workflowProjection.ts';
 
 // v2.230.0 — pure display helpers for the Multi-Group Request Workflow projection.
@@ -159,5 +160,77 @@ describe('drawer projection helpers (single-unit historical compatibility)', () 
         assert.equal(effectivePanelStatus(projection([unit('PO_ISSUED', 'P.O Emitida')]), 'APPROVED'), 'PO_ISSUED'); // identity
         assert.equal(effectivePanelStatus(null, 'APPROVED'), 'APPROVED'); // no projection loaded
         assert.equal(effectivePanelStatus(projection([unit('A', 'a'), unit('B', 'b')]), 'PO_PARTIALLY_UPLOADED'), 'PO_PARTIALLY_UPLOADED'); // multi-unit keeps scalar
+    });
+});
+
+describe('effectivePanelStatus — multi-group QUOTATION with a lagging scalar (REQ-234 class)', () => {
+    const projection = (units) => ({ aggregateDisplay: { statusCode: 'X', label: 'X' }, units, responsibilities: [], nextActions: [], warnings: [] });
+    const group = (statusCode) => ({
+        unitType: 'GROUP', unitId: 'g-' + statusCode, label: 'Grupo ' + statusCode, totalAmount: 0, itemCount: 0,
+        itemLineNumbers: [], statusCode, statusLabel: statusCode, approvalState: 'COMPLETE', poState: 'PENDING',
+        paymentState: 'NOT_STARTED', receivingState: 'NOT_STARTED', completionState: 'NOT_STARTED', responsibleRole: 'Comprador',
+        nextAction: null,
+    });
+    const batch = (statusCode) => ({ ...group(statusCode), unitType: 'BATCH', unitId: 'b-' + statusCode });
+
+    // CASE A — two WAITING_PO groups + stale WAITING_QUOTATION scalar → PO_REQUESTED (Register P.O renders).
+    test('CASE A: WAITING_PO + WAITING_PO → PO_REQUESTED', () => {
+        const eff = effectivePanelStatus(projection([group('WAITING_PO'), group('WAITING_PO')]), 'WAITING_QUOTATION');
+        assert.equal(eff, 'PO_REQUESTED');
+        assert.equal(isOperationalPanelStatus(eff), true);
+    });
+
+    // CASE B — one PO already issued, one still waiting → PO_PARTIALLY_UPLOADED (only remaining group registers).
+    test('CASE B: PO_ISSUED + WAITING_PO → PO_PARTIALLY_UPLOADED', () => {
+        const eff = effectivePanelStatus(projection([group('PO_ISSUED'), group('WAITING_PO')]), 'WAITING_QUOTATION');
+        assert.equal(eff, 'PO_PARTIALLY_UPLOADED');
+        assert.equal(isOperationalPanelStatus(eff), true);
+    });
+
+    // CASE C — a group returned for correction alongside an issued one → WAITING_PO_CORRECTION.
+    test('CASE C: PO_ISSUED + WAITING_PO_CORRECTION → WAITING_PO_CORRECTION', () => {
+        const eff = effectivePanelStatus(projection([group('PO_ISSUED'), group('WAITING_PO_CORRECTION')]), 'WAITING_QUOTATION');
+        assert.equal(eff, 'WAITING_PO_CORRECTION');
+        assert.equal(isOperationalPanelStatus(eff), true);
+    });
+
+    // Mixed Register + Correct: only PO_PARTIALLY_UPLOADED satisfies both inner button gates.
+    test('WAITING_PO + WAITING_PO_CORRECTION → PO_PARTIALLY_UPLOADED (shows both actions)', () => {
+        const eff = effectivePanelStatus(projection([group('WAITING_PO'), group('WAITING_PO_CORRECTION')]), 'WAITING_QUOTATION');
+        assert.equal(eff, 'PO_PARTIALLY_UPLOADED');
+        assert.equal(isOperationalPanelStatus(eff), true);
+    });
+
+    // CASE D — an already-operational multi-unit scalar is preserved unchanged (no regression).
+    test('CASE D: operational scalar preserved for multi-unit', () => {
+        assert.equal(effectivePanelStatus(projection([group('PO_ISSUED'), group('WAITING_PO')]), 'PO_PARTIALLY_UPLOADED'), 'PO_PARTIALLY_UPLOADED');
+        assert.equal(effectivePanelStatus(projection([group('WAITING_PO'), group('WAITING_PO')]), 'PO_REQUESTED'), 'PO_REQUESTED');
+    });
+
+    // CASE E — no actionable Buyer PO work: keep the persisted (non-operational) scalar.
+    test('CASE E: no actionable group keeps the scalar', () => {
+        assert.equal(effectivePanelStatus(projection([group('PO_ISSUED'), group('PO_ISSUED')]), 'WAITING_QUOTATION'), 'WAITING_QUOTATION');
+        assert.equal(effectivePanelStatus(projection([batch('WAITING_AREA_APPROVAL'), batch('WAITING_AREA_APPROVAL')]), 'WAITING_QUOTATION'), 'WAITING_QUOTATION');
+    });
+
+    // Pre-PO PENDING groups never fabricate an operational status.
+    test('multi PENDING groups with a lagging scalar stay non-operational', () => {
+        assert.equal(effectivePanelStatus(projection([group('PENDING'), group('PENDING')]), 'WAITING_QUOTATION'), 'WAITING_QUOTATION');
+    });
+
+    // BATCH units alongside a WAITING_PO group: the batch does not count as "past the PO gate".
+    test('BATCH unit does not force PO_PARTIALLY_UPLOADED', () => {
+        const eff = effectivePanelStatus(projection([batch('WAITING_AREA_APPROVAL'), group('WAITING_PO')]), 'WAITING_QUOTATION');
+        assert.equal(eff, 'PO_REQUESTED');
+    });
+
+    // Terminal scalar still wins even with lagging-looking groups.
+    test('terminal scalar authoritative for multi-unit', () => {
+        assert.equal(effectivePanelStatus(projection([group('WAITING_PO'), group('WAITING_PO')]), 'CANCELLED'), 'CANCELLED');
+    });
+
+    // The single-unit path is unchanged by the refactor.
+    test('single-unit lagging scalar still maps from the unit', () => {
+        assert.equal(effectivePanelStatus(projection([group('WAITING_PO')]), 'WAITING_QUOTATION'), 'PO_REQUESTED');
     });
 });

@@ -129,23 +129,98 @@ export function resolveSingleUnitGuidance(
 }
 
 /**
- * Effective status for the drawer ACTION PANELS of a single-unit QUOTATION request: panels are
- * keyed on request-level status codes, so the unit's lifecycle maps onto the equivalent panel
- * vocabulary (identity for post-PO states; WAITING_PO → PO_REQUESTED, PENDING →
- * WAITING_FINAL_APPROVAL). Falls back to the persisted scalar when there is no single reliable
- * unit (class-A, multi-unit — whose per-group gating is already unit-aware) or the scalar is
- * terminal. Register-PO buttons remain per-group gated inside the panels.
+ * Operational panel statuses — the request-level status codes for which the Procurement/Buyer
+ * action panel in RequestStatusActionPanels is allowed to render. Kept in sync with the
+ * allow-list at the top of that panel (RequestStatusActionPanels.tsx line ~140). Exported so the
+ * multi-unit derivation below — and its tests — can assert that a derived result is "operational"
+ * (i.e. the panel will actually render for it).
+ */
+export const OPERATIONAL_PANEL_STATUSES = new Set<string>([
+    'APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED',
+    'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT',
+    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY',
+    'WAITING_RECONCILIATION',
+]);
+
+/** True when the panel's operational allow-list would render for this request-level status. */
+export function isOperationalPanelStatus(code: string): boolean {
+    return OPERATIONAL_PANEL_STATUSES.has(code);
+}
+
+/** A single operational unit's lifecycle mapped onto the request-level panel vocabulary
+ *  (identity for post-PO states; WAITING_PO → PO_REQUESTED, PENDING → WAITING_FINAL_APPROVAL). */
+function mapUnitStatusToPanel(unitStatusCode: string): string {
+    const map: Record<string, string> = {
+        WAITING_PO: 'PO_REQUESTED',
+        PENDING: 'WAITING_FINAL_APPROVAL',
+    };
+    return map[unitStatusCode] ?? unitStatusCode;
+}
+
+/**
+ * Representative operational panel status for a MULTI-unit request whose persisted scalar is a
+ * valid non-operational request-level state while some of its groups are already operational (e.g.
+ * a partial-quotation QUOTATION correctly still WAITING_QUOTATION for its unquoted items, whose
+ * already-approved groups are WAITING_PO). Precedence mirrors exactly what the
+ * RequestStatusActionPanels inner gates need to surface the right per-group buttons — REGISTER_PO
+ * needs PO_REQUESTED / PO_PARTIALLY_UPLOADED; CORRECT_PO needs WAITING_PO_CORRECTION /
+ * PO_PARTIALLY_UPLOADED:
+ *
+ *  - a group still WAITING_PO, alongside a group that already crossed the PO gate OR a group in
+ *    correction  → PO_PARTIALLY_UPLOADED  (the only status that shows both Register and Correct)
+ *  - groups WAITING_PO with nothing issued and no correction  → PO_REQUESTED
+ *  - no WAITING_PO but a group in correction  → WAITING_PO_CORRECTION
+ *  - no actionable Buyer PO work in any group  → null (caller keeps the persisted scalar)
+ *
+ * Only GROUP units are considered; BATCH units and PENDING groups are pre-PO (neither actionable
+ * nor "past the gate") and never force an operational status on their own.
+ */
+function deriveMultiUnitPanelStatus(units: readonly WorkflowUnit[]): string | null {
+    const groups = units.filter(u => u.unitType === 'GROUP');
+    const hasWaitingPo = groups.some(u => u.statusCode === 'WAITING_PO');
+    const hasCorrection = groups.some(u => u.statusCode === 'WAITING_PO_CORRECTION');
+    const hasPastPoGroup = groups.some(u =>
+        u.statusCode !== 'WAITING_PO' &&
+        u.statusCode !== 'WAITING_PO_CORRECTION' &&
+        u.statusCode !== 'PENDING');
+
+    if (hasWaitingPo) {
+        return (hasPastPoGroup || hasCorrection) ? 'PO_PARTIALLY_UPLOADED' : 'PO_REQUESTED';
+    }
+    if (hasCorrection) return 'WAITING_PO_CORRECTION';
+    return null;
+}
+
+/**
+ * Effective status for the drawer ACTION PANELS of a QUOTATION request: panels are keyed on
+ * request-level status codes, so the operational unit lifecycle maps onto the equivalent panel
+ * vocabulary.
+ *
+ * Single-unit: the unit's lifecycle maps directly (identity for post-PO states; WAITING_PO →
+ * PO_REQUESTED, PENDING → WAITING_FINAL_APPROVAL).
+ *
+ * Multi-unit: the persisted scalar governs the panel UNLESS it is a valid NON-operational
+ * request-level state (e.g. WAITING_QUOTATION on a partial quotation) while one or more approved
+ * groups are already operational. Only then is a representative operational status derived from
+ * the groups so the group-aware panel can render; when the scalar is already operational it is
+ * preserved unchanged. The per-group Register-PO / Correct-PO buttons remain group-filtered inside
+ * the panels — the effective status only decides whether the operational panel is allowed to open.
+ *
+ * Falls back to the persisted scalar for class-A (unit-less), terminal scalars, or a multi-unit
+ * request with no actionable Buyer PO work.
  */
 export function effectivePanelStatus(
     projection: RequestWorkflowProjection | null | undefined,
     scalarStatusCode: string,
 ): string {
-    if (!projection || projection.units.length !== 1) return scalarStatusCode;
+    if (!projection || projection.units.length === 0) return scalarStatusCode;
     if (TERMINAL_SCALARS.includes(scalarStatusCode)) return scalarStatusCode;
-    const unit = projection.units[0];
-    const map: Record<string, string> = {
-        WAITING_PO: 'PO_REQUESTED',
-        PENDING: 'WAITING_FINAL_APPROVAL',
-    };
-    return map[unit.statusCode] ?? unit.statusCode;
+
+    if (projection.units.length === 1) {
+        return mapUnitStatusToPanel(projection.units[0].statusCode);
+    }
+
+    // Multi-unit: keep an already-operational scalar; only rescue a lagging non-operational one.
+    if (isOperationalPanelStatus(scalarStatusCode)) return scalarStatusCode;
+    return deriveMultiUnitPanelStatus(projection.units) ?? scalarStatusCode;
 }
