@@ -4,7 +4,34 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.3
+v2.232.4
+
+## [v2.232.4] - 2026-08-27
+
+### Buyer — Register P.O Restored for Partial Multi-Group Quotations
+
+Frontend-only patch. No backend / API / schema / data changes.
+
+#### Fixed
+
+- **Register P.O was hidden for partial multi-group QUOTATION requests.** When a quotation is only
+  partially quoted, the request scalar correctly stays `WAITING_QUOTATION` while its already-approved
+  supplier groups (`RequestPoGroup`) are `WAITING_PO`. The Buyer P.O panel was suppressed in this
+  valid state because `effectivePanelStatus` only remapped single-unit projections; a multi-group
+  request fell through to the raw non-operational scalar, which the panel's operational allow-list
+  rejected.
+- The effective panel status is now derived from the groups for multi-unit projections: a
+  representative operational status (e.g. `PO_REQUESTED`, or `PO_PARTIALLY_UPLOADED` when some groups
+  already crossed the P.O gate) so the group-aware panel renders. Per-group **Registrar P.O** /
+  **Corrigir P.O** actions remain group-filtered and authoritative.
+
+#### Notes
+
+- `WAITING_QUOTATION` on these requests is a **correct, by-design partial-quotation state**, not
+  stale data — the backend `RequestStatusCalculator` intentionally keeps the request awaiting
+  quotation while items remain unquoted. No request statuses were normalized or repaired.
+- Already-operational request scalars and terminal scalars (CANCELLED/REJECTED/COMPLETED) are
+  preserved unchanged; single-unit behavior is unchanged.
 
 ## [v2.232.3] - 2026-08-27
 

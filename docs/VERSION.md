@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.232.3
+v2.232.4
+
+## [v2.232.4] - 2026-08-27
+
+### Buyer — Register P.O Restored for Partial Multi-Group Quotations
+
+Frontend-only patch. For a partial-quotation QUOTATION request, the request scalar can correctly
+remain `WAITING_QUOTATION` (items still being quoted) while its already-approved `RequestPoGroup`s
+are `WAITING_PO`. The drawer previously hid the whole Buyer P.O panel in that valid state because
+`effectivePanelStatus` only remapped single-unit projections. It now derives a representative
+operational panel status for multi-unit projections from the groups themselves, so the group-aware
+panel renders while per-group Register/Correct P.O actions stay authoritative. Already-operational
+and terminal scalars are preserved unchanged. No backend / API / schema / data changes.
 
 ## [v2.232.3] - 2026-08-27
 
