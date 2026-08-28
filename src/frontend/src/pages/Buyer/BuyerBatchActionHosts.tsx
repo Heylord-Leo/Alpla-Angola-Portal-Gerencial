@@ -3,6 +3,7 @@ import { ModalWrapper } from '../../components/common/ModalWrapper';
 import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
 import { BatchReworkModal } from './BatchReworkModal';
 import { api } from '../../lib/api';
+import { toWizardActiveRequest } from './QuotationWizard/workspaceWizardRequest';
 import type { BatchItemInput, ExtraItemDecisionPayload } from '../../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,8 +39,13 @@ function useRequest(requestId: string) {
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(null);
+    // RequestDetailsDto exposes the GUID as `id` only — the classic group contract the batch modals
+    // follow (BatchReworkModal calls updateApprovalBatch/resubmitApprovalBatch with `group.requestId`)
+    // expects `requestId`. Stamp it once here, at the host boundary, from the authoritative fetch key —
+    // same normalization as the wizard host (REQ-24/08/2026-293); without it the rework calls hit
+    // /api/v1/requests/undefined/... (HTTP 404, route `{requestId:guid}` never matches).
     api.requests.get(requestId)
-      .then(r => { if (alive) setRequest(r); })
+      .then(r => { if (alive) setRequest(toWizardActiveRequest(r, requestId)); })
       .catch(e => { if (alive) setError(e?.message || 'Falha ao carregar o pedido.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };

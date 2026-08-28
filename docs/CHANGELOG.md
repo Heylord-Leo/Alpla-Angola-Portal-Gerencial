@@ -4,7 +4,35 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.4
+v2.232.5
+
+## [v2.232.5] - 2026-08-28
+
+### Buyer / Gestão de Cotações — Workspace Batch Rework "Reenviar" Fix (Area Adjustment)
+
+Frontend-only patch. No backend / API / schema / data changes.
+
+#### Fixed
+
+- **"Reenviar sem alterações" and "Salvar Correções e Reenviar" failed from the Buyer Workspace.**
+  The Workspace rework host (`BuyerBatchReworkHost`) loaded the request via `api.requests.get` and
+  forwarded the raw `RequestDetailsDto` — whose GUID is exposed as `id` only — as the modal's
+  `group`. `BatchReworkModal` follows the classic group contract and calls
+  `updateApprovalBatch` / `resubmitApprovalBatch` with `group.requestId`, so both actions produced
+  malformed `/api/v1/requests/undefined/batches/{batchId}/...` requests (HTTP 404 — the
+  `{requestId:guid}` route never matches, no controller was reached).
+- The host's shared request loader now normalizes the identity once at the boundary — stamping
+  `requestId` from the authoritative fetch key via the existing `toWizardActiveRequest` helper (the
+  same seam as the v2.232.3 wizard fix). Both rework actions now target the real request GUID and
+  the batch returns to Area Approval normally.
+
+#### Notes
+
+- The classic Buyer screen was never affected (it builds its own group carrying `requestId`) and is
+  unchanged; `BatchReworkModal`'s contract is unchanged. The affected requests' data was always
+  intact — the failed calls never reached the backend, so no data repair is involved.
+- New node-only regression suite `BuyerBatchActionHosts.requestId.test.ts` locks the boundary
+  normalization and the modal's classic contract (pure helper assertions + source-level guards).
 
 ## [v2.232.4] - 2026-08-27
 
