@@ -2319,7 +2319,7 @@ export function BuyerItemsList() {
                                                                             onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#bae6fd'; }}
                                                                             onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#e0f2fe'; }}
                                                                         >
-                                                                            Corrigir Lote
+                                                                            Revisar Lote para Reenvio
                                                                         </button>
                                                                     )}
                                                                     {canMutateQuotation && mode === 'BUYER' && isReversible && (
@@ -2634,6 +2634,9 @@ export function BuyerItemsList() {
                 group={batchReworkModal.group}
                 batch={batchReworkModal.batch}
                 onSuccess={handleBatchReworkSuccess}
+                // QF4: this classic screen IS the quotation-management surface — closing the modal
+                // lands the buyer directly on the request's quotation tools.
+                onManageQuotations={() => setBatchReworkModal({ show: false, group: null, batch: null })}
             />
 
             <CancelApprovalBatchModal

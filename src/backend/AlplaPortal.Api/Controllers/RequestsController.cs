@@ -1484,6 +1484,22 @@ public class RequestsController : BaseController
                 }
             }
 
+            // Adjustment V2 Phase 1 (QF1): stamp the Approver's actual adjustment context onto each
+            // batch, derived from the already-materialized status history. batch.Comment is the
+            // Buyer's text and is NOT the adjustment motive. Null fields when nothing parses safely.
+            var adjustmentHistoryEntries = request.StatusHistory
+                .Select(sh => new BatchAdjustmentContextParser.HistoryEntry(sh.ActionTaken, sh.Comment, sh.CreatedAtUtc, sh.ActorName))
+                .ToList();
+            foreach (var batchDto in request.ApprovalBatches)
+            {
+                var adjustmentContext = BatchAdjustmentContextParser.Resolve(adjustmentHistoryEntries, batchDto.BatchNumber);
+                if (adjustmentContext == null) continue;
+                batchDto.AdjustmentReason = adjustmentContext.Reason;
+                batchDto.AdjustmentRequestedByName = adjustmentContext.RequestedByName;
+                batchDto.AdjustmentRequestedAtUtc = adjustmentContext.RequestedAtUtc;
+                batchDto.AdjustmentSourceStage = adjustmentContext.SourceStage;
+            }
+
             // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED
             // lines, unresolved legacy extras) — read-only, computed from the quotation(s) that
             // contributed a CANDIDATE (or, for legacy batches, a winner) to that specific batch.
@@ -6203,6 +6219,25 @@ public class RequestsController : BaseController
             });
         }
 
+        // ── Batch-model gate (REQ-20/08/2026-274 ghost-card class) ──
+        // A QUOTATION request with ANY ApprovalBatch is governed by the batch approval model:
+        // request-wide approve/reject/adjust would act over lots this endpoint cannot see (e.g. a
+        // lot in FINAL_ADJUSTMENT owned by the Buyer, while the scalar intentionally stays
+        // WAITING_FINAL_APPROVAL). Protects stale browser tabs and direct API calls; PAYMENT and
+        // true legacy zero-batch QUOTATION requests pass through unchanged.
+        if (request.RequestType!.Code == "QUOTATION" &&
+            await _context.ApprovalBatches.AnyAsync(b => b.RequestId == id))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Aprovação por Lotes",
+                Detail = "Este pedido de Cotação é aprovado por lotes. A ação request-wide não é " +
+                         "permitida — utilize o fluxo de lotes (cada lote é aprovado, rejeitado ou " +
+                         "reajustado individualmente).",
+                Status = 400
+            });
+        }
+
         if (request.RequestType!.Code == "PAYMENT" && action == "REQUEST_ADJUSTMENT")
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Pedidos de Pagamento não permitem reajuste. Apenas aprovação ou rejeição são permitidas.", Status = 400 });
 
@@ -6432,6 +6467,22 @@ public class RequestsController : BaseController
                 Detail = "Este pedido possui grupo(s) operacionais com P.O. registrada ou em fase " +
                          "financeira. A aprovação request-wide não é permitida — utilize o fluxo de " +
                          "lotes para aprovar itens restantes.",
+                Status = 400
+            });
+        }
+
+        // ── Batch-model gate (REQ-20/08/2026-274 ghost-card class) — mirror of the Final guard ──
+        // A QUOTATION request with ANY ApprovalBatch must be decided through the batch endpoints;
+        // the request-wide legacy path stays valid only for true zero-batch legacy requests.
+        if (request.RequestType!.Code == "QUOTATION" &&
+            await _context.ApprovalBatches.AnyAsync(b => b.RequestId == id))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Aprovação por Lotes",
+                Detail = "Este pedido de Cotação é aprovado por lotes. A ação request-wide não é " +
+                         "permitida — utilize o fluxo de lotes (cada lote é aprovado, rejeitado ou " +
+                         "reajustado individualmente).",
                 Status = 400
             });
         }

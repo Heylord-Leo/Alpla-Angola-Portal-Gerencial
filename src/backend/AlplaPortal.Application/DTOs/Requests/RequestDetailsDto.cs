@@ -137,6 +137,24 @@ public class RequestApprovalBatchDto
     public string? UpdatedByUserName { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
 
+    // ── Adjustment V2 Phase 1 (QF1): the Approver's ACTUAL adjustment context, derived read-only
+    // from the latest BATCH_AREA_ADJUSTMENT / BATCH_FINAL_ADJUSTMENT history entry for THIS batch
+    // (BatchAdjustmentContextParser). `Comment` above is the Buyer's own text and must never be
+    // labeled as the adjustment motive. All four are null when the batch was never adjusted or
+    // legacy history cannot be parsed safely — never invented.
+
+    /// <summary>Free-text motive the Approver entered when requesting the adjustment.</summary>
+    public string? AdjustmentReason { get; set; }
+
+    /// <summary>Full name of the Approver who requested the adjustment.</summary>
+    public string? AdjustmentRequestedByName { get; set; }
+
+    [JsonConverter(typeof(UtcDateTimeJsonConverter))]
+    public DateTime? AdjustmentRequestedAtUtc { get; set; }
+
+    /// <summary>"AREA" or "FINAL" — which approval stage requested the adjustment.</summary>
+    public string? AdjustmentSourceStage { get; set; }
+
     public List<RequestApprovalBatchItemDto> Items { get; set; } = new();
 
     /// <summary>Genuine EXTRA_ITEM lines the Buyer explicitly decided not to include in this batch. Read-only, excluded from totals.</summary>

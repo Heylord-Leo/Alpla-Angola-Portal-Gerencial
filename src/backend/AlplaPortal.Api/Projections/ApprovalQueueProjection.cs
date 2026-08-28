@@ -110,9 +110,16 @@ public static class ApprovalQueueProjection
             .ToListAsync();
 
         // ── B. Request-level rows: actionable by request status, with NO matching batch ──
-        //   Covers PAYMENT (never batched) and legacy whole-request QUOTATION approvals.
+        //   Covers PAYMENT (never batched) and legacy whole-request QUOTATION approvals ONLY.
+        //   Batch-model gate (REQ-20/08/2026-274 ghost-card class): a QUOTATION request with ANY
+        //   ApprovalBatch row is governed by the batch model, so its actionable rows can only be
+        //   section-A batch rows. Without this, a request whose sole batch sits in AREA/FINAL
+        //   _ADJUSTMENT — while the scalar intentionally stays aggregate WAITING_*_APPROVAL
+        //   (RequestStatusCalculator) — emitted a request-level card that was genuinely actionable
+        //   (request-wide Reject) although the Buyer owns the rework. Stage-agnostic on purpose.
         var requestRows = await stageQuery
-            .Where(r => !r.ApprovalBatches.Any(b => b.Status == stageBatchStatus))
+            .Where(r => !r.ApprovalBatches.Any(b => b.Status == stageBatchStatus)
+                && (r.RequestType!.Code != RequestConstants.Types.Quotation || !r.ApprovalBatches.Any()))
             .Select(x => new RequestRow
             {
                 RequestId = x.Id,

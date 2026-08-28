@@ -87,8 +87,16 @@ public class SaveQuotationAuthoritativeTotalsIntegrationTests
         await using var ctx = new ApplicationDbContext(Options());
         var actor = await ctx.Users.AsNoTracking().Select(u => u.Id).FirstOrDefaultAsync();
         if (actor == Guid.Empty) return null;
-        var supplierId = await ctx.Suppliers.AsNoTracking().Select(s => s.Id).FirstOrDefaultAsync();
-        if (supplierId == 0) return null;
+        // Own EXTERNAL supplier (removed by CleanupAsync) — the previous "first supplier" pick broke
+        // on a model-created sandbox whose first row is the internal "Alpla Global Services", which
+        // InternalCompanyGuard (correctly) rejects. Unique name: Suppliers.Name is uniquely indexed.
+        var supplier = new Supplier
+        {
+            Name = "ZZTEST Fornecedor Externo " + Guid.NewGuid().ToString("N")[..8],
+            TaxId = "ZZ" + Guid.NewGuid().ToString("N")[..9],
+            IsActive = true
+        };
+        ctx.Suppliers.Add(supplier);
         var iva14 = await ctx.IvaRates.AsNoTracking().Where(i => i.RatePercent == 14m).Select(i => i.Id).FirstOrDefaultAsync();
         if (iva14 == 0) return null;
 
@@ -131,10 +139,10 @@ public class SaveQuotationAuthoritativeTotalsIntegrationTests
             lineItemIds.Add(li.Id);
         }
         await ctx.SaveChangesAsync();
-        return new Seeded(request.Id, lineItemIds, actor, supplierId, iva14);
+        return new Seeded(request.Id, lineItemIds, actor, supplier.Id, iva14);
     }
 
-    private static async Task CleanupAsync(Guid requestId)
+    private static async Task CleanupAsync(Guid requestId, int supplierId)
     {
         await using var ctx = new ApplicationDbContext(Options());
         await ctx.Database.ExecuteSqlRawAsync(
@@ -142,7 +150,10 @@ public class SaveQuotationAuthoritativeTotalsIntegrationTests
             "DELETE FROM Quotations WHERE RequestId={0};" +
             "DELETE FROM RequestStatusHistories WHERE RequestId={0};" +
             "DELETE FROM RequestLineItems WHERE RequestId={0};" +
-            "DELETE FROM Requests WHERE Id={0};", requestId);
+            "DELETE FROM Requests WHERE Id={0};" +
+            // ONLY this seed's own ZZTEST supplier (id-scoped: name-pattern deletes raced against
+            // the other SaveQuotation suite running in parallel and removed its just-seeded row).
+            "DELETE FROM Suppliers WHERE Id={1} AND NOT EXISTS (SELECT 1 FROM Quotations q WHERE q.SupplierId = Suppliers.Id);", requestId, supplierId);
     }
 
     private static SaveQuotationItemDto OcrLine(
@@ -162,7 +173,11 @@ public class SaveQuotationAuthoritativeTotalsIntegrationTests
         OcrOriginalUnitPrice = unitPrice,
         OcrOriginalDiscountAmount = 0,
         OcrOriginalIvaRatePercent = null,
-        OcrOriginalLineTotal = qty * unitPrice
+        OcrOriginalLineTotal = qty * unitPrice,
+        // Current per-line materiality rule: applying 14% against a document with NO per-line OCR
+        // rate (imputed 0) is a material IVA change and requires a consolidated line reason — the
+        // same justification a real buyer records for a summary-IVA document today.
+        LineAdjustmentJustification = "Taxa de IVA aplicada conforme o resumo global do documento (IVA 14%)."
     };
 
     [Fact] // Structural pin: a client-computed line total is UNREPRESENTABLE on the wire.
@@ -232,6 +247,6 @@ public class SaveQuotationAuthoritativeTotalsIntegrationTests
             var quotation = await verify.Quotations.AsNoTracking().FirstAsync(q => q.Id == saved.Id);
             Assert.Equal(1_508_220m, quotation.TotalAmount);
         }
-        finally { await CleanupAsync(seeded.RequestId); }
+        finally { await CleanupAsync(seeded.RequestId, seeded.SupplierId); }
     }
 }
