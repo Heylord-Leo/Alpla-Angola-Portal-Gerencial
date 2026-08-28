@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.232.4
+v2.232.5
+
+## [v2.232.5] - 2026-08-28
+
+### Buyer — Workspace Batch Rework "Reenviar" Fix (Area Adjustment)
+
+Frontend-only patch. In the NEW Buyer Workspace, "Revisar e reenviar lote" (batch in
+AREA_ADJUSTMENT / FINAL_ADJUSTMENT) failed on both actions — "Reenviar sem alterações" and
+"Salvar Correções e Reenviar" — because the Workspace host forwarded the raw `RequestDetailsDto`
+(GUID exposed as `id`) to `BatchReworkModal`, which follows the classic group contract and reads
+`group.requestId`. The calls hit `/api/v1/requests/undefined/batches/{batchId}/...` (HTTP 404 — the
+`{requestId:guid}` route never matches). The host now stamps `requestId` once at its boundary via the
+existing `toWizardActiveRequest` normalization (same seam as the v2.232.3 wizard fix). The classic
+Buyer screen and the modal's contract are unchanged. No backend / API / schema / data changes.
 
 ## [v2.232.4] - 2026-08-27
 
