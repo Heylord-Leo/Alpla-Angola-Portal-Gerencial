@@ -12,6 +12,9 @@
  *
  * Kept in its own dependency-free module (no api/react imports) so it is unit-testable under the
  * repo's node-only vitest environment.
+ *
+ * Also reused by BuyerBatchActionHosts (Workspace batch rework host): it is the same
+ * RequestDetailsDto→classic-group boundary, where BatchReworkModal reads `group.requestId`.
  */
 export function toWizardActiveRequest<T extends object>(request: T, requestId: string): T & { requestId: string } {
     return { ...request, requestId };
