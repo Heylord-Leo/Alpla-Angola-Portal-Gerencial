@@ -57,6 +57,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<ApprovalBatchItem> ApprovalBatchItems => Set<ApprovalBatchItem>();
     public DbSet<ApprovalBatchItemCandidate> ApprovalBatchItemCandidates => Set<ApprovalBatchItemCandidate>();
     public DbSet<ApprovalBatchExtraItemDecision> ApprovalBatchExtraItemDecisions => Set<ApprovalBatchExtraItemDecision>();
+
+    // Adjustment V2 (Phase 2 — dormant domain; no workflow reads/writes until Phase 3)
+    public DbSet<ApprovalBatchAdjustment> ApprovalBatchAdjustments => Set<ApprovalBatchAdjustment>();
+    public DbSet<ApprovalBatchAdjustmentReason> ApprovalBatchAdjustmentReasons => Set<ApprovalBatchAdjustmentReason>();
+    public DbSet<ApprovalBatchAdjustmentResolution> ApprovalBatchAdjustmentResolutions => Set<ApprovalBatchAdjustmentResolution>();
+    public DbSet<ApprovalBatchAdjustmentFieldChange> ApprovalBatchAdjustmentFieldChanges => Set<ApprovalBatchAdjustmentFieldChange>();
+    public DbSet<ApprovalBatchCandidateReview> ApprovalBatchCandidateReviews => Set<ApprovalBatchCandidateReview>();
     public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
 
     // Integration Foundation (Phase 0)

@@ -540,6 +540,152 @@ public class ApprovalBatchItemCandidateConfiguration : IEntityTypeConfiguration<
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Adjustment V2 (Phase 2 — DORMANT domain model). No workflow reads or writes
+// these tables until Phase 3; the existing Area/Final adjustment flow and the
+// RequestStatusHistory audit remain the active implementation.
+// ═════════════════════════════════════════════════════════════════════════════
+
+public class ApprovalBatchAdjustmentConfiguration : IEntityTypeConfiguration<ApprovalBatchAdjustment>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchAdjustment> builder)
+    {
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.SourceStage).IsRequired().HasMaxLength(10);
+        builder.Property(a => a.Status).IsRequired().HasMaxLength(30);
+        builder.Property(a => a.ApproverComment).IsRequired().HasMaxLength(2000);
+        builder.Property(a => a.CancelReason).HasMaxLength(2000);
+        builder.Property(a => a.TotalsBeforeMin).HasColumnType("decimal(18,2)");
+        builder.Property(a => a.TotalsBeforeMax).HasColumnType("decimal(18,2)");
+
+        // Owned by the ApprovalBatch aggregate — cascades with it, exactly like Items and
+        // ExtraItemDecisions (also keeps the existing Request → ApprovalBatch cascade working).
+        builder.HasOne(a => a.ApprovalBatch)
+               .WithMany(b => b.Adjustments)
+               .HasForeignKey(a => a.ApprovalBatchId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        // Adjustment-child rows cascade from their cycle root.
+        builder.HasMany(a => a.Reasons)
+               .WithOne(r => r.Adjustment)
+               .HasForeignKey(r => r.AdjustmentId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(a => a.Resolutions)
+               .WithOne(r => r.Adjustment)
+               .HasForeignKey(r => r.AdjustmentId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(a => a.FieldChanges)
+               .WithOne(fc => fc.Adjustment)
+               .HasForeignKey(fc => fc.AdjustmentId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(a => a.CandidateReviews)
+               .WithOne(cr => cr.Adjustment)
+               .HasForeignKey(cr => cr.AdjustmentId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        // Cycle numbers are unique within a batch (multiple historical cycles supported).
+        builder.HasIndex(a => new { a.ApprovalBatchId, a.CycleNumber })
+               .IsUnique()
+               .HasDatabaseName("UX_ApprovalBatchAdjustment_Batch_Cycle");
+
+        // At most ONE open cycle per batch. The filter targets Status DIRECTLY — SQL Server
+        // rejects filtered indexes over computed columns, so there is no IsOpen helper column.
+        // Keep this list in sync with AdjustmentConstants.States.Open.
+        builder.HasIndex(a => a.ApprovalBatchId)
+               .IsUnique()
+               .HasFilter("[Status] IN (N'WAITING_REQUESTER', N'WAITING_BUYER')")
+               .HasDatabaseName("UX_ApprovalBatchAdjustment_OpenCycle");
+    }
+}
+
+public class ApprovalBatchAdjustmentReasonConfiguration : IEntityTypeConfiguration<ApprovalBatchAdjustmentReason>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchAdjustmentReason> builder)
+    {
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.ReasonCode).IsRequired().HasMaxLength(40);
+        builder.Property(r => r.Detail).HasMaxLength(1000);
+
+        // Traceability reference to the affected line — same NoAction convention as
+        // ApprovalBatchItem.RequestLineItemId (line items are soft-deleted in production).
+        builder.HasOne(r => r.RequestLineItem)
+               .WithMany()
+               .HasForeignKey(r => r.RequestLineItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        // One reason code per scope per cycle. HasFilter(null) removes EF's default
+        // "[RequestLineItemId] IS NOT NULL" filter so the NULL (= whole-lot) scope participates:
+        // SQL Server then also rejects a duplicate whole-lot reason — the desired rule.
+        builder.HasIndex(r => new { r.AdjustmentId, r.ReasonCode, r.RequestLineItemId })
+               .IsUnique()
+               .HasFilter(null)
+               .HasDatabaseName("UX_ApprovalBatchAdjustmentReason_Cycle_Code_Item");
+    }
+}
+
+public class ApprovalBatchAdjustmentResolutionConfiguration : IEntityTypeConfiguration<ApprovalBatchAdjustmentResolution>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchAdjustmentResolution> builder)
+    {
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.ActorType).IsRequired().HasMaxLength(20);
+        builder.Property(r => r.ResolutionComment).IsRequired().HasMaxLength(2000);
+
+        // One "Resposta ao reajuste" per actor type per cycle (requester hand-off + buyer resubmit).
+        builder.HasIndex(r => new { r.AdjustmentId, r.ActorType })
+               .IsUnique()
+               .HasDatabaseName("UX_ApprovalBatchAdjustmentResolution_Cycle_Actor");
+    }
+}
+
+public class ApprovalBatchAdjustmentFieldChangeConfiguration : IEntityTypeConfiguration<ApprovalBatchAdjustmentFieldChange>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchAdjustmentFieldChange> builder)
+    {
+        builder.HasKey(fc => fc.Id);
+
+        builder.Property(fc => fc.FieldCode).IsRequired().HasMaxLength(40);
+        // Display-normalized old/new values of the CONTROLLED field catalog — generous but bounded.
+        builder.Property(fc => fc.OldValue).HasMaxLength(2000);
+        builder.Property(fc => fc.NewValue).HasMaxLength(2000);
+
+        builder.HasOne(fc => fc.RequestLineItem)
+               .WithMany()
+               .HasForeignKey(fc => fc.RequestLineItemId)
+               .OnDelete(DeleteBehavior.NoAction);
+
+        builder.HasIndex(fc => fc.AdjustmentId)
+               .HasDatabaseName("IX_ApprovalBatchAdjustmentFieldChange_AdjustmentId");
+    }
+}
+
+public class ApprovalBatchCandidateReviewConfiguration : IEntityTypeConfiguration<ApprovalBatchCandidateReview>
+{
+    public void Configure(EntityTypeBuilder<ApprovalBatchCandidateReview> builder)
+    {
+        builder.HasKey(cr => cr.Id);
+
+        builder.Property(cr => cr.TriggerReason).IsRequired().HasMaxLength(40);
+        builder.Property(cr => cr.Status).IsRequired().HasMaxLength(20);
+        builder.Property(cr => cr.ReviewComment).HasMaxLength(2000);
+
+        // ApprovalBatchItemId / QuotationItemId are deliberately PLAIN Guids (no FK): the review
+        // audit must survive candidate/item deletion on REPLACE/REMOVE — the same "frozen facts
+        // must not block" convention as the candidate snapshot's UnitId/SupplierId.
+
+        // One review per option per cycle.
+        builder.HasIndex(cr => new { cr.AdjustmentId, cr.ApprovalBatchItemId, cr.QuotationItemId })
+               .IsUnique()
+               .HasDatabaseName("UX_ApprovalBatchCandidateReview_Cycle_Item_QuotationItem");
+    }
+}
+
 public class QuotationReuseAuthorizationConfiguration : IEntityTypeConfiguration<QuotationReuseAuthorization>
 {
     public void Configure(EntityTypeBuilder<QuotationReuseAuthorization> builder)
