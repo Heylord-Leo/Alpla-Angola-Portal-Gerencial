@@ -4,7 +4,53 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.233.0
+v2.234.0
+
+## [v2.234.0] - 2026-08-29
+
+### Adjustment V2 — Foundation
+
+Backend-only additive release. Adjustment V2 is **not functionally available** — this ships the
+dormant persistence/domain foundation the next phases build on.
+
+#### Added
+
+- Structured batch-adjustment cycle domain: `ApprovalBatchAdjustment` (one row per cycle;
+  multiple numbered cycles per ApprovalBatch), `ApprovalBatchAdjustmentReason` (approved 15-code
+  catalog, item-scoped or whole-lot; SUPPLIER and SUPPLIER_DELIVERY_TIME distinct),
+  `ApprovalBatchAdjustmentResolution` (one "Resposta ao reajuste" per actor type per cycle),
+  `ApprovalBatchAdjustmentFieldChange` (typed old→new audit of the controlled requester-field
+  catalog), and `ApprovalBatchCandidateReview` (future Buyer review of flagged candidate options;
+  identities stored without FK so the audit survives future candidate replacement/removal).
+- Catalog constants (`AdjustmentConstants`): source stages, cycle states, actor types, reason
+  codes with requester-owner map, field codes, candidate-review states/triggers.
+- Database constraints: unique cycle number per batch; at most one OPEN cycle per batch (filtered
+  unique index on the cycle state); unfiltered unique reason scope (duplicate whole-lot reasons
+  rejected); one resolution per actor per cycle; one candidate review per option per cycle.
+
+#### Database
+
+- One additive migration: `AddApprovalBatchAdjustmentDomain` — five new tables, eight indexes,
+  **zero changes to existing tables, zero data statements, no historical backfill**. New tables
+  start empty; existing requests/batches unchanged (verified after applying to the local
+  production-clone database). Adjustment rows cascade with their owning batch aggregate;
+  references to request line items are non-cascading; user references follow the existing
+  plain-Guid convention.
+
+#### Behavior
+
+- **The domain is dormant** — no controller, service, projection, or UI reads or writes it.
+- No Area/Final adjustment behavior changes; no RequestStatusCalculator changes; no Approval
+  Center changes; no Buyer/Requester routing or UI changes; no notification changes; no frontend
+  behavior changes; no feature activation or feature flags.
+
+#### Tests
+
+- New relational integration coverage (real SQL Server schema, self-bootstrapping test sandbox):
+  cycle↔batch linkage, cycle-number uniqueness, one-open-cycle constraint, full reason catalog and
+  whole-lot reason uniqueness, actor-resolution uniqueness, field-change persistence,
+  candidate-review persistence and no-FK identity survival, FK/cascade safety, and schema
+  creation of all five tables.
 
 ## [v2.233.0] - 2026-08-28
 
