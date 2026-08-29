@@ -48,4 +48,6 @@ public class ApprovalBatch
     public ICollection<ApprovalBatchItem> Items { get; set; } = new List<ApprovalBatchItem>();
     public ICollection<ApprovalBatchExtraItemDecision> ExtraItemDecisions { get; set; } = new List<ApprovalBatchExtraItemDecision>();
     public ICollection<RequestPoGroup> PoGroups { get; set; } = new List<RequestPoGroup>();
+    /// <summary>Adjustment V2 structured cycles (dormant until Phase 3 — see ApprovalBatchAdjustment).</summary>
+    public ICollection<ApprovalBatchAdjustment> Adjustments { get; set; } = new List<ApprovalBatchAdjustment>();
 }

@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.233.0
+v2.234.0
+
+## [v2.234.0] - 2026-08-29
+
+### Adjustment V2 — Foundation (Dormant Domain Model)
+
+Backend-only additive release. Adds the structured persistence foundation for Adjustment V2
+batch-adjustment cycles: five new tables (ApprovalBatchAdjustments + Reasons + Resolutions +
+FieldChanges + CandidateReviews) supporting multiple numbered cycles per ApprovalBatch, the
+approved 15-code reason catalog, mandatory actor resolutions, typed business-field change audit,
+and quotation candidate reviews — with database constraints for cycle-number uniqueness and at
+most one open cycle per batch. **The domain is DORMANT**: no workflow reads or writes it yet; the
+existing Area/Final adjustment flow, RequestStatusCalculator, Approval Center, Buyer/Requester
+surfaces, and notifications are all unchanged, and no frontend behavior changes. One additive
+migration (`AddApprovalBatchAdjustmentDomain`), no historical backfill — new tables start empty
+and existing requests/batches are untouched.
 
 ## [v2.233.0] - 2026-08-28
 
