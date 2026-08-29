@@ -185,10 +185,12 @@ jobs:
         run: |
           $backupDir = "${{ vars.BACKUP_PATH }}"
           if ([string]::IsNullOrWhiteSpace($backupDir)) {
-            $backupDir = "C:\Apps\AlplaPortal\Test\backups\db"
-          } else {
-            $backupDir = Join-Path $backupDir "db"
+            # Fail-closed: no hard-coded fallback drive (the old C:\ literal is exactly how the
+            # system disk filled up — PROD deploy run #46 died with 61 MB free).
+            throw "BACKUP_PATH environment variable is not set for TEST. Configure it (e.g. D:\Backups\AlplaPortal\Test) before applying migrations."
           }
+          $backupDir = Join-Path $backupDir "db"
+          $beforeNewest = Get-ChildItem -LiteralPath $backupDir -Filter '*_pre-migration.bak' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
 
           & "${{ github.workspace }}\scripts\db\apply-migrations.ps1" `
             -ConnectionString $env:MIGRATION_CONN_STR `
@@ -196,6 +198,16 @@ jobs:
             -BackupDir $backupDir `
             -RepoRoot "${{ github.workspace }}" `
             -ExpectedDatabase "Portal-Gerencial-Test"
+
+          # Retention (approved policy): runs ONLY when THIS run secured a new pre-migration
+          # backup (a no-pending-migrations run creates none and must not clean anything).
+          # Best-effort inside the helper — warnings only, never fails the workflow.
+          $afterNewest = Get-ChildItem -LiteralPath $backupDir -Filter '*_pre-migration.bak' -File -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if ($afterNewest -and (-not $beforeNewest -or $afterNewest.Name -ne $beforeNewest.Name)) {
+            & "${{ github.workspace }}\scripts\deploy\backup-retention.ps1" -BackupRoot $backupDir -Mode Database
+          } else {
+            Write-Host "No new database backup was created this run - retention skipped."
+          }
 
       # --- Summary ---
       # Reports what actually happened. The previous version printed "If migrations were applied

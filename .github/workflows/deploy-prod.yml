@@ -539,7 +539,64 @@ jobs:
             Write-Host "::warning::Deployment will continue — the application will validate on startup."
           }
 
+      # --- GATE: backup destination usable + sufficient free space (fail-closed) ---
+      # Run #46 class: the deploy was cancelled mid "Create timestamped file backup" with the
+      # backup drive at 61 MB free. This gate resolves the CONFIGURED backup root
+      # (vars.BACKUP_PATH — deliberately NO fallback to any hard-coded drive: unset variable or
+      # unusable destination fails the deploy here, BEFORE the SQL backup, IIS or file steps),
+      # proves the runner account can write to it, and requires enough free space. Required space
+      # = current api+web deployment size × 1.2 (robocopy copies exactly those trees; the 20%
+      # margin covers filesystem overhead and growth between check and copy) + the size of the
+      # newest existing .bak × 1.1 as the SQL-backup allowance when history exists.
+      - name: Validate backup destination and free space
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $backupRoot = "${{ vars.BACKUP_PATH }}"
+          if ([string]::IsNullOrWhiteSpace($backupRoot)) {
+            throw "BACKUP_PATH environment variable is not set for PRODUCTION. Fail-closed: there is no fallback backup drive. Configure it (e.g. D:\Backups\AlplaPortal\Prod) before deploying."
+          }
+          New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+
+          # Write probe: prove the runner account can create and remove files at the destination.
+          $probe = Join-Path $backupRoot ("write-probe-" + [Guid]::NewGuid().ToString("N") + ".tmp")
+          Set-Content -Path $probe -Value "probe" -ErrorAction Stop
+          Remove-Item -Path $probe -Force -ErrorAction Stop
+
+          $driveRoot = [System.IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $backupRoot).Path)
+          $drive = New-Object System.IO.DriveInfo($driveRoot)
+          $systemRoot = [System.IO.Path]::GetPathRoot($env:SystemRoot)
+          if ($driveRoot -ieq $systemRoot) {
+            Write-Host "::warning::Backup destination '$backupRoot' is on the SYSTEM drive ($systemRoot). Point BACKUP_PATH at a data drive (e.g. D:) so backups can never exhaust the OS disk."
+          }
+
+          function Get-TreeSizeBytes([string]$path) {
+            if (-not (Test-Path -LiteralPath $path)) { return [long]0 }
+            $sum = (Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+            if ($null -eq $sum) { return [long]0 } else { return [long]$sum }
+          }
+          $appBytes = (Get-TreeSizeBytes "${{ vars.API_DEPLOY_PATH }}") + (Get-TreeSizeBytes "${{ vars.WEB_DEPLOY_PATH }}")
+
+          # SQL-backup allowance: newest existing .bak is the best local estimator of the next one.
+          $dbAllowanceBytes = [long]0
+          $dbDir = Join-Path $backupRoot "db"
+          if (Test-Path -LiteralPath $dbDir) {
+            $latestBak = Get-ChildItem -LiteralPath $dbDir -Filter '*.bak' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+            if ($latestBak) { $dbAllowanceBytes = [long]($latestBak.Length * 1.1) }
+          }
+          if ($dbAllowanceBytes -eq 0) { Write-Host "No prior .bak found - SQL-backup allowance not estimable; file-backup requirement applies alone." }
+
+          $requiredBytes = [long]($appBytes * 1.2) + $dbAllowanceBytes
+          Write-Host ("Backup root: {0} (drive {1})" -f $backupRoot, $driveRoot)
+          Write-Host ("Drive total: {0:N1} GB, free: {1:N1} GB" -f ($drive.TotalSize/1GB), ($drive.AvailableFreeSpace/1GB))
+          Write-Host ("App size (api+web): {0:N2} GB; SQL allowance: {1:N2} GB; required with margin: {2:N2} GB" -f ($appBytes/1GB), ($dbAllowanceBytes/1GB), ($requiredBytes/1GB))
+          if ($drive.AvailableFreeSpace -lt $requiredBytes) {
+            throw ("INSUFFICIENT BACKUP SPACE - failing closed before any server mutation. Backup path: {0}. Required: {1:N2} GB. Available: {2:N2} GB on {3}. Free space on that drive or repoint BACKUP_PATH." -f $backupRoot, ($requiredBytes/1GB), ($drive.AvailableFreeSpace/1GB), $driveRoot)
+          }
+          Write-Host "::notice::Backup destination validated (write permission OK, free space OK)."
+
       - name: Create SQL database backup
+        id: sql_backup
         shell: pwsh
         run: |
           $connStr = "${{ secrets.PROD_DB_CONNECTION_STRING }}"
@@ -582,10 +639,23 @@ jobs:
             $cmd.ExecuteNonQuery() | Out-Null
             $conn.Close()
             Write-Host "::notice::Database backup created: $backupFile"
+            # Signal for retention: only a run that SECURED a new .bak may clean older ones.
+            "db_backup_created=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } catch {
             Write-Host "::warning::Database backup failed: $_"
             Write-Host "::warning::Deployment will continue. Manual backup recommended before verifying."
           }
+
+      # --- Retention (approved policy) for deployment DB backups: runs ONLY when this run secured
+      #     a new .bak. Keeps the newest 5 whitelisted backups; deletes only older-than-14-days
+      #     beyond those. Best-effort: warnings only, never blocks. dev-export lives outside db\. ---
+      - name: Retention cleanup (database backups)
+        if: steps.sql_backup.outputs.db_backup_created == 'true'
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\scripts\deploy\backup-retention.ps1" `
+            -BackupRoot "${{ vars.BACKUP_PATH }}\db" `
+            -Mode Database
 
       # --- GATE: database readiness + pending migrations — BEFORE stopping pools / replacing files ---
       # Corrected activation order: a pending-migration failure aborts with the PREVIOUS version still
@@ -620,6 +690,7 @@ jobs:
 
       # --- Backup Current Files ---
       - name: Create timestamped file backup
+        id: file_backup
         shell: pwsh
         run: |
           $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -650,8 +721,24 @@ jobs:
             Write-Host "::warning::Web deploy path does not exist yet. Skipping Web backup."
           }
 
+          # Completion marker: rollback tooling/operators must never trust a backup directory
+          # without this file — a run that dies mid-copy leaves no marker behind.
+          Set-Content -Path (Join-Path $backupDir 'backup-complete.marker') -Value ("completed {0:o}" -f (Get-Date).ToUniversalTime())
+          "backup_dir_name=backup_$timestamp" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
           # Reset exit code so the step doesn't fail on robocopy success codes 1-7
           $global:LASTEXITCODE = 0
+
+      # --- Retention (approved policy): AFTER the new backup is secured, keep the newest 5
+      #     completed backups unconditionally and delete only completed backups outside that set
+      #     older than 14 days. Best-effort: cleanup failures warn, never block the deploy. ---
+      - name: Retention cleanup (application backups)
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\scripts\deploy\backup-retention.ps1" `
+            -BackupRoot "${{ vars.BACKUP_PATH }}" `
+            -Mode Application `
+            -CurrentBackupName "${{ steps.file_backup.outputs.backup_dir_name }}"
 
       # --- Stop PRODUCTION IIS App Pools ---
       - name: Stop Production IIS App Pools
