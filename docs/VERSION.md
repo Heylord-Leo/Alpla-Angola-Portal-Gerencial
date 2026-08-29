@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.232.5
+v2.233.0
+
+## [v2.233.0] - 2026-08-28
+
+### Approvals — Adjustment Context (Phase 1 Quick Fixes) + Approval Queue Actionability
+
+Frontend + backend additive behavioral fix. The batch rework surface now shows the APPROVER's
+actual adjustment context (motivo, source stage, requested-by, requested-at — derived read-only
+from status history; `batch.comment` is now honestly labeled as the Buyer's own comment), renames
+the over-promising labels ("Revisar Lote para Reenvio" / "Salvar Composição e Reenviar"), adds a
+"Gerenciar Cotações" bridge plus quotation-wizard access during RESOLVE_ADJUSTMENT, and states
+what the surface can and cannot change. The Approval Center no longer emits a request-level
+Area/Final card for a batch-model QUOTATION request whose batch is in adjustment (the scalar
+aggregate is intentional and unchanged); actionable approval rows come only from real batches,
+request-level approve/reject/adjust endpoints now refuse batch-model QUOTATION requests
+(defense-in-depth), and the Final drawer no longer offers request-wide actions without a valid
+active batch. No schema migration, no PROD data repair, RequestStatusCalculator scalar semantics
+unchanged, Adjustment V2 domain model NOT included.
 
 ## [v2.232.5] - 2026-08-28
 

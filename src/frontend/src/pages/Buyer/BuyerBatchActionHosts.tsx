@@ -69,12 +69,12 @@ export function BuyerApprovalBatchHost({ requestId, onClose, onCompleted }: { re
 }
 
 /** Host C — rework a returned batch (reuses BatchReworkModal; it owns its own update/resubmit calls). */
-export function BuyerBatchReworkHost({ requestId, onClose, onCompleted }: { requestId: string; onClose: () => void; onCompleted: (message: string) => void }) {
+export function BuyerBatchReworkHost({ requestId, onClose, onCompleted, onManageQuotations }: { requestId: string; onClose: () => void; onCompleted: (message: string) => void; onManageQuotations?: () => void }) {
   const { request, loading, error } = useRequest(requestId);
   const adjustmentBatch = (request?.approvalBatches || []).find((b: any) => b.status === 'AREA_ADJUSTMENT' || b.status === 'FINAL_ADJUSTMENT') || null;
 
   if (loading) return <LoadingModal title="Revisar e reenviar lote" onClose={onClose} />;
   if (error || !request) return <InfoModal title="Revisar e reenviar lote" message={error || 'Pedido não encontrado.'} onClose={onClose} />;
   if (!adjustmentBatch) return <InfoModal title="Revisar e reenviar lote" message="Nenhum lote em ajuste foi encontrado para este pedido." onClose={onClose} />;
-  return <BatchReworkModal isOpen onClose={onClose} group={request} batch={adjustmentBatch} onSuccess={(message) => onCompleted(message)} />;
+  return <BatchReworkModal isOpen onClose={onClose} group={request} batch={adjustmentBatch} onSuccess={(message) => onCompleted(message)} onManageQuotations={onManageQuotations} />;
 }

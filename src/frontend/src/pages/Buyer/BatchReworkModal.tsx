@@ -57,11 +57,22 @@ interface BatchReworkModalProps {
     batch: ApprovalBatchSummary | null;
     /** Called after a fully successful update + resubmit — parent should refetch and close. */
     onSuccess: (message: string) => void;
+    /** QF4: host-provided bridge to the existing quotation tools (classic screen / Workspace
+     * quotations tab). This modal only reviews batch COMPOSITION — commercial edits happen there. */
+    onManageQuotations?: () => void;
 }
 
 // 'savedNotResubmitted': the update succeeded (corrections ARE persisted) but the resubmit call
 // that immediately follows it failed — must never be described as a save failure.
 type SubmitPhase = 'idle' | 'submitting' | 'savedNotResubmitted' | 'resubmitOnlyFailed';
+
+/** QF3: pt-PT display of the adjustment timestamp; neutral fallback for legacy/unparsed history. */
+function formatAdjustmentTimestamp(iso: string | null | undefined): string {
+    if (!iso) return 'Informação não disponível';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Informação não disponível';
+    return d.toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 /**
  * Buyer's rework screen for a batch the Area or Final Approver returned (AREA_ADJUSTMENT /
@@ -71,7 +82,7 @@ type SubmitPhase = 'idle' | 'submitting' | 'savedNotResubmitted' | 'resubmitOnly
  * options are snapshotted server-side on save. Editing a legacy (pre-candidate) batch explicitly
  * converts it to the candidate model.
  */
-export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onClose, group, batch, onSuccess }) => {
+export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onClose, group, batch, onSuccess, onManageQuotations }) => {
     const [reworkItems, setReworkItems] = useState<ReworkItem[]>([]);
     const [extraItemDecisions, setExtraItemDecisions] = useState<Record<string, ExtraItemDecisionState>>({});
     const [phase, setPhase] = useState<SubmitPhase>('idle');
@@ -423,10 +434,12 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                         </div>
                         <div>
                             <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                                Corrigir Lote #{batch.batchNumber}
+                                Revisar Lote #{batch.batchNumber} para Reenvio
                             </h2>
                             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                                Revise as opções de cotação e os itens adicionais antes de reenviar. O vencedor será escolhido pelo Aprovador de Área.
+                                Esta tela permite revisar a composição do lote e as opções de cotação.
+                                Para alterar preços, fornecedor ou documentos, utilize Gerenciar Cotações.
+                                O vencedor será escolhido pelo Aprovador de Área.
                             </p>
                         </div>
                     </div>
@@ -436,6 +449,28 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                 </div>
 
                 <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {/* QF3: the APPROVER's adjustment context — backend-derived (QF1), never batch.comment. */}
+                    <div style={{ border: '1px solid #fcd34d', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '14px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 20px', fontSize: '0.8125rem', color: '#92400e' }}>
+                        <div>
+                            <strong>Origem:</strong>{' '}
+                            {batch.adjustmentSourceStage === 'FINAL' ? 'Aprovação Final'
+                                : batch.adjustmentSourceStage === 'AREA' ? 'Aprovação de Área'
+                                : 'Informação não disponível'}
+                        </div>
+                        <div>
+                            <strong>Solicitado por:</strong>{' '}
+                            {batch.adjustmentRequestedByName || 'Informação não disponível'}
+                        </div>
+                        <div>
+                            <strong>Solicitado em:</strong>{' '}
+                            {formatAdjustmentTimestamp(batch.adjustmentRequestedAtUtc)}
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                            <strong>Motivo do reajuste:</strong>{' '}
+                            {batch.adjustmentReason || 'Informação não disponível'}
+                        </div>
+                    </div>
+
                     {cameFromFinalAdjustment && (
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 16px' }}>
                             <Info size={18} color="#2563eb" style={{ flexShrink: 0, marginTop: '2px' }} />
@@ -454,9 +489,10 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                         </div>
                     )}
 
+                    {/* QF1: batch.comment is the BUYER's own text — labeled honestly, never as the motive. */}
                     {batch.comment && (
-                        <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px', fontSize: '0.8125rem', color: '#92400e' }}>
-                            <strong>Motivo do reajuste:</strong> {batch.comment}
+                        <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px 16px', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                            <strong>Comentário do lote (Comprador):</strong> {batch.comment}
                         </div>
                     )}
 
@@ -588,9 +624,16 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                 )}
 
                 <div style={{ padding: '16px 24px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', backgroundColor: 'var(--color-bg-surface)', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-                    <button onClick={onClose} style={{ padding: '10px 20px', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-text-muted)', cursor: 'pointer' }}>
-                        Fechar
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={onClose} style={{ padding: '10px 20px', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                            Fechar
+                        </button>
+                        {onManageQuotations && (
+                            <button onClick={onManageQuotations} disabled={isSubmitting} style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid var(--color-primary)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-primary)', cursor: isSubmitting ? 'not-allowed' : 'pointer' }} title="Abrir as ferramentas de cotação existentes para alterar preços, fornecedor ou documentos">
+                                Gerenciar Cotações
+                            </button>
+                        )}
+                    </div>
                     {phase === 'savedNotResubmitted' ? null : (
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <button
@@ -605,7 +648,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                                 disabled={!isValid || isSubmitting}
                                 style={{ padding: '10px 20px', backgroundColor: isValid && !isSubmitting ? 'var(--color-primary)' : 'var(--color-border)', border: 'none', borderRadius: '8px', fontWeight: 600, color: 'white', cursor: isValid && !isSubmitting ? 'pointer' : 'not-allowed' }}
                             >
-                                {isSubmitting ? 'Enviando...' : 'Salvar Correções e Reenviar'}
+                                {isSubmitting ? 'Enviando...' : 'Salvar Composição e Reenviar'}
                             </button>
                         </div>
                     )}

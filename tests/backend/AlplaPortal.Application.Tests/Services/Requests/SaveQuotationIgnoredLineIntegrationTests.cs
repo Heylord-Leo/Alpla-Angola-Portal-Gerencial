@@ -84,8 +84,18 @@ public class SaveQuotationIgnoredLineIntegrationTests
         await using var ctx = new ApplicationDbContext(Options());
         var actor = await ctx.Users.AsNoTracking().Select(u => u.Id).FirstOrDefaultAsync();
         if (actor == Guid.Empty) return null;
-        var supplierId = await ctx.Suppliers.AsNoTracking().Select(s => s.Id).FirstOrDefaultAsync();
-        if (supplierId == 0) return null;
+        // Own EXTERNAL supplier (removed by CleanupAsync). The previous "first supplier" pick broke
+        // on a model-created sandbox whose first row is the internal "Alpla Global Services" —
+        // InternalCompanyGuard then (correctly) rejects the quotation with 400. A ZZTEST name with
+        // a unique NIF can never resolve as an internal company.
+        var supplier = new Supplier
+        {
+            // Unique per seed — Suppliers.Name carries a unique index and tests may run in parallel.
+            Name = "ZZTEST Fornecedor Externo " + Guid.NewGuid().ToString("N")[..8],
+            TaxId = "ZZ" + Guid.NewGuid().ToString("N")[..9],
+            IsActive = true
+        };
+        ctx.Suppliers.Add(supplier);
         var iva14 = await ctx.IvaRates.AsNoTracking().Where(i => i.RatePercent == 14m).Select(i => i.Id).FirstOrDefaultAsync();
         if (iva14 == 0) return null;
 
@@ -123,10 +133,10 @@ public class SaveQuotationIgnoredLineIntegrationTests
         };
         ctx.RequestLineItems.Add(li);
         await ctx.SaveChangesAsync();
-        return new Seeded(request.Id, li.Id, actor, supplierId, iva14);
+        return new Seeded(request.Id, li.Id, actor, supplier.Id, iva14);
     }
 
-    private static async Task CleanupAsync(Guid requestId)
+    private static async Task CleanupAsync(Guid requestId, int supplierId)
     {
         await using var ctx = new ApplicationDbContext(Options());
         await ctx.Database.ExecuteSqlRawAsync(
@@ -134,7 +144,10 @@ public class SaveQuotationIgnoredLineIntegrationTests
             "DELETE FROM Quotations WHERE RequestId={0};" +
             "DELETE FROM RequestStatusHistories WHERE RequestId={0};" +
             "DELETE FROM RequestLineItems WHERE RequestId={0};" +
-            "DELETE FROM Requests WHERE Id={0};", requestId);
+            "DELETE FROM Requests WHERE Id={0};" +
+            // ONLY this seed's own ZZTEST supplier (id-scoped: name-pattern deletes raced against
+            // the other SaveQuotation suite running in parallel and removed its just-seeded row).
+            "DELETE FROM Suppliers WHERE Id={1} AND NOT EXISTS (SELECT 1 FROM Quotations q WHERE q.SupplierId = Suppliers.Id);", requestId, supplierId);
     }
 
     /// <summary>DTO items exactly as the FIXED frontend emits them (camel-cased over HTTP → these DTOs).</summary>
@@ -163,7 +176,17 @@ public class SaveQuotationIgnoredLineIntegrationTests
                     // LineTotal is computed server-side
                     MappedRequestLineItemId = s.LineItemId,
                     ReconciliationStatus = "MAPPED",
-                    ReconciliationJustification = null
+                    ReconciliationJustification = null,
+                    // An OCR line MUST carry its extraction baseline (enforced since the
+                    // AddQuotationItemOcrBaseline wave; the real frontend always sends it).
+                    // Baseline == entered values ⇒ no material financial edit ⇒ no per-line
+                    // adjustment reason required — exactly the scenario under test.
+                    LineOrigin = "OCR",
+                    OcrOriginalQuantity = 1,
+                    OcrOriginalUnitPrice = 43750m,
+                    OcrOriginalDiscountAmount = 0,
+                    OcrOriginalIvaRatePercent = 14m,
+                    OcrOriginalLineTotal = 49875m
                 },
                 new()
                 {
@@ -176,7 +199,13 @@ public class SaveQuotationIgnoredLineIntegrationTests
                     // LineTotal is computed server-side
                     MappedRequestLineItemId = null,
                     ReconciliationStatus = "IGNORED",
-                    ReconciliationJustification = ignoredJustification
+                    ReconciliationJustification = ignoredJustification,
+                    LineOrigin = "OCR",
+                    OcrOriginalQuantity = 1,
+                    OcrOriginalUnitPrice = 32400m,
+                    OcrOriginalDiscountAmount = 0,
+                    OcrOriginalIvaRatePercent = 14m,
+                    OcrOriginalLineTotal = 36936m
                 }
             }
         };
@@ -213,7 +242,7 @@ public class SaveQuotationIgnoredLineIntegrationTests
             var quotation = await verify.Quotations.AsNoTracking().FirstAsync(q => q.Id == saved.Id);
             Assert.Equal(49875m, quotation.TotalAmount);         // considered-only aggregate
         }
-        finally { await CleanupAsync(seeded.RequestId); }
+        finally { await CleanupAsync(seeded.RequestId, seeded.SupplierId); }
     }
 
     [Fact] // Ignorada com valor SEM justificativa → 400 (regra por linha), sem 409 genérico
@@ -233,7 +262,7 @@ public class SaveQuotationIgnoredLineIntegrationTests
             var problem = Assert.IsType<ProblemDetails>(bad.Value);
             Assert.Equal("Justificativa Obrigatória", problem.Title);
         }
-        finally { await CleanupAsync(seeded.RequestId); }
+        finally { await CleanupAsync(seeded.RequestId, seeded.SupplierId); }
     }
 
     [Fact] // Status em caixa divergente ("ignored") é normalizado no boundary e tratado como IGNORED
@@ -261,6 +290,6 @@ public class SaveQuotationIgnoredLineIntegrationTests
                 .FirstAsync(qi => qi.QuotationId == saved.Id && qi.LineNumber == 2);
             Assert.Equal("IGNORED", ignored.ReconciliationStatus); // persisted canonical
         }
-        finally { await CleanupAsync(seeded.RequestId); }
+        finally { await CleanupAsync(seeded.RequestId, seeded.SupplierId); }
     }
 }

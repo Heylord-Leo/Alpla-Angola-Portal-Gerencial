@@ -528,6 +528,14 @@ export interface ApprovalBatchSummary {
     updatedAtUtc?: string | null;
     budgetJustification?: string | null;
     approvedTotalAmount?: number | null;
+    /** QF1: the APPROVER's actual adjustment context, backend-derived from status history.
+     * `comment` above is the Buyer's own batch text and must never be shown as the motive.
+     * All four are null for never-adjusted batches or unparseable legacy history. */
+    adjustmentReason?: string | null;
+    adjustmentRequestedByName?: string | null;
+    adjustmentRequestedAtUtc?: string | null;
+    /** "AREA" | "FINAL" */
+    adjustmentSourceStage?: string | null;
     items: ApprovalBatchItemSummary[];
     /** Genuine EXTRA_ITEM lines the buyer explicitly decided not to include in this batch. */
     excludedExtraItems?: BatchInformationalItem[];

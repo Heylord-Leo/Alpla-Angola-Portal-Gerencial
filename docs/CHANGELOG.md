@@ -4,7 +4,65 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.232.5
+v2.233.0
+
+## [v2.233.0] - 2026-08-28
+
+### Approvals — Adjustment Context (Phase 1 Quick Fixes) + Approval Queue Actionability
+
+Frontend + backend additive behavioral fix. No schema migration. No PROD data repair.
+`RequestStatusCalculator` scalar semantics unchanged. The Adjustment V2 domain model
+(ApprovalBatchAdjustment entities, requester routing, REQUIRES_REVIEW, V2 notifications) is
+**not** part of this release.
+
+#### Buyer / Reajuste (Quick Fixes QF1–QF5)
+
+- **The rework surface now shows the APPROVER's actual adjustment reason.** It previously
+  displayed `batch.comment` — the Buyer's own batch text — under "Motivo do reajuste". The real
+  motive lives only in the `BATCH_AREA_ADJUSTMENT` / `BATCH_FINAL_ADJUSTMENT` history entries; a
+  new shared parser (`BatchAdjustmentContextParser`) derives it read-only (exact `Lote #N`
+  attribution, latest cycle wins, null-safe for legacy history — never invented) and exposes it as
+  additive DTO fields (`adjustmentReason`, `adjustmentRequestedByName`, `adjustmentRequestedAtUtc`,
+  `adjustmentSourceStage`).
+- Adjustment context header: Origem (Aprovação de Área/Final), Solicitado por, Solicitado em,
+  Motivo — with neutral "Informação não disponível" fallbacks. `batch.comment`, when present, is
+  now labeled "Comentário do lote (Comprador)".
+- Renamed misleading labels: "Corrigir Lote" → **"Revisar Lote para Reenvio"**;
+  "Salvar Correções e Reenviar" → **"Salvar Composição e Reenviar"** (modal + classic screen).
+- Quotation bridge: "Gerenciar Cotações" action on the rework surface (Workspace → quotations tab;
+  classic → the quotation screen itself), and the quotation wizard entries now render in the
+  Workspace during RESOLVE_ADJUSTMENT — the same wizard the classic screen already permits in
+  adjustment states.
+- Explanatory copy states the surface reviews lot COMPOSITION only; commercial edits happen in
+  Gerenciar Cotações.
+
+#### Approval Center — batch-model ghost cards (REQ-20/08/2026-274 class)
+
+- **Fixed batch-model QUOTATION requests appearing as request-level Area/Final approval cards
+  while their batch is in adjustment.** The scalar aggregate (batch FINAL_ADJUSTMENT → request
+  WAITING_FINAL_APPROVAL) is intentional and unchanged; the queue projection's request-level
+  fallback row now exists only for PAYMENT and true legacy zero-batch QUOTATION requests.
+  Actionable Area/Final rows come exclusively from real batches. Symmetric for both stages;
+  multi-batch requests keep one row per genuinely waiting lot.
+- Defense-in-depth: the request-level area/final approve, reject and request-adjustment endpoints
+  now refuse batch-model QUOTATION requests with a structured 400 ("Aprovação por Lotes") —
+  protecting stale browser tabs and direct API calls. PAYMENT and legacy zero-batch QUOTATION
+  requests are unaffected.
+- Frontend safety: the Final drawer no longer offers request-wide Aprovar/Rejeitar/Reajuste for a
+  batch-model QUOTATION without a valid active batch — it shows a safe explanation instead
+  (parity with the existing Area-side scope guard).
+
+#### Tests / reliability
+
+- New regression coverage: adjustment-context parser (5), approval-queue ghost rows across
+  Area/Final/multi-batch/PAYMENT/legacy shapes (7, real EF projection), request-level endpoint
+  gates (9), plus frontend source-guards for the rework surface labels/context (12) and the Final
+  drawer guard (4).
+- Test-infrastructure repairs (test-only, no product behavior): the LocalDB integration sandbox is
+  now self-bootstrapped from the current EF model, and two pre-existing SaveQuotation integration
+  suites had fixtures repaired (own external ZZTEST supplier instead of "first supplier" — which
+  resolved to an internal ALPLA company the InternalCompanyGuard correctly rejects; required OCR
+  baselines; id-scoped cleanup) so they genuinely execute instead of silently skipping.
 
 ## [v2.232.5] - 2026-08-28
 

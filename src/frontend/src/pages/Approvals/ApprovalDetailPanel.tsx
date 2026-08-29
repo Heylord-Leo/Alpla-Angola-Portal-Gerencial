@@ -275,6 +275,13 @@ export function ApprovalDetailPanel({
     const isPayment = data.requestTypeCode === 'PAYMENT';
 
     const hasApprovalBatches = Array.isArray(data.approvalBatches) && data.approvalBatches.length > 0;
+
+    // Ghost-row guard (REQ-20/08/2026-274 class): a batch-model QUOTATION that reached the drawer
+    // without resolving an actionable batch for this stage (e.g. its only lot is in FINAL_ADJUSTMENT
+    // with the Buyer, while the scalar intentionally stays WAITING_FINAL_APPROVAL) must never expose
+    // request-wide approval actions. The backend refuses them anyway (batch-model gate) — this is
+    // the matching Final-branch parity of the Area-side G1 scope guard.
+    const isBatchModelWithoutActiveBatch = isQuotation && hasApprovalBatches && !activeBatch;
     const hasSelectedQuotationItem = (data.lineItems || []).some(
         (item: any) => Boolean(item.selectedQuotationItemId)
     );
@@ -1580,6 +1587,13 @@ export function ApprovalDetailPanel({
                             <ShieldCheck size={16} /> Revisar Pedido
                         </button>
                     </>
+                ) : isBatchModelWithoutActiveBatch ? (
+                    // Final-branch G1 parity: no request-wide actions for a batch-model QUOTATION
+                    // without a resolved actionable batch — safe explanation instead.
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: 'rgba(217, 119, 6, 0.06)', border: '1.5px solid rgba(217, 119, 6, 0.3)', borderRadius: 'var(--radius-lg)', color: '#92400E', fontSize: '0.8125rem', fontWeight: 600 }}>
+                        <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                        Este pedido é aprovado por lotes e não possui nenhum lote aguardando aprovação final neste momento (ex.: lote em reajuste com o Comprador). Atualize a fila de aprovações.
+                    </div>
                 ) : (
                     <>
                         {showAdjustmentAction && (

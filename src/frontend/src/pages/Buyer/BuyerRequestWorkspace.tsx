@@ -161,7 +161,19 @@ export function BuyerRequestWorkspace() {
                 <button onClick={() => setActiveHost('approval')} style={primaryBtn}>{nextAction!.label}</button>
               )}
               {actionableCode === 'RESOLVE_ADJUSTMENT' && (
-                <button onClick={() => setActiveHost('rework')} style={primaryBtn}>{nextAction!.label}</button>
+                <>
+                  <button onClick={() => setActiveHost('rework')} style={primaryBtn}>{nextAction!.label}</button>
+                  {/* QF4: the SAME quotation wizard the classic screen already allows during
+                      adjustment states (canMutateQuotation includes AREA/FINAL_ADJUSTMENT) — outline
+                      styling keeps the rework action primary. New quotation lines mapped to the
+                      batch's items surface as addable options in the rework modal. */}
+                  <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'UPLOAD')} style={outlineBtn} title="Importar documento (PDF/imagem) e extrair a cotação por OCR">
+                    <Upload size={15} /> Importar Cotação
+                  </button>
+                  <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'MANUAL')} style={outlineBtn} title="Introduzir os valores da cotação manualmente">
+                    <Pencil size={15} /> Inserir Manualmente
+                  </button>
+                </>
               )}
               {actionableCode === 'ADD_QUOTATION' && (
                 // The server-derived next action (Adicionar cotação / Completar cotações) stays as the
@@ -240,7 +252,14 @@ export function BuyerRequestWorkspace() {
         <BuyerApprovalBatchHost requestId={ws.requestId} onClose={() => setActiveHost(null)} onCompleted={afterMutation} />
       )}
       {activeHost === 'rework' && (
-        <BuyerBatchReworkHost requestId={ws.requestId} onClose={() => setActiveHost(null)} onCompleted={afterMutation} />
+        <BuyerBatchReworkHost
+          requestId={ws.requestId}
+          onClose={() => setActiveHost(null)}
+          onCompleted={afterMutation}
+          // QF4: bridge to the existing quotation tools — close the rework host and land on the
+          // Workspace quotations tab (route-backed, so returning to the rework action is one click).
+          onManageQuotations={() => { setActiveHost(null); setTab('quotes'); }}
+        />
       )}
 
       {/* In-Workspace Supplier Sheet drawer — mounts the SHARED SupplierFichaDetailContent (Stage 3D). */}
