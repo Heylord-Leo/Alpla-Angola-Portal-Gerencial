@@ -125,6 +125,7 @@ builder.Services.AddScoped<IFinancePaymentEligibilityService, FinancePaymentElig
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
 builder.Services.AddScoped<IRequestStatusSyncService, RequestStatusSyncService>();
+builder.Services.AddScoped<IAdjustmentCycleService, AdjustmentCycleService>();
 
 // Shared line-item creation (standard add-item + buyer reconciliation workaround)
 builder.Services.AddScoped<ILineItemFactory, LineItemFactory>();

@@ -191,7 +191,9 @@ public class BatchAreaApproveLegacyGateTests
             new Mock<IGroupBuilderService>().Object,
             new Mock<IApprovalRoutingService>().Object,
             new Mock<IQuotationItemEligibilityService>().Object,
-            new BatchExtraItemDecisionService(ctx));
+            new BatchExtraItemDecisionService(ctx),
+            new AdjustmentCycleService(ctx),
+            new Mock<IWorkflowNotificationOrchestrator>().Object);
 
         // System Administrator bypasses both CanActAsAreaManagerAsync and the request scope
         // filter — the subject under test here is exclusively the unresolved-legacy gate.

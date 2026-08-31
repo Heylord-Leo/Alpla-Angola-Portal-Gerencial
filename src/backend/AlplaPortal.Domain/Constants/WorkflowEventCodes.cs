@@ -17,6 +17,12 @@ public static class WorkflowEventCodes
     public const string AreaAdjustment = "AREA_ADJUSTMENT";
     public const string FinalAdjustment = "FINAL_ADJUSTMENT";
 
+    // --- Adjustment V2 (Phase 3): batch-level structured adjustment cycle notifications ---
+    // Distinct from the legacy request-level AREA_ADJUSTMENT/FINAL_ADJUSTMENT codes above.
+    // Phase 3 emits ONLY these two (Buyer-facing); requester/resubmit/cancel events land in later phases.
+    public const string BatchAreaAdjustment = "BATCH_AREA_ADJUSTMENT_REQUESTED";
+    public const string BatchFinalAdjustment = "BATCH_FINAL_ADJUSTMENT_REQUESTED";
+
     // --- Operational Flow ---
     public const string PoRegistered = "PO_REGISTERED";
     public const string PaymentScheduled = "PAYMENT_SCHEDULED";

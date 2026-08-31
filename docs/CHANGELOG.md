@@ -4,7 +4,53 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.234.0
+v2.235.0
+
+## [v2.235.0] - 2026-08-31
+
+### Adjustment V2 — Phase 3 (Structured Approver Request + First Notifications)
+
+Activates the structured adjustment cycle for new Area/Final adjustments. **No migration** (the
+Phase 2 schema is unchanged); `RequestStatusCalculator`, the approval queue, and the backup
+infrastructure are untouched; Phases 4/5/6/7 are **not** activated.
+
+#### Added — Functional
+- **Structured Area/Final adjustment reasons** — the "Solicitar Reajuste" action now takes one or
+  more reasons from the approved catalog (Buyer-owned and Requester-owned groups), whole-lot or
+  item-scoped, alongside the still-mandatory comment. Server-side validation: ≥1 reason, valid
+  codes, item-required reasons must name a batch item, no cross-request item injection, duplicates
+  normalized.
+- **Real V2 adjustment-cycle creation** — each Area/Final adjustment persists exactly one
+  `ApprovalBatchAdjustment` (+ `ApprovalBatchAdjustmentReason` rows) **atomically** with the batch
+  transition, cleanup, technical history, and status sync (relational transaction).
+- **Concurrency / open-cycle safety** — a second concurrent or duplicate adjustment on the same
+  batch is rejected deterministically with **HTTP 409** via the one-open-cycle unique index; no raw
+  SQL exception leaks.
+- **Transitional WAITING_BUYER routing** — every new Phase 3 cycle starts `WAITING_BUYER`.
+  Requester-owned/mixed reasons remain classified as requester-owned but are actionable through the
+  existing Buyer rework path; the `WAITING_REQUESTER` hop and requester notifications are deferred
+  to Phase 5. This is temporary compatibility routing, not the final requester-first flow.
+- **Legacy resubmit/cancel cycle closure** — the existing `ResubmitBatch` closes an open cycle to
+  `RESUBMITTED` and batch cancellation closes it to `CANCELLED` (no structured resolution note yet —
+  Phase 4); a legacy batch with no cycle is a safe no-op.
+- **First Buyer-facing V2 notifications** — Area/Final "Ação necessária — Reajuste solicitado…"
+  emitted through the existing `WorkflowNotificationOrchestrator` → `EmailOutbox` **after** the
+  business commit, deduped by cycle id. Requester notifications deferred to Phase 5.
+
+#### Added — UX
+- The **actual Area/Final "Reajuste" quick-action** (and the Area wizard) now present the structured
+  reason picker; the structured payload is validated and sent through the existing batch endpoints.
+- **Affected-item labels** are business-readable — `#<LineNumber> — <ItemCode> — <Description>` —
+  never a bare "Item" and never a GUID.
+- **Read-only Batch Details** in "Lotes & Aprovações": clicking a lote shows a friendly batch status
+  and, when an open cycle exists, its origin/state/responsibility/reasons/comment/requester/affected
+  items — friendly labels only, no actions/edits. Legacy batches with no cycle render safely
+  ("Este lote não possui um ciclo de reajuste estruturado.").
+
+#### Compatibility
+- Legacy technical history (`BATCH_AREA_ADJUSTMENT` / `BATCH_FINAL_ADJUSTMENT` / `BATCH_RESUBMITTED`)
+  and the v2.233.0 QF context parser are preserved unchanged. No historical backfill. Legacy
+  pre-V2 batches require no V2 data to render or resubmit.
 
 ## [v2.234.0] - 2026-08-29
 

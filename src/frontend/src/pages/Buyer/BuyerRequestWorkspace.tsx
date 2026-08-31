@@ -13,9 +13,11 @@ import { useWorkspaceWizardHost } from './QuotationWizard/hooks/useWorkspaceWiza
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { BuyerSupplierFichaDrawer, BuyerSupplierFichaDrawerHandle } from './BuyerSupplierFichaDrawer';
 import { CloseNotQuotedModal } from './CloseNotQuotedModal';
+import { BatchDetailModal } from './BatchDetailModal';
+import { batchStatusLabel } from '../../lib/adjustmentReasons';
 import { formatDateTime } from '../../lib/utils';
 import { api } from '../../lib/api';
-import type { BuyerWorkspace, BuyerWorkspaceItem } from '../../types/buyerWorkspace';
+import type { BuyerWorkspace, BuyerWorkspaceItem, BuyerWorkspaceBatch } from '../../types/buyerWorkspace';
 import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL } from './buyerQueueView';
 import {
   WORKSPACE_TABS, resolveTab, backToQueueTarget, coverageChips, bucketLabel,
@@ -447,16 +449,31 @@ function TabQuotes({ ws }: { ws: BuyerWorkspace }) {
 
 // ── Tab 3: Lotes & Aprovações ──
 function TabBatches({ ws }: { ws: BuyerWorkspace }) {
+  const [selected, setSelected] = useState<BuyerWorkspaceBatch | null>(null);
   if (ws.batches.length === 0) return <Empty>Nenhum lote de aprovação criado.</Empty>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {ws.batches.map(b => (
-        <div key={b.id} style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <button
+          key={b.id}
+          type="button"
+          onClick={() => setSelected(b)}
+          title="Ver detalhes do lote"
+          style={{ textAlign: 'left', width: '100%', cursor: 'pointer', background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 800, color: 'var(--color-primary)' }}>Lote {b.batchNumber}</span>
               <span style={batchKindChip(b.kind)}>{batchKindLabel(b.kind)}</span>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{lotItemCountLabel(b.itemCount)}</span>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-text-main)', background: 'var(--color-accent-soft, #eef2f7)', padding: '2px 8px', borderRadius: 999 }}>
+                {batchStatusLabel(b.status)}
+              </span>
+              {b.adjustment && (
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#92400E', background: '#FFFBEB', border: '1px solid #FCD34D', padding: '1px 7px', borderRadius: 999 }}>
+                  Reajuste #{b.adjustment.cycleNumber}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>{lotLineNumbersLabel(b.itemLineNumbers)}</div>
           </div>
@@ -465,8 +482,9 @@ function TabBatches({ ws }: { ws: BuyerWorkspace }) {
             {b.areaDecisionAtUtc && <div>Decisão de área {fmtDate(b.areaDecisionAtUtc)}</div>}
             {b.approvedTotalAmount != null && <div>Aprovado: {fmtAmount(b.approvedTotalAmount)}</div>}
           </div>
-        </div>
+        </button>
       ))}
+      <BatchDetailModal batch={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

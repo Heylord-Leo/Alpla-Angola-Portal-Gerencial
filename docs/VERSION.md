@@ -2,7 +2,29 @@
 
 ## Current Version
 
-v2.234.0
+v2.235.0
+
+## [v2.235.0] - 2026-08-31
+
+### Adjustment V2 — Phase 3 (Structured Approver Request + First Notifications)
+
+Activates the structured adjustment cycle for NEW Area/Final adjustments (the Phase 2 domain
+becomes live). Approvers now classify a "Solicitar Reajuste" with one or more structured reasons
+(Buyer/Requester groups, whole-lot or item-scoped) plus the mandatory comment; the request creates
+exactly one `ApprovalBatchAdjustment` cycle (+ reason rows) atomically with the existing batch
+transition, guarded against duplicate/concurrent open cycles (one-open-cycle unique index →
+deterministic 409). The first Buyer-facing V2 notifications are emitted via the existing
+orchestrator/outbox after commit. A read-only Batch Details surface in "Lotes & Aprovações" shows
+the friendly batch status and the open cycle (origin/state/responsibility/reasons/comment/affected
+items), with legacy batches rendering safely without a cycle.
+
+**Phase 3 transitional routing:** all new cycles start `WAITING_BUYER` — requester-owned/mixed
+reasons stay classified as requester-owned but remain actionable through the existing Buyer rework
+path; the `WAITING_REQUESTER` hop and requester notifications activate in Phase 5. The legacy
+resubmit closes an open cycle to `RESUBMITTED` (no structured resolution note yet — Phase 4), and a
+legacy batch with no cycle is a safe no-op. No migration (Phase 2 schema unchanged);
+RequestStatusCalculator, the approval queue, and backup infrastructure are untouched; Phases
+4/5/6/7 are NOT activated.
 
 ## [v2.234.0] - 2026-08-29
 

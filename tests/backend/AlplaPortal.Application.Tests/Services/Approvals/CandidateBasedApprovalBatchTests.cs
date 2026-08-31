@@ -186,7 +186,9 @@ public class CandidateBasedApprovalBatchTests
             new GroupBuilderService(ctx),
             routing.Object,
             new QuotationItemEligibilityService(ctx),
-            new BatchExtraItemDecisionService(ctx));
+            new BatchExtraItemDecisionService(ctx),
+            new AdjustmentCycleService(ctx),
+            new Mock<IWorkflowNotificationOrchestrator>().Object);
 
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, actorId.ToString()) };
         var effectiveRoles = roles.Length > 0 ? roles : new[] { RoleConstants.SystemAdministrator, RoleConstants.FinalApprover };
@@ -801,7 +803,7 @@ public class CandidateBasedApprovalBatchTests
         await using (var ctx = new ApplicationDbContext(s.Options))
         {
             var result = await BuildController(ctx, s.Actor).BatchFinalRequestAdjustment(
-                s.RequestId, batchId, new BatchApprovalActionDto { Comment = "Rever a escolha do sensor com o fornecedor Kwanza." });
+                s.RequestId, batchId, new BatchAdjustmentRequestDto { Comment = "Rever a escolha do sensor com o fornecedor Kwanza.", WholeBatch = true, Reasons = { new BatchAdjustmentReasonInputDto { ReasonCode = AdjustmentConstants.ReasonCodes.PriceNegotiation } } });
             Assert.IsType<OkObjectResult>(result);
         }
 
@@ -844,7 +846,7 @@ public class CandidateBasedApprovalBatchTests
         await using (var ctx = new ApplicationDbContext(s.Options))
         {
             Assert.IsType<OkObjectResult>(await BuildController(ctx, s.Actor).BatchFinalRequestAdjustment(
-                s.RequestId, batchId, new BatchApprovalActionDto { Comment = "Rever candidatos do rolamento, por favor." }));
+                s.RequestId, batchId, new BatchAdjustmentRequestDto { Comment = "Rever candidatos do rolamento, por favor.", WholeBatch = true, Reasons = { new BatchAdjustmentReasonInputDto { ReasonCode = AdjustmentConstants.ReasonCodes.PriceNegotiation } } }));
         }
 
         // Buyer edits: drop the Luanda option of the rolamento, keep everything else, add a note.
@@ -920,7 +922,7 @@ public class CandidateBasedApprovalBatchTests
         await using (var ctx = new ApplicationDbContext(s.Options))
         {
             Assert.IsType<OkObjectResult>(await BuildController(ctx, s.Actor).BatchAreaRequestAdjustment(
-                s.RequestId, batchId, new BatchApprovalActionDto { Comment = "Rever opções antes de aprovar, por favor." }));
+                s.RequestId, batchId, new BatchAdjustmentRequestDto { Comment = "Rever opções antes de aprovar, por favor.", WholeBatch = true, Reasons = { new BatchAdjustmentReasonInputDto { ReasonCode = AdjustmentConstants.ReasonCodes.BatchComposition } } }));
         }
 
         Guid generatedLineId;

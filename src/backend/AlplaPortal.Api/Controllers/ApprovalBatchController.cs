@@ -7,6 +7,7 @@ using AlplaPortal.Application.Interfaces.Approvals;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Approvals;
@@ -29,6 +30,8 @@ public class ApprovalBatchController : BaseController
     private readonly IApprovalRoutingService _approvalRouting;
     private readonly IQuotationItemEligibilityService _quotationEligibility;
     private readonly IBatchExtraItemDecisionService _extraItemDecisionService;
+    private readonly IAdjustmentCycleService _adjustmentCycle;
+    private readonly IWorkflowNotificationOrchestrator _orchestrator;
 
     public ApprovalBatchController(
         ApplicationDbContext context,
@@ -37,7 +40,9 @@ public class ApprovalBatchController : BaseController
         IGroupBuilderService groupBuilderService,
         IApprovalRoutingService approvalRouting,
         IQuotationItemEligibilityService quotationEligibility,
-        IBatchExtraItemDecisionService extraItemDecisionService) : base(context)
+        IBatchExtraItemDecisionService extraItemDecisionService,
+        IAdjustmentCycleService adjustmentCycle,
+        IWorkflowNotificationOrchestrator orchestrator) : base(context)
     {
         _logger = logger;
         _statusSyncService = statusSyncService;
@@ -45,6 +50,8 @@ public class ApprovalBatchController : BaseController
         _approvalRouting = approvalRouting;
         _quotationEligibility = quotationEligibility;
         _extraItemDecisionService = extraItemDecisionService;
+        _adjustmentCycle = adjustmentCycle;
+        _orchestrator = orchestrator;
     }
 
     /// <summary>
@@ -1114,7 +1121,7 @@ public class ApprovalBatchController : BaseController
     /// clears allocations, sets batch to AREA_ADJUSTMENT.
     /// </summary>
     [HttpPost("{batchId:guid}/area-approval/request-adjustment")]
-    public async Task<IActionResult> BatchAreaRequestAdjustment(Guid requestId, Guid batchId, [FromBody] BatchApprovalActionDto dto)
+    public async Task<IActionResult> BatchAreaRequestAdjustment(Guid requestId, Guid batchId, [FromBody] BatchAdjustmentRequestDto dto)
     {
         var actorId = CurrentUserId;
 
@@ -1127,6 +1134,13 @@ public class ApprovalBatchController : BaseController
         // Phase B authorization — DepartmentManager titularity (D1)
         if (!await CanActAsAreaManagerAsync(actorId, request!))
             return StatusCode(403, "Você não é responsável pelo departamento/planta deste pedido.");
+
+        // ── Adjustment V2 (Phase 3): validate + stage the structured cycle (no save yet) ──
+        var stage = await _adjustmentCycle.StageNewCycleAsync(
+            batch!, AdjustmentConstants.SourceStages.Area, dto, actorId);
+        if (!stage.Success)
+            return StatusCode(stage.ErrorStatus, new ProblemDetails { Title = stage.ErrorTitle, Detail = stage.ErrorDetail, Status = stage.ErrorStatus });
+        var cycle = stage.Cycle!;
 
         // ── Clear allocations for batch items ──
         var batchItemRliIds = batch!.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
@@ -1158,7 +1172,7 @@ public class ApprovalBatchController : BaseController
         batch.UpdatedByUserId = actorId;
         request!.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
-        // ── History entry ──
+        // ── History entry (legacy technical audit — preserved verbatim for the QF parser) ──
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
@@ -1171,12 +1185,36 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        await _context.SaveChangesAsync();
+        // ── Atomic: batch transition + cleanup + history + V2 cycle + scalar sync all commit
+        //     together, or none does. A concurrent request that already opened the cycle / claimed
+        //     the CycleNumber loses the unique-index race deterministically → 409. ──
+        if (_context.Database.IsRelational())
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+                await _statusSyncService.SyncStatusAsync(requestId, actorId);
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (DbUpdateException ex) when (_adjustmentCycle.IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync();
+                return Conflict(new ProblemDetails { Title = "Reajuste em Andamento", Detail = "Já existe um ciclo de reajuste aberto para este lote.", Status = 409 });
+            }
+        }
+        else
+        {
+            await _context.SaveChangesAsync();
+            await _statusSyncService.SyncStatusAsync(requestId, actorId);
+            await _context.SaveChangesAsync();
+        }
 
-        await _statusSyncService.SyncStatusAsync(requestId, actorId);
-        await _context.SaveChangesAsync();
+        _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-adjustment requested by {ActorId} (cycle #{Cycle})", batchId, requestId, actorId, cycle.CycleNumber);
 
-        _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-adjustment requested by {ActorId}", batchId, requestId, actorId);
+        // ── Notification AFTER commit (never blocks/rolls back the business change) ──
+        await EmitBatchAdjustmentNotificationAsync(request, batch, cycle, WorkflowEventCodes.BatchAreaAdjustment, actorId);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} devolvido para reajuste com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -1538,6 +1576,13 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        // ── Adjustment V2 (PHASE 3 TRANSITIONAL COMPATIBILITY): close the batch's open V2 cycle as
+        //     RESUBMITTED, atomically with the batch transition, so the one-open-cycle guard never
+        //     permanently blocks a second adjustment before Phase 4 owns the structured Buyer
+        //     resubmit. NO structured "Resposta ao reajuste" row is written here — that becomes
+        //     mandatory when Phase 4 activates the structured Buyer resolution/resubmit flow. ──
+        await _adjustmentCycle.CloseOpenCycleAsync(batchId, AdjustmentConstants.States.Resubmitted, actorId, cancelReason: null);
+
         await _context.SaveChangesAsync();
 
         await _statusSyncService.SyncStatusAsync(requestId, actorId);
@@ -1785,7 +1830,7 @@ public class ApprovalBatchController : BaseController
     /// Rework path: FINAL_ADJUSTMENT → PUT edit → POST resubmit → WAITING_AREA_APPROVAL.
     /// </summary>
     [HttpPost("{batchId:guid}/final-approval/request-adjustment")]
-    public async Task<IActionResult> BatchFinalRequestAdjustment(Guid requestId, Guid batchId, [FromBody] BatchApprovalActionDto dto)
+    public async Task<IActionResult> BatchFinalRequestAdjustment(Guid requestId, Guid batchId, [FromBody] BatchAdjustmentRequestDto dto)
     {
         var actorId = CurrentUserId;
 
@@ -1797,6 +1842,13 @@ public class ApprovalBatchController : BaseController
 
         var (request, batch, error) = await LoadAndValidateBatch(requestId, batchId, RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval);
         if (error != null) return error;
+
+        // ── Adjustment V2 (Phase 3): validate + stage the structured cycle (no save yet) ──
+        var stage = await _adjustmentCycle.StageNewCycleAsync(
+            batch!, AdjustmentConstants.SourceStages.Final, dto, actorId);
+        if (!stage.Success)
+            return StatusCode(stage.ErrorStatus, new ProblemDetails { Title = stage.ErrorTitle, Detail = stage.ErrorDetail, Status = stage.ErrorStatus });
+        var cycle = stage.Cycle!;
 
         // ── Validate PO groups are all PENDING (safety check) ──
         var batchPoGroups = await _context.RequestPoGroups
@@ -1870,18 +1922,113 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        await _context.SaveChangesAsync();
+        // ── Atomic: batch transition + cleanup + winner revocation + history + V2 cycle + scalar
+        //     sync commit together, or none does; concurrent open-cycle race → deterministic 409. ──
+        if (_context.Database.IsRelational())
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+                await _statusSyncService.SyncStatusAsync(requestId, actorId);
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (DbUpdateException ex) when (_adjustmentCycle.IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync();
+                return Conflict(new ProblemDetails { Title = "Reajuste em Andamento", Detail = "Já existe um ciclo de reajuste aberto para este lote.", Status = 409 });
+            }
+        }
+        else
+        {
+            await _context.SaveChangesAsync();
+            await _statusSyncService.SyncStatusAsync(requestId, actorId);
+            await _context.SaveChangesAsync();
+        }
 
-        await _statusSyncService.SyncStatusAsync(requestId, actorId);
-        await _context.SaveChangesAsync();
+        _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-adjustment requested by {ActorId} (cycle #{Cycle})", batchId, requestId, actorId, cycle.CycleNumber);
 
-        _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-adjustment requested by {ActorId}", batchId, requestId, actorId);
+        // ── Notification AFTER commit (never blocks/rolls back the business change) ──
+        await EmitBatchAdjustmentNotificationAsync(request, batch, cycle, WorkflowEventCodes.BatchFinalAdjustment, actorId);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} devolvido para reajuste final.", BatchId = batchId, Status = batch.Status });
     }
 
     // ── Private helpers ──
 
+    /// <summary>
+    /// Adjustment V2 (Phase 3): builds and emits the Buyer-facing structured-adjustment notification
+    /// AFTER the business transaction has committed. Uses the shared AdjustmentEventLabels catalog
+    /// (friendly reason labels, never raw codes) and the cycle Id as the idempotency CorrelationId
+    /// (dedup per recipient is enforced in the outbox). Never throws — a notification failure must
+    /// not fail or roll back the already-committed adjustment.
+    /// </summary>
+    private async Task EmitBatchAdjustmentNotificationAsync(
+        Request request, ApprovalBatch batch, ApprovalBatchAdjustment cycle, string eventCode, Guid actorId)
+    {
+        try
+        {
+            var reasonLabels = string.Join(", ", cycle.Reasons
+                .Select(r => r.ReasonCode)
+                .Distinct()
+                .Select(AdjustmentEventLabels.ReasonLabel));
+
+            string? affected;
+            if (cycle.WholeBatch)
+            {
+                affected = "Lote inteiro";
+            }
+            else
+            {
+                var affectedIds = cycle.Reasons
+                    .Where(r => r.RequestLineItemId.HasValue)
+                    .Select(r => r.RequestLineItemId!.Value)
+                    .Distinct()
+                    .ToHashSet();
+                var descs = request.LineItems
+                    .Where(li => affectedIds.Contains(li.Id))
+                    .Select(li => li.Description)
+                    .ToList();
+                affected = descs.Count > 0 ? string.Join(", ", descs) : "Lote inteiro";
+            }
+
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == actorId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "Sistema";
+
+            var evt = new WorkflowEvent
+            {
+                EventCode = eventCode,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = request.Status?.Code ?? "",
+                ActionTaken = eventCode,
+                ActorUserId = actorId,
+                ActorName = actorName,
+                Comment = cycle.ApproverComment,
+                CorrelationId = cycle.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                BatchNumber = batch.BatchNumber,
+                AdjustmentReasonLabels = reasonLabels,
+                AdjustmentAffectedItems = affected,
+            };
+
+            await _orchestrator.EmitAsync(evt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Batch adjustment notification failed for cycle {CycleId} on Request {RequestId}", cycle.Id, request.Id);
+        }
+    }
 
     private async Task<ApprovalBatchDto?> BuildBatchDto(Guid batchId, Guid? expectedRequestId = null)
     {
@@ -2108,6 +2255,10 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         };
         _context.RequestStatusHistories.Add(history);
+
+        // ── Adjustment V2 (PHASE 3 TRANSITIONAL COMPATIBILITY): a cancelled batch closes its open
+        //     V2 cycle as CANCELLED, atomically with the batch transition. ──
+        await _adjustmentCycle.CloseOpenCycleAsync(batchId, AdjustmentConstants.States.Cancelled, actorId, dto.Justification);
 
         await _context.SaveChangesAsync();
 

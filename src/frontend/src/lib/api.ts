@@ -313,11 +313,11 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao rejeitar o lote.');
             return response.json();
         },
-        requestAdjustmentBatchArea: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+        requestAdjustmentBatchArea: async (requestId: string, batchId: string, payload: { comment: string; wholeBatch: boolean; reasons: { reasonCode: string; requestLineItemId?: string | null }[] }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/area-approval/request-adjustment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify(payload),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no lote.');
             return response.json();
@@ -340,11 +340,11 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao rejeitar o lote (Aprovação Final).');
             return response.json();
         },
-        requestAdjustmentBatchFinal: async (requestId: string, batchId: string, comment: string): Promise<{ message: string; statusCode: string }> => {
+        requestAdjustmentBatchFinal: async (requestId: string, batchId: string, payload: { comment: string; wholeBatch: boolean; reasons: { reasonCode: string; requestLineItemId?: string | null }[] }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/final-approval/request-adjustment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment }),
+                body: JSON.stringify(payload),
             });
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no lote (Aprovação Final).');
             return response.json();
