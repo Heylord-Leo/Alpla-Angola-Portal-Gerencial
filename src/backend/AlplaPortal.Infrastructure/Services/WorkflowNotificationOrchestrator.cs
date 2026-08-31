@@ -197,6 +197,14 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await AddUserRecipientAsync(recipients, evt.RequesterId);
                 break;
 
+            // --- Adjustment V2 (Phase 3): notify the responsible Buyer only (the sole actionable
+            //     actor until Phase 4/5). No recipient resolvable (no assigned buyer) → the
+            //     orchestrator safely logs "no recipients" and skips. ---
+            case WorkflowEventCodes.BatchAreaAdjustment:
+            case WorkflowEventCodes.BatchFinalAdjustment:
+                await AddUserRecipientAsync(recipients, evt.BuyerId, bypassSelfNotifyRule: true);
+                break;
+
             // --- PO Registered: notify Finance users (plant-scoped) ---
             case WorkflowEventCodes.PoRegistered:
                 await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
@@ -958,6 +966,15 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailBody = BuildAdjustmentBody(reqRef, reqContext, actorLabel, "aprovação final", evt.Comment)
             };
 
+            // --- Adjustment V2 (Phase 3): structured, Buyer-facing action-required notification.
+            //     Copy vocabulary is drawn from the shared AdjustmentEventLabels catalog so it stays
+            //     identical to the future timeline / approver summary. ---
+            case WorkflowEventCodes.BatchAreaAdjustment:
+                return BuildBatchAdjustmentConfig(evt, reqRef, actorLabel, isFinal: false);
+
+            case WorkflowEventCodes.BatchFinalAdjustment:
+                return BuildBatchAdjustmentConfig(evt, reqRef, actorLabel, isFinal: true);
+
             case WorkflowEventCodes.PoRegistered: return new EventConfig
             {
                 Category = NotificationCategories.Payment,
@@ -1177,6 +1194,54 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             ? $"<p style='margin-top:12px; padding:12px; background:#fff8e1; border-left:4px solid #f39c12;'><b>Motivo:</b> {System.Net.WebUtility.HtmlEncode(comment)}</p>"
             : "";
         return $"O pedido <b>{reqRef}</b>{reqContext} foi devolvido pela equipa de Finanças (<b>{actor}</b>) para correção da P.O ou documentação.{commentHtml}";
+    }
+
+    /// <summary>
+    /// Adjustment V2 (Phase 3) — Buyer-facing "Ação necessária" config for a structured adjustment
+    /// cycle. Copy uses the shared <see cref="AdjustmentEventLabels"/> catalog (stage label + reason
+    /// chips) so it matches the future timeline/approver wording exactly. Renders only friendly
+    /// labels — never raw reason codes or GUIDs.
+    /// </summary>
+    private static EventConfig BuildBatchAdjustmentConfig(WorkflowEvent evt, string reqRef, string actorLabel, bool isFinal)
+    {
+        Func<string?, string> enc = System.Net.WebUtility.HtmlEncode;
+        var stageLabel = isFinal ? AdjustmentEventLabels.RequestedAtFinal : AdjustmentEventLabels.RequestedAtArea;
+        var lote = evt.BatchNumber.HasValue ? $"Lote #{evt.BatchNumber.Value}" : "o lote";
+
+        var reasonsHtml = !string.IsNullOrWhiteSpace(evt.AdjustmentReasonLabels)
+            ? $"<p style='margin:6px 0;'><b>Motivos:</b> {enc(evt.AdjustmentReasonLabels)}</p>"
+            : "";
+        var affectedHtml = !string.IsNullOrWhiteSpace(evt.AdjustmentAffectedItems)
+            ? $"<p style='margin:6px 0;'><b>Itens afetados:</b> {enc(evt.AdjustmentAffectedItems)}</p>"
+            : "";
+        var commentHtml = !string.IsNullOrWhiteSpace(evt.Comment)
+            ? $"<p style='margin-top:12px; padding:12px; background:#fff8e1; border-left:4px solid #f39c12;'><b>Comentário do aprovador:</b> {enc(evt.Comment)}</p>"
+            : "";
+        var returnNoteHtml = isFinal
+            ? $"<p style='margin:12px 0 0; font-size:13px; color:#555;'>{enc(AdjustmentEventLabels.FinalReturnsViaAreaNote)}</p>"
+            : "";
+
+        var body = $@"
+<p><b>{enc(stageLabel)}</b> — {lote} do pedido <b>{reqRef}</b> por <b>{enc(actorLabel)}</b>.</p>
+<div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:16px 0;'>
+    {reasonsHtml}
+    {affectedHtml}
+    {commentHtml}
+</div>
+<p>Reveja o lote e reenvie-o para aprovação.</p>
+{returnNoteHtml}";
+
+        return new EventConfig
+        {
+            Category = NotificationCategories.Approval,
+            NotificationType = NotificationTypes.Warning,
+            InAppTitle = stageLabel,
+            InAppMessage = $"{lote} do pedido {reqRef} requer a sua revisão — {stageLabel.ToLowerInvariant()}.",
+            SendEmail = true,
+            EmailSubject = $"Ação necessária — {stageLabel} — {reqRef}",
+            EmailHeadline = stageLabel,
+            EmailBody = body
+        };
     }
 
 

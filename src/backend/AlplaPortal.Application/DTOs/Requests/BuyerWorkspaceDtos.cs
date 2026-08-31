@@ -115,6 +115,34 @@ public class BuyerWorkspaceBatchDto
     public DateTime? UpdatedAtUtc { get; set; }
     public string? CreatedByName { get; set; }
     public DateTime? AreaDecisionAtUtc { get; set; } // earliest winner-selection stamp, when present
+
+    /// <summary>Adjustment V2 (Phase 3) — the batch's OPEN structured adjustment cycle, when one
+    /// exists. Read-only display detail; null for batches with no open V2 cycle (legacy or never
+    /// adjusted). Does NOT expose resolutions/field-changes/candidate-reviews (later phases).</summary>
+    public BuyerWorkspaceBatchAdjustmentDto? Adjustment { get; set; }
+}
+
+/// <summary>Adjustment V2 (Phase 3) — read-only projection of one OPEN adjustment cycle for the
+/// batch details surface. Codes stay raw here; the frontend renders friendly labels.</summary>
+public class BuyerWorkspaceBatchAdjustmentDto
+{
+    public int CycleNumber { get; set; }
+    public string SourceStage { get; set; } = string.Empty; // AREA | FINAL
+    public string Status { get; set; } = string.Empty;      // WAITING_BUYER | WAITING_REQUESTER | ...
+    public bool WholeBatch { get; set; }
+    public string ApproverComment { get; set; } = string.Empty;
+    public string? RequestedByName { get; set; }
+    public DateTime RequestedAtUtc { get; set; }
+    public List<BuyerWorkspaceBatchAdjustmentReasonDto> Reasons { get; set; } = new();
+}
+
+public class BuyerWorkspaceBatchAdjustmentReasonDto
+{
+    public string ReasonCode { get; set; } = string.Empty;
+    public Guid? RequestLineItemId { get; set; }
+    /// <summary>Resolved line number of the affected item, when item-scoped (for display).</summary>
+    public int? LineNumber { get; set; }
+    public string? Detail { get; set; }
 }
 
 public class BuyerWorkspaceSupplierDto

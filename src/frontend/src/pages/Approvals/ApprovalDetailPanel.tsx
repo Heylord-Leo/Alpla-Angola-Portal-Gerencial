@@ -17,6 +17,8 @@ import { motion } from 'framer-motion';
 import { useGuidedTourContext } from '../../features/guided-tour/GuidedTourProvider';
 import type { TourId } from '../../features/guided-tour/guidedTourTypes';
 import { ApprovalWizardModal } from './ApprovalWizardModal';
+import { AdjustmentReasonPicker } from './AdjustmentReasonPicker';
+import { buildAdjustmentReasons, validateAdjustmentSelection, affectedItemLabel } from '../../lib/adjustmentReasons';
 import { ItemAssignment } from './WizardStepAllocation';
 import { AllocationReassignmentDto } from './WizardStepBudget';
 
@@ -243,6 +245,10 @@ export function ApprovalDetailPanel({
     const [approvalComment, setApprovalComment] = useState('');
     const [approvalProcessing, setApprovalProcessing] = useState(false);
     const [modalFeedback, setModalFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
+    // Adjustment V2 (Phase 3): structured reasons for the quick-action ApprovalModal REQUEST_ADJUSTMENT
+    // path (the real Area quick-action + all of Final). Reset on modal close and after a successful submit.
+    const [adjustmentReasonCodes, setAdjustmentReasonCodes] = useState<string[]>([]);
+    const [adjustmentItemIds, setAdjustmentItemIds] = useState<string[]>([]);
     
     // Internal processing state for winner selection
     const [quotationProcessingId, setQuotationProcessingId] = useState<string | null>(null);
@@ -492,7 +498,8 @@ export function ApprovalDetailPanel({
         reassignments?: AllocationReassignmentDto[],
         allocations?: Record<string, any[]>,
         extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>,
-        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[]
+        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[],
+        adjustmentReasons?: { wholeBatch: boolean; reasons: { reasonCode: string; requestLineItemId?: string | null }[] }
     ): Promise<boolean> => {
         setApprovalProcessing(true);
         try {
@@ -516,10 +523,17 @@ export function ApprovalDetailPanel({
                         ? await api.requests.rejectArea(data.id, comment)
                         : await api.requests.rejectFinal(data.id, comment));
             } else if (action === 'REQUEST_ADJUSTMENT') {
+                // Adjustment V2 (Phase 3): batch adjustments carry structured reasons; legacy
+                // request-level adjustments (no batch) stay comment-only.
+                const batchPayload = {
+                    comment,
+                    wholeBatch: adjustmentReasons?.wholeBatch ?? true,
+                    reasons: adjustmentReasons?.reasons ?? [],
+                };
                 result = activeBatch
                     ? (isArea
-                        ? await api.requests.requestAdjustmentBatchArea(data.id, activeBatch.id, comment)
-                        : await api.requests.requestAdjustmentBatchFinal(data.id, activeBatch.id, comment))
+                        ? await api.requests.requestAdjustmentBatchArea(data.id, activeBatch.id, batchPayload)
+                        : await api.requests.requestAdjustmentBatchFinal(data.id, activeBatch.id, batchPayload))
                     : (isArea
                         ? await api.requests.requestAdjustmentArea(data.id, comment)
                         : await api.requests.requestAdjustmentFinal(data.id, comment));
@@ -557,6 +571,30 @@ export function ApprovalDetailPanel({
         } finally {
             setApprovalProcessing(false);
         }
+    };
+
+    const resetAdjustmentPicker = () => {
+        setAdjustmentReasonCodes([]);
+        setAdjustmentItemIds([]);
+    };
+
+    // Adjustment V2 (Phase 3): explicit adapter for the batch REQUEST_ADJUSTMENT quick-action path
+    // (Area quick-action + all of Final go through ApprovalModal). Validates the structured selection
+    // with the shared frontend validator, builds the payload, and submits it through the existing
+    // handleWizardSubmit contract — the one trailing positional argument is confined to this single
+    // named helper instead of being spread across the JSX call site.
+    const submitBatchAdjustment = async (): Promise<void> => {
+        const err = validateAdjustmentSelection(adjustmentReasonCodes, adjustmentItemIds, approvalComment);
+        if (err) {
+            setModalFeedback({ type: 'error', message: err });
+            return;
+        }
+        const adjustmentReasons = buildAdjustmentReasons(adjustmentReasonCodes, adjustmentItemIds);
+        const ok = await handleWizardSubmit(
+            'REQUEST_ADJUSTMENT', itemAwards, itemAssignments, approvalComment,
+            undefined, undefined, undefined, undefined, undefined, adjustmentReasons,
+        );
+        if (ok) resetAdjustmentPicker();
     };
 
     // --- Render Helpers ---
@@ -1680,8 +1718,17 @@ export function ApprovalDetailPanel({
                     setShowApprovalModal({ show: false, type: null });
                     setApprovalComment('');
                     setModalFeedback({ type: 'error', message: null });
+                    resetAdjustmentPicker();
                 }}
-                onConfirm={(action) => handleWizardSubmit(action, itemAwards, itemAssignments, approvalComment)}
+                onConfirm={(action) => {
+                    // Adjustment V2 (Phase 3): a batch adjustment carries structured reasons; legacy
+                    // request-level (no activeBatch) and every other action keep the direct path.
+                    if (action === 'REQUEST_ADJUSTMENT' && activeBatch) {
+                        void submitBatchAdjustment();
+                    } else {
+                        void handleWizardSubmit(action, itemAwards, itemAssignments, approvalComment);
+                    }
+                }}
                 comment={approvalComment}
                 setComment={setApprovalComment}
                 processing={approvalProcessing}
@@ -1692,7 +1739,27 @@ export function ApprovalDetailPanel({
                 batchItemCount={activeBatch?.items?.length ?? null}
                 isLegacyQuotationApproval={isLegacyQuotationApproval}
                 isDecidedCandidateBatch={Boolean(activeBatch?.items?.some((bi: any) => (bi.candidates?.length ?? 0) > 0 && bi.selectedCandidateId))}
-            />
+            >
+                {/* Adjustment V2 (Phase 3): structured reason picker for the batch REQUEST_ADJUSTMENT
+                    quick-action (Area + Final). Legacy request-level/non-batch adjustments (no
+                    activeBatch) and PAYMENT stay comment-only. */}
+                {showApprovalModal.type === 'REQUEST_ADJUSTMENT' && activeBatch && data.requestTypeCode !== 'PAYMENT' && (
+                    <AdjustmentReasonPicker
+                        // Business-readable labels from the request line items (activeItems), which
+                        // carry lineNumber/itemCatalogCode/description — the batch item rows only
+                        // carry the id. The picker payload id stays the RequestLineItemId (item.id).
+                        items={activeItems.map((item: any) => ({
+                            id: item.id,
+                            label: affectedItemLabel({ lineNumber: item.lineNumber, itemCatalogCode: item.itemCatalogCode, description: item.description }),
+                        }))}
+                        selectedCodes={adjustmentReasonCodes}
+                        onChangeCodes={setAdjustmentReasonCodes}
+                        selectedItemIds={adjustmentItemIds}
+                        onChangeItemIds={setAdjustmentItemIds}
+                        disabled={approvalProcessing}
+                    />
+                )}
+            </ApprovalModal>
 
             {/* WIZARD MODAL (For Area Approval Quotes) */}
             <ApprovalWizardModal

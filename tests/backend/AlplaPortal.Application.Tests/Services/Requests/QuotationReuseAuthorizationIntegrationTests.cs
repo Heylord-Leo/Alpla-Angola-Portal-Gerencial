@@ -189,7 +189,8 @@ public class QuotationReuseAuthorizationIntegrationTests
         var controller = new ApprovalBatchController(
             ctx, NullLogger<ApprovalBatchController>.Instance,
             statusSync.Object, new Mock<IGroupBuilderService>().Object, routing.Object,
-            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx));
+            new QuotationItemEligibilityService(ctx), new BatchExtraItemDecisionService(ctx),
+            new AdjustmentCycleService(ctx), new Mock<IWorkflowNotificationOrchestrator>().Object);
         SetUser(controller, actorId, "System Administrator");
         return controller;
     }

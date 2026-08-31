@@ -42,6 +42,24 @@ export interface BuyerWorkspaceQuotation {
   isSelected: boolean;
 }
 
+export interface BuyerWorkspaceBatchAdjustmentReason {
+  reasonCode: string;
+  requestLineItemId?: string | null;
+  lineNumber?: number | null;
+  detail?: string | null;
+}
+
+export interface BuyerWorkspaceBatchAdjustment {
+  cycleNumber: number;
+  sourceStage: string; // AREA | FINAL
+  status: string;      // WAITING_BUYER | WAITING_REQUESTER | ...
+  wholeBatch: boolean;
+  approverComment: string;
+  requestedByName?: string | null;
+  requestedAtUtc: string;
+  reasons: BuyerWorkspaceBatchAdjustmentReason[];
+}
+
 export interface BuyerWorkspaceBatch {
   id: string;
   batchNumber: number;
@@ -54,6 +72,8 @@ export interface BuyerWorkspaceBatch {
   updatedAtUtc?: string | null;
   createdByName?: string | null;
   areaDecisionAtUtc?: string | null;
+  /** Adjustment V2 (Phase 3): the batch's OPEN structured adjustment cycle, or null when none. */
+  adjustment?: BuyerWorkspaceBatchAdjustment | null;
 }
 
 export interface CurrencyAmount {

@@ -365,4 +365,70 @@ public class BuyerWorkspaceEndpointTests
         Assert.Equal("REJECTED", ws.Batches.Single(b => b.BatchNumber == 2).Kind);
         Assert.Contains(1, ws.Batches.Single(b => b.BatchNumber == 1).ItemLineNumbers);
     }
+
+    // ════════════════════ Adjustment V2 (Phase 3) batch-details projection ════════════════════
+
+    [Fact]
+    public async Task Workspace_ProjectsOpenAdjustmentCycle_OnItsBatchOnly()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var actor = await SeedActorAsync(ctx);
+        var req = SeedRequest(ctx, actor, "REQ-ADJ");
+        var i1 = SeedItem(ctx, req, 1, RequestConstants.QuotationLifecycleStatuses.BatchAssigned);
+        var i2 = SeedItem(ctx, req, 2, RequestConstants.QuotationLifecycleStatuses.BatchAssigned);
+        var b1 = SeedBatch(ctx, req, 1, RequestConstants.ApprovalBatchStatuses.AreaAdjustment, actor, i1);
+        SeedBatch(ctx, req, 2, RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, actor, i2); // no cycle
+        var cycle = new ApprovalBatchAdjustment
+        {
+            Id = Guid.NewGuid(), ApprovalBatchId = b1.Id, CycleNumber = 1,
+            SourceStage = AdjustmentConstants.SourceStages.Area, Status = AdjustmentConstants.States.WaitingBuyer,
+            WholeBatch = false, ApproverComment = "Rever preço do item.",
+            RequestedByUserId = actor, RequestedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow,
+        };
+        cycle.Reasons.Add(new ApprovalBatchAdjustmentReason { Id = Guid.NewGuid(), ReasonCode = AdjustmentConstants.ReasonCodes.PriceNegotiation, CreatedAtUtc = DateTime.UtcNow });
+        cycle.Reasons.Add(new ApprovalBatchAdjustmentReason { Id = Guid.NewGuid(), ReasonCode = AdjustmentConstants.ReasonCodes.RequestedQuantity, RequestLineItemId = i1.Id, CreatedAtUtc = DateTime.UtcNow });
+        ctx.ApprovalBatchAdjustments.Add(cycle);
+        await ctx.SaveChangesAsync();
+
+        var ws = await Workspace(ctx, actor, req.Id);
+
+        var adj = ws.Batches.Single(b => b.BatchNumber == 1).Adjustment;
+        Assert.NotNull(adj);
+        Assert.Equal(1, adj!.CycleNumber);
+        Assert.Equal(AdjustmentConstants.SourceStages.Area, adj.SourceStage);
+        Assert.Equal(AdjustmentConstants.States.WaitingBuyer, adj.Status);
+        Assert.False(adj.WholeBatch);
+        Assert.Equal("Rever preço do item.", adj.ApproverComment);
+        Assert.Equal("Comprador Teste", adj.RequestedByName);
+        Assert.Equal(2, adj.Reasons.Count);
+        // Item-scoped reason resolves the affected line number for display.
+        Assert.Contains(adj.Reasons, r => r.ReasonCode == AdjustmentConstants.ReasonCodes.RequestedQuantity && r.LineNumber == 1);
+        Assert.Contains(adj.Reasons, r => r.ReasonCode == AdjustmentConstants.ReasonCodes.PriceNegotiation && r.LineNumber == null);
+
+        // A batch with no structured cycle projects nothing (legacy-safe).
+        Assert.Null(ws.Batches.Single(b => b.BatchNumber == 2).Adjustment);
+    }
+
+    [Fact]
+    public async Task Workspace_ClosedCycle_IsNotProjected()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var actor = await SeedActorAsync(ctx);
+        var req = SeedRequest(ctx, actor, "REQ-ADJ-CLOSED");
+        var i1 = SeedItem(ctx, req, 1, RequestConstants.QuotationLifecycleStatuses.QuotationApproved);
+        var b1 = SeedBatch(ctx, req, 1, RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, actor, i1);
+        ctx.ApprovalBatchAdjustments.Add(new ApprovalBatchAdjustment
+        {
+            Id = Guid.NewGuid(), ApprovalBatchId = b1.Id, CycleNumber = 1,
+            SourceStage = AdjustmentConstants.SourceStages.Area, Status = AdjustmentConstants.States.Resubmitted,
+            WholeBatch = true, ApproverComment = "ciclo concluído", RequestedByUserId = actor,
+            RequestedAtUtc = DateTime.UtcNow, ClosedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+
+        var ws = await Workspace(ctx, actor, req.Id);
+        Assert.Null(ws.Batches.Single(b => b.BatchNumber == 1).Adjustment); // only OPEN cycles are shown
+    }
 }

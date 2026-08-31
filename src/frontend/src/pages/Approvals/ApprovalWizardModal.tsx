@@ -11,6 +11,8 @@ import { WizardStepReview } from './WizardStepReview';
 import { WizardStepBudget, AllocationReassignmentDto } from './WizardStepBudget';
 import { useWizardValidation } from './hooks/useWizardValidation';
 import { buildSelectionsPayload } from './candidateSelection';
+import { AdjustmentReasonPicker } from './AdjustmentReasonPicker';
+import { buildAdjustmentReasons, validateAdjustmentSelection, affectedItemLabel } from '../../lib/adjustmentReasons';
 
 interface ApprovalWizardModalProps {
     isOpen: boolean;
@@ -30,7 +32,9 @@ interface ApprovalWizardModalProps {
         extraItemDecisions?: Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>,
         /** Candidate model (Area batch approval): the winner decision per ApprovalBatchItem —
          * identity + optional justification only, never commercial values. */
-        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[]
+        selections?: { approvalBatchItemId: string; selectedCandidateId: string; winnerSelectionJustification?: string }[],
+        /** Adjustment V2 (Phase 3): structured reasons for REQUEST_ADJUSTMENT on a batch. */
+        adjustmentReasons?: { wholeBatch: boolean; reasons: { reasonCode: string; requestLineItemId?: string | null }[] }
     ) => Promise<boolean>;
     isSubmitting: boolean;
     onDownloadAttachment?: (attachmentId: string, fileName: string) => void;
@@ -61,6 +65,9 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
     const [itemAllocations, setItemAllocations] = useState<Record<string, ItemAllocation[]>>({});
     const [extraItemDecisions, setExtraItemDecisions] = useState<Record<string, { decision: 'APPROVE' | 'REJECT' | 'ADJUST' | null; comment: string }>>({});
     const [comment, setComment] = useState('');
+    // Adjustment V2 (Phase 3): structured reasons captured on the review step for REQUEST_ADJUSTMENT.
+    const [adjustmentReasonCodes, setAdjustmentReasonCodes] = useState<string[]>([]);
+    const [adjustmentItemIds, setAdjustmentItemIds] = useState<string[]>([]);
     const [confirmReview, setConfirmReview] = useState(false);
     const [budgetJustification, setBudgetJustification] = useState('');
     const [isBudgetJustificationRequired, setIsBudgetJustificationRequired] = useState(false);
@@ -175,6 +182,8 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             setExtraItemDecisions({});
             setCurrentStep(1);
             setComment('');
+            setAdjustmentReasonCodes([]);
+            setAdjustmentItemIds([]);
             setConfirmReview(false);
             setBudgetJustification('');
             setIsBudgetJustificationRequired(false);
@@ -346,6 +355,17 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             return;
         }
 
+        // Adjustment V2 (Phase 3): a batch adjustment requires structured reasons (item selection
+        // for item-required reasons). Legacy request-level adjustments (no activeBatch) stay comment-only.
+        const isBatchAdjustment = action === 'REQUEST_ADJUSTMENT' && !!activeBatch;
+        if (isBatchAdjustment) {
+            const reasonError = validateAdjustmentSelection(adjustmentReasonCodes, adjustmentItemIds, comment);
+            if (reasonError) {
+                setStepValidationError(reasonError);
+                return;
+            }
+        }
+
         setStepValidationError(null);
         try {
             // Candidate model: the Area winner decision travels ONLY as identity + optional
@@ -353,7 +373,10 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
             const selections = (action === 'APPROVE' && isCandidateBatch)
                 ? buildSelectionsPayload(activeBatch?.items || [], batchSelections, selectionJustifications)
                 : undefined;
-            const success = await onSubmitAction(action, itemAwards, itemAssignments, comment, budgetJustification, reassignments, itemAllocations, extraItemDecisions, selections);
+            const adjustmentReasons = isBatchAdjustment
+                ? buildAdjustmentReasons(adjustmentReasonCodes, adjustmentItemIds)
+                : undefined;
+            const success = await onSubmitAction(action, itemAwards, itemAssignments, comment, budgetJustification, reassignments, itemAllocations, extraItemDecisions, selections, adjustmentReasons);
             if (success) {
                 // Modal closes automatically on success via the parent
             }
@@ -716,6 +739,27 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                             budgetJustification={budgetJustification}
                             budgetPreview={budgetPreview}
                         />
+                    )}
+
+                    {/* Adjustment V2 (Phase 3): structured reason selection for a batch adjustment —
+                        only on the final review step, QUOTATION batches only. */}
+                    {currentStepConfig.key === 'REVIEW' && activeBatch && request?.requestTypeCode !== 'PAYMENT' && (
+                        <div style={{ marginTop: 16 }}>
+                            <AdjustmentReasonPicker
+                                items={(activeBatch?.items || []).map((it: any) => ({
+                                    id: it.requestLineItemId,
+                                    label: affectedItemLabel({ lineNumber: it.requestLineItemLineNumber, itemCatalogCode: null, description: it.requestLineItemDescription }),
+                                }))}
+                                selectedCodes={adjustmentReasonCodes}
+                                onChangeCodes={(c) => { setAdjustmentReasonCodes(c); setHasInteracted(true); }}
+                                selectedItemIds={adjustmentItemIds}
+                                onChangeItemIds={(ids) => { setAdjustmentItemIds(ids); setHasInteracted(true); }}
+                                disabled={isSubmitting}
+                            />
+                            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #6b7280)', margin: '6px 2px 0' }}>
+                                Os motivos são obrigatórios ao clicar em "Solicitar Reajuste".
+                            </p>
+                        </div>
                     )}
                 </div>
 

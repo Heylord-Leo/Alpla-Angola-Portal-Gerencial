@@ -49,4 +49,15 @@ public record WorkflowEvent
     public int? DepartmentId { get; init; }
     public int? PlantId { get; init; }
     public int? CompanyId { get; init; }
+
+    // --- Adjustment V2 (Phase 3) context — populated only for the batch-adjustment events ---
+
+    /// <summary>The lot number the adjustment was requested on (e.g. "Lote #1").</summary>
+    public int? BatchNumber { get; init; }
+
+    /// <summary>Friendly, comma-separated reason labels for the adjustment (never raw codes).</summary>
+    public string? AdjustmentReasonLabels { get; init; }
+
+    /// <summary>Affected item descriptions, or null / "Lote inteiro" when whole-lot.</summary>
+    public string? AdjustmentAffectedItems { get; init; }
 }
