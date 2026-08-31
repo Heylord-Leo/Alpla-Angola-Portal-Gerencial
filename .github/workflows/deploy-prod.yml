@@ -56,6 +56,7 @@ jobs:
       build_id: ${{ steps.meta.outputs.build_id }}
       version: ${{ steps.meta.outputs.version }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
+      retention_helper_sha256: ${{ steps.scripts_meta.outputs.retention_helper_sha256 }}
 
     steps:
       # --- Checkout ---
@@ -285,6 +286,31 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      # Deploy-side operational scripts (e.g. backup retention). The Deploy job is artifact-only
+      # by design (no repository checkout on the slow-link self-hosted runner), so anything it
+      # executes must travel as an artifact — TEST run #140 failed exactly because the retention helper
+      # was invoked from github.workspace, which that job never populates.
+      # Publish the helper's SHA-256 as a job output so the Deploy job can prove, BEFORE touching
+      # the server, that it executes exactly the file committed at github.sha.
+      - name: Compute deploy-scripts identity
+        id: scripts_meta
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helper = Join-Path "${{ github.workspace }}" "scripts\deploy\backup-retention.ps1"
+          if (-not (Test-Path -LiteralPath $helper)) { throw "scripts/deploy/backup-retention.ps1 is missing from the checkout - the Deploy job could not run retention. Aborting the build." }
+          $hash = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "::notice::backup-retention.ps1 sha256=$hash"
+          "retention_helper_sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload deploy-scripts artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-scripts-prod
+          path: ${{ github.workspace }}/scripts/deploy
+          retention-days: 14
+          if-no-files-found: error
+
   # ===========================================================================
   # Job 2: Deploy to PRODUCTION
   # ===========================================================================
@@ -310,6 +336,7 @@ jobs:
     env:
       ARTIFACT_API_PATH: C:\ActionsArtifacts\AlplaPortal\prod\api
       ARTIFACT_WEB_PATH: C:\ActionsArtifacts\AlplaPortal\prod\web
+      ARTIFACT_SCRIPTS_PATH: C:\ActionsArtifacts\AlplaPortal\prod\scripts
 
     steps:
       # --- Fail-fast: required deployment variables (before ANY server-touching work) ---
@@ -332,7 +359,7 @@ jobs:
           # already guarantees an empty tree each run, whereas run_id-scoped folders would accumulate on
           # the self-hosted runner with no garbage collection. Fail-closed: any partial delete aborts the
           # job BEFORE download, so a stale/locked leftover file can never corrupt integrity verification.
-          $paths = @("${{ env.ARTIFACT_API_PATH }}", "${{ env.ARTIFACT_WEB_PATH }}")
+          $paths = @("${{ env.ARTIFACT_API_PATH }}", "${{ env.ARTIFACT_WEB_PATH }}", "${{ env.ARTIFACT_SCRIPTS_PATH }}")
           foreach ($p in $paths) {
             if (Test-Path -LiteralPath $p) {
               Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
@@ -358,6 +385,33 @@ jobs:
         with:
           name: web-artifact-prod
           path: ${{ env.ARTIFACT_WEB_PATH }}
+
+      - name: Download deploy-scripts artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-scripts-prod
+          path: ${{ env.ARTIFACT_SCRIPTS_PATH }}
+
+      # --- GATE: retention helper present, identical to the built commit and parseable — BEFORE any
+      #     server-touching work. A missing/mismatched/corrupt helper is a CI CONFIGURATION ERROR and
+      #     fails the deploy here, while nothing has been backed up, stopped or replaced. Retention
+      #     is never silently skipped: that would hide the unbounded-storage problem it exists to
+      #     prevent. Cleanup trouble INSIDE a valid helper is a different matter and stays
+      #     warning-only (the helper always exits 0 for it). ---
+      - name: Verify deploy-scripts artifact (retention helper)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $helper = Join-Path "${{ env.ARTIFACT_SCRIPTS_PATH }}" "backup-retention.ps1"
+          $expected = "${{ needs.build.outputs.retention_helper_sha256 }}"
+          if (-not (Test-Path -LiteralPath $helper)) { throw "CI CONFIGURATION ERROR: retention helper not found at '$helper' (deploy-scripts artifact missing or empty). Aborting before any server mutation." }
+          if ([string]::IsNullOrWhiteSpace($expected)) { throw "CI CONFIGURATION ERROR: the build job published no retention_helper_sha256 output. Aborting before any server mutation." }
+          $actual = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "CI CONFIGURATION ERROR: retention helper sha256 ($actual) != built ($expected). Aborting before any server mutation." }
+          $tokens = $null; $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput((Get-Content -LiteralPath $helper -Raw), $helper, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) { throw "CI CONFIGURATION ERROR: retention helper does not parse ($($parseErrors.Count) error(s)): $($parseErrors[0].Message)" }
+          Write-Host "::notice::Retention helper verified: $helper (sha256=$actual)"
 
       # --- GATE: build identity (FE == BE == expected) — before any server mutation ---
       - name: Verify build manifests (frontend == backend == expected)
@@ -653,7 +707,13 @@ jobs:
         if: steps.sql_backup.outputs.db_backup_created == 'true'
         shell: pwsh
         run: |
-          & "${{ github.workspace }}\scripts\deploy\backup-retention.ps1" `
+          # Missing helper = CI configuration error → fail (before IIS mutation); cleanup problems
+          # INSIDE the helper remain warnings — it never exits non-zero for them.
+          $helper = "${{ env.ARTIFACT_SCRIPTS_PATH }}\backup-retention.ps1"
+          if (-not (Test-Path -LiteralPath $helper)) {
+            throw "Retention helper not found at '$helper' - the deploy-scripts artifact did not download. CI configuration error; retention must not be silently skipped."
+          }
+          & $helper `
             -BackupRoot "${{ vars.BACKUP_PATH }}\db" `
             -Mode Database
 
@@ -735,7 +795,13 @@ jobs:
       - name: Retention cleanup (application backups)
         shell: pwsh
         run: |
-          & "${{ github.workspace }}\scripts\deploy\backup-retention.ps1" `
+          # Missing helper = CI configuration error → fail (before IIS mutation); cleanup problems
+          # INSIDE the helper remain warnings — it never exits non-zero for them.
+          $helper = "${{ env.ARTIFACT_SCRIPTS_PATH }}\backup-retention.ps1"
+          if (-not (Test-Path -LiteralPath $helper)) {
+            throw "Retention helper not found at '$helper' - the deploy-scripts artifact did not download. CI configuration error; retention must not be silently skipped."
+          }
+          & $helper `
             -BackupRoot "${{ vars.BACKUP_PATH }}" `
             -Mode Application `
             -CurrentBackupName "${{ steps.file_backup.outputs.backup_dir_name }}"
