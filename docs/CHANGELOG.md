@@ -50,6 +50,11 @@ approval queue, and the backup infrastructure are untouched; Phases 5/6/7 are **
 - **Contextual adjustment-reason picker** — the Area wizard's yellow "Motivos do Reajuste" panel is no
   longer permanently visible; it appears only under "Solicitar Reajuste" (Final/quick-action was already
   contextual). Approval and rejection remain independent of adjustment reasons.
+- **Buyer Workspace partial-coverage action** (pre-existing bug) — ready items can be sent to approval
+  while other items remain pending quotation. The Workspace now consumes the full actionable
+  `nextActions` list instead of only the first action, so PartialCoverage exposes **both** batch
+  submission ("Enviar itens cobertos para aprovação") and quotation continuation simultaneously.
+  Backend workflow (`BuyerQueueProjectionBuilder`, partial-batch creation) is unchanged.
 
 #### Preserved
 - Original quotation/QuotationItem and prior candidate audit remain; legacy no-cycle resubmit stays

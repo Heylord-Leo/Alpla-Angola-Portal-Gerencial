@@ -27,6 +27,7 @@ import {
   lotLineNumbersLabel, lotItemCountLabel, clampIndex,
 } from './buyerWorkspaceView';
 import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequestEmail';
+import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -114,8 +115,18 @@ export function BuyerRequestWorkspace() {
   const nextAction = ws.nextActions.find(a => a.actionable) || ws.nextActions[0];
   const openItems = openItemsForQuotation(ws.items);
   const hasOpenItems = openItems.length > 0;
-  // Server-authorized next step (ADD_QUOTATION | SUBMIT_BATCH | RESOLVE_ADJUSTMENT); AWAITING_* → null.
-  const actionableCode = nextAction && nextAction.actionable && nextAction.code !== 'NONE' ? nextAction.code : null;
+  // Server-authorized actions — the contract may return MORE THAN ONE actionable entry (e.g.
+  // PartialCoverage returns both ADD_QUOTATION and SUBMIT_BATCH). Derive each independently from the
+  // server list (no frontend eligibility recomputation, no ordering dependency) so a ready subset can
+  // be sent for approval WHILE remaining items keep their quotation-continuation actions.
+  const { hasSubmitBatch, hasAddQuotation, hasResolveAdjustment, submitBatchLabel, resolveAdjustmentLabel } =
+    deriveWorkspaceHeaderActions(ws.nextActions);
+  const hasAnyActionable = ws.nextActions.some(a => a.actionable && a.code !== 'NONE');
+  // When BOTH the send and quotation activities are valid, the "Próxima ação" text must not imply only
+  // one is possible. Otherwise keep the server's own label.
+  const nextActionLabel = (hasSubmitBatch && hasAddQuotation)
+    ? 'Enviar itens prontos ou completar cotações'
+    : (nextAction?.label || 'Sem ação do comprador');
 
   return (
     <PageContainer>
@@ -153,8 +164,8 @@ export function BuyerRequestWorkspace() {
             {nextAction && (
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)' }}>Próxima ação</div>
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: actionableCode ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>
-                  {nextAction.label || 'Sem ação do comprador'}
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: hasAnyActionable ? 'var(--color-text-main)' : 'var(--color-text-muted)' }}>
+                  {nextActionLabel}
                 </div>
               </div>
             )}
@@ -162,14 +173,12 @@ export function BuyerRequestWorkspace() {
               {hasOpenItems && (
                 <button onClick={solicitarCotacao} style={outlineBtn}><Mail size={15} /> Solicitar cotação</button>
               )}
-              {/* SUBMIT_BATCH / RESOLVE_ADJUSTMENT run IN the Workspace (Hosts B/C). ADD_QUOTATION still
-                  bridges to the classic Wizard host until the Wizard host lands. */}
-              {actionableCode === 'SUBMIT_BATCH' && (
-                <button onClick={() => setActiveHost('approval')} style={primaryBtn}>{nextAction!.label}</button>
-              )}
-              {actionableCode === 'RESOLVE_ADJUSTMENT' && (
+              {/* RESOLVE_ADJUSTMENT is the special/primary flow: while a structured adjustment must be
+                  resolved the server suppresses SUBMIT_BATCH/ADD_QUOTATION, so this branch owns the
+                  header alone (rework + the adjustment-scoped quotation entries). */}
+              {hasResolveAdjustment ? (
                 <>
-                  <button onClick={() => setActiveHost('rework')} style={primaryBtn}>{nextAction!.label}</button>
+                  <button onClick={() => setActiveHost('rework')} style={primaryBtn}>{resolveAdjustmentLabel}</button>
                   {/* QF4: the SAME quotation wizard the classic screen already allows during
                       adjustment states (canMutateQuotation includes AREA/FINAL_ADJUSTMENT) — outline
                       styling keeps the rework action primary. New quotation lines mapped to the
@@ -181,20 +190,27 @@ export function BuyerRequestWorkspace() {
                     <Pencil size={15} /> Inserir Manualmente
                   </button>
                 </>
-              )}
-              {actionableCode === 'ADD_QUOTATION' && (
-                // The server-derived next action (Adicionar cotação / Completar cotações) stays as the
-                // PRÓXIMA AÇÃO label above; here we expose the TWO explicit ENTRY METHODS. Both launch the
-                // SAME "REGISTRAR NOVA COTAÇÃO" wizard through the SAME shared controller, differing only in
-                // the canonical Wizard source ('UPLOAD' → document/OCR, 'MANUAL' → priceable rows). No new
-                // operational-state codes; no classic navigation.
+              ) : (
                 <>
-                  <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'UPLOAD')} style={primaryBtn} title="Importar documento (PDF/imagem) e extrair a cotação por OCR">
-                    <Upload size={15} /> Importar Cotação
-                  </button>
-                  <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'MANUAL')} style={outlineBtn} title="Introduzir os valores da cotação manualmente">
-                    <Pencil size={15} /> Inserir Manualmente
-                  </button>
+                  {/* SUBMIT_BATCH and ADD_QUOTATION render INDEPENDENTLY — both appear together in
+                      PartialCoverage so the Buyer can send the ready subset (Host B / the existing
+                      PartialApprovalBatchModal) WITHOUT finishing the remaining quotations. */}
+                  {hasSubmitBatch && (
+                    <button onClick={() => setActiveHost('approval')} style={primaryBtn}>{submitBatchLabel}</button>
+                  )}
+                  {hasAddQuotation && (
+                    // Two explicit entry methods into the SAME "REGISTRAR NOVA COTAÇÃO" wizard (UPLOAD →
+                    // document/OCR, MANUAL → priceable rows). Importar stays primary only when there is no
+                    // send action competing for primacy.
+                    <>
+                      <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'UPLOAD')} style={hasSubmitBatch ? outlineBtn : primaryBtn} title="Importar documento (PDF/imagem) e extrair a cotação por OCR">
+                        <Upload size={15} /> Importar Cotação
+                      </button>
+                      <button onClick={() => wizardHost.openAddQuotation(ws.requestId, 'MANUAL')} style={outlineBtn} title="Introduzir os valores da cotação manualmente">
+                        <Pencil size={15} /> Inserir Manualmente
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>

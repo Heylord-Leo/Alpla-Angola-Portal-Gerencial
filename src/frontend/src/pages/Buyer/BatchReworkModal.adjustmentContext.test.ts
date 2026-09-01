@@ -77,13 +77,14 @@ describe('QF4 — quotation bridge', () => {
     });
 
     it('Workspace renders the quotation wizard entries during RESOLVE_ADJUSTMENT', () => {
-        const resolveBlock = workspaceSrc.split("actionableCode === 'RESOLVE_ADJUSTMENT'")[1]?.split('actionableCode ===')[0] ?? '';
+        // The RESOLVE_ADJUSTMENT branch owns the header alone (hasResolveAdjustment ? … : …).
+        const resolveBlock = workspaceSrc.split('hasResolveAdjustment ? (')[1]?.split(') : (')[0] ?? '';
         expect(resolveBlock).toMatch(/openAddQuotation\(ws\.requestId, 'UPLOAD'\)/);
         expect(resolveBlock).toMatch(/openAddQuotation\(ws\.requestId, 'MANUAL'\)/);
     });
 
     it('normal ADD_QUOTATION wizard entries remain intact', () => {
-        const addBlock = workspaceSrc.split("actionableCode === 'ADD_QUOTATION'")[1] ?? '';
+        const addBlock = workspaceSrc.split('hasAddQuotation && (')[1] ?? '';
         expect(addBlock).toMatch(/openAddQuotation\(ws\.requestId, 'UPLOAD'\)/);
         expect(addBlock).toMatch(/openAddQuotation\(ws\.requestId, 'MANUAL'\)/);
     });
