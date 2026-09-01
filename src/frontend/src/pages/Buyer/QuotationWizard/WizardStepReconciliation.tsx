@@ -3,6 +3,7 @@ import { OcrDraft, RequestDetailsDto } from '../../../types';
 import { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
 import { CheckCircle, AlertCircle, HelpCircle, Link as LinkIcon, Plus, XCircle, Search, RefreshCw, Lock, FilePlus } from 'lucide-react';
 import { isLineItemEligibleForQuotation } from '../batchEligibility';
+import { reconciliationRequestItems } from './reconciliationTargets';
 import { AddRequestedItemModal } from './AddRequestedItemModal';
 import { validateReconciliationJustification } from '../../../lib/reconciliationJustificationValidator';
 import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../lib/lineReconciliation';
@@ -47,14 +48,17 @@ const IGNORED_JUSTIFICATION_SUGGESTIONS: readonly string[] = [
 const justificationChipBase: React.CSSProperties = { padding: '6px 10px', fontSize: '0.8rem', fontWeight: 500, borderRadius: '16px', cursor: 'pointer', border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' };
 const justificationChipSelected: React.CSSProperties = { ...justificationChipBase, border: '1px solid var(--color-primary)', backgroundColor: 'var(--color-primary)', color: '#fff' };
 
-/** Quick-select shortcuts for the consolidated line-adjustment reason (frontend-only text helpers). */
+/** Quick-select shortcuts for the consolidated line-adjustment reason (frontend-only text helpers).
+ * Source-neutral: covers deliberate commercial edits (e.g. a renegotiated price) as well as real OCR
+ * corrections — the baseline compared against is the line's ORIGINAL values, not necessarily an OCR run. */
 const LINE_ADJUSTMENT_SUGGESTIONS: readonly string[] = [
-    'Erro na extração pelo OCR',
+    'Preço renegociado com o fornecedor',
     'Quantidade corrigida conforme o documento',
     'Quantidade confirmada com o fornecedor',
     'Apenas parte da quantidade será adquirida',
     'A quantidade representa embalagem ou múltiplo comercial',
     'Preço/desconto corrigido conforme o documento',
+    'Erro na extração pelo OCR',
     OTHER_JUSTIFICATION_LABEL,
 ];
 
@@ -126,11 +130,19 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
     // Only items still open for quotation belong in this wizard's active flow —
     // items already in a batch, approved, or formally proposed/accepted as
     // not-quoted are excluded (they are handled elsewhere and must not be
-    // re-mapped or re-declared as not-quoted here).
+    // re-mapped or re-declared as not-quoted here). This is the NEW-quotation eligibility
+    // and still drives auto-suggest and the coverage gate.
     const eligibleRequestItems = (request.lineItems || []).filter(isLineItemEligibleForQuotation);
-    const coveredElsewhereCount = (request.lineItems?.length || 0) - eligibleRequestItems.length;
+    // Phase 4: the reconciliation TARGETS the panel/dropdown offer = eligible UNION the request items
+    // THIS draft already maps. On EDIT of a contributing quotation the mapped item may already be
+    // BATCH_ASSIGNED/QUOTATION_APPROVED — its existing reconciliation must stay visible. For a NEW
+    // draft (no mapped ids) this collapses to the eligible set, so NEW behavior is unchanged.
+    const reconTargets = reconciliationRequestItems(request.lineItems, mappedIds as Set<string>, isLineItemEligibleForQuotation);
+    const reconTargetIds = new Set(reconTargets.map((li: any) => li.id));
+    // "Covered elsewhere" must NOT count an item that is shown here as already linked by this draft.
+    const coveredElsewhereCount = (request.lineItems || []).filter((li: any) => !reconTargetIds.has(li.id)).length;
     const inBatchOrApprovedCount = (request.lineItems || []).filter((i: any) =>
-        ['BATCH_ASSIGNED', 'QUOTATION_APPROVED'].includes(i.quotationLifecycleStatus)
+        ['BATCH_ASSIGNED', 'QUOTATION_APPROVED'].includes(i.quotationLifecycleStatus) && !mappedIds.has(i.id)
     ).length;
     // Kept apart on purpose: PROPOSED is still awaiting a Requester/Area Approver
     // decision (can bounce back to pending on reject) while ACCEPTED is final —
@@ -431,7 +443,7 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                                                     onChange={(e) => handleMappingChange(idx, e.target.value || null)}
                                                 >
                                                     <option value="">-- Selecione um item --</option>
-                                                    {eligibleRequestItems.filter((reqItem: any) =>
+                                                    {reconTargets.filter((reqItem: any) =>
                                                         reqItem.id === quoteItem.mappedRequestLineItemId || !mappedIds.has(reqItem.id)
                                                     ).map((reqItem: any) => (
                                                         <option key={reqItem.id} value={reqItem.id}>
@@ -507,12 +519,12 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                                             return (
                                                 <div style={{ marginTop: "12px", padding: "12px", border: "1px solid #FDE68A", backgroundColor: "#FFFBEB", borderRadius: "6px" }}>
                                                     <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#92400E", marginBottom: "6px" }}>
-                                                        Alteração em relação ao documento OCR
+                                                        Alterações em relação à cotação original
                                                     </div>
                                                     <div style={{ fontSize: "0.75rem", color: "#78350F", marginBottom: "8px", display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                                                        <span>Qtd OCR: <strong>{fmtNum(quoteItem.ocrOriginalQuantity)}</strong> → <strong>{fmtNum(quoteItem.quantity)}</strong></span>
-                                                        <span>Preço OCR: <strong>{fmtNum(quoteItem.ocrOriginalUnitPrice)}</strong> → <strong>{fmtNum(quoteItem.unitPrice)}</strong></span>
-                                                        <span>Desc. OCR: <strong>{fmtNum(quoteItem.ocrOriginalDiscountAmount)}</strong> → <strong>{fmtNum(quoteItem.discountAmount)}</strong></span>
+                                                        <span>Qtd. original: <strong>{fmtNum(quoteItem.ocrOriginalQuantity)}</strong> → <strong>{fmtNum(quoteItem.quantity)}</strong></span>
+                                                        <span>Preço original: <strong>{fmtNum(quoteItem.ocrOriginalUnitPrice)}</strong> → <strong>{fmtNum(quoteItem.unitPrice)}</strong></span>
+                                                        <span>Desc. original: <strong>{fmtNum(quoteItem.ocrOriginalDiscountAmount)}</strong> → <strong>{fmtNum(quoteItem.discountAmount)}</strong></span>
                                                     </div>
                                                     <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "#92400E", marginBottom: "6px" }}>Motivo das alterações desta linha *</label>
                                                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
@@ -553,7 +565,7 @@ export const WizardStepReconciliation: React.FC<WizardStepReconciliationProps> =
                         <p style={{ margin: "4px 0 0 0", fontSize: "0.875rem", color: "#64748b" }}>Cobertura da solicitação original</p>
                     </div>
                     <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "16px", maxHeight: "600px", overflowY: "auto" }}>
-                        {eligibleRequestItems.map((reqItem: any, idx: number) => {
+                        {reconTargets.map((reqItem: any, idx: number) => {
                             const notQuotedItem = draft.items.find((i: any) => i.reconciliationStatus === "NOT_QUOTED" && i.mappedRequestLineItemId === reqItem.id);
                             const isNotQuoted = !!notQuotedItem;
                             const mappingInfo = draft.items.find((i: any) => (i.reconciliationStatus === "MAPPED" || i.reconciliationStatus === "SUBSTITUTE") && i.mappedRequestLineItemId === reqItem.id);

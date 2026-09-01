@@ -9,6 +9,8 @@ import {
 import { computeRelevantExtraLines, parseExtraItemDecisionError } from './batchExtraItemsLogic';
 import { BatchExtraItemsDecisionPanel } from './BatchExtraItemsDecisionPanel';
 import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
+import { reasonLabel, sourceStageLabel, affectedItemLabel } from '../../lib/adjustmentReasons';
+import { resolveBatchContributingQuotations } from './QuotationWizard/resolveContributingQuotations';
 
 /** One selectable option row in the rework screen. `frozen` = values come from the batch's
  * persisted candidate SNAPSHOT (never refreshed from the live quotation); otherwise the option is
@@ -22,6 +24,11 @@ interface ReworkOption {
     currency: string;
     reconciliationStatus: string;
     frozen: boolean;
+    /** Adjustment V2 (Phase 4): another quotation of this request explicitly revises this option's
+     * quotation → it is a superseded "Versão anterior" and cannot be selected for the new round. */
+    superseded?: boolean;
+    /** This option's quotation is itself a revision (has revisesQuotationId) → "Revisada". */
+    isRevision?: boolean;
 }
 
 interface ReworkItem {
@@ -59,7 +66,11 @@ interface BatchReworkModalProps {
     onSuccess: (message: string) => void;
     /** QF4: host-provided bridge to the existing quotation tools (classic screen / Workspace
      * quotations tab). This modal only reviews batch COMPOSITION — commercial edits happen there. */
-    onManageQuotations?: () => void;
+    /** Phase 4: the Buyer wants to correct the batch's commercial data. The modal resolves the batch's
+     * contributing existing quotation(s) and hands them up with THIS batch's id (reworkBatchId); the host
+     * opens the right one as a REVISION (one → direct, many → chooser, zero → controlled feedback).
+     * Never opens a blank NEW quotation and never mutates the original. */
+    onManageQuotations?: (contributingQuotations: SavedQuotationDto[], reworkBatchId: string) => void;
 }
 
 // 'savedNotResubmitted': the update succeeded (corrections ARE persisted) but the resubmit call
@@ -93,8 +104,15 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
     const [fieldErrorItemId, setFieldErrorItemId] = useState<string | null>(null);
     const [fieldErrorMessage, setFieldErrorMessage] = useState<string | null>(null);
     const [showValidation, setShowValidation] = useState(false);
+    // Adjustment V2 (Phase 4): the Buyer's mandatory "Resposta ao reajuste" — required ONLY when the
+    // batch carries an OPEN structured cycle; legacy batches keep the comment-only resubmit. Retained
+    // across a failed resubmit (only cleared when the modal (re)opens).
+    const [adjustmentResponse, setAdjustmentResponse] = useState('');
 
     const hasLegacyItems = reworkItems.some(i => i.isLegacy);
+    // Server is authoritative; this only drives the UX (mandatory field + gating).
+    const responseRequired = !!batch?.hasOpenAdjustmentCycle;
+    const responseMissing = responseRequired && adjustmentResponse.trim().length === 0;
 
     useEffect(() => {
         if (!isOpen || !group || !batch) return;
@@ -102,6 +120,14 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         const allLineItems: RequestLineItemDto[] = group.items || group.lineItems || group.requestLineItems || [];
         const quotations: SavedQuotationDto[] = group.quotations || [];
         const allQuotationItems = quotations.flatMap(q => (q.items || []).map(qi => ({ ...qi, quotationId: q.id, supplierName: q.supplierNameSnapshot })));
+
+        // Adjustment V2 (Phase 4): a quotation is SUPERSEDED when another quotation of this request
+        // explicitly revises it (revisesQuotationId → its id). Deterministic provenance only — never
+        // by price/date/supplier. isRevision = the quotation itself carries a revisesQuotationId.
+        const supersededQuotationIds = new Set(quotations.map(q => q.revisesQuotationId).filter(Boolean) as string[]);
+        const revisionQuotationIds = new Set(quotations.filter(q => q.revisesQuotationId).map(q => q.id));
+        const isOptionSuperseded = (quotationId: string) => supersededQuotationIds.has(quotationId);
+        const isOptionRevision = (quotationId: string) => revisionQuotationIds.has(quotationId);
 
         const newItems: ReworkItem[] = [];
 
@@ -175,13 +201,27 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
             const buyerNotes: Record<string, string> = {};
             snapshotCandidates.forEach(c => { if (c.buyerNote) buyerNotes[c.quotationItemId] = c.buyerNote; });
 
+            // Stamp revision provenance on every option (deterministic; no value/date matching).
+            options.forEach(o => { o.superseded = isOptionSuperseded(o.quotationId); o.isRevision = isOptionRevision(o.quotationId); });
+
+            // Default selection: the previously-submitted candidate(s), MINUS any now superseded by a
+            // revision. If dropping a superseded option leaves the item with nothing selected AND there
+            // is EXACTLY ONE current (non-superseded) revised option, preselect it — unambiguous mapping
+            // only. With multiple leaf revisions, leave it to the Buyer.
+            const initialChecked = (isLegacy
+                ? (batchItem.selectedQuotationItemId ? [batchItem.selectedQuotationItemId] : [])
+                : snapshotCandidates.map(c => c.quotationItemId))
+                .filter(qid => { const o = options.find(op => op.quotationItemId === qid); return !(o && o.superseded); });
+            if (initialChecked.length === 0) {
+                const leafRevisions = options.filter(o => o.isRevision && !o.superseded);
+                if (leafRevisions.length === 1) initialChecked.push(leafRevisions[0].quotationItemId);
+            }
+
             newItems.push({
                 reqItem,
                 options,
                 kept: true,
-                checkedIds: isLegacy
-                    ? (batchItem.selectedQuotationItemId ? [batchItem.selectedQuotationItemId] : [])
-                    : snapshotCandidates.map(c => c.quotationItemId),
+                checkedIds: initialChecked,
                 buyerNotes,
                 isLegacy
             });
@@ -217,6 +257,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         setFieldErrorItemId(null);
         setFieldErrorMessage(null);
         setShowValidation(false);
+        setAdjustmentResponse('');
     }, [isOpen, group, batch]);
 
     // Contributing quotations = every quotation carrying at least one CHECKED option of a KEPT item.
@@ -245,6 +286,9 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
     const handleToggleOption = (reqItemId: string, quotationItemId: string) => {
         setReworkItems(prev => prev.map(item => {
             if (item.reqItem.id !== reqItemId) return item;
+            // A superseded ("Versão anterior") option is never selectable for the new approval round.
+            const opt = item.options.find(o => o.quotationItemId === quotationItemId);
+            if (opt?.superseded) return item;
             const checked = item.checkedIds.includes(quotationItemId);
             return {
                 ...item,
@@ -285,7 +329,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
 
     const keptItems = reworkItems.filter(i => i.kept);
     const invalidItems = keptItems.filter(i => i.checkedIds.length === 0);
-    const isValid = keptItems.length > 0 && invalidItems.length === 0 && isExtraItemsValid;
+    const isValid = keptItems.length > 0 && invalidItems.length === 0 && isExtraItemsValid && !responseMissing;
 
     const buildPayload = () => {
         const items: BatchItemInput[] = keptItems.map(item => ({
@@ -368,6 +412,11 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
             setSubmitError('Decida (incluir ou não incluir) todos os itens adicionais pendentes da cotação antes de continuar.');
             return;
         }
+        if (responseMissing) {
+            setShowValidation(true);
+            setSubmitError('Escreva a resposta ao reajuste solicitado antes de reenviar o lote.');
+            return;
+        }
 
         setPhase('submitting');
         const { items, extraItemDecisions: payload } = buildPayload();
@@ -381,7 +430,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
         }
 
         try {
-            await api.requests.resubmitApprovalBatch(group.requestId, batch.id);
+            await api.requests.resubmitApprovalBatch(group.requestId, batch.id, undefined, responseRequired ? adjustmentResponse.trim() : undefined);
             setPhase('idle');
             onSuccess('Correções salvas e lote reenviado para aprovação com sucesso.');
         } catch (err: any) {
@@ -394,10 +443,15 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
 
     const handleResubmitOnly = async () => {
         if (!group || !batch) return;
+        if (responseMissing) {
+            setShowValidation(true);
+            setSubmitError('Escreva a resposta ao reajuste solicitado antes de reenviar o lote.');
+            return;
+        }
         setSubmitError(null);
         setPhase('submitting');
         try {
-            await api.requests.resubmitApprovalBatch(group.requestId, batch.id);
+            await api.requests.resubmitApprovalBatch(group.requestId, batch.id, undefined, responseRequired ? adjustmentResponse.trim() : undefined);
             setPhase('idle');
             onSuccess('Lote reenviado para aprovação com sucesso.');
         } catch (err: any) {
@@ -449,27 +503,112 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                 </div>
 
                 <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                    {/* QF3: the APPROVER's adjustment context — backend-derived (QF1), never batch.comment. */}
-                    <div style={{ border: '1px solid #fcd34d', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '14px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 20px', fontSize: '0.8125rem', color: '#92400e' }}>
-                        <div>
-                            <strong>Origem:</strong>{' '}
-                            {batch.adjustmentSourceStage === 'FINAL' ? 'Aprovação Final'
-                                : batch.adjustmentSourceStage === 'AREA' ? 'Aprovação de Área'
-                                : 'Informação não disponível'}
+                    {/* Adjustment context. V2 (open structured cycle) distinguishes STRUCTURED reasons
+                        from the approver's free-text comment; legacy pre-V2 batches fall back to the QF1
+                        scalar (the parsed history text), which must never masquerade as a structured reason. */}
+                    {batch.openAdjustmentCycle ? (
+                        <div style={{ border: '1px solid #fcd34d', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '14px 16px', fontSize: '0.8125rem', color: '#92400e', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Reajuste solicitado
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 20px' }}>
+                                <div>
+                                    <strong>Origem:</strong>{' '}
+                                    {sourceStageLabel(batch.openAdjustmentCycle.sourceStage)}
+                                </div>
+                                <div>
+                                    <strong>Solicitado por:</strong>{' '}
+                                    {batch.adjustmentRequestedByName || 'Informação não disponível'}
+                                </div>
+                                <div>
+                                    <strong>Solicitado em:</strong>{' '}
+                                    {formatAdjustmentTimestamp(batch.adjustmentRequestedAtUtc)}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={{ fontWeight: 700, marginBottom: '4px' }}>Motivos:</div>
+                                {batch.openAdjustmentCycle.reasons.length === 0 ? (
+                                    <div>Informação não disponível</div>
+                                ) : (
+                                    <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {batch.openAdjustmentCycle.reasons.map((r, i) => (
+                                            <li key={i}>
+                                                {reasonLabel(r.reasonCode)}
+                                                {r.lineNumber != null && (
+                                                    <span style={{ opacity: 0.85 }}>
+                                                        {' '}— Item afetado: {affectedItemLabel({ lineNumber: r.lineNumber, itemCatalogCode: r.itemCatalogCode, description: r.description })}
+                                                    </span>
+                                                )}
+                                                {r.detail && <span style={{ opacity: 0.85 }}> — {r.detail}</span>}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div>
+                                <div style={{ fontWeight: 700, marginBottom: '4px' }}>Comentário do aprovador:</div>
+                                <div style={{ whiteSpace: 'pre-wrap' }}>
+                                    {batch.openAdjustmentCycle.approverComment?.trim() || 'Sem comentário'}
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <strong>Solicitado por:</strong>{' '}
-                            {batch.adjustmentRequestedByName || 'Informação não disponível'}
+                    ) : (
+                        // Legacy fallback (no V2 cycle): the QF1 parsed free-text is the only motive available.
+                        <div style={{ border: '1px solid #fcd34d', backgroundColor: '#fffbeb', borderRadius: '8px', padding: '14px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px 20px', fontSize: '0.8125rem', color: '#92400e' }}>
+                            <div>
+                                <strong>Origem:</strong>{' '}
+                                {batch.adjustmentSourceStage === 'FINAL' ? 'Aprovação Final'
+                                    : batch.adjustmentSourceStage === 'AREA' ? 'Aprovação de Área'
+                                    : 'Informação não disponível'}
+                            </div>
+                            <div>
+                                <strong>Solicitado por:</strong>{' '}
+                                {batch.adjustmentRequestedByName || 'Informação não disponível'}
+                            </div>
+                            <div>
+                                <strong>Solicitado em:</strong>{' '}
+                                {formatAdjustmentTimestamp(batch.adjustmentRequestedAtUtc)}
+                            </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <strong>Motivo do reajuste:</strong>{' '}
+                                {batch.adjustmentReason || 'Informação não disponível'}
+                            </div>
                         </div>
-                        <div>
-                            <strong>Solicitado em:</strong>{' '}
-                            {formatAdjustmentTimestamp(batch.adjustmentRequestedAtUtc)}
+                    )}
+
+                    {/* Adjustment V2 (Phase 4): mandatory Buyer response — shown only for batches with an
+                        open structured cycle. Registers one BUYER resolution and closes the cycle on resubmit. */}
+                    {responseRequired && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label htmlFor="adjustment-response" style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                Resposta ao reajuste <span style={{ color: '#dc2626' }}>*</span>
+                            </label>
+                            <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                                Descreva o que foi ajustado ou esclareça o pedido do aprovador. Esta resposta é obrigatória e ficará registada no histórico do reajuste.
+                            </p>
+                            <textarea
+                                id="adjustment-response"
+                                value={adjustmentResponse}
+                                onChange={(e) => { setAdjustmentResponse(e.target.value); if (submitError) setSubmitError(null); }}
+                                placeholder="Ex.: Cotação corrigida com o novo fornecedor e preço solicitado."
+                                rows={3}
+                                maxLength={2000}
+                                style={{
+                                    width: '100%', padding: '10px 12px', fontSize: '0.85rem', borderRadius: '8px',
+                                    border: (showValidation && responseMissing) ? '1px solid #dc2626' : '1px solid var(--color-border)',
+                                    backgroundColor: '#fff', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box'
+                                }}
+                            />
+                            {showValidation && responseMissing && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
+                                    <AlertTriangle size={14} /> A resposta ao reajuste é obrigatória.
+                                </div>
+                            )}
                         </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                            <strong>Motivo do reajuste:</strong>{' '}
-                            {batch.adjustmentReason || 'Informação não disponível'}
-                        </div>
-                    </div>
+                    )}
 
                     {cameFromFinalAdjustment && (
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 16px' }}>
@@ -531,21 +670,25 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                                                 )}
                                                 {item.options.map(option => {
                                                     const checked = item.checkedIds.includes(option.quotationItemId);
+                                                    const superseded = !!option.superseded;
                                                     return (
-                                                        <div key={option.quotationItemId} style={{ border: checked ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: checked ? '#eff6ff' : 'transparent' }}>
-                                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', cursor: 'pointer' }}>
-                                                                <input type="checkbox" checked={checked} onChange={() => handleToggleOption(item.reqItem.id, option.quotationItemId)} style={{ cursor: 'pointer', marginTop: '4px' }} />
+                                                        <div key={option.quotationItemId} style={{ border: checked ? '1px solid #3b82f6' : '1px solid var(--color-border)', borderRadius: '6px', backgroundColor: superseded ? '#f9fafb' : (checked ? '#eff6ff' : 'transparent'), opacity: superseded ? 0.7 : 1 }}>
+                                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px', cursor: superseded ? 'not-allowed' : 'pointer' }}>
+                                                                <input type="checkbox" checked={checked} disabled={superseded} onChange={() => handleToggleOption(item.reqItem.id, option.quotationItemId)} style={{ cursor: superseded ? 'not-allowed' : 'pointer', marginTop: '4px' }} />
                                                                 <div style={{ flex: 1 }}>
                                                                     <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                                                                         {option.description}
                                                                         {option.reconciliationStatus === 'SUBSTITUTE' && <span style={{ padding: '2px 6px', backgroundColor: '#fef9c3', color: '#854d0e', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px' }}>Substituto</span>}
-                                                                        {option.frozen && <span style={{ padding: '2px 6px', backgroundColor: '#f0f9ff', color: '#0369a1', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #bae6fd' }}>Valores congelados no envio</span>}
+                                                                        {superseded && <span style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', color: '#475569', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #cbd5e1' }}>Versão anterior</span>}
+                                                                        {option.isRevision && !superseded && <span style={{ padding: '2px 6px', backgroundColor: '#dcfce7', color: '#166534', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #86efac' }}>Revisada</span>}
+                                                                        {option.frozen && !superseded && <span style={{ padding: '2px 6px', backgroundColor: '#f0f9ff', color: '#0369a1', fontSize: '0.7rem', fontWeight: 700, borderRadius: '4px', border: '1px solid #bae6fd' }}>Valores congelados no envio</span>}
                                                                     </div>
                                                                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>Fornecedor: <strong>{option.supplierName}</strong></div>
+                                                                    {superseded && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>Esta cotação possui uma revisão mais recente.</div>}
                                                                 </div>
                                                                 <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>{formatCurrencyAO(option.lineTotal)}</div>
                                                             </label>
-                                                            {checked && (
+                                                            {checked && !superseded && (
                                                                 <div style={{ padding: '0 12px 12px 40px' }}>
                                                                     <input
                                                                         type="text"
@@ -629,7 +772,7 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                             Fechar
                         </button>
                         {onManageQuotations && (
-                            <button onClick={onManageQuotations} disabled={isSubmitting} style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid var(--color-primary)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-primary)', cursor: isSubmitting ? 'not-allowed' : 'pointer' }} title="Abrir as ferramentas de cotação existentes para alterar preços, fornecedor ou documentos">
+                            <button onClick={() => batch && onManageQuotations?.(resolveBatchContributingQuotations(batch, (group?.quotations as SavedQuotationDto[]) || []), batch.id)} disabled={isSubmitting} style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid var(--color-primary)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-primary)', cursor: isSubmitting ? 'not-allowed' : 'pointer' }} title="Revisar a cotação existente do lote (cria uma nova revisão) para alterar preços, fornecedor ou documentos">
                                 Gerenciar Cotações
                             </button>
                         )}
@@ -638,8 +781,9 @@ export const BatchReworkModal: React.FC<BatchReworkModalProps> = ({ isOpen, onCl
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <button
                                 onClick={handleResubmitOnly}
-                                disabled={isSubmitting}
-                                style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-text-main)', cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+                                disabled={isSubmitting || responseMissing}
+                                title={responseMissing ? 'Escreva a resposta ao reajuste antes de reenviar.' : undefined}
+                                style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', fontWeight: 600, color: 'var(--color-text-main)', cursor: (isSubmitting || responseMissing) ? 'not-allowed' : 'pointer', opacity: responseMissing ? 0.6 : 1 }}
                             >
                                 Reenviar sem alterações
                             </button>

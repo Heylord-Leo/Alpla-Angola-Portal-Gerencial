@@ -16,6 +16,8 @@ import { QuotationWizardModal } from './QuotationWizard/QuotationWizardModal';
 import { useQuotationWizardState } from './QuotationWizard/hooks/useQuotationWizardState';
 import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
 import { BatchReworkModal } from './BatchReworkModal';
+import { QuotationEditChooserModal } from './QuotationEditChooserModal';
+import { quotationEditMode } from './QuotationWizard/resolveContributingQuotations';
 import { CancelApprovalBatchModal } from './CancelApprovalBatchModal';
 import { isQuotationItemSelectableForApproval, isLineItemEligibleForQuotation } from './batchEligibility';
 import { getBuyerItemStatus } from './buyerItemStatus';
@@ -214,6 +216,10 @@ export function BuyerItemsList() {
         group: any | null;
         batch: any | null;
     }>({ show: false, group: null, batch: null });
+
+    // Phase 4: chooser when a returned batch is composed from more than one existing quotation —
+    // selecting one opens it in EDIT mode via the existing wizard controller.
+    const [quoteChooser, setQuoteChooser] = useState<{ group: any; quotations: SavedQuotationDto[]; reworkBatchId: string } | null>(null);
 
     const [cancelApprovalModal, setCancelApprovalModal] = useState<{
         show: boolean;
@@ -2634,10 +2640,27 @@ export function BuyerItemsList() {
                 group={batchReworkModal.group}
                 batch={batchReworkModal.batch}
                 onSuccess={handleBatchReworkSuccess}
-                // QF4: this classic screen IS the quotation-management surface — closing the modal
-                // lands the buyer directly on the request's quotation tools.
-                onManageQuotations={() => setBatchReworkModal({ show: false, group: null, batch: null })}
+                // Phase 4: open the batch's CONTRIBUTING existing quotation in EDIT mode (not a blank
+                // NEW quotation — batch-committed items are ineligible for new manual entry). One →
+                // edit direct; many → chooser; zero → controlled feedback. After saving, the Buyer
+                // reopens "Revisar e reenviar lote" to enter the mandatory response and resubmit.
+                onManageQuotations={(quotations, reworkBatchId) => {
+                    const g = batchReworkModal.group;
+                    setBatchReworkModal({ show: false, group: null, batch: null });
+                    if (!g) return;
+                    if (quotations.length === 1) wizardController.handleOpenWizard(g, quotationEditMode(quotations[0]), quotations[0], reworkBatchId);
+                    else if (quotations.length > 1) setQuoteChooser({ group: g, quotations, reworkBatchId });
+                    else setFeedback({ type: 'error', message: 'Não foi possível identificar a cotação associada a este lote.' });
+                }}
             />
+
+            {quoteChooser && (
+                <QuotationEditChooserModal
+                    quotations={quoteChooser.quotations}
+                    onSelect={(q) => { const g = quoteChooser.group; const rb = quoteChooser.reworkBatchId; setQuoteChooser(null); wizardController.handleOpenWizard(g, quotationEditMode(q), q, rb); }}
+                    onClose={() => setQuoteChooser(null)}
+                />
+            )}
 
             <CancelApprovalBatchModal
                 isOpen={cancelApprovalModal.show}

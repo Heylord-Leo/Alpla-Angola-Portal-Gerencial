@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../../../lib/api';
-import { AmbiguousSavePreAttemptSnapshot, IvaRate, Unit } from '../../../../types';
+import { AmbiguousSavePreAttemptSnapshot, IvaRate, SavedQuotationDto, Unit } from '../../../../types';
+import { quotationEditMode } from '../resolveContributingQuotations';
 import { computeFileHash } from '../../../../lib/utils';
 import { useOcrProcessor } from '../../../../hooks/useOcrProcessor';
 import { useQuotationWizardState, QuotationWizardSource } from './useQuotationWizardState';
@@ -86,6 +87,22 @@ export function useWorkspaceWizardHost(opts: {
         }
     };
 
+    /**
+     * Phase 4 — open a REVISION of an existing contributing quotation for a Buyer commercial correction
+     * (the rework "Gerenciar Cotações" bridge). The wizard is SEEDED from the original quotation (item
+     * rows/prices/supplier/document/mappings) but persists as a NEW quotation identity — the original and
+     * its frozen candidate stay immutable. `reworkBatchId` is forwarded so the backend applies the narrow
+     * rework status exception. Mode follows the quotation's own source (`quotationEditMode`).
+     */
+    const openReviseQuotation = async (requestId: string, quotation: SavedQuotationDto, reworkBatchId: string) => {
+        try {
+            const request = await api.requests.get(requestId);
+            controller.handleOpenWizard(toWizardActiveRequest(request, requestId), quotationEditMode(quotation), quotation, reworkBatchId);
+        } catch (e: any) {
+            opts.onFeedback({ type: 'error', message: e?.message || 'Falha ao abrir o assistente de cotação.' });
+        }
+    };
+
     // Exact-file duplicate check BEFORE upload (same decision as classic; small presentation here).
     const onUploadFile = async (file: File) => {
         try {
@@ -111,6 +128,7 @@ export function useWorkspaceWizardHost(opts: {
         controller,
         ivaRates, units, currencies,
         openAddQuotation,
+        openReviseQuotation,
         onUploadFile,
         dupWarning, confirmDupUpload, dismissDup,
     };

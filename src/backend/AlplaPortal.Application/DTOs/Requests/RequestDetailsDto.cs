@@ -155,6 +155,17 @@ public class RequestApprovalBatchDto
     /// <summary>"AREA" or "FINAL" — which approval stage requested the adjustment.</summary>
     public string? AdjustmentSourceStage { get; set; }
 
+    /// <summary>Adjustment V2 (Phase 4): true when this batch has an OPEN structured adjustment cycle
+    /// — the Buyer's "Resposta ao reajuste" is then mandatory at resubmit. False for legacy pre-V2
+    /// batches (comment-only resubmit).</summary>
+    public bool HasOpenAdjustmentCycle { get; set; }
+
+    /// <summary>Adjustment V2 (Phase 4): the batch's OPEN structured cycle, when one exists. Separates
+    /// the approver's STRUCTURED reasons from the free-text approver comment — the QF1 <see cref="AdjustmentReason"/>
+    /// above conflates the two and is kept only as the LEGACY fallback for pre-V2 batches. Null when
+    /// no open cycle exists (legacy). No resolutions/field-changes/candidate-reviews are exposed.</summary>
+    public RequestBatchAdjustmentCycleDto? OpenAdjustmentCycle { get; set; }
+
     public List<RequestApprovalBatchItemDto> Items { get; set; } = new();
 
     /// <summary>Genuine EXTRA_ITEM lines the Buyer explicitly decided not to include in this batch. Read-only, excluded from totals.</summary>
@@ -197,6 +208,31 @@ public class RequestApprovalBatchItemDto
 
     /// <summary>Frozen candidate snapshots (empty for legacy items — never synthesized).</summary>
     public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
+}
+
+/// <summary>Adjustment V2 (Phase 4) — read-only projection of a batch's OPEN structured adjustment
+/// cycle for the Buyer rework surface. Codes stay raw; the frontend renders friendly labels via
+/// adjustmentReasons.ts. No GUIDs, resolutions, field-changes or candidate-reviews are exposed.</summary>
+public class RequestBatchAdjustmentCycleDto
+{
+    public int CycleNumber { get; set; }
+    /// <summary>"AREA" or "FINAL" — which approval stage requested the adjustment.</summary>
+    public string SourceStage { get; set; } = string.Empty;
+    /// <summary>The approver's free-text comment — shown as "Comentário do aprovador", never as the motive.</summary>
+    public string ApproverComment { get; set; } = string.Empty;
+    public List<RequestBatchAdjustmentReasonDto> Reasons { get; set; } = new();
+}
+
+/// <summary>One structured adjustment reason. Item-scoped reasons carry the affected line's
+/// business-readable identity (line number + catalog code + description), never the GUID.</summary>
+public class RequestBatchAdjustmentReasonDto
+{
+    public string ReasonCode { get; set; } = string.Empty;
+    /// <summary>Resolved line number of the affected item, when item-scoped; null for whole-lot reasons.</summary>
+    public int? LineNumber { get; set; }
+    public string? ItemCatalogCode { get; set; }
+    public string? Description { get; set; }
+    public string? Detail { get; set; }
 }
 
 public class RequestLineItemDto

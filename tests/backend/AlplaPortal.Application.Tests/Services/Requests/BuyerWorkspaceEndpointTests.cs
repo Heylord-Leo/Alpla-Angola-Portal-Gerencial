@@ -411,24 +411,39 @@ public class BuyerWorkspaceEndpointTests
     }
 
     [Fact]
-    public async Task Workspace_ClosedCycle_IsNotProjected()
+    public async Task Workspace_ClosedCycle_IsProjectedWithBuyerResolution()
     {
+        // Phase 4: the latest cycle is projected even after RESUBMITTED, so the Buyer's
+        // "Resposta ao reajuste" stays visible on the batch-details surface.
         using var ctx = NewContext();
         SeedLookups(ctx);
         var actor = await SeedActorAsync(ctx);
         var req = SeedRequest(ctx, actor, "REQ-ADJ-CLOSED");
         var i1 = SeedItem(ctx, req, 1, RequestConstants.QuotationLifecycleStatuses.QuotationApproved);
         var b1 = SeedBatch(ctx, req, 1, RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, actor, i1);
-        ctx.ApprovalBatchAdjustments.Add(new ApprovalBatchAdjustment
+        var resolvedAt = DateTime.UtcNow;
+        var cycle = new ApprovalBatchAdjustment
         {
             Id = Guid.NewGuid(), ApprovalBatchId = b1.Id, CycleNumber = 1,
             SourceStage = AdjustmentConstants.SourceStages.Area, Status = AdjustmentConstants.States.Resubmitted,
             WholeBatch = true, ApproverComment = "ciclo concluído", RequestedByUserId = actor,
-            RequestedAtUtc = DateTime.UtcNow, ClosedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow,
+            RequestedAtUtc = DateTime.UtcNow, ClosedAtUtc = resolvedAt, CreatedAtUtc = DateTime.UtcNow,
+        };
+        cycle.Resolutions.Add(new ApprovalBatchAdjustmentResolution
+        {
+            Id = Guid.NewGuid(), AdjustmentId = cycle.Id, ActorType = AdjustmentConstants.ActorTypes.Buyer,
+            ResolvedByUserId = actor, ResolutionComment = "Cotação corrigida conforme solicitado.",
+            ResolvedAtUtc = resolvedAt,
         });
+        ctx.ApprovalBatchAdjustments.Add(cycle);
         await ctx.SaveChangesAsync();
 
         var ws = await Workspace(ctx, actor, req.Id);
-        Assert.Null(ws.Batches.Single(b => b.BatchNumber == 1).Adjustment); // only OPEN cycles are shown
+        var adj = ws.Batches.Single(b => b.BatchNumber == 1).Adjustment;
+        Assert.NotNull(adj); // the latest (resubmitted) cycle is now projected
+        Assert.Equal(AdjustmentConstants.States.Resubmitted, adj!.Status);
+        Assert.Equal("Cotação corrigida conforme solicitado.", adj.ResponseNote);
+        Assert.Equal("Comprador Teste", adj.RespondedByName);
+        Assert.NotNull(adj.RespondedAtUtc);
     }
 }

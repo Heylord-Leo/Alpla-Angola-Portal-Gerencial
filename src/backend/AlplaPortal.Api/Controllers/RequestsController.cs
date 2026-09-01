@@ -1318,6 +1318,7 @@ public class RequestsController : BaseController
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
+                    RevisesQuotationId = q.RevisesQuotationId,
                     SourceType = q.SourceType,
                     SourceFileName = q.SourceFileName,
                     IsSelected = q.IsSelected,
@@ -1498,6 +1499,51 @@ public class RequestsController : BaseController
                 batchDto.AdjustmentRequestedByName = adjustmentContext.RequestedByName;
                 batchDto.AdjustmentRequestedAtUtc = adjustmentContext.RequestedAtUtc;
                 batchDto.AdjustmentSourceStage = adjustmentContext.SourceStage;
+            }
+
+            // Adjustment V2 (Phase 4): project each batch's OPEN structured cycle so the Buyer rework
+            // surface can (1) enforce the mandatory "Resposta ao reajuste" at resubmit and (2) show the
+            // STRUCTURED reasons distinctly from the approver's free-text comment (the QF1 scalar above
+            // conflates the two and stays only as the legacy fallback). Legacy pre-V2 batches have no
+            // cycle → OpenAdjustmentCycle stays null and the modal falls back to QF1. Read-only, additive.
+            var detailBatchIds = request.ApprovalBatches.Select(b => b.Id).ToList();
+            if (detailBatchIds.Count > 0)
+            {
+                var openCycles = await _context.ApprovalBatchAdjustments.AsNoTracking()
+                    .Include(a => a.Reasons)
+                    .Where(a => detailBatchIds.Contains(a.ApprovalBatchId)
+                             && AdjustmentConstants.States.Open.Contains(a.Status))
+                    .ToListAsync();
+                // At most one open cycle per batch (UX_ApprovalBatchAdjustment_OpenCycle filtered index).
+                var openCycleByBatch = openCycles
+                    .GroupBy(a => a.ApprovalBatchId)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CycleNumber).First());
+                var lineInfoById = request.LineItems.ToDictionary(li => li.Id, li => li);
+                foreach (var batchDto in request.ApprovalBatches)
+                {
+                    if (!openCycleByBatch.TryGetValue(batchDto.Id, out var cycle)) continue;
+                    batchDto.HasOpenAdjustmentCycle = true;
+                    batchDto.OpenAdjustmentCycle = new RequestBatchAdjustmentCycleDto
+                    {
+                        CycleNumber = cycle.CycleNumber,
+                        SourceStage = cycle.SourceStage,
+                        ApproverComment = cycle.ApproverComment,
+                        Reasons = cycle.Reasons.Select(rn =>
+                        {
+                            RequestLineItemDto? li = null;
+                            if (rn.RequestLineItemId.HasValue)
+                                lineInfoById.TryGetValue(rn.RequestLineItemId.Value, out li);
+                            return new RequestBatchAdjustmentReasonDto
+                            {
+                                ReasonCode = rn.ReasonCode,
+                                LineNumber = li?.LineNumber,
+                                ItemCatalogCode = li?.ItemCatalogCode,
+                                Description = li?.Description,
+                                Detail = rn.Detail,
+                            };
+                        }).ToList(),
+                    };
+                }
             }
 
             // Enrich each batch with its informational lines (buyer-excluded extras, IGNORED
@@ -4189,7 +4235,7 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id:guid}/quotations")]
-    public async Task<ActionResult<SavedQuotationDto>> SaveQuotation(Guid id, [FromQuery] Guid? replaceQuotationId, [FromBody] SaveQuotationRequestDto dto)
+    public async Task<ActionResult<SavedQuotationDto>> SaveQuotation(Guid id, [FromQuery] Guid? replaceQuotationId, [FromBody] SaveQuotationRequestDto dto, [FromQuery] Guid? reworkBatchId = null, [FromQuery] Guid? revisesQuotationId = null)
     {
         NormalizeReconciliationStatuses(dto);
 
@@ -4214,15 +4260,27 @@ public class RequestsController : BaseController
         
         if (request == null) return NotFound("Pedido não encontrado.");
 
-        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes
+        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes.
+        // Adjustment V2 (Phase 4) narrow exception: a batch-model QUOTATION request keeps its scalar
+        // at WAITING_*_APPROVAL while a batch is in AREA_ADJUSTMENT/FINAL_ADJUSTMENT. The Buyer must be
+        // able to ADD a REVISED quotation for that rework batch (never mutate the original / its frozen
+        // candidate). The exception is scoped by an explicit reworkBatchId; the global scalar rule is
+        // unchanged. See EvaluateReworkRevisionAsync.
+        var isReworkRevision = false;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível adicionar cotações neste status do pedido.", 
-                Status = 409 
-            });
+            var (reworkAllowed, reworkError) = await EvaluateReworkRevisionAsync(request, reworkBatchId, revisesQuotationId, replaceQuotationId, dto, actorId);
+            if (reworkError != null) return reworkError;
+            if (!reworkAllowed)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Não é possível adicionar cotações neste status do pedido.",
+                    Status = 409
+                });
+            }
+            isReworkRevision = true;
         }
 
         // Basic Validation
@@ -4257,6 +4315,11 @@ public class RequestsController : BaseController
         };
 
         ApplyQuotationClassificationEvidence(quotation, dto);
+
+        // Adjustment V2 (Phase 4): stamp revision provenance ONLY for a validated rework revision — the
+        // original quotation stays immutable; this new identity records that it revises it. A
+        // revisesQuotationId supplied on any other path is ignored (never trusted blindly).
+        if (isReworkRevision) quotation.RevisesQuotationId = revisesQuotationId;
 
         if (replaceQuotationId.HasValue)
         {
@@ -4499,6 +4562,74 @@ public class RequestsController : BaseController
                 ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
         });
+    }
+
+    /// <summary>
+    /// Adjustment V2 (Phase 4): evaluate the narrow rework-revision exception to the scalar quotation
+    /// gate. Returns (allowed, error): a non-null error is an explicit rejection to surface; (false, null)
+    /// means "no rework context" so the caller falls back to the generic 409. Allowed only when
+    /// <paramref name="reworkBatchId"/> names an ApprovalBatch of THIS request in AREA_ADJUSTMENT/
+    /// FINAL_ADJUSTMENT, the actor is the assigned Buyer (or a System Administrator), the operation is an
+    /// ADD (never a replace), and every mapped request item in the revised quotation belongs to that exact
+    /// batch. Never widens the scalar rule; never reopens BATCH_ASSIGNED items globally.
+    /// </summary>
+    private async Task<(bool allowed, ActionResult? error)> EvaluateReworkRevisionAsync(
+        Request request, Guid? reworkBatchId, Guid? revisesQuotationId, Guid? replaceQuotationId, SaveQuotationRequestDto dto, Guid actorId)
+    {
+        if (reworkBatchId == null) return (false, null); // no rework context → generic 409
+
+        // A revision must ADD a new quotation identity — it must never replace/delete the original that
+        // backs the frozen candidate snapshot.
+        if (replaceQuotationId.HasValue)
+            return (false, BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Uma revisão de cotação para reajuste não pode substituir a cotação original.", Status = 400 }));
+
+        var batch = await _context.ApprovalBatches
+            .Include(b => b.Items)
+                .ThenInclude(i => i.Candidates)
+            .FirstOrDefaultAsync(b => b.Id == reworkBatchId.Value && b.RequestId == request.Id);
+        if (batch == null)
+            return (false, NotFound(new ProblemDetails { Title = "Lote não encontrado.", Detail = "O lote de reajuste informado não pertence a este pedido.", Status = 404 }));
+
+        var adjustmentStatuses = new[] { RequestConstants.ApprovalBatchStatuses.AreaAdjustment, RequestConstants.ApprovalBatchStatuses.FinalAdjustment };
+        if (!adjustmentStatuses.Contains(batch.Status))
+            return (false, BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O lote não está em reajuste (status atual: {batch.Status}).", Status = 400 }));
+
+        // Buyer-scoped: only the request's assigned Buyer (or a System Administrator) may revise.
+        var isAdmin = CurrentUserRoles.Contains(RoleConstants.SystemAdministrator);
+        if (!isAdmin && request.BuyerId != actorId)
+            return (false, StatusCode(403, "Apenas o Comprador responsável pode revisar cotações deste lote em reajuste."));
+
+        // Revision provenance is mandatory and validated — never trusted blindly.
+        if (revisesQuotationId == null)
+            return (false, BadRequest(new ProblemDetails { Title = "Revisão Inválida", Detail = "A cotação original a ser revisada não foi informada.", Status = 400 }));
+
+        var original = await _context.Quotations.AsNoTracking()
+            .FirstOrDefaultAsync(q => q.Id == revisesQuotationId.Value && q.RequestId == request.Id);
+        if (original == null)
+            return (false, NotFound(new ProblemDetails { Title = "Cotação não encontrada.", Detail = "A cotação original a ser revisada não pertence a este pedido.", Status = 404 }));
+
+        // The original must actually CONTRIBUTE to this rework batch (a candidate — or a legacy
+        // selected winner — sourced from it). Strict id relationships only; never supplier/total.
+        var batchQuotationItemIds = batch.Items
+            .SelectMany(i => i.Candidates.Select(c => c.QuotationItemId))
+            .Concat(batch.Items.Where(i => i.SelectedQuotationItemId.HasValue).Select(i => i.SelectedQuotationItemId!.Value))
+            .Distinct().ToList();
+        var contributes = await _context.QuotationItems.AsNoTracking()
+            .AnyAsync(qi => qi.QuotationId == original.Id && batchQuotationItemIds.Contains(qi.Id));
+        if (!contributes)
+            return (false, BadRequest(new ProblemDetails { Title = "Revisão Inválida", Detail = "A cotação informada não contribui para o lote em reajuste.", Status = 400 }));
+
+        // Item scope: every mapped request item in the revised quotation must belong to THIS rework batch.
+        var batchLineIds = batch.Items.Select(i => i.RequestLineItemId).ToHashSet();
+        var mappedIds = (dto.Items ?? new List<SaveQuotationItemDto>())
+            .Where(i => i.MappedRequestLineItemId.HasValue)
+            .Select(i => i.MappedRequestLineItemId!.Value)
+            .Distinct()
+            .ToList();
+        if (mappedIds.Count == 0 || mappedIds.Any(mid => !batchLineIds.Contains(mid)))
+            return (false, BadRequest(new ProblemDetails { Title = "Item Fora do Lote", Detail = "A revisão só pode conter itens pertencentes ao lote em reajuste.", Status = 400 }));
+
+        return (true, null);
     }
 
     [HttpPut("{requestId}/quotations/{quotationId}")]

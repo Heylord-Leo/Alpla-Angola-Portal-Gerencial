@@ -187,6 +187,10 @@ public class SavedQuotationDto
     public string SourceType { get; set; } = string.Empty;
     public string? SourceFileName { get; set; }
     public Guid? ProformaAttachmentId { get; set; }
+    /// <summary>Adjustment V2 (Phase 4): revision provenance — when set, this quotation revises the
+    /// referenced quotation (which the Buyer rework surface then marks as a superseded "Versão anterior").
+    /// Null for ordinary quotations.</summary>
+    public Guid? RevisesQuotationId { get; set; }
     public bool IsSelected { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public int ItemCount { get; set; }

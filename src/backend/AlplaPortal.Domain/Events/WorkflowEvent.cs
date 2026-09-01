@@ -60,4 +60,8 @@ public record WorkflowEvent
 
     /// <summary>Affected item descriptions, or null / "Lote inteiro" when whole-lot.</summary>
     public string? AdjustmentAffectedItems { get; init; }
+
+    /// <summary>Adjustment source stage (AdjustmentConstants.SourceStages: AREA | FINAL) — drives the
+    /// "returns first to Area" note on a Final-sourced resubmit. Null for non-adjustment events.</summary>
+    public string? AdjustmentSourceStage { get; init; }
 }

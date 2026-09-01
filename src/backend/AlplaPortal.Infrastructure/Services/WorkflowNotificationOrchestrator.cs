@@ -205,6 +205,13 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await AddUserRecipientAsync(recipients, evt.BuyerId, bypassSelfNotifyRule: true);
                 break;
 
+            // --- Adjustment V2 (Phase 4): Buyer resolved + resubmitted → the lot is back at Area
+            //     approval. Notify the Area manager(s) for the request's department + plant (the same
+            //     canonical routing as pending-area-approval). No recipient resolvable → skip. ---
+            case WorkflowEventCodes.BatchResubmitted:
+                await AddAreaManagerRecipientsAsync(recipients, evt);
+                break;
+
             // --- PO Registered: notify Finance users (plant-scoped) ---
             case WorkflowEventCodes.PoRegistered:
                 await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
@@ -615,6 +622,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     }
 
     /// <summary>
+    /// Adjustment V2 (Phase 4): resolves the Area manager(s) for the request's department + plant via
+    /// the canonical DepartmentManager routing (same recipients as pending area approval). None
+    /// resolvable → the caller's "no recipients" path logs and skips.
+    /// </summary>
+    private async Task AddAreaManagerRecipientsAsync(List<NotificationRecipient> recipients, WorkflowEvent evt)
+    {
+        var req = await _context.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+        var deptId = evt.DepartmentId ?? req?.DepartmentId ?? 0;
+        var plantId = evt.PlantId ?? req?.PlantId;
+        if (deptId == 0) return;
+
+        var routing = await _approvalRouting.ResolveAreaManagersAsync(deptId, plantId);
+        if (!routing.HasManagers) return;
+
+        foreach (var manager in routing.Managers)
+            recipients.Add(new NotificationRecipient(manager.UserId, manager.Email, manager.FullName));
+    }
+
+    /// <summary>
     /// Resolves all active Finance users scoped to the request's plant.
     /// Falls back to all active Finance users if no plant is specified or no
     /// plant-scoped users exist (global in-app only — email suppressed for global fan-out).
@@ -975,6 +1001,10 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             case WorkflowEventCodes.BatchFinalAdjustment:
                 return BuildBatchAdjustmentConfig(evt, reqRef, actorLabel, isFinal: true);
 
+            // --- Adjustment V2 (Phase 4): Buyer resolved + resubmitted → Area approver action ---
+            case WorkflowEventCodes.BatchResubmitted:
+                return BuildBatchResubmittedConfig(evt, reqRef, actorLabel);
+
             case WorkflowEventCodes.PoRegistered: return new EventConfig
             {
                 Category = NotificationCategories.Payment,
@@ -1240,6 +1270,46 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             SendEmail = true,
             EmailSubject = $"Ação necessária — {stageLabel} — {reqRef}",
             EmailHeadline = stageLabel,
+            EmailBody = body
+        };
+    }
+
+    /// <summary>
+    /// Adjustment V2 (Phase 4) — Area-approver "Lote reenviado" config after the Buyer resolves an
+    /// adjustment. Carries the Buyer's response and the structured reasons (friendly labels only);
+    /// a Final-sourced cycle explains the return-via-Area. Next action: approve/review the lot.
+    /// </summary>
+    private static EventConfig BuildBatchResubmittedConfig(WorkflowEvent evt, string reqRef, string actorLabel)
+    {
+        Func<string?, string> enc = System.Net.WebUtility.HtmlEncode;
+        var lote = evt.BatchNumber.HasValue ? $"Lote #{evt.BatchNumber.Value}" : "o lote";
+        var isFinal = evt.AdjustmentSourceStage == AdjustmentConstants.SourceStages.Final;
+
+        var reasonsHtml = !string.IsNullOrWhiteSpace(evt.AdjustmentReasonLabels)
+            ? $"<p style='margin:6px 0;'><b>Motivos do reajuste:</b> {enc(evt.AdjustmentReasonLabels)}</p>" : "";
+        var responseHtml = !string.IsNullOrWhiteSpace(evt.Comment)
+            ? $"<p style='margin-top:12px; padding:12px; background:#eef7f0; border-left:4px solid #2e7d32;'><b>Resposta do Comprador:</b> {enc(evt.Comment)}</p>" : "";
+        var originHtml = isFinal
+            ? $"<p style='margin:6px 0; font-size:13px; color:#555;'>Reajuste originado na Aprovação Final — o lote retorna primeiro à Aprovação da Área.</p>" : "";
+
+        var body = $@"
+<p><b>{enc(AdjustmentEventLabels.ResubmittedToArea)}</b> — {lote} do pedido <b>{reqRef}</b> foi reenviado por <b>{enc(actorLabel)}</b> após a correção do reajuste.</p>
+<div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:16px 0;'>
+    {reasonsHtml}
+    {responseHtml}
+</div>
+{originHtml}
+<p>Reveja e aprove o lote na Aprovação da Área.</p>";
+
+        return new EventConfig
+        {
+            Category = NotificationCategories.Approval,
+            NotificationType = NotificationTypes.Info,
+            InAppTitle = AdjustmentEventLabels.ResubmittedToArea,
+            InAppMessage = $"{lote} do pedido {reqRef} foi reenviado após reajuste e aguarda a sua aprovação de área.",
+            SendEmail = true,
+            EmailSubject = $"Ação necessária — Lote reenviado após reajuste — {reqRef}",
+            EmailHeadline = AdjustmentEventLabels.ResubmittedToArea,
             EmailBody = body
         };
     }

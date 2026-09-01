@@ -1342,6 +1342,21 @@ public class ApprovalBatchController : BaseController
         if (errors.Any())
             return BadRequest(new ProblemDetails { Title = "Validação Falhou", Detail = string.Join(" | ", errors), Status = 400 });
 
+        // ── Adjustment V2 (Phase 4): a SUPERSEDED quotation's option cannot be (re)selected for the new
+        //     approval round. If a submitted candidate is sourced from a quotation that another quotation
+        //     of this request explicitly revises (RevisesQuotationId), reject deterministically — the
+        //     revised option must be used. This runs only in AREA/FINAL_ADJUSTMENT (the only UpdateBatch
+        //     statuses); historical approvals/PO are untouched. ──
+        var supersededQuotationIds = await GetSupersededQuotationIdsAsync(requestId);
+        if (supersededQuotationIds.Count > 0)
+        {
+            var usesSuperseded = dto.Items
+                .SelectMany(i => i.Candidates ?? new List<BatchCandidateInputDto>())
+                .Any(c => quotationItemMap.TryGetValue(c.QuotationItemId, out var qi) && supersededQuotationIds.Contains(qi.QuotationId));
+            if (usesSuperseded)
+                return BadRequest(new ProblemDetails { Title = "Cotação Substituída", Detail = "Esta cotação possui uma revisão mais recente. Selecione a versão revisada.", Status = 400 });
+        }
+
         // Check for items in other active batches
         var currentBatchRliIds = batch.Items.Select(bi => bi.RequestLineItemId).ToHashSet();
         var newItemIds = requestLineItemIds.Except(currentBatchRliIds).ToHashSet();
@@ -1534,6 +1549,20 @@ public class ApprovalBatchController : BaseController
     /// <summary>
     /// Resubmits a batch after rework: sets batch back to WAITING_AREA_APPROVAL.
     /// </summary>
+    /// <summary>Adjustment V2 (Phase 4): quotation ids of <paramref name="requestId"/> that are
+    /// SUPERSEDED — another quotation of the same request explicitly revises them
+    /// (Quotation.RevisesQuotationId). Their commercial options must not enter a NEW approval round
+    /// during rework. Deterministic (explicit provenance only), never value/date/supplier matching.</summary>
+    private async Task<HashSet<Guid>> GetSupersededQuotationIdsAsync(Guid requestId)
+    {
+        var ids = await _context.Quotations.AsNoTracking()
+            .Where(q => q.RequestId == requestId && q.RevisesQuotationId != null)
+            .Select(q => q.RevisesQuotationId!.Value)
+            .Distinct()
+            .ToListAsync();
+        return ids.ToHashSet();
+    }
+
     [HttpPost("{batchId:guid}/resubmit")]
     public async Task<IActionResult> ResubmitBatch(Guid requestId, Guid batchId, [FromBody] BatchApprovalActionDto? dto)
     {
@@ -1541,6 +1570,23 @@ public class ApprovalBatchController : BaseController
 
         var (request, batch, error) = await LoadAndValidateBatchForRework(requestId, batchId);
         if (error != null) return error;
+
+        // ── Adjustment V2 (Phase 4): defensive stale-composition guard — a batch whose current
+        //     candidates still include a SUPERSEDED quotation's option must not be resubmitted; the
+        //     Buyer must swap in the revised option first (UpdateBatch enforces the same rule). ──
+        var supersededQuotationIds = await GetSupersededQuotationIdsAsync(requestId);
+        if (supersededQuotationIds.Count > 0 &&
+            batch!.Items.SelectMany(bi => bi.Candidates).Any(c => supersededQuotationIds.Contains(c.QuotationId)))
+        {
+            return BadRequest(new ProblemDetails { Title = "Cotação Substituída", Detail = "Uma opção deste lote possui uma revisão mais recente. Selecione a versão revisada antes de reenviar.", Status = 400 });
+        }
+
+        // ── Adjustment V2 (Phase 4): a batch with an OPEN structured cycle requires the Buyer's
+        //     mandatory "Resposta ao reajuste" before resubmit. Legacy batches (no cycle) keep the
+        //     comment-only behavior — response not required (Scenario G compatibility). ──
+        var openCycle = await _adjustmentCycle.GetOpenCycleAsync(batchId);
+        if (openCycle != null && string.IsNullOrWhiteSpace(dto?.AdjustmentResponse))
+            return BadRequest(new ProblemDetails { Title = "Resposta Obrigatória", Detail = "Informe a \"Resposta ao reajuste\" descrevendo o que foi feito antes de reenviar o lote.", Status = 400 });
 
         // Defensive Option C check: everything the batch puts forward must still be legitimate at
         // resubmission — every candidate option plus any legacy buyer-selected winner (its own
@@ -1576,19 +1622,47 @@ public class ApprovalBatchController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
 
-        // ── Adjustment V2 (PHASE 3 TRANSITIONAL COMPATIBILITY): close the batch's open V2 cycle as
-        //     RESUBMITTED, atomically with the batch transition, so the one-open-cycle guard never
-        //     permanently blocks a second adjustment before Phase 4 owns the structured Buyer
-        //     resubmit. NO structured "Resposta ao reajuste" row is written here — that becomes
-        //     mandatory when Phase 4 activates the structured Buyer resolution/resubmit flow. ──
-        await _adjustmentCycle.CloseOpenCycleAsync(batchId, AdjustmentConstants.States.Resubmitted, actorId, cancelReason: null);
+        // ── Adjustment V2 (Phase 4): for an OPEN V2 cycle, stage the mandatory Buyer resolution
+        //     ("Resposta ao reajuste") and close the cycle to RESUBMITTED — atomically with the batch
+        //     transition + history. A legacy batch with no cycle is a safe no-op (openCycle == null).
+        //     Requester-owned/mixed reasons are NOT reclassified: the Buyer resolves under Phase 3
+        //     compatibility routing; the requester-first hop activates in Phase 5. ──
+        var buyerResolved = openCycle != null;
+        if (buyerResolved)
+            _adjustmentCycle.StageBuyerResolutionAndClose(openCycle!, actorId, dto!.AdjustmentResponse!);
 
-        await _context.SaveChangesAsync();
+        // ── Atomic: batch transition + history + V2 resolution + cycle close + scalar sync commit
+        //     together, or none does. A concurrent/double resubmit loses the resolution unique-index
+        //     race deterministically → 409 (no raw SQL leak). ──
+        if (_context.Database.IsRelational())
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+                await _statusSyncService.SyncStatusAsync(requestId, actorId);
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (DbUpdateException ex) when (_adjustmentCycle.IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync();
+                return Conflict(new ProblemDetails { Title = "Reenvio em Andamento", Detail = "Este lote já foi reenviado (resposta ao reajuste já registada). Atualize a página.", Status = 409 });
+            }
+        }
+        else
+        {
+            await _context.SaveChangesAsync();
+            await _statusSyncService.SyncStatusAsync(requestId, actorId);
+            await _context.SaveChangesAsync();
+        }
 
-        await _statusSyncService.SyncStatusAsync(requestId, actorId);
-        await _context.SaveChangesAsync();
+        _logger.LogInformation("Batch {BatchId} of Request {RequestId} resubmitted by {ActorId} (V2 resolved: {Resolved})", batchId, requestId, actorId, buyerResolved);
 
-        _logger.LogInformation("Batch {BatchId} of Request {RequestId} resubmitted by {ActorId}", batchId, requestId, actorId);
+        // ── Notification AFTER commit: the batch is back at Area approval; notify the Area
+        //     approver(s). Only for a resolved V2 cycle (legacy resubmits keep prior behavior). ──
+        if (buyerResolved)
+            await EmitBatchResubmittedNotificationAsync(request!, batch, openCycle!, dto!.AdjustmentResponse!, actorId);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} reenviado para aprovação com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -2027,6 +2101,54 @@ public class ApprovalBatchController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Batch adjustment notification failed for cycle {CycleId} on Request {RequestId}", cycle.Id, request.Id);
+        }
+    }
+
+    /// <summary>
+    /// Adjustment V2 (Phase 4): after the Buyer resolves + resubmits, notify the Area approver(s)
+    /// that the lot is back for approval, carrying the Buyer's response and the structured reasons
+    /// (friendly labels only). Emitted AFTER commit; never throws.
+    /// </summary>
+    private async Task EmitBatchResubmittedNotificationAsync(
+        Request request, ApprovalBatch batch, ApprovalBatchAdjustment cycle, string response, Guid actorId)
+    {
+        try
+        {
+            var reasonLabels = string.Join(", ", cycle.Reasons
+                .Select(r => r.ReasonCode).Distinct().Select(AdjustmentEventLabels.ReasonLabel));
+
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == actorId).Select(u => u.FullName).FirstOrDefaultAsync() ?? "Comprador";
+
+            var evt = new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.BatchResubmitted,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = request.Status?.Code ?? "",
+                ActionTaken = WorkflowEventCodes.BatchResubmitted,
+                ActorUserId = actorId,
+                ActorName = actorName,
+                Comment = response,
+                CorrelationId = cycle.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                BatchNumber = batch.BatchNumber,
+                AdjustmentReasonLabels = reasonLabels,
+                AdjustmentSourceStage = cycle.SourceStage,
+            };
+
+            await _orchestrator.EmitAsync(evt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Batch resubmit notification failed for cycle {CycleId} on Request {RequestId}", cycle.Id, request.Id);
         }
     }
 

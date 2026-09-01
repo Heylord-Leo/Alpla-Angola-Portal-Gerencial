@@ -259,6 +259,17 @@ public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
                .WithOne(qi => qi.Quotation)
                .HasForeignKey(qi => qi.QuotationId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        // Adjustment V2 (Phase 4) — revision provenance self-reference. Restrict so the original
+        // (referenced) quotation cannot be deleted while a revision points at it: revision history is
+        // never cascade-deleted. Not unique — a prior quotation may legitimately have more than one
+        // revision (branching); the "current leaf" logic lives in the composition guard.
+        builder.HasOne(q => q.RevisesQuotation)
+               .WithMany()
+               .HasForeignKey(q => q.RevisesQuotationId)
+               .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(q => q.RevisesQuotationId)
+               .HasDatabaseName("IX_Quotation_RevisesQuotationId");
     }
 }
 

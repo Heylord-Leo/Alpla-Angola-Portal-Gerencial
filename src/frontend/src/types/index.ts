@@ -287,6 +287,9 @@ export interface SavedQuotationDto {
     sourceType: string;
     sourceFileName?: string;
     proformaAttachmentId?: string;
+    /** Adjustment V2 (Phase 4): revision provenance — when set, this quotation revises the referenced
+     * quotation (which the rework surface then marks as a superseded "Versão anterior"). Null otherwise. */
+    revisesQuotationId?: string | null;
     isSelected: boolean;
     createdAtUtc: string;
     itemCount: number;
@@ -515,6 +518,25 @@ export interface BatchInformationalItem {
     comment?: string | null;
 }
 
+/** Adjustment V2 (Phase 4): one structured adjustment reason. Item-scoped reasons carry the affected
+ * line's business-readable identity (line number + catalog code + description), never a GUID. */
+export interface RequestBatchAdjustmentReason {
+    reasonCode: string;
+    lineNumber?: number | null;
+    itemCatalogCode?: string | null;
+    description?: string | null;
+    detail?: string | null;
+}
+
+/** Adjustment V2 (Phase 4): a batch's OPEN structured cycle — structured reasons distinct from the
+ * approver's free-text comment. Rendered read-only in the Buyer rework surface. */
+export interface RequestBatchAdjustmentCycle {
+    cycleNumber: number;
+    sourceStage: string; // AREA | FINAL
+    approverComment: string;
+    reasons: RequestBatchAdjustmentReason[];
+}
+
 export interface ApprovalBatchSummary {
     id: string;
     batchNumber: number;
@@ -536,6 +558,12 @@ export interface ApprovalBatchSummary {
     adjustmentRequestedAtUtc?: string | null;
     /** "AREA" | "FINAL" */
     adjustmentSourceStage?: string | null;
+    /** Adjustment V2 (Phase 4): true when the batch carries an OPEN structured cycle, so the Buyer's
+     * "Resposta ao reajuste" is mandatory at resubmit. False for legacy batches (comment-only). */
+    hasOpenAdjustmentCycle?: boolean;
+    /** Adjustment V2 (Phase 4): the OPEN structured cycle — structured reasons + the approver's
+     * free-text comment, kept distinct. Null for legacy batches (fall back to the QF1 adjustment* fields). */
+    openAdjustmentCycle?: RequestBatchAdjustmentCycle | null;
     items: ApprovalBatchItemSummary[];
     /** Genuine EXTRA_ITEM lines the buyer explicitly decided not to include in this batch. */
     excludedExtraItems?: BatchInformationalItem[];

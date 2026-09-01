@@ -379,4 +379,121 @@ public class AdjustmentCycleServiceTests
         }
         finally { await CleanupAsync(seed.RequestId); }
     }
+
+    // ══════════════ Phase 4 — Buyer resolution (GetOpenCycle + StageBuyerResolutionAndClose) ══════════════
+
+    private static async Task<Guid> SeedOpenCycleAsync(Guid batchId, Guid actorId)
+    {
+        await using var ctx = new ApplicationDbContext(Options());
+        var cycle = new ApprovalBatchAdjustment
+        {
+            ApprovalBatchId = batchId, CycleNumber = 1, SourceStage = AdjustmentConstants.SourceStages.Area,
+            Status = AdjustmentConstants.States.WaitingBuyer, WholeBatch = true, ApproverComment = "aberto",
+            RequestedByUserId = actorId, RequestedAtUtc = DateTime.UtcNow, CreatedAtUtc = DateTime.UtcNow,
+        };
+        cycle.Reasons.Add(new ApprovalBatchAdjustmentReason
+        {
+            ReasonCode = AdjustmentConstants.ReasonCodes.PriceNegotiation, CreatedAtUtc = DateTime.UtcNow,
+        });
+        ctx.ApprovalBatchAdjustments.Add(cycle);
+        await ctx.SaveChangesAsync();
+        return cycle.Id;
+    }
+
+    // ── G. GetOpenCycle returns the open cycle; null when none / already closed ────
+    [Fact]
+    public async Task GetOpenCycle_ReturnsOpen_NullWhenClosedOrLegacy()
+    {
+        if (!CanConnect()) return;
+        var seed = await SeedAsync();
+        if (seed == null) return;
+        try
+        {
+            await using (var ctx = new ApplicationDbContext(Options()))
+            {
+                var svc = new AdjustmentCycleService(ctx);
+                Assert.Null(await svc.GetOpenCycleAsync(seed.BatchId)); // legacy batch: no cycle
+            }
+            var cycleId = await SeedOpenCycleAsync(seed.BatchId, seed.ActorId);
+            await using (var ctx = new ApplicationDbContext(Options()))
+            {
+                var svc = new AdjustmentCycleService(ctx);
+                var open = await svc.GetOpenCycleAsync(seed.BatchId);
+                Assert.NotNull(open);
+                Assert.Equal(cycleId, open!.Id);
+                Assert.NotEmpty(open.Reasons); // Reasons are included for the notification payload
+            }
+        }
+        finally { await CleanupAsync(seed.RequestId); }
+    }
+
+    // ── H. StageBuyerResolutionAndClose records one BUYER resolution and closes the cycle ─────────
+    [Fact]
+    public async Task StageBuyerResolutionAndClose_RecordsBuyerResolution_ClosesResubmitted()
+    {
+        if (!CanConnect()) return;
+        var seed = await SeedAsync();
+        if (seed == null) return;
+        try
+        {
+            await SeedOpenCycleAsync(seed.BatchId, seed.ActorId);
+            await using (var ctx = new ApplicationDbContext(Options()))
+            {
+                var svc = new AdjustmentCycleService(ctx);
+                var open = await svc.GetOpenCycleAsync(seed.BatchId);
+                var res = svc.StageBuyerResolutionAndClose(open!, seed.ActorId, "  Cotação corrigida.  ");
+                Assert.Equal(AdjustmentConstants.ActorTypes.Buyer, res.ActorType);
+                Assert.Equal("Cotação corrigida.", res.ResolutionComment); // trimmed
+                await ctx.SaveChangesAsync();
+            }
+            await using (var verify = new ApplicationDbContext(Options()))
+            {
+                var cycle = await verify.ApprovalBatchAdjustments.Include(a => a.Resolutions)
+                    .SingleAsync(a => a.ApprovalBatchId == seed.BatchId);
+                Assert.Equal(AdjustmentConstants.States.Resubmitted, cycle.Status);
+                Assert.NotNull(cycle.ClosedAtUtc);
+                var resolution = Assert.Single(cycle.Resolutions);
+                Assert.Equal(AdjustmentConstants.ActorTypes.Buyer, resolution.ActorType);
+                Assert.Equal(seed.ActorId, resolution.ResolvedByUserId);
+                // The open slot is freed → a new cycle can be created afterwards.
+                var open = await verify.ApprovalBatchAdjustments.CountAsync(a => a.ApprovalBatchId == seed.BatchId && AdjustmentConstants.States.Open.Contains(a.Status));
+                Assert.Equal(0, open);
+            }
+        }
+        finally { await CleanupAsync(seed.RequestId); }
+    }
+
+    // ── I. Concurrency / double-resolve → the resolution unique index yields exactly one BUYER
+    //      resolution (the atomicity guarantee the controller maps to 409). ─────────────────────
+    [Fact]
+    public async Task ConcurrentBuyerResolution_SecondSaveViolatesUniqueIndex_NetOneResolution()
+    {
+        if (!CanConnect()) return;
+        var seed = await SeedAsync();
+        if (seed == null) return;
+        try
+        {
+            await SeedOpenCycleAsync(seed.BatchId, seed.ActorId);
+
+            await using var ctx1 = new ApplicationDbContext(Options());
+            await using var ctx2 = new ApplicationDbContext(Options());
+            var svc1 = new AdjustmentCycleService(ctx1);
+            var svc2 = new AdjustmentCycleService(ctx2);
+            var open1 = await svc1.GetOpenCycleAsync(seed.BatchId);
+            var open2 = await svc2.GetOpenCycleAsync(seed.BatchId);
+
+            svc1.StageBuyerResolutionAndClose(open1!, seed.ActorId, "resposta 1");
+            svc2.StageBuyerResolutionAndClose(open2!, seed.ActorId, "resposta 2");
+
+            await ctx1.SaveChangesAsync(); // winner
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() => ctx2.SaveChangesAsync());
+            Assert.True(svc2.IsUniqueViolation(ex)); // controller maps this to 409 "Reenvio em Andamento"
+
+            await using var verify = new ApplicationDbContext(Options());
+            var count = await verify.Set<ApprovalBatchAdjustmentResolution>()
+                .CountAsync(r => r.AdjustmentId == open1!.Id && r.ActorType == AdjustmentConstants.ActorTypes.Buyer);
+            Assert.Equal(1, count);
+        }
+        finally { await CleanupAsync(seed.RequestId); }
+    }
 }

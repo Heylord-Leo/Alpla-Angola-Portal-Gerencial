@@ -14,9 +14,11 @@ import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { BuyerSupplierFichaDrawer, BuyerSupplierFichaDrawerHandle } from './BuyerSupplierFichaDrawer';
 import { CloseNotQuotedModal } from './CloseNotQuotedModal';
 import { BatchDetailModal } from './BatchDetailModal';
+import { QuotationEditChooserModal } from './QuotationEditChooserModal';
 import { batchStatusLabel } from '../../lib/adjustmentReasons';
 import { formatDateTime } from '../../lib/utils';
 import { api } from '../../lib/api';
+import type { SavedQuotationDto } from '../../types';
 import type { BuyerWorkspace, BuyerWorkspaceItem, BuyerWorkspaceBatch } from '../../types/buyerWorkspace';
 import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL } from './buyerQueueView';
 import {
@@ -51,6 +53,9 @@ export function BuyerRequestWorkspace() {
   const backTarget = useMemo(() => backToQueueTarget((location.state as any)?.from), [location.state]);
   const setTab = (id: string) => { const p = new URLSearchParams(params); p.set('tab', id); setParams(p, { replace: true }); };
   const [feedback, setFeedback] = useState<string | null>(null);
+  // Phase 4: when a returned batch is composed from >1 existing quotation, "Gerenciar Cotações"
+  // shows this chooser before opening the selected one in EDIT mode.
+  const [quoteChooser, setQuoteChooser] = useState<{ quotations: SavedQuotationDto[]; reworkBatchId: string } | null>(null);
   const [activeHost, setActiveHost] = useState<'approval' | 'rework' | null>(null);
   const flash = (msg: string) => { setFeedback(msg); window.setTimeout(() => setFeedback(null), 5000); };
 
@@ -258,9 +263,25 @@ export function BuyerRequestWorkspace() {
           requestId={ws.requestId}
           onClose={() => setActiveHost(null)}
           onCompleted={afterMutation}
-          // QF4: bridge to the existing quotation tools — close the rework host and land on the
-          // Workspace quotations tab (route-backed, so returning to the rework action is one click).
-          onManageQuotations={() => { setActiveHost(null); setTab('quotes'); }}
+          // Phase 4: open the batch's CONTRIBUTING existing quotation in EDIT mode (not a blank NEW
+          // quotation — batch-committed items are ineligible for new manual entry). One → edit direct;
+          // many → chooser; zero → controlled feedback. After saving, the Buyer reopens "Revisar e
+          // reenviar lote" to enter the mandatory "Resposta ao reajuste" and resubmit.
+          onManageQuotations={(quotations, reworkBatchId) => {
+            setActiveHost(null);
+            if (quotations.length === 1) wizardHost.openReviseQuotation(ws.requestId, quotations[0], reworkBatchId);
+            else if (quotations.length > 1) setQuoteChooser({ quotations, reworkBatchId });
+            else flash('Não foi possível identificar a cotação associada a este lote.');
+          }}
+        />
+      )}
+
+      {/* Phase 4: chooser when a returned batch is composed from more than one existing quotation. */}
+      {quoteChooser && (
+        <QuotationEditChooserModal
+          quotations={quoteChooser.quotations}
+          onSelect={(q) => { const rb = quoteChooser.reworkBatchId; setQuoteChooser(null); wizardHost.openReviseQuotation(ws.requestId, q, rb); }}
+          onClose={() => setQuoteChooser(null)}
         />
       )}
 

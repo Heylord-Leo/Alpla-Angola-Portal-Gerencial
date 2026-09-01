@@ -4,7 +4,56 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.235.0
+v2.236.0
+
+## [v2.236.0] - 2026-09-01
+
+### Adjustment V2 — Phase 4 (Buyer Resolution + Quotation Revisions)
+
+Activates the BUYER side of the structured adjustment cycle and the commercial-correction flow. One
+additive migration (`20260901075730_AddQuotationRevisionProvenance`); `RequestStatusCalculator`, the
+approval queue, and the backup infrastructure are untouched; Phases 5/6/7 are **not** activated (no
+`ApprovalBatchCandidateReview` / CONFIRM / REFRESH / REPLACE / REMOVE / REQUIRES_REVIEW semantics).
+
+#### Added — Functional
+- **Structured Buyer resolution** — resubmitting a batch that carries an OPEN V2 cycle requires the
+  Buyer's mandatory **"Resposta ao reajuste"**; it records exactly one `ApprovalBatchAdjustmentResolution`
+  (ActorType BUYER), closes the cycle to **RESUBMITTED**, and returns the batch to
+  **WAITING_AREA_APPROVAL** (from AREA or FINAL adjustment). Atomic (batch transition + history +
+  resolution + cycle close + status sync); the `(AdjustmentId, ActorType)` unique index maps a
+  concurrent double-resubmit to a deterministic 409.
+- **Area-approver notification** — a single post-commit `BATCH_RESUBMITTED_TO_AREA` outbox event
+  (reasons + Buyer response), resolved to the Area manager(s).
+- **Revised quotation as a new identity** — "Gerenciar Cotações" during rework opens the batch's
+  contributing quotation as a **revision** seeded from the original but persisted as a NEW quotation
+  (ADD path), never mutating the original quotation or its frozen candidate.
+- **Revision provenance** — additive `Quotation.RevisesQuotationId` (self-reference, RESTRICT, indexed)
+  records that a revised quotation supersedes the original. No historical backfill.
+- **Superseded-selection guard** — a quotation another explicitly revises is shown read-only
+  ("Versão anterior", disabled) with the revised option marked "Revisada" and preselected when
+  unambiguous; a backend composition/resubmit guard rejects selecting a superseded option
+  ("Esta cotação possui uma revisão mais recente…"). Deterministic (provenance ids only, never
+  value/date/supplier).
+- **Fresh candidate snapshot from the revised quotation** — selecting the revised option in the
+  existing rework composition produces a new `ApprovalBatchItemCandidate` snapshot at the revised
+  values; the original candidate is never silently refreshed.
+
+#### Fixed — UX
+- **Buyer rework quotation-management** — "Gerenciar Cotações" is no longer a dead-end; a one/many/zero
+  chooser opens the right existing quotation instead of a blank manual quotation.
+- **Reconciliation visibility** — when editing a contributing quotation, an already-linked
+  `BATCH_ASSIGNED` request item stays visible/mappable (union of eligible + draft-mapped targets);
+  global quotation eligibility is unchanged.
+- **Source-neutral commercial-change justification** — the line material-change section reads
+  "Alterações em relação à cotação original" (not "documento OCR") and offers
+  **"Preço renegociado com o fornecedor"**; the OCR reason remains available.
+- **Contextual adjustment-reason picker** — the Area wizard's yellow "Motivos do Reajuste" panel is no
+  longer permanently visible; it appears only under "Solicitar Reajuste" (Final/quick-action was already
+  contextual). Approval and rejection remain independent of adjustment reasons.
+
+#### Preserved
+- Original quotation/QuotationItem and prior candidate audit remain; legacy no-cycle resubmit stays
+  comment-only; Final-sourced provenance is intact and Area is not skipped after Final-sourced rework.
 
 ## [v2.235.0] - 2026-08-31
 

@@ -65,40 +65,56 @@ public class BuyerWorkspaceController : BaseController
         var creatorName = await _context.Users
             .Where(u => u.Id == r.CreatedByUserId).Select(u => u.FullName).FirstOrDefaultAsync();
 
-        // Adjustment V2 (Phase 3): the OPEN structured cycle per batch (read-only detail for the
-        // "Lotes & Aprovações" surface). One query over all the request's batches; the open-cycle
-        // unique index guarantees at most one per batch. Closed/legacy batches project no cycle.
+        // Adjustment V2 (Phase 3 + 4): the LATEST structured cycle per batch (read-only detail for
+        // the "Lotes & Aprovações" surface) — the open cycle while one is in progress, otherwise the
+        // most recent closed cycle (so a resubmitted cycle and its Buyer "Resposta ao reajuste" stay
+        // visible after RESUBMITTED). Legacy/never-adjusted batches project no cycle. NOT the Phase 7
+        // timeline — one latest cycle only.
         var batchIds = r.ApprovalBatches.Select(b => b.Id).ToList();
-        var openCycles = batchIds.Count == 0
+        var allCycles = batchIds.Count == 0
             ? new List<ApprovalBatchAdjustment>()
             : await _context.ApprovalBatchAdjustments.AsNoTracking()
                 .Include(a => a.Reasons)
-                .Where(a => batchIds.Contains(a.ApprovalBatchId)
-                         && AdjustmentConstants.States.Open.Contains(a.Status))
+                .Include(a => a.Resolutions)
+                .Where(a => batchIds.Contains(a.ApprovalBatchId))
                 .ToListAsync();
-        var cycleActorIds = openCycles.Select(a => a.RequestedByUserId).Distinct().ToList();
+        var latestCycles = allCycles
+            .GroupBy(a => a.ApprovalBatchId)
+            .Select(g => g.OrderByDescending(a => a.CycleNumber).First())
+            .ToList();
+        var cycleActorIds = latestCycles.Select(a => a.RequestedByUserId)
+            .Concat(latestCycles.SelectMany(a => a.Resolutions).Select(res => res.ResolvedByUserId))
+            .Distinct().ToList();
         var cycleActorNames = cycleActorIds.Count == 0
             ? new Dictionary<Guid, string>()
             : await _context.Users.AsNoTracking()
                 .Where(u => cycleActorIds.Contains(u.Id))
                 .ToDictionaryAsync(u => u.Id, u => u.FullName);
         var cycleLineNumberById = r.LineItems.ToDictionary(li => li.Id, li => li.LineNumber);
-        var adjustmentsByBatch = openCycles.ToDictionary(a => a.ApprovalBatchId, a => new BuyerWorkspaceBatchAdjustmentDto
+        var adjustmentsByBatch = latestCycles.ToDictionary(a => a.ApprovalBatchId, a =>
         {
-            CycleNumber = a.CycleNumber,
-            SourceStage = a.SourceStage,
-            Status = a.Status,
-            WholeBatch = a.WholeBatch,
-            ApproverComment = a.ApproverComment,
-            RequestedByName = cycleActorNames.TryGetValue(a.RequestedByUserId, out var nm) ? nm : null,
-            RequestedAtUtc = a.RequestedAtUtc,
-            Reasons = a.Reasons.Select(rn => new BuyerWorkspaceBatchAdjustmentReasonDto
+            var buyerResolution = a.Resolutions
+                .FirstOrDefault(res => res.ActorType == AdjustmentConstants.ActorTypes.Buyer);
+            return new BuyerWorkspaceBatchAdjustmentDto
             {
-                ReasonCode = rn.ReasonCode,
-                RequestLineItemId = rn.RequestLineItemId,
-                LineNumber = rn.RequestLineItemId.HasValue && cycleLineNumberById.TryGetValue(rn.RequestLineItemId.Value, out var ln) ? ln : (int?)null,
-                Detail = rn.Detail,
-            }).ToList(),
+                CycleNumber = a.CycleNumber,
+                SourceStage = a.SourceStage,
+                Status = a.Status,
+                WholeBatch = a.WholeBatch,
+                ApproverComment = a.ApproverComment,
+                RequestedByName = cycleActorNames.TryGetValue(a.RequestedByUserId, out var nm) ? nm : null,
+                RequestedAtUtc = a.RequestedAtUtc,
+                Reasons = a.Reasons.Select(rn => new BuyerWorkspaceBatchAdjustmentReasonDto
+                {
+                    ReasonCode = rn.ReasonCode,
+                    RequestLineItemId = rn.RequestLineItemId,
+                    LineNumber = rn.RequestLineItemId.HasValue && cycleLineNumberById.TryGetValue(rn.RequestLineItemId.Value, out var ln) ? ln : (int?)null,
+                    Detail = rn.Detail,
+                }).ToList(),
+                ResponseNote = buyerResolution?.ResolutionComment,
+                RespondedByName = buyerResolution != null && cycleActorNames.TryGetValue(buyerResolution.ResolvedByUserId, out var rnm) ? rnm : null,
+                RespondedAtUtc = buyerResolution?.ResolvedAtUtc,
+            };
         });
 
         int Bkt(string key) => p.CoverageCounts.TryGetValue(key, out var v) ? v : 0;

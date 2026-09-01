@@ -30,10 +30,16 @@ export interface UseQuotationWizardStateReturn {
     draft: OcrDraft | null;
     isEditing: boolean;
     editingQuotationId: string | null;
+    /** Adjustment V2 (Phase 4): when set, this NEW quotation is a REVISION created during the rework of
+     * this batch — the id is forwarded to SaveQuotation so the backend applies the narrow rework
+     * exception. Null for every ordinary create/edit. */
+    reworkBatchId: string | null;
+    /** Adjustment V2 (Phase 4): the original quotation this revision supersedes (provenance). */
+    revisesQuotationId: string | null;
     isFinalReviewConfirmed: boolean;
-    
+
     // Actions
-    openWizard: (mode: 'NEW' | 'EDIT', initialDraft?: OcrDraft | null, quotationId?: string, source?: QuotationWizardSource) => void;
+    openWizard: (mode: 'NEW' | 'EDIT', initialDraft?: OcrDraft | null, quotationId?: string, source?: QuotationWizardSource, reworkBatchId?: string, revisesQuotationId?: string) => void;
     closeWizard: () => void;
 
     goToStep: (step: QuotationWizardStep) => void;
@@ -69,6 +75,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
     const [draft, setDraft] = useState<OcrDraft | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editingQuotationId, setEditingQuotationId] = useState<string | null>(null);
+    const [reworkBatchId, setReworkBatchId] = useState<string | null>(null);
+    const [revisesQuotationId, setRevisesQuotationId] = useState<string | null>(null);
     const [isFinalReviewConfirmed, setIsFinalReviewConfirmed] = useState(false);
     const [classificationConflict, setClassificationConflict] =
         useState<ClassificationConflictState>(EMPTY_CONFLICT);
@@ -100,9 +108,11 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         return Math.max(0, Math.round((taxableBase + adjustedIva) * 100) / 100);
     };
 
-    const openWizard = (mode: 'NEW' | 'EDIT', initialDraft: OcrDraft | null = null, quotationId?: string, source: QuotationWizardSource = 'MANUAL') => {
+    const openWizard = (mode: 'NEW' | 'EDIT', initialDraft: OcrDraft | null = null, quotationId?: string, source: QuotationWizardSource = 'MANUAL', reworkBatchIdArg?: string, revisesQuotationIdArg?: string) => {
         setIsEditing(mode === 'EDIT');
         setEditingQuotationId(quotationId || null);
+        setReworkBatchId(reworkBatchIdArg || null);
+        setRevisesQuotationId(revisesQuotationIdArg || null);
         setDraft(initialDraft);
         setCurrentStep(source === 'UPLOAD' ? 'DOCUMENTS_OCR' : 'OVERVIEW');
         setIsFinalReviewConfirmed(false);
@@ -116,6 +126,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         setDraft(null);
         setIsEditing(false);
         setEditingQuotationId(null);
+        setReworkBatchId(null);
+        setRevisesQuotationId(null);
         setCurrentStep('OVERVIEW');
         setIsFinalReviewConfirmed(false);
         setClassificationConflict(EMPTY_CONFLICT);
@@ -337,6 +349,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         draft,
         isEditing,
         editingQuotationId,
+        reworkBatchId,
+        revisesQuotationId,
         isFinalReviewConfirmed,
         openWizard,
         closeWizard,

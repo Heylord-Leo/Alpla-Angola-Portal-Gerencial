@@ -183,6 +183,11 @@ public class BatchApprovalActionDto
 {
     public string? Comment { get; set; }
 
+    /// <summary>Adjustment V2 (Phase 4) — the Buyer's mandatory "Resposta ao reajuste" at resubmit,
+    /// required only when the batch has an open V2 adjustment cycle (legacy batches ignore it).
+    /// Persisted as an ApprovalBatchAdjustmentResolution (ActorType = BUYER).</summary>
+    public string? AdjustmentResponse { get; set; }
+
     /// <summary>Maps RequestLineItemId → {PlantId, CostCenterId} (single-allocation shorthand).</summary>
     public Dictionary<Guid, ItemApprovalAssignmentDto>? ItemAssignments { get; set; }
 

@@ -58,6 +58,13 @@ public class Quotation
     public Guid? ProformaAttachmentId { get; set; }
     public RequestAttachment? ProformaAttachment { get; set; }
 
+    /// <summary>Adjustment V2 (Phase 4) — revision provenance. When set, this quotation is a commercial
+    /// REVISION of the referenced quotation (created during a batch rework). The original quotation
+    /// stays immutable/auditable; this one is a NEW identity carrying revised commercial values. Null
+    /// for every ordinary quotation (no historical backfill). NOT Phase 6 candidate-review.</summary>
+    public Guid? RevisesQuotationId { get; set; }
+    public Quotation? RevisesQuotation { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
     public Guid CreatedByUserId { get; set; }
 

@@ -259,11 +259,13 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao salvar correções do lote.');
             return response.json();
         },
-        resubmitApprovalBatch: async (requestId: string, batchId: string, comment?: string): Promise<any> => {
+        resubmitApprovalBatch: async (requestId: string, batchId: string, comment?: string, adjustmentResponse?: string): Promise<any> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/batches/${batchId}/resubmit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment })
+                // Adjustment V2 (Phase 4): the Buyer's mandatory "Resposta ao reajuste" for a batch
+                // with an open V2 cycle; ignored server-side for legacy batches with no cycle.
+                body: JSON.stringify({ comment, adjustmentResponse })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao reenviar lote para aprovação.');
             return response.json();
@@ -938,10 +940,16 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao revogar a autorização de reuso.');
             return res.json();
         },
-        saveQuotation: async (requestId: string, quotation: any, replaceQuotationId?: string): Promise<any> => {
-            const url = replaceQuotationId 
-                ? `${API_BASE_URL}/api/v1/requests/${requestId}/quotations?replaceQuotationId=${replaceQuotationId}`
-                : `${API_BASE_URL}/api/v1/requests/${requestId}/quotations`;
+        saveQuotation: async (requestId: string, quotation: any, replaceQuotationId?: string, reworkBatchId?: string, revisesQuotationId?: string): Promise<any> => {
+            // Adjustment V2 (Phase 4): reworkBatchId + revisesQuotationId are sent ONLY for a revision
+            // created from the batch rework path; they scope the backend's narrow status exception and
+            // record revision provenance. Ordinary creation omits them.
+            const qs = new URLSearchParams();
+            if (replaceQuotationId) qs.set('replaceQuotationId', replaceQuotationId);
+            if (reworkBatchId) qs.set('reworkBatchId', reworkBatchId);
+            if (revisesQuotationId) qs.set('revisesQuotationId', revisesQuotationId);
+            const suffix = qs.toString();
+            const url = `${API_BASE_URL}/api/v1/requests/${requestId}/quotations${suffix ? `?${suffix}` : ''}`;
             const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

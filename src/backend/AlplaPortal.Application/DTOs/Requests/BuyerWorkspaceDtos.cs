@@ -134,6 +134,12 @@ public class BuyerWorkspaceBatchAdjustmentDto
     public string? RequestedByName { get; set; }
     public DateTime RequestedAtUtc { get; set; }
     public List<BuyerWorkspaceBatchAdjustmentReasonDto> Reasons { get; set; } = new();
+
+    // Phase 4 — the Buyer's "Resposta ao reajuste" once the cycle has been resolved/resubmitted
+    // (null while the cycle is still open). Read-only display; no later-phase surfaces exposed.
+    public string? ResponseNote { get; set; }
+    public string? RespondedByName { get; set; }
+    public DateTime? RespondedAtUtc { get; set; }
 }
 
 public class BuyerWorkspaceBatchAdjustmentReasonDto
