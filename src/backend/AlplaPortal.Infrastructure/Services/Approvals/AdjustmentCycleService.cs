@@ -158,6 +158,45 @@ public class AdjustmentCycleService : IAdjustmentCycleService
     }
 
     /// <inheritdoc />
+    public async Task<ApprovalBatchAdjustment?> GetOpenCycleAsync(Guid batchId, CancellationToken ct = default) =>
+        await _context.ApprovalBatchAdjustments
+            .Include(a => a.Reasons)
+            .FirstOrDefaultAsync(a => a.ApprovalBatchId == batchId
+                                   && AdjustmentConstants.States.Open.Contains(a.Status), ct);
+
+    /// <inheritdoc />
+    public ApprovalBatchAdjustmentResolution StageBuyerResolutionAndClose(
+        ApprovalBatchAdjustment openCycle, Guid actorId, string responseNote)
+    {
+        var now = DateTime.UtcNow;
+
+        var resolution = new ApprovalBatchAdjustmentResolution
+        {
+            Id = Guid.NewGuid(),
+            AdjustmentId = openCycle.Id,
+            ActorType = AdjustmentConstants.ActorTypes.Buyer,
+            ResolvedByUserId = actorId,
+            ResolutionComment = responseNote.Trim(),
+            ResolvedAtUtc = now,
+        };
+        // Insert with the cycle update atomically. Register it EXPLICITLY on the set: openCycle is an
+        // already-tracked entity, and a child with a client-set (non-store-generated) Guid key added
+        // only through the collection navigation is misclassified as Modified by change detection —
+        // which fails as an UPDATE of a non-existent row. Keep the navigation in sync for callers that
+        // read openCycle.Resolutions. The (AdjustmentId, ActorType) unique index rejects a second
+        // concurrent Buyer resolution → 409.
+        _context.ApprovalBatchAdjustmentResolutions.Add(resolution);
+        openCycle.Resolutions.Add(resolution);
+
+        openCycle.Status = AdjustmentConstants.States.Resubmitted;
+        openCycle.ClosedAtUtc = now;
+        openCycle.UpdatedAtUtc = now;
+        openCycle.UpdatedByUserId = actorId;
+
+        return resolution;
+    }
+
+    /// <inheritdoc />
     public bool IsUniqueViolation(Exception ex) =>
         ex is DbUpdateException && ex.InnerException is SqlException { Number: 2601 or 2627 };
 }

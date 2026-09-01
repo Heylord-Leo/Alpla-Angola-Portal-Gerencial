@@ -58,6 +58,11 @@ export interface BuyerWorkspaceBatchAdjustment {
   requestedByName?: string | null;
   requestedAtUtc: string;
   reasons: BuyerWorkspaceBatchAdjustmentReason[];
+  // Phase 4 — the Buyer's "Resposta ao reajuste" once the cycle is resolved/resubmitted
+  // (null while still open). Read-only display.
+  responseNote?: string | null;
+  respondedByName?: string | null;
+  respondedAtUtc?: string | null;
 }
 
 export interface BuyerWorkspaceBatch {

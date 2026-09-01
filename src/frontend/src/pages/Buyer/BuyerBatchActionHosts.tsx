@@ -4,7 +4,7 @@ import { PartialApprovalBatchModal } from './PartialApprovalBatchModal';
 import { BatchReworkModal } from './BatchReworkModal';
 import { api } from '../../lib/api';
 import { toWizardActiveRequest } from './QuotationWizard/workspaceWizardRequest';
-import type { BatchItemInput, ExtraItemDecisionPayload } from '../../types';
+import type { BatchItemInput, ExtraItemDecisionPayload, SavedQuotationDto } from '../../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3C — thin Workspace hosts that mount the EXISTING, unmodified batch modals
@@ -69,7 +69,7 @@ export function BuyerApprovalBatchHost({ requestId, onClose, onCompleted }: { re
 }
 
 /** Host C — rework a returned batch (reuses BatchReworkModal; it owns its own update/resubmit calls). */
-export function BuyerBatchReworkHost({ requestId, onClose, onCompleted, onManageQuotations }: { requestId: string; onClose: () => void; onCompleted: (message: string) => void; onManageQuotations?: () => void }) {
+export function BuyerBatchReworkHost({ requestId, onClose, onCompleted, onManageQuotations }: { requestId: string; onClose: () => void; onCompleted: (message: string) => void; onManageQuotations?: (contributingQuotations: SavedQuotationDto[], reworkBatchId: string) => void }) {
   const { request, loading, error } = useRequest(requestId);
   const adjustmentBatch = (request?.approvalBatches || []).find((b: any) => b.status === 'AREA_ADJUSTMENT' || b.status === 'FINAL_ADJUSTMENT') || null;
 

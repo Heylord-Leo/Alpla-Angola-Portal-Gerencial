@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.235.0
+v2.236.0
+
+## [v2.236.0] - 2026-09-01
+
+### Adjustment V2 — Phase 4 (Buyer Resolution + Quotation Revisions)
+
+Activates the BUYER side of the structured adjustment cycle. A batch returned with an open V2 cycle
+requires the Buyer's mandatory "Resposta ao reajuste" at resubmit, which records exactly one
+`ApprovalBatchAdjustmentResolution` (BUYER), closes the cycle to RESUBMITTED, returns the batch to
+WAITING_AREA_APPROVAL (from AREA or FINAL adjustment), and notifies the Area approver
+(`BATCH_RESUBMITTED_TO_AREA`, post-commit). Commercial corrections use a **revised quotation** created
+as a NEW quotation identity (the original quotation and its frozen candidate stay immutable), linked
+by additive provenance `Quotation.RevisesQuotationId`; a superseded quotation is shown read-only but
+cannot be selected, enforced by a backend composition/resubmit guard, and the revised option produces
+a fresh candidate snapshot through the existing composition. Includes Buyer rework quotation-management
+fixes, a reconciliation-visibility fix for already-linked BATCH_ASSIGNED items, source-neutral
+commercial-change justification wording (adds "Preço renegociado com o fornecedor"), and makes the
+Area wizard's structured adjustment-reason picker contextual (shown only under "Solicitar Reajuste").
+One additive migration (`20260901075730_AddQuotationRevisionProvenance`). `RequestStatusCalculator`
+and the approval queue are unchanged; Phases 5/6/7 are **not** activated.
 
 ## [v2.235.0] - 2026-08-31
 

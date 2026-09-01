@@ -27,10 +27,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /**
  * Read-only batch details for the "Lotes & Aprovações" tab (Phase 3 quick improvement). Shows the
- * batch identity, a friendly batch-status label, and — when an OPEN structured adjustment cycle
- * exists — the cycle summary (origin, state, responsibility, reasons, approver comment, requester,
- * affected items). Purely informational: no action buttons, no editing, no later-phase surfaces.
- * Renders friendly labels only, never raw codes or GUIDs.
+ * batch identity, a friendly batch-status label, and — when a structured adjustment cycle exists
+ * (the latest cycle, open or already resubmitted) — the cycle summary (origin, state, responsibility,
+ * reasons, approver comment, requester, affected items) plus, once resolved, the Buyer's response to
+ * the adjustment (Phase 4). Purely informational: no action buttons, no editing, no later-phase
+ * surfaces. Renders friendly labels only, never raw codes or GUIDs.
  */
 export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({ batch, onClose }) => {
     if (!batch) return null;
@@ -99,6 +100,21 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({ batch, onClo
                                     {adj.approverComment || '—'}
                                 </div>
                             </div>
+
+                            {/* Adjustment V2 (Phase 4): the Buyer's response, once the cycle has been
+                                resolved and resubmitted (the cycle then reads "Reenviado para aprovação"). */}
+                            {adj.responseNote && (
+                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--color-border)' }}>
+                                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-text-muted)', marginBottom: 4 }}>Resposta ao reajuste (Comprador)</div>
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--color-text-main)', padding: '8px 10px', background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 8, whiteSpace: 'pre-wrap' }}>
+                                        {adj.responseNote}
+                                    </div>
+                                    <div style={{ marginTop: 4 }}>
+                                        <Row label="Respondido por">{adj.respondedByName || '—'}</Row>
+                                        <Row label="Respondido em">{fmt(adj.respondedAtUtc)}</Row>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>

@@ -44,15 +44,32 @@ public interface IAdjustmentCycleService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Phase 3 transitional compatibility: closes the batch's open V2 cycle (if any) into a terminal
-    /// state (RESUBMITTED from the legacy resubmit path, CANCELLED from batch cancellation) so the
-    /// one-open-cycle guard never permanently blocks a second adjustment before Phase 4 owns the
-    /// structured Buyer resolution/resubmit flow. Stages the change only; caller saves. Returns the
+    /// Closes the batch's open V2 cycle (if any) into a terminal state — used by batch cancellation
+    /// (CANCELLED, no resolution). The Buyer resubmit path uses
+    /// <see cref="StageBuyerResolutionAndClose"/> instead so a RESUBMITTED close always carries the
+    /// mandatory structured resolution (Phase 4). Stages the change only; caller saves. Returns the
     /// closed cycle or null when there was no open cycle.
     /// </summary>
     Task<ApprovalBatchAdjustment?> CloseOpenCycleAsync(
         Guid batchId, string terminalStatus, Guid actorId, string? cancelReason,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads the batch's single OPEN adjustment cycle (with its reasons), or null when none exists
+    /// (a legacy pre-V2 batch, or a batch whose cycle is already closed). Read-only.
+    /// </summary>
+    Task<ApprovalBatchAdjustment?> GetOpenCycleAsync(Guid batchId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Phase 4 — Buyer resolution + close. STAGES the mandatory structured "Resposta ao reajuste"
+    /// (an <see cref="ApprovalBatchAdjustmentResolution"/> with ActorType = BUYER) on the given open
+    /// cycle and closes it to RESUBMITTED (ClosedAtUtc = now). Does not save — the caller commits it
+    /// atomically with the batch transition. A concurrent/double resubmit is rejected by the
+    /// (AdjustmentId, ActorType) unique index at SaveChanges (→ <see cref="IsUniqueViolation"/> → 409).
+    /// Returns the staged resolution.
+    /// </summary>
+    ApprovalBatchAdjustmentResolution StageBuyerResolutionAndClose(
+        ApprovalBatchAdjustment openCycle, Guid actorId, string responseNote);
 
     /// <summary>True when the exception is a SQL unique-constraint violation — i.e. a concurrent
     /// request already created the open cycle / claimed the CycleNumber. Maps to a 409. Accepts the

@@ -22,6 +22,8 @@ public static class WorkflowEventCodes
     // Phase 3 emits ONLY these two (Buyer-facing); requester/resubmit/cancel events land in later phases.
     public const string BatchAreaAdjustment = "BATCH_AREA_ADJUSTMENT_REQUESTED";
     public const string BatchFinalAdjustment = "BATCH_FINAL_ADJUSTMENT_REQUESTED";
+    // Phase 4: Buyer resolved the adjustment and resubmitted the lot to Area approval.
+    public const string BatchResubmitted = "BATCH_RESUBMITTED_TO_AREA";
 
     // --- Operational Flow ---
     public const string PoRegistered = "PO_REGISTERED";

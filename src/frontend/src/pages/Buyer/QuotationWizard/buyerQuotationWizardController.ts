@@ -116,7 +116,7 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
                         ocrTotal,
                         financialIntegrityOverride: overridePayload?.financialIntegrityOverride ?? false,
                         overrideJustification: overridePayload?.overrideJustification
-                    });
+                    }, undefined, quotationWizardState.reworkBatchId ?? undefined, quotationWizardState.revisesQuotationId ?? undefined);
                 } catch (createError: any) {
                     const isNetworkError = createError?.status === 0 || createError?.status === undefined;
                     const is5xx = typeof createError?.status === 'number' && createError.status >= 500 && createError.status < 600;
@@ -257,7 +257,7 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
         }
     };
 
-    const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto) => {
+    const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto, reworkBatchId?: string) => {
         preAttemptSnapshotRef.current = null;
         setWizardActiveRequest(group);
         if (editQuotation) {
@@ -306,7 +306,16 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
                     lineAdjustmentJustification: item.lineAdjustmentJustification || null
                 }))
             };
-            quotationWizardState.openWizard('EDIT', draft, editQuotation.id, mode);
+            // Adjustment V2 (Phase 4): a rework REVISION seeds from the existing quotation but persists
+            // as a NEW quotation identity (the original + its frozen candidate stay immutable). Opening in
+            // NEW mode routes the save to SaveQuotation (add) and forwards reworkBatchId for the backend's
+            // narrow rework exception. Without reworkBatchId this is the ordinary in-place EDIT.
+            if (reworkBatchId) {
+                // Revision provenance: the NEW quotation supersedes THIS original (editQuotation.id).
+                quotationWizardState.openWizard('NEW', draft, undefined, mode, reworkBatchId, editQuotation.id);
+            } else {
+                quotationWizardState.openWizard('EDIT', draft, editQuotation.id, mode);
+            }
         } else {
             const initialDraft: OcrDraft = {
                 supplierId: null,

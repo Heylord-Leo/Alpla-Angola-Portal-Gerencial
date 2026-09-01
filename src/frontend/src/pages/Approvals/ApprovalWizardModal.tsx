@@ -68,6 +68,10 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
     // Adjustment V2 (Phase 3): structured reasons captured on the review step for REQUEST_ADJUSTMENT.
     const [adjustmentReasonCodes, setAdjustmentReasonCodes] = useState<string[]>([]);
     const [adjustmentItemIds, setAdjustmentItemIds] = useState<string[]>([]);
+    // Adjustment V2 (Phase 4 UX): the structured reason picker is part of the "Solicitar Reajuste"
+    // ACTION, not the normal review — it stays hidden until the approver enters this mode. Approve and
+    // Reject never show it. Leaving the mode (Cancelar / navigating back) clears the selection.
+    const [adjustmentMode, setAdjustmentMode] = useState(false);
     const [confirmReview, setConfirmReview] = useState(false);
     const [budgetJustification, setBudgetJustification] = useState('');
     const [isBudgetJustificationRequired, setIsBudgetJustificationRequired] = useState(false);
@@ -330,6 +334,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
 
     const handleBack = () => {
         setStepValidationError(null);
+        setAdjustmentMode(false); // leaving the review step exits the adjustment action
         setCurrentStep(prev => Math.max(prev - 1, 1));
     };
 
@@ -741,9 +746,10 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                         />
                     )}
 
-                    {/* Adjustment V2 (Phase 3): structured reason selection for a batch adjustment —
-                        only on the final review step, QUOTATION batches only. */}
-                    {currentStepConfig.key === 'REVIEW' && activeBatch && request?.requestTypeCode !== 'PAYMENT' && (
+                    {/* Adjustment V2 (Phase 4 UX): structured reason selection appears ONLY once the
+                        approver has chosen "Solicitar Reajuste" (adjustmentMode) — never during normal
+                        review/approve/reject. Final review step, QUOTATION batches only. */}
+                    {currentStepConfig.key === 'REVIEW' && adjustmentMode && activeBatch && request?.requestTypeCode !== 'PAYMENT' && (
                         <div style={{ marginTop: 16 }}>
                             <AdjustmentReasonPicker
                                 items={(activeBatch?.items || []).map((it: any) => ({
@@ -798,6 +804,37 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                         </span>
 
                         {currentStep === totalSteps ? (
+                            adjustmentMode ? (
+                                /* Adjustment action state: the structured picker (above) is now visible;
+                                   confirm submits REQUEST_ADJUSTMENT, cancel returns to normal review. */
+                                <>
+                                    <button
+                                        onClick={() => { setAdjustmentMode(false); setAdjustmentReasonCodes([]); setAdjustmentItemIds([]); setStepValidationError(null); }}
+                                        disabled={isSubmitting}
+                                        style={{
+                                            padding: '10px 20px', borderRadius: '8px',
+                                            backgroundColor: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151',
+                                            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                                            fontWeight: 600, fontSize: '0.8125rem', transition: 'all 0.15s'
+                                        }}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={() => handleSubmit('REQUEST_ADJUSTMENT')}
+                                        disabled={isSubmitting || !confirmReview}
+                                        style={{
+                                            padding: '10px 20px', borderRadius: '8px',
+                                            backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', color: '#D97706',
+                                            cursor: isSubmitting || !confirmReview ? 'not-allowed' : 'pointer',
+                                            fontWeight: 600, fontSize: '0.8125rem', transition: 'all 0.15s',
+                                            opacity: !confirmReview ? 0.5 : 1
+                                        }}
+                                    >
+                                        Confirmar Reajuste
+                                    </button>
+                                </>
+                            ) : (
                             <>
                                 <button
                                     onClick={() => handleSubmit('REJECT')}
@@ -814,7 +851,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                                 </button>
                                 {request?.requestTypeCode !== 'PAYMENT' && (
                                 <button
-                                    onClick={() => handleSubmit('REQUEST_ADJUSTMENT')}
+                                    onClick={() => { setAdjustmentMode(true); setStepValidationError(null); }}
                                     disabled={isSubmitting || !confirmReview}
                                     style={{
                                         padding: '10px 20px', borderRadius: '8px',
@@ -843,6 +880,7 @@ export const ApprovalWizardModal: React.FC<ApprovalWizardModalProps> = ({
                                     {isSubmitting ? 'Processando...' : '👍 Aprovar Pedido'}
                                 </button>
                             </>
+                            )
                         ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 {(['COMPARISON', 'SINGLE_QUOTE_REVIEW'].includes(currentStepConfig.key)) && approvedExtraItems.length > 0 && !isStep2Valid() && (

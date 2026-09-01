@@ -63,19 +63,28 @@ describe('QF4 — quotation bridge', () => {
         expect(modalSrc).toMatch(/Gerenciar Cotações/);
     });
 
-    it('both hosts provide the bridge (Workspace → quotes tab; classic → close onto the quotation screen)', () => {
-        expect(workspaceSrc).toMatch(/onManageQuotations=\{\(\) => \{ setActiveHost\(null\); setTab\('quotes'\); \}\}/);
-        expect(classicSrc).toMatch(/onManageQuotations=\{\(\) => setBatchReworkModal\(/);
+    it('both hosts open the contributing quotation as a REVISION (Phase 4, seed-as-NEW)', () => {
+        // Scope the negation to the rework bridge callback — the header "Importar/Inserir" buttons
+        // legitimately keep calling openAddQuotation and must not trip this assertion.
+        const wsCallback = workspaceSrc.match(/onManageQuotations=\{\(quotations, reworkBatchId\) => \{[\s\S]*?\}\}/)?.[0] ?? '';
+        expect(wsCallback).toMatch(/wizardHost\.openReviseQuotation\(ws\.requestId, quotations\[0\], reworkBatchId\)/);
+        expect(wsCallback).not.toMatch(/openAddQuotation/);
+        expect(wsCallback).not.toMatch(/openEditQuotation/);
+        expect(wsCallback).not.toMatch(/setTab\('quotes'\)/);
+        // Classic: opens the resolved quotation via the existing controller, passing reworkBatchId
+        // (seed-as-NEW happens inside handleOpenWizard when reworkBatchId is present).
+        expect(classicSrc).toMatch(/wizardController\.handleOpenWizard\(g, quotationEditMode\(quotations\[0\]\), quotations\[0\], reworkBatchId\)/);
     });
 
     it('Workspace renders the quotation wizard entries during RESOLVE_ADJUSTMENT', () => {
-        const resolveBlock = workspaceSrc.split("actionableCode === 'RESOLVE_ADJUSTMENT'")[1]?.split('actionableCode ===')[0] ?? '';
+        // The RESOLVE_ADJUSTMENT branch owns the header alone (hasResolveAdjustment ? … : …).
+        const resolveBlock = workspaceSrc.split('hasResolveAdjustment ? (')[1]?.split(') : (')[0] ?? '';
         expect(resolveBlock).toMatch(/openAddQuotation\(ws\.requestId, 'UPLOAD'\)/);
         expect(resolveBlock).toMatch(/openAddQuotation\(ws\.requestId, 'MANUAL'\)/);
     });
 
     it('normal ADD_QUOTATION wizard entries remain intact', () => {
-        const addBlock = workspaceSrc.split("actionableCode === 'ADD_QUOTATION'")[1] ?? '';
+        const addBlock = workspaceSrc.split('hasAddQuotation && (')[1] ?? '';
         expect(addBlock).toMatch(/openAddQuotation\(ws\.requestId, 'UPLOAD'\)/);
         expect(addBlock).toMatch(/openAddQuotation\(ws\.requestId, 'MANUAL'\)/);
     });

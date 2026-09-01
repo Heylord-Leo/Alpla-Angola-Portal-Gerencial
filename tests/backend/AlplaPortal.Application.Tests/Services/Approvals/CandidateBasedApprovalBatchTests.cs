@@ -861,7 +861,10 @@ public class CandidateBasedApprovalBatchTests
 
         await using (var ctx = new ApplicationDbContext(s.Options))
         {
-            var result = await BuildController(ctx, s.Actor).ResubmitBatch(s.RequestId, batchId, null);
+            // Adjustment V2 (Phase 4): the batch was returned through the structured cycle, so the
+            // Buyer's "Resposta ao reajuste" is now mandatory at resubmit.
+            var result = await BuildController(ctx, s.Actor).ResubmitBatch(s.RequestId, batchId,
+                new BatchApprovalActionDto { AdjustmentResponse = "Rolamento revisado: mantida apenas a opção Kwanza." });
             Assert.IsType<OkObjectResult>(result);
         }
 
@@ -870,6 +873,11 @@ public class CandidateBasedApprovalBatchTests
             .Include(b => b.Items).ThenInclude(bi => bi.Candidates)
             .SingleAsync(b => b.Id == batchId);
         Assert.Equal(RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval, batch.Status);
+        // The structured cycle is now resolved with exactly one BUYER resolution.
+        var resolvedCycle = await verify.ApprovalBatchAdjustments.AsNoTracking()
+            .Include(a => a.Resolutions).SingleAsync(a => a.ApprovalBatchId == batchId);
+        Assert.Equal(AdjustmentConstants.States.Resubmitted, resolvedCycle.Status);
+        Assert.Single(resolvedCycle.Resolutions);
         var rolamento = batch.Items.Single(bi => bi.RequestLineItemId == s.LineIds[0]);
         var only = Assert.Single(rolamento.Candidates);
         Assert.Equal(s.KwanzaItems[0], only.QuotationItemId);
