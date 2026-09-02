@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BuyerWorkloadStrip } from './BuyerWorkloadStrip';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   StickyNote, Eye, MessageSquarePlus, XCircle, UserPlus, ArrowRight,
@@ -50,6 +51,7 @@ export function BuyerQueueList() {
   const card = params.get('card') || 'all';
   const search = params.get('search') || '';
   const sort = params.get('sort') || QUEUE_DEFAULT_SORT;
+  const buyer = params.get('buyer') || '';
   const company = params.get('company') || '';
   const plant = params.get('plant') || '';
   const department = params.get('department') || '';
@@ -105,7 +107,7 @@ export function BuyerQueueList() {
     setLoading(true);
     setError(null);
     api.buyerQueue.getQueue({
-      ownership, query: search || undefined, sort,
+      ownership, buyer: buyer || undefined, query: search || undefined, sort,
       company: company ? Number(company) : undefined,
       plant: plant ? Number(plant) : undefined,
       department: department ? Number(department) : undefined,
@@ -115,7 +117,7 @@ export function BuyerQueueList() {
       needLevel: needLevelApiValue(needLevel),
       includeCompleted, page, pageSize: PAGE_SIZE,
     }).then(setQueue).catch(e => setError(e?.message || 'Erro ao carregar a fila.')).finally(() => setLoading(false));
-  }, [ownership, search, sort, company, plant, department, selectedCard, deadline, needLevel, includeCompleted, page]);
+  }, [ownership, buyer, search, sort, company, plant, department, selectedCard, deadline, needLevel, includeCompleted, page]);
 
   const loadSummary = useCallback(() => {
     // Summary scope = authorization + ownership + search + org filters (NOT the selected card).
@@ -185,7 +187,7 @@ export function BuyerQueueList() {
   const totalPages = queue?.totalPages ?? 1;
   const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, totalCount);
-  const hasActiveFilters = !!(search || company || plant || department || needLevel || deadline || includeCompleted || card !== 'all' || sort !== QUEUE_DEFAULT_SORT);
+  const hasActiveFilters = !!(search || company || plant || department || (needLevel && needLevel !== NEED_LEVEL_ALL) || deadline || includeCompleted || card !== 'all' || sort !== QUEUE_DEFAULT_SORT);
 
   return (
     <PageContainer>
@@ -290,6 +292,20 @@ export function BuyerQueueList() {
           </div>
         )}
       </div>
+
+      {/* Buyer workload distribution (Dashboard V2 slice B2) — managerial visibility only; renders
+          nothing otherwise. Reflects the list's structural filters; clicking filters the list. */}
+      <BuyerWorkloadStrip
+        company={company ? Number(company) : undefined}
+        plant={plant ? Number(plant) : undefined}
+        department={department ? Number(department) : undefined}
+        needLevel={needLevelApiValue(needLevel)}
+        activeBuyerId={buyer || undefined}
+        activeUnassigned={ownership === 'unassigned'}
+        onSelectBuyer={(id) => updateParams({ buyer: id, ownership: null })}
+        onSelectUnassigned={() => updateParams({ ownership: 'unassigned', buyer: null })}
+        onClear={() => updateParams({ buyer: null, ownership: null })}
+      />
 
       {/* Results meta */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>

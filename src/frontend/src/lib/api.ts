@@ -7,6 +7,7 @@ import {
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
 import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
+import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
@@ -2508,6 +2509,23 @@ export const api = {
     },
 
     // Buyer operational queue (Phase 2). Request-level; consumes the canonical BuyerQueueController.
+    dashboardV2: {
+        // Dashboard V2 Buyer section. Server returns only the planes the user is entitled to
+        // (personal/shared/workload); null planes are simply not rendered. Counts reconcile with
+        // the Buyer queue/workspace (same canonical projection).
+        getBuyer: async (opts: DashboardV2BuyerParams = {}): Promise<DashboardV2BuyerSectionDto> => {
+            const params = new URLSearchParams();
+            if (opts.company) params.append('company', String(opts.company));
+            if (opts.plant) params.append('plant', String(opts.plant));
+            if (opts.department) params.append('department', String(opts.department));
+            if (opts.needLevel) params.append('needLevel', opts.needLevel);
+            const qs = params.toString();
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/buyer${qs ? `?${qs}` : ''}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a carga de Compras.');
+            return response.json();
+        },
+    },
+
     buyerQueue: {
         getQueue: async (opts: BuyerQueueParams = {}): Promise<BuyerQueuePage> => {
             const params = new URLSearchParams();
@@ -2518,6 +2536,7 @@ export const api = {
             if (opts.plant) params.append('plant', String(opts.plant));
             if (opts.department) params.append('department', String(opts.department));
             if (opts.ownership) params.append('ownership', opts.ownership);
+            if (opts.buyer) params.append('buyer', opts.buyer);
             if (opts.operationalState) params.append('operationalState', opts.operationalState);
             if (opts.priority) params.append('priority', opts.priority);
             if (opts.deadline) params.append('deadline', opts.deadline);

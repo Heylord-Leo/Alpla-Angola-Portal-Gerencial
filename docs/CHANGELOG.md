@@ -4,7 +4,40 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.236.0
+v2.237.0
+
+## [v2.237.0] - 2026-09-02
+
+### Dashboard V2 — B1+B2 (Canonical Buyer Foundation + Team Workload)
+
+First slice of the Cockpit V2 redesign. Additive and read-only: a new `GET /api/dashboard/v2/buyer`
+endpoint and a Buyer dashboard section, plus a Buyer workload distribution on the queue screen. **No
+DB migration.** `RequestStatusCalculator`, the approval queue, Finance/Receiving/Approval/Adjustment/PO
+workflow semantics, database schema, security/SSO, and infrastructure/deploy workflows are untouched.
+The legacy `GET /api/requests/cockpit-summary` dashboard remains in place for later V2 phases; Finance,
+Receiving, pipeline, alerts and financial V2 sections are **not** delivered in this slice.
+
+#### Added — Functional
+- **Canonical Buyer dashboard foundation** with an explicit **Pessoal / Compartilhado / Gerencial**
+  separation — a shared queue is never presented as personal work.
+- **Buyer team workload overview** (Gerencial): per-buyer rows with an **unassigned shared bucket**
+  surfaced separately (never merged into a buyer's personal counts).
+- **Buyer workload drill-down** into the existing "Gestão de Cotações" screen (`/buyer/items`), with a
+  `buyer=<id>` filter and an unassigned filter; the queue screen shows a matching workload distribution.
+- **Per-column workload bars** (each column independently scaled; zero → no bar; exact value primary)
+  and **explanatory header tooltips** (unit stated; accessible on hover, focus and click).
+
+#### Changed
+- **Buyer queue default need-level filter changed from CRITICO to ALL**, so no valid assigned request
+  is hidden by default; critical work stays prominent through the canonical `priority` sort (unchanged).
+- **Dark-mode / readability fixes** in the Buyer dashboard section (defined theme tokens only).
+
+#### Architecture
+- **Canonical reconciliation with `BuyerQueueProjectionBuilder`** — the dashboard tallies projection
+  outputs only (`BuyerWorkloadAggregator`); it does **not** re-implement coverage/state/action logic.
+- The entity→projection-input mapping was extracted from `BuyerQueueController` into a shared Domain
+  factory (`BuyerQueueProjectionInputFactory`), now used by the Buyer queue, the Buyer Workspace and
+  the Dashboard service (removes the earlier service→controller dependency; behavior unchanged).
 
 ## [v2.236.0] - 2026-09-01
 

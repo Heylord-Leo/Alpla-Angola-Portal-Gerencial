@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.236.0
+v2.237.0
+
+## [v2.237.0] - 2026-09-02
+
+### Dashboard V2 — B1+B2 (Canonical Buyer foundation + workload)
+
+First slice of the Cockpit V2 redesign. Adds a canonical Buyer dashboard section with a
+Pessoal / Compartilhado / Gerencial separation, a Buyer team workload overview (per-buyer plus an
+explicit unassigned shared bucket), and drill-down into the existing "Gestão de Cotações" screen
+(`/buyer/items`). All counts are tallied from `BuyerQueueProjectionBuilder` outputs (via the shared
+`BuyerQueueProjectionInputFactory`) so the dashboard reconciles exactly with the Buyer queue and
+Buyer Workspace — no workflow logic is re-implemented. Also changes the Buyer queue default
+need-level filter from CRITICO to ALL (critical work stays prominent through the canonical priority
+sort). No DB migration; `RequestStatusCalculator`, Finance/Receiving/Approval/Adjustment/PO
+semantics, schema, security and infrastructure are untouched. The legacy `cockpit-summary` dashboard
+remains in place for later V2 phases.
 
 ## [v2.236.0] - 2026-09-01
 

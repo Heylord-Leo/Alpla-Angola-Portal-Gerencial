@@ -37,6 +37,7 @@ public class BuyerQueueController : BaseController
         [FromQuery] int? plant = null,
         [FromQuery] int? department = null,
         [FromQuery] string ownership = "all",
+        [FromQuery] Guid? buyer = null,
         [FromQuery] string? operationalState = null,
         [FromQuery] string? priority = null,
         [FromQuery] string? deadline = null,
@@ -49,7 +50,7 @@ public class BuyerQueueController : BaseController
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
 
-        var projected = await LoadAndProjectAsync(includeCompleted, ownership, query, company, plant, department, needLevel);
+        var projected = await LoadAndProjectAsync(includeCompleted, ownership, query, company, plant, department, needLevel, buyer);
 
         // Projection-derived filters (not SQL-translatable).
         IEnumerable<Row> rows = projected;
@@ -105,10 +106,11 @@ public class BuyerQueueController : BaseController
         [FromQuery] int? plant = null,
         [FromQuery] int? department = null,
         [FromQuery] string ownership = "all",
+        [FromQuery] Guid? buyer = null,
         [FromQuery] bool includeCompleted = false,
         [FromQuery] string? needLevel = null)
     {
-        var projected = await LoadAndProjectAsync(includeCompleted, ownership, query, company, plant, department, needLevel);
+        var projected = await LoadAndProjectAsync(includeCompleted, ownership, query, company, plant, department, needLevel, buyer);
 
         var byState = projected
             .GroupBy(x => x.P.OperationalState)
@@ -137,7 +139,7 @@ public class BuyerQueueController : BaseController
 
     private async Task<List<Row>> LoadAndProjectAsync(
         bool includeCompleted, string ownership, string? query, int? company, int? plant, int? department,
-        string? needLevel = null)
+        string? needLevel = null, Guid? buyer = null)
     {
         var currentUserId = CurrentUserId;
         var scoped = await GetScopedRequestsQuery();
@@ -150,6 +152,10 @@ public class BuyerQueueController : BaseController
             case "me": q = q.Where(r => r.BuyerId == currentUserId); break;
             case "unassigned": q = q.Where(r => r.BuyerId == null); break;
         }
+
+        // Explicit buyer filter (used by the Dashboard V2 workload drill-down). Applied within the
+        // authorization scope; narrows to one buyer's assigned requests.
+        if (buyer.HasValue) q = q.Where(r => r.BuyerId == buyer.Value);
 
         // Org filters — applied in SQL BEFORE pagination, so both the list and the summary share the
         // exact same company/plant/department scope.
@@ -210,48 +216,9 @@ public class BuyerQueueController : BaseController
     };
 
     private static Proj.BuyerQueueProjection Project(Request r, Guid currentUserId, DateTime today)
-        => Proj.Build(BuildRequestInput(r), currentUserId, today);
-
-    /// <summary>
-    /// Builds the pure projection input from a fully-hydrated Request. Shared with the Buyer Workspace
-    /// (BuyerWorkspaceController) so both surfaces feed BuyerQueueProjectionBuilder the identical input
-    /// and can never diverge on coverage/state. Requires the same includes as the queue hydration.
-    /// </summary>
-    internal static Proj.RequestInput BuildRequestInput(Request r)
-    {
-        var nonDeleted = r.LineItems.Where(li => !li.IsDeleted).ToList();
-        var poGroups = r.PoGroups.ToList();
-        var supersededIds = r.ApprovalBatches
-            .Where(b => SupersededBatchPolicy.IsSuperseded(b, nonDeleted, poGroups))
-            .Select(b => b.Id)
-            .ToHashSet();
-
-        var items = r.LineItems.Select(li => new Proj.ItemInput(
-            li.Id, li.IsDeleted, li.QuotationLifecycleStatus, li.LineItemStatus?.Code,
-            li.SupplierId.HasValue || !string.IsNullOrEmpty(li.SupplierName))).ToList();
-
-        var batches = r.ApprovalBatches.Select(b => new Proj.BatchInput(
-            b.Id, b.BatchNumber, b.Status,
-            b.Items.Select(bi => new Proj.BatchItemInput(
-                bi.RequestLineItemId, bi.SelectedQuotationItemId,
-                bi.Candidates.Select(c => c.QuotationItemId).ToList())).ToList())).ToList();
-
-        var quotationItems = r.Quotations
-            .SelectMany(qq => qq.Items)
-            .Select(qi => new Proj.QuotationItemInput(qi.Id, qi.MappedRequestLineItemId, qi.ReconciliationStatus))
-            .ToList();
-
-        var hasProformaOrQuotation = r.Attachments.Any(a =>
-            (a.AttachmentTypeCode == AttachmentConstants.Types.Proforma
-             || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted);
-
-        return new Proj.RequestInput(
-            r.Id, r.RequestNumber ?? string.Empty, r.Title,
-            r.RequestType.Code, r.Status.Code, r.IsCancelled,
-            r.BuyerId, r.NeedLevel?.Code, r.NeedByDateUtc, r.CreatedAtUtc,
-            r.SupplierId.HasValue, hasProformaOrQuotation,
-            items, batches, quotationItems, supersededIds);
-    }
+        // Entity→input mapping lives in the shared Domain factory (BuyerQueueProjectionInputFactory) so
+        // the queue, the Buyer Workspace and the Dashboard all feed the projection the identical input.
+        => Proj.Build(BuyerQueueProjectionInputFactory.FromRequest(r), currentUserId, today);
 
     private IEnumerable<Row> Sort(IEnumerable<Row> rows, string sort) => (sort ?? "priority").ToLowerInvariant() switch
     {

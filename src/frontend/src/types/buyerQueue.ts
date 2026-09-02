@@ -84,6 +84,7 @@ export interface BuyerQueueParams {
   plant?: number;
   department?: number;
   ownership?: string; // all | me | unassigned
+  buyer?: string; // explicit buyer GUID filter (Dashboard V2 workload drill-down)
   operationalState?: string;
   priority?: string;
   deadline?: string;
