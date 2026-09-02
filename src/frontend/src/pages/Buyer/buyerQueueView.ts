@@ -103,14 +103,17 @@ export function countAdvancedFilters(p: {
   return n;
 }
 
-// ── Need-level default filter (Phase 3E.2) ──
-// The Buyer Queue opens on the CRITICAL need level so critical purchase requests are the initial work
-// view. This is a real filter (server-side), not a sort. "Todos" is an explicit sentinel so it survives
-// in the URL and is not re-defaulted; an absent param means a fresh load → the product default.
-export const NEED_LEVEL_DEFAULT = 'CRITICO';
+// ── Need-level default filter (Dashboard V2 acceptance #3) ──
+// The Buyer Queue opens on the FULL active workload (Todos), so no valid assigned request is ever
+// hidden by default — critical work stays prominent through the canonical 'priority' sort
+// (RequiresAttention → exception/overdue band → NeedLevelRank → DeadlineRank), not by hiding the rest.
+// This is a real server-side filter, not a sort. An absent/empty param means a fresh load → Todos
+// (no needLevel sent to the API). An explicit code (e.g. ?needLevel=CRITICO) still filters and survives
+// in the URL. (Was CRITICO before #3, which hid non-critical assigned work on buyer drill-down.)
 export const NEED_LEVEL_ALL = 'ALL';
+export const NEED_LEVEL_DEFAULT = NEED_LEVEL_ALL;
 
-/** Effective need-level filter from the URL param: absent/empty → product default (Crítico). */
+/** Effective need-level filter from the URL param: absent/empty → product default (Todos / all levels). */
 export function resolveNeedLevel(param: string | null | undefined): string {
   return param && param.length > 0 ? param : NEED_LEVEL_DEFAULT;
 }

@@ -6,6 +6,7 @@ using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Domain.Common;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -57,7 +58,7 @@ public class BuyerWorkspaceController : BaseController
         if (r.RequestType.Code != RequestConstants.Types.Quotation)
             return NotFound(new ProblemDetails { Title = "Workspace indisponível", Detail = "O Workspace do Comprador aplica-se apenas a pedidos de cotação.", Status = 404 });
 
-        var input = BuyerQueueController.BuildRequestInput(r);
+        var input = BuyerQueueProjectionInputFactory.FromRequest(r);
         var p = Proj.Build(input, CurrentUserId, DateTime.UtcNow);
         var buckets = Proj.ClassifyItemCoverage(input);
         var supersededIds = input.SupersededBatchIds;

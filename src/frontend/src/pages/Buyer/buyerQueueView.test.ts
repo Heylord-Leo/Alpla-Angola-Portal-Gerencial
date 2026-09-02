@@ -172,12 +172,18 @@ describe('no static legacy quotation labels', () => {
 
 // ── Phase 3E.2: default need-level filter + own-request indicator ──
 describe('need-level default filter', () => {
-  it('defaults to CRITICAL when no URL param (fresh queue)', () => {
+  it('defaults to ALL (Todos) when no URL param — full active workload, nothing hidden (acceptance #3)', () => {
     expect(resolveNeedLevel(null)).toBe(NEED_LEVEL_DEFAULT);
-    expect(resolveNeedLevel(null)).toBe('CRITICO');
-    expect(resolveNeedLevel('')).toBe('CRITICO');
+    expect(resolveNeedLevel(null)).toBe('ALL');
+    expect(resolveNeedLevel('')).toBe('ALL');
+    expect(NEED_LEVEL_DEFAULT).toBe(NEED_LEVEL_ALL);
   });
-  it('respects an explicit need level in the URL', () => {
+  it('sends NO needLevel param to the API on a fresh load (no implicit CRITICAL)', () => {
+    expect(needLevelApiValue(resolveNeedLevel(null))).toBeUndefined();
+    expect(needLevelApiValue(resolveNeedLevel(''))).toBeUndefined();
+  });
+  it('respects an explicit need level in the URL (CRITICAL still works)', () => {
+    expect(resolveNeedLevel('CRITICO')).toBe('CRITICO');
     expect(resolveNeedLevel('URGENTE')).toBe('URGENTE');
     expect(resolveNeedLevel(NEED_LEVEL_ALL)).toBe('ALL');
   });
@@ -185,14 +191,15 @@ describe('need-level default filter', () => {
     expect(needLevelApiValue('CRITICO')).toBe('CRITICO');
     expect(needLevelApiValue(NEED_LEVEL_ALL)).toBeUndefined();
   });
-  it('advanced-filter count includes the default CRITICAL but not Todos', () => {
+  it('advanced-filter count includes an explicit CRITICAL but not the default Todos', () => {
     expect(countAdvancedFilters({ needLevel: 'CRITICO' })).toBe(1);
     expect(countAdvancedFilters({ needLevel: NEED_LEVEL_ALL })).toBe(0);
     expect(countAdvancedFilters({ needLevel: '' })).toBe(0);
   });
-  it('clearing filters (param removed) restores CRITICAL', () => {
-    // clearFilters deletes the needLevel param → resolveNeedLevel(null) → default
-    expect(resolveNeedLevel(null)).toBe('CRITICO');
+  it('clearing filters (param removed) restores the true default: ALL, not CRITICAL (acceptance #3)', () => {
+    // clearFilters deletes the needLevel param → resolveNeedLevel(null) → default (Todos/ALL)
+    expect(resolveNeedLevel(null)).toBe('ALL');
+    expect(needLevelApiValue(resolveNeedLevel(null))).toBeUndefined();
   });
 });
 
