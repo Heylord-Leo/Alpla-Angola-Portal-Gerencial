@@ -59,3 +59,22 @@ export interface DashboardV2BuyerParams {
   department?: number;
   needLevel?: string;
 }
+
+// ── B3: Finance shared queue (operational counts; no monetary amounts — those are B7) ──
+// The server encodes entitlement by which plane is present: `shared` = Finance-role user (operational,
+// cards drill into /finance/payments); `managerial` = Local Manager/SysAdmin without Finance (view-only,
+// no navigation). Both null → user has no Finance section.
+export interface FinanceSharedQueueSummaryDto {
+  actionableGroups: number;
+  actionableRequests: number;
+  needsSchedulingGroups: number;
+  needsPaymentGroups: number;
+  dueTodayGroups: number;
+  overdueGroups: number;
+  paidWaitingReceivingGroups: number;
+}
+
+export interface DashboardV2FinanceSectionDto {
+  shared?: FinanceSharedQueueSummaryDto | null;
+  managerial?: FinanceSharedQueueSummaryDto | null;
+}

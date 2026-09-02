@@ -4,7 +4,42 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.237.0
+v2.238.0
+
+## [v2.238.0] - 2026-09-02
+
+### Dashboard V2 — B3 (Finance Shared Queue)
+
+Additive, read-only: a new `GET /api/dashboard/v2/finance` endpoint and a Finance dashboard section.
+No DB migration; no change to Finance eligibility/scheduling/payment mutation semantics, PO/Receiving/
+Approval/Adjustment workflows, security/SSO, or deployment workflows. The legacy
+`GET /api/requests/cockpit-summary` dashboard remains; Financial-summary money visualization (B7) and
+Receiving (B4) are **not** delivered here.
+
+#### Added
+- **Dashboard V2 Finance shared queue** (Compartilhado) for Finance-role users, with group-level
+  actionable counts and drill-downs into the canonical Finance screen (`/finance/payments`).
+- **Managerial Finance aggregate** (Gerencial) for Local Manager / System Administrator without the
+  Finance role — identical counts, view-only, no navigation, no Finance actions.
+- **Group-level actionable Finance metrics** (actionable groups; needs-scheduling; needs-payment;
+  due-today; overdue) plus a **distinct actionable-request** secondary count.
+- **`FinanceObligationSummaryProjection`** — reusable canonical obligation summary projection.
+
+#### Changed
+- Finance obligations summary computation **extracted** from `FinanceController` into the reusable
+  projection (used by both the Finance endpoint and the Dashboard); endpoint behavior preserved.
+
+#### Fixed / Clarified
+- Finance dashboard no longer relies on scalar request status — counts come from per-group
+  actionability via `FinancePaymentEligibilityService`.
+- Finance urgency uses `RequestPayments.ScheduledDateUtc` (not `NeedByDateUtc`).
+- `WAITING_PO` excluded from Finance workload; `PAYMENT_SCHEDULED` remains actionable;
+  `PAYMENT_COMPLETED` is informational (not actionable).
+- Managerial visibility grants no Finance actions.
+
+#### Technical
+- No migration; no Finance workflow semantic change; no monetary totals in Dashboard B3;
+  legacy Dashboard remains. Dashboard counts reconcile with `/api/v1/finance/obligations`.
 
 ## [v2.237.0] - 2026-09-02
 

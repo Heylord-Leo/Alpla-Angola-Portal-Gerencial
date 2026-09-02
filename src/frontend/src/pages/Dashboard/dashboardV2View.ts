@@ -50,6 +50,22 @@ export function buyerQueueHref(opts: { buyerId?: string; ownership?: 'me' | 'una
   return qs ? `${BUYER_QUEUE_ROUTE}?${qs}` : BUYER_QUEUE_ROUTE;
 }
 
+// ── Finance drill-down route (single source of truth; only server-supported /finance/payments filters) ──
+export const FINANCE_PAYMENTS_ROUTE = '/finance/payments';
+export type FinanceDrillKey =
+  | 'actionable' | 'needsScheduling' | 'needsPayment' | 'dueToday' | 'overdue' | 'paidWaitingReceiving';
+
+export function financePaymentsHref(key: FinanceDrillKey): string {
+  switch (key) {
+    case 'actionable': return `${FINANCE_PAYMENTS_ROUTE}?actionableOnly=true`;
+    case 'needsScheduling': return `${FINANCE_PAYMENTS_ROUTE}?actionClass=NEEDS_SCHEDULING`;
+    case 'needsPayment': return `${FINANCE_PAYMENTS_ROUTE}?actionClass=NEEDS_PAYMENT`;
+    case 'dueToday': return `${FINANCE_PAYMENTS_ROUTE}?dueTodayOnly=true`;
+    case 'overdue': return `${FINANCE_PAYMENTS_ROUTE}?overdueOnly=true`;
+    case 'paidWaitingReceiving': return `${FINANCE_PAYMENTS_ROUTE}?actionClass=PAID_WAITING_RECEIVING`;
+  }
+}
+
 // ── In-cell column bars (each column has its OWN scale) ──
 
 export type WorkloadMetricKey = 'assigned' | 'actionable' | 'pending' | 'ready' | 'attention';

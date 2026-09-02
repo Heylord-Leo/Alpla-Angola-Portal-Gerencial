@@ -13,6 +13,7 @@ import { WorkflowInteractive } from './components/WorkflowInteractive';
 import { WorkflowStageDetails } from './components/WorkflowStageDetails';
 import { WORKFLOW_STAGES } from './components/workflowData';
 import { DashboardV2BuyerSection } from './components/DashboardV2BuyerSection';
+import { DashboardV2FinanceSection } from './components/DashboardV2FinanceSection';
 
 export function Dashboard() {
     const navigate = useNavigate();
@@ -148,6 +149,9 @@ export function Dashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                 {/* ── Dashboard V2 (Phase B slice B1+B2): canonical Buyer section (Pessoal / Compartilhado / Gerencial) ── */}
                 <DashboardV2BuyerSection />
+
+                {/* ── Dashboard V2 (Phase B slice B3): Finance shared queue (Compartilhado / Gerencial) ── */}
+                <DashboardV2FinanceSection />
 
                 {/* ── Section 1: Minha Fila de Trabalho (legacy cockpit — unchanged during V2 rollout) ── */}
                 <MyWorkQueue data={cockpit} />
