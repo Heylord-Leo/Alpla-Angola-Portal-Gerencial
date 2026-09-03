@@ -14,6 +14,7 @@ import { WorkflowStageDetails } from './components/WorkflowStageDetails';
 import { WORKFLOW_STAGES } from './components/workflowData';
 import { DashboardV2BuyerSection } from './components/DashboardV2BuyerSection';
 import { DashboardV2FinanceSection } from './components/DashboardV2FinanceSection';
+import { DashboardV2ReceivingSection } from './components/DashboardV2ReceivingSection';
 
 export function Dashboard() {
     const navigate = useNavigate();
@@ -152,6 +153,9 @@ export function Dashboard() {
 
                 {/* ── Dashboard V2 (Phase B slice B3): Finance shared queue (Compartilhado / Gerencial) ── */}
                 <DashboardV2FinanceSection />
+
+                {/* ── Dashboard V2 (Phase B slice B4): Receiving shared queue (Compartilhado / Gerencial) ── */}
+                <DashboardV2ReceivingSection />
 
                 {/* ── Section 1: Minha Fila de Trabalho (legacy cockpit — unchanged during V2 rollout) ── */}
                 <MyWorkQueue data={cockpit} />

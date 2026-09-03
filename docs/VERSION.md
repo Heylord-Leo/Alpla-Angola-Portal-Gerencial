@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.238.0
+v2.239.0
+
+## [v2.239.0] - 2026-09-03
+
+### Dashboard V2 — B4 (Receiving Shared Queue)
+
+Adds the Receiving shared queue to Dashboard V2. A Receiving-role user sees an operational
+"Fila compartilhada — Recebimento" (Compartilhado) with group-level actionable counts and exact
+drill-downs into the Receiving workspace; a Local Manager / System Administrator without the Receiving
+role sees a view-only "Visão gerencial — Recebimento" (Gerencial) with the same counts and no
+navigation. Managerial visibility never implies operational ownership — the Shared plane requires the
+real Receiving role. All counts come from the canonical `ReceivingActionEvaluator` (extracted
+behavior-preserving from the `MoveToReceipt`/`ConfirmReceiving` guards) via a new group-level
+`ReceivingQueueProjection`, so the Dashboard reconciles exactly with the new
+`GET /api/v1/receiving/queue`: `ActionableGroups` = actionable RequestPoGroup rows; each bucket count =
+its bucket-filtered rows; `ActionableRequests` = distinct RequestId over those rows. `PAYMENT_COMPLETED`
+hands off from Finance to Receiving (bucket `READY_FOR_RECEIPT`); `WAITING_PO` is excluded. No DB
+migration; no Receiving workflow/permission change; the request-scalar `ProcessTransition` path is
+intentionally unchanged; no monetary totals and no aging (deferred by product decision); the legacy
+Dashboard remains live.
 
 ## [v2.238.0] - 2026-09-02
 

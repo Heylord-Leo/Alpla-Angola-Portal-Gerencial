@@ -78,3 +78,42 @@ export interface DashboardV2FinanceSectionDto {
   shared?: FinanceSharedQueueSummaryDto | null;
   managerial?: FinanceSharedQueueSummaryDto | null;
 }
+
+// ── B4: Receiving shared queue (operational counts; no aging, no money). Plane presence encodes
+// entitlement: `shared` = Receiving-role user (operational, cards drill into the group-level workspace);
+// `managerial` = Local Manager/SysAdmin without Receiving (view-only, no navigation). ──
+export interface ReceivingSharedQueueSummaryDto {
+  actionableGroups: number;
+  actionableRequests: number;
+  readyForReceiptGroups: number;
+  waitingReceiptGroups: number;
+  followUpGroups: number;
+  waitingSupplierDeliveryGroups: number;
+}
+
+export interface DashboardV2ReceivingSectionDto {
+  shared?: ReceivingSharedQueueSummaryDto | null;
+  managerial?: ReceivingSharedQueueSummaryDto | null;
+}
+
+// Group-level Receiving queue (drill-down; reconciles exactly with the dashboard summary).
+export interface ReceivingQueueRowDto {
+  requestId: string;
+  requestNumber: string;
+  requestTypeCode: string;
+  title?: string | null;
+  requestPoGroupId: string;
+  groupStatus: string;
+  supplierName?: string | null;
+  purchaseOrderNumber?: string | null;
+  actionableBucket: string; // READY_FOR_RECEIPT | WAITING_RECEIPT | IN_FOLLOWUP | WAITING_SUPPLIER_DELIVERY
+  availableActions: string[];
+}
+
+export interface ReceivingQueueResponseDto {
+  rows: ReceivingQueueRowDto[];
+  summary: ReceivingSharedQueueSummaryDto;
+}
+
+/** Canonical Receiving drill-down buckets (mirror ReceivingActionEvaluator.Buckets). */
+export type ReceivingBucket = 'READY_FOR_RECEIPT' | 'WAITING_RECEIPT' | 'IN_FOLLOWUP' | 'WAITING_SUPPLIER_DELIVERY';

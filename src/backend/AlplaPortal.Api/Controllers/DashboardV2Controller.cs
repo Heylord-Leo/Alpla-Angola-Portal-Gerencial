@@ -6,6 +6,7 @@ using AlplaPortal.Application.Interfaces.Finance;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Finance;
+using AlplaPortal.Infrastructure.Services.Receiving;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -72,6 +73,28 @@ public class DashboardV2Controller : BaseController
         var dto = await service.BuildFinanceSectionAsync(
             scoped, projection, isFinance, canSeeManagerial, DateTime.UtcNow.Date);
 
+        return Ok(dto);
+    }
+
+    /// <summary>
+    /// B4 — Receiving shared queue (operational counts). Shared plane for Receiving-role users;
+    /// managerial aggregate (view-only, identical counts) for Local Manager / SysAdmin without the
+    /// Receiving role. Counts reconcile with /api/v1/receiving/queue (same canonical projection).
+    /// No aging, no money, no mutation. Absent planes are null.
+    /// </summary>
+    [HttpGet("receiving")]
+    public async Task<ActionResult<DashboardV2ReceivingSectionDto>> GetReceivingSection()
+    {
+        var roles = CurrentUserRoles;
+        var isReceiving = roles.Contains(RoleConstants.Receiving);
+        var canSeeManagerial = roles.Contains(RoleConstants.LocalManager)
+                               || roles.Contains(RoleConstants.SystemAdministrator);
+
+        var scoped = await GetScopedRequestsQuery();
+        var service = new DashboardV2QueryService(_context);
+        var projection = new ReceivingQueueProjection();
+
+        var dto = await service.BuildReceivingSectionAsync(scoped, projection, isReceiving, canSeeManagerial);
         return Ok(dto);
     }
 }

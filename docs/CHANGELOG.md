@@ -4,7 +4,46 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.238.0
+v2.239.0
+
+## [v2.239.0] - 2026-09-03
+
+### Dashboard V2 — B4 (Receiving Shared Queue)
+
+Additive, read-only: a new `GET /api/dashboard/v2/receiving` endpoint, a new canonical group-level
+`GET /api/v1/receiving/queue` endpoint, and a Receiving dashboard section. No DB migration; no change to
+Receiving operational workflow (`MoveToReceipt`/`ConfirmReceiving` transitions, history, side effects),
+Finance/PO/Buyer/Approval/Adjustment/payment semantics, security/SSO, or deployment workflows. The
+request-scalar `ProcessTransition` generic path is intentionally unchanged. The legacy Dashboard remains
+live.
+
+### Added
+- Dashboard V2 Receiving Shared queue (operational, for Receiving-role users)
+- Receiving managerial aggregate (view-only) for Local Manager / System Administrator
+- canonical group-level Receiving queue endpoint `GET /api/v1/receiving/queue`
+- `ReceivingActionEvaluator` as the single source of Receiving actionability
+- exact group-level drill-downs from the Dashboard into the Receiving workspace
+- distinct actionable-request count (`ActionableRequests`) alongside `ActionableGroups`
+- canonical Receiving workspace mode driven by Dashboard filters
+
+### Changed
+- `MoveToReceipt` and `ConfirmReceiving` status guards now delegate to the canonical
+  `ReceivingActionEvaluator` with behavior preserved (same accepted/rejected statuses, role checks,
+  response codes/messages, transitions and side effects)
+
+### Clarified
+- `PAYMENT_COMPLETED` hands off from Finance to Receiving (bucket `READY_FOR_RECEIPT`)
+- `WAITING_PO` is excluded from Receiving workload
+- Receiving is Shared / Managerial, never Personal
+- Local Manager managerial visibility does not imply Receiving ownership
+- Receiving aging is intentionally deferred
+
+### Technical
+- no migration
+- no formal Receiving SLA
+- no monetary totals in Dashboard B4
+- legacy Dashboard remains
+- `ProcessTransition` generic request-scalar path intentionally unchanged
 
 ## [v2.238.0] - 2026-09-02
 

@@ -7913,10 +7913,9 @@ public class RequestsController : BaseController
         var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
 
-        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types
-        string[] requiredStatuses = new[] { "PAYMENT_COMPLETED" };
-
-        if (!requiredStatuses.Contains(poGroup.Status))
+        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types.
+        // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
+        if (!ReceivingActionEvaluator.CanMoveToReceipt(poGroup.Status))
         {
             return BadRequest(new ProblemDetails
             {
@@ -7988,9 +7987,9 @@ public class RequestsController : BaseController
             var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
             if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
 
-            // Status Rule: Must be in WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY to confirm receiving
-            var allowedStatuses = new[] { "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery };
-            if (!allowedStatuses.Contains(poGroup.Status))
+            // Status Rule: WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY.
+            // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
+            if (!ReceivingActionEvaluator.CanConfirmReceiving(poGroup.Status))
             {
                 return BadRequest(new ProblemDetails
                 {

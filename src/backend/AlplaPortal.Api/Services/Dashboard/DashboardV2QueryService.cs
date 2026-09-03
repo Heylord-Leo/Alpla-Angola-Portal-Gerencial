@@ -8,6 +8,7 @@ using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Finance;
+using AlplaPortal.Infrastructure.Services.Receiving;
 using Microsoft.EntityFrameworkCore;
 using Proj = AlplaPortal.Domain.Services.BuyerQueueProjectionBuilder;
 
@@ -28,6 +29,31 @@ public sealed class DashboardV2QueryService
     private readonly ApplicationDbContext _context;
 
     public DashboardV2QueryService(ApplicationDbContext context) => _context = context;
+
+    // ── B4: Receiving shared queue (operational counts; reconciles with /api/v1/receiving/queue) ──
+    /// <summary>
+    /// Build the Dashboard Receiving section from the SAME canonical projection the group-level Receiving
+    /// queue uses (<see cref="ReceivingQueueProjection"/> → <see cref="ReceivingActionEvaluator"/>), so the
+    /// dashboard counts reconcile exactly. Counts only — no aging, no money. Shared plane for Receiving-role
+    /// users; Managerial plane (identical counts, view-only) for a Local Manager / SysAdmin who is NOT a
+    /// Receiving user, avoiding a duplicate payload for Receiving+manager.
+    /// </summary>
+    public async Task<DashboardV2ReceivingSectionDto> BuildReceivingSectionAsync(
+        IQueryable<AlplaPortal.Domain.Entities.Request> scoped,
+        ReceivingQueueProjection projection,
+        bool isReceiving, bool canSeeManagerial)
+    {
+        if (!isReceiving && !canSeeManagerial) return new DashboardV2ReceivingSectionDto();
+
+        var built = await projection.BuildAsync(scoped);
+        var s = built.Summary;
+
+        return new DashboardV2ReceivingSectionDto
+        {
+            Shared = isReceiving ? s : null,
+            Managerial = (!isReceiving && canSeeManagerial) ? s : null,
+        };
+    }
 
     // ── B3: Finance shared queue (operational counts; reconciles with /api/v1/finance/obligations) ──
     /// <summary>
