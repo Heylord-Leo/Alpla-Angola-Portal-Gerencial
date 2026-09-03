@@ -51,7 +51,12 @@ const LoginPage: React.FC = () => {
         inputWrapper: { position: 'relative' as const },
         iconLeft: { position: 'absolute' as const, left: '16px', top: '13px', color: 'var(--color-primary)', opacity: 0.5 },
         iconRight: { position: 'absolute' as const, right: '16px', top: '13px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' },
-        input: { width: '100%', padding: '12px 16px 12px 48px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', fontWeight: 500, transition: 'all 0.2s', outline: 'none', backgroundColor: '#fcfcfc' },
+        // Theme-safe input surface + text: the background and the entered/masked text must always be a
+        // compatible pair. Previously the background was a hard-coded light hex with no explicit color,
+        // so in dark mode the inherited near-white --color-text-main rendered near-white text on a light
+        // field (invisible). Both now come from tokens: light → white field + dark ink; dark → dark
+        // field + light ink. Placeholders are themed globally (globals.css input::placeholder).
+        input: { width: '100%', padding: '12px 16px 12px 48px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', fontWeight: 500, transition: 'all 0.2s', outline: 'none', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-main)' },
         inputFocus: { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 4px rgba(var(--color-primary-rgb), 0.1)', backgroundColor: 'var(--color-bg-surface)' },
         errorBox: { backgroundColor: 'rgba(var(--color-status-red-rgb), 0.05)', border: '1px solid var(--color-status-red)', padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: 'var(--color-status-red)', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-md)' },
         successBox: { backgroundColor: 'rgba(34, 197, 94, 0.05)', border: '1px solid #22c55e', padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: '12px', color: '#16a34a', fontSize: '0.85rem', fontWeight: 600, borderRadius: 'var(--radius-md)' },
