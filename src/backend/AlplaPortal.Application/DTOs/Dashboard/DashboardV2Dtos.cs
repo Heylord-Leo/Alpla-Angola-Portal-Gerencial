@@ -44,6 +44,35 @@ public class BuyerSharedQueueSummaryDto
     public int UnassignedCriticalActionableRequests { get; set; }
 }
 
+// ── B3: Finance shared queue (operational / count-based; monetary totals belong to B7) ──
+
+/// <summary>
+/// Dashboard V2 — Finance section (Phase B slice B3). Two planes:
+///  - Shared     (COMPARTILHADO) : the shared Finance queue for Finance-role users.
+///  - Managerial (GERENCIAL)     : aggregate visibility for Local Manager / SysAdmin (no actions).
+/// A plane the current user is not entitled to is null (the frontend omits it). Counts only — no
+/// monetary amounts (currency-safe financial totals are B7 Financial Summary).
+/// </summary>
+public class DashboardV2FinanceSectionDto
+{
+    public FinanceSharedQueueSummaryDto? Shared { get; set; }
+    public FinanceSharedQueueSummaryDto? Managerial { get; set; }
+}
+
+/// <summary>Finance shared-queue operational counts. Primary unit = obligation (RequestPoGroup);
+/// ActionableRequests is the distinct-request secondary. No amounts (B7 owns money).</summary>
+public class FinanceSharedQueueSummaryDto
+{
+    public int ActionableGroups { get; set; }
+    public int ActionableRequests { get; set; }
+    public int NeedsSchedulingGroups { get; set; }
+    public int NeedsPaymentGroups { get; set; }
+    public int DueTodayGroups { get; set; }
+    public int OverdueGroups { get; set; }
+    /// <summary>Informational only (PAYMENT_COMPLETED / paid-waiting-receiving) — NOT Finance-actionable.</summary>
+    public int PaidWaitingReceivingGroups { get; set; }
+}
+
 /// <summary>GERENCIAL — per-buyer workload distribution plus the explicit unassigned bucket.</summary>
 public class BuyerWorkloadSummaryDto
 {

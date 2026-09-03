@@ -10,6 +10,8 @@ import {
   barPercent,
   buyerQueueHref,
   BUYER_QUEUE_ROUTE,
+  financePaymentsHref,
+  FINANCE_PAYMENTS_ROUTE,
 } from './dashboardV2View';
 import type { BuyerWorkloadRowDto, BuyerPersonalSummaryDto, BuyerSharedQueueSummaryDto } from '../../types/dashboardV2';
 
@@ -78,6 +80,16 @@ describe('dashboardV2View', () => {
     expect(buyerQueueHref({ ownership: 'me' })).toBe('/buyer/items?ownership=me');
     expect(buyerQueueHref()).toBe('/buyer/items');
     expect(buyerQueueHref({ buyerId: 'x' })).not.toContain('/buyer/queue');
+  });
+
+  it('financePaymentsHref maps each card to an EXISTING /finance/payments server filter', () => {
+    expect(FINANCE_PAYMENTS_ROUTE).toBe('/finance/payments');
+    expect(financePaymentsHref('actionable')).toBe('/finance/payments?actionableOnly=true');
+    expect(financePaymentsHref('needsScheduling')).toBe('/finance/payments?actionClass=NEEDS_SCHEDULING');
+    expect(financePaymentsHref('needsPayment')).toBe('/finance/payments?actionClass=NEEDS_PAYMENT');
+    expect(financePaymentsHref('dueToday')).toBe('/finance/payments?dueTodayOnly=true');
+    expect(financePaymentsHref('overdue')).toBe('/finance/payments?overdueOnly=true');
+    expect(financePaymentsHref('paidWaitingReceiving')).toBe('/finance/payments?actionClass=PAID_WAITING_RECEIVING');
   });
 
   it('barPercent scales within a column; zero => 0 (no bar); empty column => 0', () => {

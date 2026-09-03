@@ -7,7 +7,7 @@ import {
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
 import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
-import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams } from '../types/dashboardV2';
+import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
@@ -2522,6 +2522,13 @@ export const api = {
             const qs = params.toString();
             const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/buyer${qs ? `?${qs}` : ''}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar a carga de Compras.');
+            return response.json();
+        },
+        // Dashboard V2 Finance section. Server returns only the entitled plane (shared/managerial);
+        // null planes are simply not rendered. Counts reconcile with /finance/obligations.
+        getFinance: async (): Promise<DashboardV2FinanceSectionDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/finance`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a fila de Finanças.');
             return response.json();
         },
     },

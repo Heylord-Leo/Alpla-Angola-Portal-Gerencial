@@ -7,6 +7,7 @@ using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.Finance;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Services.Finance;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Events;
@@ -804,113 +805,10 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var today = DateTime.UtcNow.Date;
 
-        var financeStatuses = new[]
-        {
-            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent,
-            RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted,
-            RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid,
-            RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup,
-            RequestConstants.Statuses.Completed, RequestConstants.Statuses.PoPartiallyUploaded
-        };
-        var financeGroupStatuses = new[]
-        {
-            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.AdvancePaymentRequired,
-            RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentCompleted,
-            RequestConstants.Statuses.WaitingSupplierDelivery, RequestConstants.Statuses.PaymentRequestSent,
-            RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted,
-            RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.Completed
-        };
-
-        var query = scopedQuery.Where(r =>
-            (financeStatuses.Contains(r.Status!.Code)
-                && r.Attachments.Any(a => !a.IsDeleted && a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
-            || (r.RequestType!.Code == RequestConstants.Types.Quotation
-                && r.PoGroups.Any(g => financeGroupStatuses.Contains(g.Status))));
-
-        // Organizational filters (server-side, before pagination). These scope BOTH the list and the
-        // summary cards — the cards reflect the current org/search scope; action-card selection only
-        // filters the list further.
-        if (plantId.HasValue) query = query.Where(r => r.PlantId == plantId.Value);
-        if (departmentId.HasValue) query = query.Where(r => r.DepartmentId == departmentId.Value);
-        if (companyId.HasValue) query = query.Where(r => r.CompanyId == companyId.Value);
-
-        var loaded = await query
-            .Include(r => r.Status).Include(r => r.RequestType).Include(r => r.Supplier)
-            .Include(r => r.Requester).Include(r => r.Plant).Include(r => r.Department)
-            .Include(r => r.Quotations).Include(r => r.Currency)
-            .Include(r => r.PoGroups).ThenInclude(g => g.Payments)
-            .Include(r => r.PoGroups).ThenInclude(g => g.Supplier)
-            .AsSplitQuery()
-            .ToListAsync();
-
-        // Build one obligation per non-cancelled group. Each group is judged in isolation.
-        var allObligations = new List<(FinanceObligationDto Dto, Guid RequestId)>();
-        var containersById = new Dictionary<Guid, FinanceObligationContainerDto>();
-
-        foreach (var r in loaded)
-        {
-            var activeGroups = r.PoGroups.Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled).ToList();
-            if (activeGroups.Count == 0) continue;
-
-            var reqInput = new FinanceObligationProjectionBuilder.RequestInput(
-                r.Id, r.RequestNumber ?? string.Empty, r.RequestType!.Code, r.Title,
-                r.Department?.Name, r.Plant?.Name);
-
-            var container = new FinanceObligationContainerDto
-            {
-                RequestId = r.Id,
-                RequestNumber = r.RequestNumber ?? string.Empty,
-                RequestTypeCode = r.RequestType.Code,
-                Title = r.Title,
-                Department = r.Department?.Name,
-                Plant = r.Plant?.Name,
-                CreatedAtUtc = r.CreatedAtUtc,
-                SupplierCount = activeGroups.Select(g => g.SupplierId ?? (int?)null).Where(x => x.HasValue).Distinct().Count()
-            };
-
-            foreach (var g in activeGroups)
-            {
-                var supplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
-                    g.SupplierNameSnapshot, r.SelectedQuotationId.HasValue,
-                    r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.SupplierNameSnapshot : null,
-                    r.Supplier?.Name);
-                var currency = FinanceGroupDisplayResolver.ResolveCurrencyCode(
-                    g.CurrencyCode, r.SelectedQuotationId.HasValue,
-                    r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
-                    r.Currency?.Code);
-
-                var groupInput = new FinanceObligationProjectionBuilder.GroupInput(
-                    g.Id, g.SupplierId, supplierName, g.SupplierNifSnapshot, g.Supplier?.TaxId, g.Status,
-                    g.PurchaseOrderNumber, currency, g.TotalAmount,
-                    _eligibility.EvaluateGroupActions(r.RequestType.Code, r.Status!.Code, g.Status),
-                    g.Payments.Select(p => new FinanceObligationProjectionBuilder.PaymentInput(
-                        p.Id, p.PaymentType, p.PaymentStatus, p.PlannedAmount, p.ActualPaidAmount,
-                        p.ScheduledDateUtc, p.PaidDateUtc, p.PaymentProofAttachmentId.HasValue, p.CurrencyCode)).ToList());
-
-                var o = FinanceObligationProjectionBuilder.Build(reqInput, groupInput, today);
-                var dto = new FinanceObligationDto
-                {
-                    RequestId = o.RequestId, RequestNumber = o.RequestNumber, RequestTypeCode = o.RequestTypeCode,
-                    RequestTitle = o.RequestTitle, Department = o.Department, Plant = o.Plant,
-                    RequestPoGroupId = o.RequestPoGroupId, SupplierId = o.SupplierId, SupplierName = o.SupplierName,
-                    SupplierNif = o.SupplierNif, SupplierTaxId = o.SupplierTaxId, GroupStatusCode = o.GroupStatusCode,
-                    GroupStatusLabel = o.GroupStatusLabel, OperationalStateLabel = o.OperationalStateLabel,
-                    PurchaseOrderNumber = o.PurchaseOrderNumber, CurrencyCode = o.CurrencyCode, GroupAmount = o.GroupAmount,
-                    PaymentId = o.PaymentId, PaymentType = o.PaymentType, ScheduledDateUtc = o.ScheduledDateUtc,
-                    PlannedAmount = o.PlannedAmount, ActualPaidAmount = o.ActualPaidAmount, PaidDateUtc = o.PaidDateUtc,
-                    HasPaymentProof = o.HasPaymentProof, FinanceActions = o.FinanceActions.ToList(),
-                    ActionClass = o.ActionClass, ActionClassLabel = o.ActionClassLabel, NextActionLabel = o.NextActionLabel,
-                    ResponsibleRole = o.ResponsibleRole, DueDate = o.DueDate, IsOverdue = o.IsOverdue,
-                    OverdueDays = o.OverdueDays, IsDueToday = o.IsDueToday, ObligationAmount = o.ObligationAmount
-                };
-                container.Obligations.Add(dto);
-                allObligations.Add((dto, r.Id));
-            }
-
-            container.TotalsByCurrency = SumByCurrency(container.Obligations.Select(x => (x.CurrencyCode, x.ObligationAmount)));
-            container.ExpandByDefault = container.Obligations.Count > 1;
-            containersById[r.Id] = container;
-        }
+        // Build obligations + containers via the shared projection (same computation the Dashboard uses).
+        var built = await new FinanceObligationSummaryProjection(_eligibility)
+            .BuildAsync(scopedQuery, plantId, departmentId, companyId, today);
+        var containersById = built.Containers;
 
         // ── Search / currency narrowing (applies to BOTH summary and list) ──
         // Matches request number, supplier name, P.O., title, AND the supplier NIF — both the group's
@@ -933,10 +831,10 @@ public class FinanceController : BaseController
         bool MatchesCurrency(FinanceObligationDto o) =>
             string.IsNullOrWhiteSpace(currencyCode) || string.Equals(o.CurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase);
 
-        var scoped = allObligations.Where(x => MatchesSearch(x.Dto) && MatchesCurrency(x.Dto)).Select(x => x.Dto).ToList();
+        var scoped = built.Obligations.Where(o => MatchesSearch(o) && MatchesCurrency(o)).ToList();
 
         // ── Summary: over the search/currency-scoped set, ALL classes (cards are the filter entry points) ──
-        var summary = BuildObligationSummary(scoped);
+        var summary = FinanceObligationSummaryProjection.BuildSummary(scoped);
 
         // ── List filters (actionClass / overdue / dueToday / actionableOnly) ──
         bool MatchesListFilter(FinanceObligationDto o)
@@ -960,7 +858,7 @@ public class FinanceController : BaseController
                 var kept = c.Obligations.Where(o => MatchesSearch(o) && MatchesCurrency(o))
                     .OrderBy(ObligationUrgencyRank).ThenBy(o => o.DueDate ?? DateTime.MaxValue).ToList();
                 c.Obligations = kept;
-                c.TotalsByCurrency = SumByCurrency(kept.Select(x => (x.CurrencyCode, x.ObligationAmount)));
+                c.TotalsByCurrency = FinanceObligationSummaryProjection.SumByCurrency(kept.Select(x => (x.CurrencyCode, x.ObligationAmount)));
                 return c;
             })
             .ToList();
@@ -1041,52 +939,6 @@ public class FinanceController : BaseController
             FinanceActionClasses.PaidWaitingReceiving => 6,
             FinanceActionClasses.Completed => 7,
             _ => 8
-        };
-    }
-
-    private static List<FinanceCurrencyAmountDto> SumByCurrency(IEnumerable<(string? Currency, decimal Amount)> rows) =>
-        rows.GroupBy(x => string.IsNullOrWhiteSpace(x.Currency) ? "—" : x.Currency!)
-            .Select(g => new FinanceCurrencyAmountDto { CurrencyCode = g.Key, Amount = g.Sum(x => x.Amount) })
-            .OrderByDescending(c => c.Amount).ToList();
-
-    private static FinanceObligationCardDto Card(string actionClass, IEnumerable<FinanceObligationDto> obligations, Func<FinanceObligationDto, bool> predicate)
-    {
-        var matched = obligations.Where(predicate).ToList();
-        return new FinanceObligationCardDto
-        {
-            ActionClass = actionClass,
-            Label = FinanceActionClasses.Label(actionClass),
-            Count = matched.Count,
-            AmountsByCurrency = SumByCurrency(matched.Select(o => (o.CurrencyCode, o.ObligationAmount)))
-        };
-    }
-
-    private static FinanceObligationSummaryDto BuildObligationSummary(List<FinanceObligationDto> obligations)
-    {
-        var actionable = obligations.Where(o =>
-            o.ActionClass == FinanceActionClasses.NeedsScheduling
-            || o.ActionClass == FinanceActionClasses.NeedsPayment
-            || o.ActionClass == FinanceActionClasses.FiscalDocumentPending).ToList();
-
-        return new FinanceObligationSummaryDto
-        {
-            NeedsScheduling = Card(FinanceActionClasses.NeedsScheduling, obligations, o => o.ActionClass == FinanceActionClasses.NeedsScheduling),
-            NeedsPayment = Card(FinanceActionClasses.NeedsPayment, obligations, o => o.ActionClass == FinanceActionClasses.NeedsPayment),
-            DueToday = new FinanceObligationCardDto
-            {
-                ActionClass = "DUE_TODAY", Label = "Vence Hoje",
-                Count = obligations.Count(o => o.IsDueToday),
-                AmountsByCurrency = SumByCurrency(obligations.Where(o => o.IsDueToday).Select(o => (o.CurrencyCode, o.ObligationAmount)))
-            },
-            Overdue = new FinanceObligationCardDto
-            {
-                ActionClass = "OVERDUE", Label = "Atrasados",
-                Count = obligations.Count(o => o.IsOverdue),
-                AmountsByCurrency = SumByCurrency(obligations.Where(o => o.IsOverdue).Select(o => (o.CurrencyCode, o.ObligationAmount)))
-            },
-            PaidWaitingReceiving = Card(FinanceActionClasses.PaidWaitingReceiving, obligations, o => o.ActionClass == FinanceActionClasses.PaidWaitingReceiving),
-            ActionableTotal = actionable.Count,
-            ActionableAmountsByCurrency = SumByCurrency(actionable.Select(o => (o.CurrencyCode, o.ObligationAmount)))
         };
     }
 

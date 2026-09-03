@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.237.0
+v2.238.0
+
+## [v2.238.0] - 2026-09-02
+
+### Dashboard V2 — B3 (Finance Shared Queue)
+
+Adds the Finance shared queue to Dashboard V2. A Finance-role user sees an operational
+"Fila compartilhada — Finanças" (Compartilhado) with group-level actionable counts and drill-downs
+into the existing Finance screen (`/finance/payments`); a Local Manager / SysAdmin without the Finance
+role sees a view-only "Visão gerencial — Finanças" (Gerencial) with the same counts and no navigation.
+All counts come from a reusable canonical projection (`FinanceObligationSummaryProjection`, extracted
+from `FinanceController` with behavior preserved) over `FinancePaymentEligibilityService`, so the
+dashboard reconciles exactly with `/api/v1/finance/obligations` — no eligibility logic is duplicated
+and the frontend recomputes nothing. Finance urgency uses `RequestPayments.ScheduledDateUtc`;
+`WAITING_PO` is excluded, `PAYMENT_SCHEDULED` stays actionable, `PAYMENT_COMPLETED` is informational.
+No DB migration; no Finance workflow/permission change; no monetary totals (those are B7); the legacy
+`cockpit-summary` dashboard remains in place.
 
 ## [v2.237.0] - 2026-09-02
 

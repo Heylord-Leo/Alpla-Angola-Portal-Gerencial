@@ -7,6 +7,7 @@ using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Services.Finance;
 using Microsoft.EntityFrameworkCore;
 using Proj = AlplaPortal.Domain.Services.BuyerQueueProjectionBuilder;
 
@@ -27,6 +28,49 @@ public sealed class DashboardV2QueryService
     private readonly ApplicationDbContext _context;
 
     public DashboardV2QueryService(ApplicationDbContext context) => _context = context;
+
+    // ── B3: Finance shared queue (operational counts; reconciles with /api/v1/finance/obligations) ──
+    /// <summary>
+    /// Build the Dashboard Finance section from the SAME canonical projection the Finance endpoint uses
+    /// (<see cref="FinanceObligationSummaryProjection"/> → <c>FinancePaymentEligibilityService</c>), so the
+    /// dashboard counts reconcile exactly with the obligations summary. Counts only — no monetary amounts
+    /// (B7). Shared plane for Finance-role users; Managerial plane (identical counts, view-only) for a
+    /// Local Manager / SysAdmin who is NOT a Finance user, avoiding a duplicate payload for Finance+manager.
+    /// </summary>
+    public async Task<DashboardV2FinanceSectionDto> BuildFinanceSectionAsync(
+        IQueryable<AlplaPortal.Domain.Entities.Request> scoped,
+        FinanceObligationSummaryProjection projection,
+        bool isFinance, bool canSeeManagerial, DateTime today)
+    {
+        if (!isFinance && !canSeeManagerial) return new DashboardV2FinanceSectionDto();
+
+        var built = await projection.BuildAsync(scoped, null, null, null, today);
+        var summary = FinanceObligationSummaryProjection.BuildSummary(built.Obligations);
+
+        // Distinct requests among the SAME actionable obligation population BuildSummary counts.
+        var actionableRequests = built.Obligations
+            .Where(o => FinanceActionClasses.IsFinanceActionable(o.ActionClass))
+            .Select(o => o.RequestId)
+            .Distinct()
+            .Count();
+
+        var s = new FinanceSharedQueueSummaryDto
+        {
+            ActionableGroups = summary.ActionableTotal,
+            ActionableRequests = actionableRequests,
+            NeedsSchedulingGroups = summary.NeedsScheduling.Count,
+            NeedsPaymentGroups = summary.NeedsPayment.Count,
+            DueTodayGroups = summary.DueToday.Count,
+            OverdueGroups = summary.Overdue.Count,
+            PaidWaitingReceivingGroups = summary.PaidWaitingReceiving.Count,
+        };
+
+        return new DashboardV2FinanceSectionDto
+        {
+            Shared = isFinance ? s : null,
+            Managerial = (!isFinance && canSeeManagerial) ? s : null,
+        };
+    }
 
     // Mirrors BuyerQueueController's default bounding so the Dashboard sees the identical
     // "buyer-active" population (reconciliation). Status list only — never workflow logic.
