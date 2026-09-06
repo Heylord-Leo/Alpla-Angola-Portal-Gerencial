@@ -1,48 +1,29 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../../lib/api';
-import { CockpitSummaryDto } from '../../types';
+import { useState } from 'react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { MyWorkQueue } from './components/MyWorkQueue';
 import { QuickActions } from './components/QuickActions';
-import { AlertList } from './components/AlertList';
-import { BottleneckTable } from './components/BottleneckTable';
-import { FinancialSummary } from './components/FinancialSummary';
+import { DashboardV2StageAgingSection } from './components/DashboardV2StageAgingSection';
+import { DashboardV2FinancialSection } from './components/DashboardV2FinancialSection';
 import { WorkflowInteractive } from './components/WorkflowInteractive';
 import { WorkflowStageDetails } from './components/WorkflowStageDetails';
 import { WORKFLOW_STAGES } from './components/workflowData';
+import { DashboardV2PersonalSection } from './components/DashboardV2PersonalSection';
+import { DashboardV2PipelineSection } from './components/DashboardV2PipelineSection';
+import { SectionInfo } from '../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from './dashboardSectionHelp';
 import { DashboardV2BuyerSection } from './components/DashboardV2BuyerSection';
 import { DashboardV2FinanceSection } from './components/DashboardV2FinanceSection';
 import { DashboardV2ReceivingSection } from './components/DashboardV2ReceivingSection';
+import { DashboardV2AlertsSection } from './components/DashboardV2AlertsSection';
 
 export function Dashboard() {
-    const navigate = useNavigate();
-    const [cockpit, setCockpit] = useState<CockpitSummaryDto | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    // B9.6: the legacy cockpit-summary fetch and its page-level loading/error/null gate are removed. Every
+    // Dashboard V2 section self-fetches (GET /api/dashboard/v2/*) and owns its own loading/error state via
+    // useSectionData, so the page renders its sections directly — no global gate, no legacy sweep.
     const [selectedStageId, setSelectedStageId] = useState('rascunho');
     const [workflowOpen, setWorkflowOpen] = useState(false);
 
-    useEffect(() => {
-        const fetchCockpit = async () => {
-            try {
-                setIsLoading(true);
-                const data = await api.requests.getCockpitSummary();
-                setCockpit(data);
-                setError(null);
-            } catch (err) {
-                console.error('Error fetching cockpit summary:', err);
-                setError('Não foi possível carregar os dados operacionais.');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchCockpit();
-    }, []);
-
-    const selectedStage = selectedStageId === 'reajuste' 
+    const selectedStage = selectedStageId === 'reajuste'
         ? {
             id: 'reajuste',
             label: 'Conceito de Reajuste',
@@ -60,85 +41,6 @@ export function Dashboard() {
         } as any
         : WORKFLOW_STAGES.find(s => s.id === selectedStageId) || WORKFLOW_STAGES[0];
 
-    // Loading state
-    if (isLoading) {
-        return (
-            <PageContainer>
-                <PageHeader 
-                    title="Cockpit Gerencial"
-                    subtitle="Prioridades, pendências e indicadores operacionais do processo de compras"
-                />
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: '16px'
-                }}>
-                    {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} style={{
-                            height: '120px',
-                            backgroundColor: 'var(--color-bg-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '12px',
-                            animation: 'pulse 1.5s ease-in-out infinite'
-                        }} />
-                    ))}
-                </div>
-                <style>{`
-                    @keyframes pulse {
-                        0%, 100% { opacity: 1; }
-                        50% { opacity: 0.5; }
-                    }
-                `}</style>
-            </PageContainer>
-        );
-    }
-
-    // Error state
-    if (error && !cockpit) {
-        return (
-            <PageContainer>
-                <PageHeader 
-                    title="Cockpit Gerencial"
-                    subtitle="Prioridades, pendências e indicadores operacionais do processo de compras"
-                />
-                <div style={{
-                    backgroundColor: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    color: '#dc2626',
-                    fontWeight: 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px'
-                }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    {error}
-                </div>
-            </PageContainer>
-        );
-    }
-
-    if (!cockpit) return null;
-
-    // Pipeline cards config
-    const pipelineCards = [
-        { title: 'Activos', value: cockpit.totalActiveRequests, color: '#3b82f6', onClick: () => navigate('/requests') },
-        { title: 'Ag. Cotação', value: cockpit.waitingQuotation, color: '#6366f1', onClick: () => navigate('/buyer/items?requestStatus=WAITING_QUOTATION') },
-        { title: 'Aprov. Área', value: cockpit.waitingAreaApproval, color: '#8b5cf6', onClick: () => navigate('/requests?statusCodes=WAITING_AREA_APPROVAL') },
-        { title: 'Aprov. Final', value: cockpit.waitingFinalApproval, color: '#a855f7', onClick: () => navigate('/requests?statusCodes=WAITING_FINAL_APPROVAL,WAITING_COST_CENTER') },
-        { title: 'Reajuste', value: cockpit.inAdjustment, color: '#f97316', onClick: () => navigate('/requests?statusCodes=AREA_ADJUSTMENT,FINAL_ADJUSTMENT') },
-        { title: 'Ag. P.O', value: cockpit.awaitingPo, color: '#0ea5e9', onClick: () => navigate('/requests?statusCodes=APPROVED,QUOTATION_COMPLETED,PO_REQUESTED') },
-        { title: 'Ag. Pagamento', value: cockpit.awaitingPayment, color: '#f59e0b', onClick: () => navigate('/finance/payments') },
-        { title: 'Pago', value: cockpit.paymentCompleted, color: '#10b981', onClick: () => navigate('/requests?statusCodes=PAYMENT_COMPLETED') },
-        { title: 'Recebimento', value: cockpit.waitingReceipt, color: '#14b8a6', onClick: () => navigate('/receiving/workspace') },
-        { title: 'Concluídos', value: cockpit.completed, color: '#6b7280', onClick: () => navigate('/requests?statusCodes=COMPLETED') },
-    ];
-
     return (
         <PageContainer>
             {/* ── Header ── */}
@@ -148,6 +50,10 @@ export function Dashboard() {
             />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                {/* ── Dashboard V2 (Phase B slice B5): canonical personal actions (Pessoal). Replaces the
+                       legacy role/status personal union — see DashboardV2PersonalSection. ── */}
+                <DashboardV2PersonalSection />
+
                 {/* ── Dashboard V2 (Phase B slice B1+B2): canonical Buyer section (Pessoal / Compartilhado / Gerencial) ── */}
                 <DashboardV2BuyerSection />
 
@@ -157,98 +63,45 @@ export function Dashboard() {
                 {/* ── Dashboard V2 (Phase B slice B4): Receiving shared queue (Compartilhado / Gerencial) ── */}
                 <DashboardV2ReceivingSection />
 
-                {/* ── Section 1: Minha Fila de Trabalho (legacy cockpit — unchanged during V2 rollout) ── */}
-                <MyWorkQueue data={cockpit} />
+                {/* ── Dashboard V2 (Phase B slice B8): canonical Alerts ("Atenção Necessária"). Placed as an
+                       attention band AFTER the personal/shared work queues and BEFORE the managerial
+                       analytics — higher-signal than analytics, but it does not replace the work queues.
+                       Entitlement-gated on the server (summary null → renders nothing). Replaces the stale
+                       legacy AlertList that B5 hid. ── */}
+                <DashboardV2AlertsSection />
 
-                {/* ── Section 2: Pipeline KPI Cards ── */}
-                <section>
-                    <h2 style={{
-                        fontSize: '1.1rem',
-                        fontWeight: 700,
-                        color: 'var(--color-text)',
-                        margin: '0 0 16px 0'
-                    }}>
-                        Visão do Pipeline
-                    </h2>
-                    <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
-                        gap: '12px'
-                    }}>
-                        {pipelineCards.map(card => (
-                            <div
-                                key={card.title}
-                                onClick={card.onClick}
-                                style={{
-                                    backgroundColor: 'var(--color-bg-surface)',
-                                    border: '1px solid var(--color-border)',
-                                    borderRadius: '10px',
-                                    padding: '14px 16px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s',
-                                    position: 'relative',
-                                    overflow: 'hidden'
-                                }}
-                                onMouseOver={(e) => {
-                                    e.currentTarget.style.transform = 'translateY(-1px)';
-                                    e.currentTarget.style.boxShadow = `0 4px 12px ${card.color}20`;
-                                    e.currentTarget.style.borderColor = `${card.color}40`;
-                                }}
-                                onMouseOut={(e) => {
-                                    e.currentTarget.style.transform = 'none';
-                                    e.currentTarget.style.boxShadow = 'none';
-                                    e.currentTarget.style.borderColor = 'var(--color-border)';
-                                }}
-                            >
-                                {/* Top color accent */}
-                                <div style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    height: '2px',
-                                    backgroundColor: card.color
-                                }} />
-                                <div style={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600,
-                                    color: card.color,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.03em',
-                                    marginBottom: '6px'
-                                }}>
-                                    {card.title}
-                                </div>
-                                <div style={{
-                                    fontSize: '1.75rem',
-                                    fontWeight: 700,
-                                    color: 'var(--color-text)',
-                                    lineHeight: 1,
-                                    fontVariantNumeric: 'tabular-nums'
-                                }}>
-                                    {card.value}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                {/* ── Section 3: Quick Actions ── */}
-                <QuickActions />
-
-                {/* ── Section 4: Atenção Requerida ── */}
-                <AlertList alerts={cockpit.alerts} />
-
-                {/* ── Section 5 + 6: Bottlenecks & Financial (side by side on large screens) ── */}
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                    gap: '32px',
-                    alignItems: 'start'
-                }}>
-                    <BottleneckTable bottlenecks={cockpit.bottlenecks} />
-                    <FinancialSummary data={cockpit.financialByStatus} />
+                {/* ── VISÃO GERENCIAL: retained legacy analytical sections. These are NOT personal — they
+                       are plant/department-wide, request-level summaries kept temporarily until their
+                       dedicated V2 slices (pipeline=B6, financial=B7, alerts=B8, stage-aging=B9). ── */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                    <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-main)', margin: 0 }}>Visão Gerencial</h2>
+                    <span style={{
+                        fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                        color: '#3b5069', backgroundColor: '#3b50691A', borderRadius: 999, padding: '2px 9px'
+                    }}>Gerencial</span>
+                    <SectionInfo {...DASHBOARD_SECTION_HELP.gerencial} />
                 </div>
+
+                {/* ── Canonical Operational Pipeline (B6.2). Replaces the legacy scalar Request.Status
+                       histogram; self-fetches GET /api/dashboard/v2/pipeline. ── */}
+                <DashboardV2PipelineSection />
+
+                {/* ── "Atenção Requerida" (legacy AlertList) is intentionally HIDDEN in B5: its global
+                       OVERDUE/NEAR alerts fire from NeedByDate on any non-terminal request (incl. already
+                       paid / in-receiving), so ~64% were stale and would read as "minha ação". A correct,
+                       open-obligation-gated, de-duplicated alert engine is B8. Backend cockpit-summary
+                       (incl. its `alerts`) is left untouched; we simply do not render it here. ── */}
+
+                {/* ── Canonical Stage Aging / Gargalos (B9.5). Replaced the legacy BottleneckTable whose
+                       "Idade" was request-creation age; self-fetches GET /api/dashboard/v2/stage-aging and
+                       shows true time-in-current-stage. The legacy cockpit-summary dependency was removed
+                       entirely in B9.6. ── */}
+                <DashboardV2StageAgingSection />
+
+                {/* ── Canonical currency-safe Financial Summary (B7.2). Replaces the legacy mixed-currency
+                       "Resumo Financeiro"; self-fetches GET /api/dashboard/v2/financial and is entitlement-
+                       gated on the server (hidden when currentExposure is null). ── */}
+                <DashboardV2FinancialSection />
 
                 {/* ── Section 7: Como funciona o processo (collapsible) ── */}
                 <section>
@@ -290,7 +143,7 @@ export function Dashboard() {
                             <span style={{
                                 fontSize: '0.95rem',
                                 fontWeight: 700,
-                                color: 'var(--color-text)'
+                                color: 'var(--color-text-main)'
                             }}>
                                 Como funciona o processo
                             </span>
@@ -311,6 +164,9 @@ export function Dashboard() {
                         </div>
                     </details>
                 </section>
+
+                {/* ── Quick Actions (utility shortcuts; permission-gated inside the component) ── */}
+                <QuickActions />
             </div>
         </PageContainer>
     );

@@ -1030,45 +1030,10 @@ export interface DashboardSummaryDto {
     filteredTotalTrendLabel: string | null;
 }
 
-// ── Cockpit Summary (Dashboard Operational Cockpit) ──
-
-export interface CockpitSummaryDto {
-    // My Work Queue
-    myPendingActions: number;
-    myUrgentItems: number;
-    myAdjustmentItems: number;
-    myOverdueItems: number;
-    myNearDeadlineItems: number;
-
-    // Pipeline counters
-    totalActiveRequests: number;
-    draft: number;
-    waitingQuotation: number;
-    waitingAreaApproval: number;
-    waitingFinalApproval: number;
-    inAdjustment: number;
-    awaitingPo: number;
-    awaitingPayment: number;
-    paymentCompleted: number;
-    waitingReceipt: number;
-    completed: number;
-
-    // Bottlenecks
-    bottlenecks: StageBottleneckDto[];
-
-    // Financial
-    financialByStatus: FinancialByStatusDto[];
-
-    // Alerts
-    alerts: AttentionAlertDto[];
-}
-
-export interface StageBottleneckDto {
-    stageCode: string;
-    stageName: string;
-    count: number;
-    oldestCreatedAtUtc: string | null;
-}
+// ── Legacy cockpit-summary types (CockpitSummaryDto + StageBottleneckDto) were removed in B9.6 when the
+// last Dashboard consumer of GET /api/v1/requests/cockpit-summary was retired. FinancialByStatusDto and
+// AttentionAlertDto are retained below only because two orphaned legacy components (FinancialSummary.tsx,
+// AlertList.tsx) still reference them — separate dead-code debt, not part of the cockpit dependency. ──
 
 export interface FinancialByStatusDto {
     groupLabel: string;

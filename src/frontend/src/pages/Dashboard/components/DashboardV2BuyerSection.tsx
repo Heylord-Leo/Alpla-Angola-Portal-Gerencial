@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { ModernTooltip } from '../../../components/ui/ModernTooltip';
-import type { BuyerWorkloadRowDto, DashboardV2BuyerSectionDto } from '../../../types/dashboardV2';
+import { SectionInfo } from '../../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from '../dashboardSectionHelp';
+import { useSectionData } from '../useSectionData';
+import { DashboardSectionSkeleton } from './DashboardSectionSkeleton';
+import { DashboardSectionError } from './DashboardSectionError';
+import type { BuyerWorkloadRowDto } from '../../../types/dashboardV2';
 import {
   hasPersonalWork,
   hasSharedWork,
@@ -91,21 +95,21 @@ const card: React.CSSProperties = {
 
 export function DashboardV2BuyerSection() {
   const navigate = useNavigate();
-  const [data, setData] = useState<DashboardV2BuyerSectionDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { status, data, retry } = useSectionData((signal) => api.dashboardV2.getBuyer(undefined, signal));
 
-  useEffect(() => {
-    let alive = true;
-    api.dashboardV2.getBuyer()
-      .then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(e?.message || 'Falha ao carregar a carga de Compras.'); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  if (loading) return null;
-  if (error || !data) return null;
+  // Buyer has data-dependent planes (Pessoal/Compartilhado/Gerencial), so the loading/error shell uses a
+  // neutral "Compras" title and never renders false planes before the response is known.
+  const loadingHeader = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <h2 style={sectionTitle}>Compras</h2>
+    </div>
+  );
+  if (status === 'loading') {
+    return <div data-testid="dashboard-v2-buyer" aria-busy="true">{loadingHeader}<DashboardSectionSkeleton label="Carregando fila de Compras..." cards={4} /></div>;
+  }
+  if (status === 'error' || !data) {
+    return <div data-testid="dashboard-v2-buyer">{loadingHeader}<DashboardSectionError onRetry={retry} /></div>;
+  }
 
   const { personal, shared, workload } = data;
   const showPersonal = hasPersonalWork(personal);
@@ -121,7 +125,7 @@ export function DashboardV2BuyerSection() {
       {showPersonal && personal && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={sectionTitle}>Minha Operação — Compras</h2><Pill kind="pessoal" />
+            <h2 style={sectionTitle}>Minha Operação — Compras</h2><Pill kind="pessoal" /><SectionInfo {...DASHBOARD_SECTION_HELP.buyerPersonal} />
           </div>
           <div
             style={{ ...card, borderLeft: `3px solid ${PLANE.pessoal.color}`, display: 'flex', gap: 28, flexWrap: 'wrap' }}
@@ -142,7 +146,7 @@ export function DashboardV2BuyerSection() {
       {showShared && shared && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h2 style={sectionTitle}>Fila compartilhada de Compras</h2><Pill kind="compartilhado" />
+            <h2 style={sectionTitle}>Fila compartilhada de Compras</h2><Pill kind="compartilhado" /><SectionInfo {...DASHBOARD_SECTION_HELP.buyerShared} />
           </div>
           <div
             style={{ ...card, borderLeft: `3px solid ${PLANE.compartilhado.color}`, display: 'flex', gap: 28, flexWrap: 'wrap' }}
@@ -166,7 +170,7 @@ export function DashboardV2BuyerSection() {
         return (
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <h2 style={sectionTitle}>Carga da Equipe de Compras</h2><Pill kind="gerencial" />
+              <h2 style={sectionTitle}>Carga da Equipe de Compras</h2><Pill kind="gerencial" /><SectionInfo {...DASHBOARD_SECTION_HELP.buyerWorkload} />
             </div>
             <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 12, overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', minWidth: 620 }}>

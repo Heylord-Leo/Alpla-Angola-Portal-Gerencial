@@ -1115,3 +1115,57 @@ public class OperationInvoiceShortCloseConfiguration : IEntityTypeConfiguration<
     }
 }
 
+// ── Dashboard V2 B9.1 — canonical operational stage tracking (persistence foundation). ──
+// Both tables use polymorphic EntityId with NO foreign keys (the id may be a Request, ApprovalBatch or
+// RequestPoGroup); RequestId is a denormalized scope column with no FK either, so deleting a Request can
+// never cascade-destroy the current snapshot or the immutable audit history.
+
+public class OperationalStageStateConfiguration : IEntityTypeConfiguration<OperationalStageState>
+{
+    public void Configure(EntityTypeBuilder<OperationalStageState> builder)
+    {
+        builder.HasKey(s => s.Id);
+
+        builder.Property(s => s.EntityType).IsRequired().HasMaxLength(20);
+        builder.Property(s => s.Domain).IsRequired().HasMaxLength(20);
+        builder.Property(s => s.StageCode).IsRequired().HasMaxLength(40);
+        builder.Property(s => s.Source).HasMaxLength(40);
+
+        // Exactly one current stage per tracked entity — the authoritative snapshot invariant.
+        builder.HasIndex(s => new { s.EntityType, s.EntityId })
+               .IsUnique()
+               .HasDatabaseName("UX_OperationalStageState_Entity");
+
+        // RequestAccessScope join.
+        builder.HasIndex(s => s.RequestId)
+               .HasDatabaseName("IX_OperationalStageState_RequestId");
+
+        // Stage-aging aggregate (group by domain+stage; MIN over entry time). INCLUDE keeps it covering.
+        builder.HasIndex(s => new { s.Domain, s.StageCode })
+               .IncludeProperties(s => s.StageEnteredAtUtc)
+               .HasDatabaseName("IX_OperationalStageState_Domain_Stage");
+    }
+}
+
+public class OperationalStageTransitionConfiguration : IEntityTypeConfiguration<OperationalStageTransition>
+{
+    public void Configure(EntityTypeBuilder<OperationalStageTransition> builder)
+    {
+        builder.HasKey(t => t.Id);
+
+        builder.Property(t => t.EntityType).IsRequired().HasMaxLength(20);
+        builder.Property(t => t.Domain).IsRequired().HasMaxLength(20);
+        builder.Property(t => t.FromStageCode).HasMaxLength(40);
+        builder.Property(t => t.ToStageCode).IsRequired().HasMaxLength(40);
+        builder.Property(t => t.TransitionSource).HasMaxLength(40);
+
+        // Per-entity event stream in chronological order (duration reconstruction / audit).
+        // Intentionally NOT unique — repeated re-entry into the same stage is legitimate history.
+        builder.HasIndex(t => new { t.EntityType, t.EntityId, t.OccurredAtUtc })
+               .HasDatabaseName("IX_OperationalStageTransition_Entity_Occurred");
+
+        builder.HasIndex(t => t.RequestId)
+               .HasDatabaseName("IX_OperationalStageTransition_RequestId");
+    }
+}
+

@@ -1,9 +1,14 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { ModernTooltip } from '../../../components/ui/ModernTooltip';
-import type { DashboardV2FinanceSectionDto, FinanceSharedQueueSummaryDto } from '../../../types/dashboardV2';
+import { SectionInfo } from '../../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from '../dashboardSectionHelp';
+import { useSectionData } from '../useSectionData';
+import { DashboardSectionSkeleton } from './DashboardSectionSkeleton';
+import { DashboardSectionError } from './DashboardSectionError';
+import type { FinanceSharedQueueSummaryDto } from '../../../types/dashboardV2';
 import { financePaymentsHref, type FinanceDrillKey } from '../dashboardV2View';
 
 // Dashboard V2 — Finance section (slice B3.2). Operational counts only (no money — that is B7).
@@ -73,19 +78,22 @@ function isEmpty(s: FinanceSharedQueueSummaryDto): boolean {
 
 export function DashboardV2FinanceSection() {
   const navigate = useNavigate();
-  const [data, setData] = useState<DashboardV2FinanceSectionDto | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { status, data, retry } = useSectionData((signal) => api.dashboardV2.getFinance(signal));
 
-  useEffect(() => {
-    let alive = true;
-    api.dashboardV2.getFinance()
-      .then((d) => { if (alive) setData(d); })
-      .catch(() => { if (alive) setData(null); }) // isolated: never breaks Buyer/legacy dashboard
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  if (loading || !data) return null;
+  // The plane label is data-dependent, so the loading/error shell uses a neutral title (no false chip).
+  const loadingHeader = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <h2 style={sectionTitle}>Finanças</h2>
+      <SectionInfo {...DASHBOARD_SECTION_HELP.finance} />
+    </div>
+  );
+  if (status === 'loading') {
+    return <section data-testid="dashboard-v2-finance" aria-busy="true">{loadingHeader}<DashboardSectionSkeleton label="Carregando fila financeira..." cards={5} /></section>;
+  }
+  if (status === 'error') {
+    return <section data-testid="dashboard-v2-finance">{loadingHeader}<DashboardSectionError onRetry={retry} /></section>;
+  }
+  if (!data) return null;
 
   // Entitlement comes from the server: prefer the operational Shared plane when present.
   const operational = !!data.shared;
@@ -104,6 +112,7 @@ export function DashboardV2FinanceSection() {
         <h2 style={sectionTitle}>{operational ? 'Fila compartilhada — Finanças' : 'Visão gerencial — Finanças'}</h2>
         <Pill kind={operational ? 'compartilhado' : 'gerencial'} />
         {!operational && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Visão gerencial</span>}
+        <SectionInfo {...DASHBOARD_SECTION_HELP.finance} />
       </div>
 
       {showEmpty && summary.paidWaitingReceivingGroups === 0 ? (

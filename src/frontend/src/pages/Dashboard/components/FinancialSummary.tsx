@@ -1,6 +1,8 @@
 import React from 'react';
 import { FinancialByStatusDto } from '../../../types';
 import { formatCurrencyAO } from '../../../lib/utils';
+import { SectionInfo } from '../../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from '../dashboardSectionHelp';
 
 interface FinancialSummaryProps {
     data: FinancialByStatusDto[];
@@ -71,14 +73,17 @@ export function FinancialSummary({ data }: FinancialSummaryProps) {
 
     return (
         <section>
-            <h2 style={{
-                fontSize: '1.1rem',
-                fontWeight: 700,
-                color: 'var(--color-text)',
-                margin: '0 0 16px 0'
-            }}>
-                Resumo Financeiro
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 16px 0' }}>
+                <h2 style={{
+                    fontSize: '1.1rem',
+                    fontWeight: 700,
+                    color: 'var(--color-text-main)',
+                    margin: 0
+                }}>
+                    Resumo Financeiro
+                </h2>
+                <SectionInfo {...DASHBOARD_SECTION_HELP.financialSummary} />
+            </div>
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',

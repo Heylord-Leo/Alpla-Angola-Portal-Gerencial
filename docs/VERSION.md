@@ -2,7 +2,37 @@
 
 ## Current Version
 
-v2.239.0
+v2.240.0
+
+## [v2.240.0] - 2026-09-06
+
+### Dashboard V2 — Canonicalization (B5–B9)
+
+Replaces the legacy operational cockpit with canonical, self-fetching Dashboard V2 sections and adds an
+additive operational-stage-tracking foundation:
+
+- **Personal & shared work (B5):** canonical "Minha Operação" (personal actions the signed-in user owns),
+  alongside the already-integrated Buyer/Finance/Receiving shared queues, with scoped personal vs
+  managerial semantics.
+- **Operational Pipeline (B6):** entity-aware canonical pipeline (REQUEST / APPROVAL_BATCH / PO_GROUP),
+  overlap-allowed, grouped by operational stage — no scalar-status flattening.
+- **Financial Summary (B7):** authoritative current exposure by currency (never summed across currencies,
+  explicit UNKNOWN bucket) plus paid history; managerial-gated.
+- **Attention Alerts (B8):** canonical Buyer need-by and Finance scheduled-date alerts over entities with an
+  open action; compact preview + full-list drawer; PESSOAL / COMPARTILHADO / GERENCIAL planes.
+- **Stage Aging / Gargalos (B9):** new `OperationalStageState` / `OperationalStageTransition` persistence;
+  live capture for APPROVAL_BATCH + PO_GROUP; exclusive current-stage dwell (`PAYMENT_COMPLETED` → `REC_READY`,
+  never a lingering `FIN_PAID` aging clock); Africa/Luanda calendar-day age; honest unknown historical age;
+  managerial read-only Gargalos UI; operational thresholds are guidance, not formal SLA; Buyer/REQUEST aging
+  is out of scope in this release.
+- **Performance / cleanup (B9.6):** the legacy `GET /api/v1/requests/cockpit-summary` endpoint, `BottleneckTable`
+  and `MyWorkQueue` are removed; ~22 legacy DB round-trips per Dashboard load are eliminated (per the B9.4
+  source/query audit — not a live benchmark); every V2 section loads/errors/retries independently.
+
+**Database:** one additive migration `20260905203852_AddOperationalStageTracking` (two tables + five indexes,
+no data or destructive operation). After deploying the migration, the Stage Aging backfill must be run (DEV
+already done) before the Gargalos UI shows populated data; the section shows an honest empty state until then.
+Not yet applied to TEST or PROD.
 
 ## [v2.239.0] - 2026-09-03
 

@@ -1,4 +1,4 @@
-import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, CockpitSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload, FeatureFlagsDto } from '../types';
+import { RequestDetailsDto, RequestTimelineDto, DashboardSummaryDto, DocumentExtractionSettingsDto, OcrModuleConfigDto, RequestListResponseDto, PurchasingSummaryDto, PendingApprovalsResponseDto, ApprovalIntelligenceDto, HistoricalPurchaseRecordDto, FinanceSummaryDto, FinanceListResponseDto, FinanceHistoryItemDto, PagedResult, CatalogSyncPreviewDto, SupplierSyncPreviewDto, SyncImportRequestDto, SyncImportResultDto, SyncSupplierReviewedImportRequestDto, CatalogResolveConflictRequestDto, CatalogResolveConflictResultDto, IntegrationSettingsDto, IntegrationConnectionTestResultDto, UpdateIntegrationSettingsDto, UpdatePrimaveraCompanyDto, ReplacePrimaveraCompanySecretDto, UpdateAlplaProdPlantDto, ReplaceAlplaProdPlantSecretDto, ExtraItemDecisionPayload, FeatureFlagsDto } from '../types';
 import {
     PaymentSourceDocumentDto,
     PaymentSourceDocumentsSummaryDto,
@@ -7,7 +7,7 @@ import {
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
 import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
-import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto, DashboardV2ReceivingSectionDto, ReceivingQueueResponseDto } from '../types/dashboardV2';
+import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto, DashboardV2ReceivingSectionDto, ReceivingQueueResponseDto, DashboardV2PersonalSectionDto, DashboardV2PipelineDto, DashboardV2FinancialDto, DashboardV2AlertsDto, DashboardV2StageAgingDto } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
@@ -58,6 +58,11 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     try {
         return await fetch(url, { ...options, headers });
     } catch (error: any) {
+        // Request cancellation (AbortController) is expected lifecycle, NOT a failure: re-throw the
+        // original AbortError so callers can detect and ignore it (no user-facing error, no console noise).
+        if (error?.name === 'AbortError' || options.signal?.aborted) {
+            throw error;
+        }
         // Detailed error reporting for the browser console
         console.error(`[API ERROR] ${method} ${url}:`, error);
 
@@ -370,11 +375,6 @@ export const api = {
         getDashboardSummary: async (): Promise<DashboardSummaryDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/summary`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar sumário do dashboard.');
-            return response.json();
-        },
-        getCockpitSummary: async (): Promise<CockpitSummaryDto> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/cockpit-summary`);
-            if (!response.ok) return handleApiError(response, 'Falha ao carregar cockpit operacional.');
             return response.json();
         },
         getPurchasingSummary: async (): Promise<PurchasingSummaryDto> => {
@@ -2513,29 +2513,66 @@ export const api = {
         // Dashboard V2 Buyer section. Server returns only the planes the user is entitled to
         // (personal/shared/workload); null planes are simply not rendered. Counts reconcile with
         // the Buyer queue/workspace (same canonical projection).
-        getBuyer: async (opts: DashboardV2BuyerParams = {}): Promise<DashboardV2BuyerSectionDto> => {
+        getBuyer: async (opts: DashboardV2BuyerParams = {}, signal?: AbortSignal): Promise<DashboardV2BuyerSectionDto> => {
             const params = new URLSearchParams();
             if (opts.company) params.append('company', String(opts.company));
             if (opts.plant) params.append('plant', String(opts.plant));
             if (opts.department) params.append('department', String(opts.department));
             if (opts.needLevel) params.append('needLevel', opts.needLevel);
             const qs = params.toString();
-            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/buyer${qs ? `?${qs}` : ''}`);
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/buyer${qs ? `?${qs}` : ''}`, { signal });
             if (!response.ok) return handleApiError(response, 'Falha ao carregar a carga de Compras.');
             return response.json();
         },
         // Dashboard V2 Finance section. Server returns only the entitled plane (shared/managerial);
         // null planes are simply not rendered. Counts reconcile with /finance/obligations.
-        getFinance: async (): Promise<DashboardV2FinanceSectionDto> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/finance`);
+        getFinance: async (signal?: AbortSignal): Promise<DashboardV2FinanceSectionDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/finance`, { signal });
             if (!response.ok) return handleApiError(response, 'Falha ao carregar a fila de Finanças.');
             return response.json();
         },
         // Dashboard V2 Receiving section. Server returns only the entitled plane (shared/managerial);
         // null planes are simply not rendered. Counts reconcile with /api/v1/receiving/queue.
-        getReceiving: async (): Promise<DashboardV2ReceivingSectionDto> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/receiving`);
+        getReceiving: async (signal?: AbortSignal): Promise<DashboardV2ReceivingSectionDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/receiving`, { signal });
             if (!response.ok) return handleApiError(response, 'Falha ao carregar a fila de Recebimento.');
+            return response.json();
+        },
+        // Dashboard V2 "Minha Operação" (PESSOAL). Server returns only the signed-in user's canonical
+        // personal actions (may be empty — an honest result). The frontend recomputes nothing.
+        getPersonal: async (signal?: AbortSignal): Promise<DashboardV2PersonalSectionDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/personal`, { signal });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a sua operação pessoal.');
+            return response.json();
+        },
+        // Dashboard V2 canonical Operational Pipeline (GERENCIAL, read-only). Stage counts by canonical
+        // entity unit; a request may appear in several stages. The frontend renders it as-is.
+        getPipeline: async (signal?: AbortSignal): Promise<DashboardV2PipelineDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/pipeline`, { signal });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a visão do pipeline.');
+            return response.json();
+        },
+        // Dashboard V2 canonical currency-safe Financial Summary (GERENCIAL). currentExposure is null when
+        // the caller is not entitled (the frontend hides the section). The frontend only formats values.
+        getFinancial: async (signal?: AbortSignal, period?: string): Promise<DashboardV2FinancialDto> => {
+            const qs = period ? `?period=${encodeURIComponent(period)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/financial${qs}`, { signal });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar o resumo financeiro.');
+            return response.json();
+        },
+        // Dashboard V2 canonical Alerts (read-only). `summary` is null when the caller is not entitled
+        // (the frontend hides the section). The server orders and bounds the list; the frontend renders
+        // it as-is (no re-sort, no client-side alert derivation).
+        getAlerts: async (signal?: AbortSignal): Promise<DashboardV2AlertsDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/alerts`, { signal });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os alertas.');
+            return response.json();
+        },
+        // Dashboard V2 canonical Stage Aging ("Gargalos"). `summary` is null when the caller is not entitled
+        // (managerial only). Age is time-in-current-stage; the frontend formats server counts (no re-derive).
+        getStageAging: async (signal?: AbortSignal): Promise<DashboardV2StageAgingDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/dashboard/v2/stage-aging`, { signal });
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os gargalos do processo.');
             return response.json();
         },
     },

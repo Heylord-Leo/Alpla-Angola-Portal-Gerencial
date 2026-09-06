@@ -1,9 +1,14 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { ModernTooltip } from '../../../components/ui/ModernTooltip';
-import type { DashboardV2ReceivingSectionDto, ReceivingSharedQueueSummaryDto } from '../../../types/dashboardV2';
+import { SectionInfo } from '../../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from '../dashboardSectionHelp';
+import { useSectionData } from '../useSectionData';
+import { DashboardSectionSkeleton } from './DashboardSectionSkeleton';
+import { DashboardSectionError } from './DashboardSectionError';
+import type { ReceivingSharedQueueSummaryDto } from '../../../types/dashboardV2';
 import { receivingWorkspaceHref, type ReceivingDrillKey } from '../dashboardV2View';
 
 // Dashboard V2 — Receiving section (slice B4.2). Operational counts only (no aging, no money). The server
@@ -57,19 +62,21 @@ function buildCards(s: ReceivingSharedQueueSummaryDto): CardDef[] {
 
 export function DashboardV2ReceivingSection() {
   const navigate = useNavigate();
-  const [data, setData] = useState<DashboardV2ReceivingSectionDto | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { status, data, retry } = useSectionData((signal) => api.dashboardV2.getReceiving(signal));
 
-  useEffect(() => {
-    let alive = true;
-    api.dashboardV2.getReceiving()
-      .then((d) => { if (alive) setData(d); })
-      .catch(() => { if (alive) setData(null); }) // isolated: never breaks Buyer/Finance/legacy dashboard
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  if (loading || !data) return null;
+  const loadingHeader = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <h2 style={sectionTitle}>Recebimento</h2>
+      <SectionInfo {...DASHBOARD_SECTION_HELP.receiving} />
+    </div>
+  );
+  if (status === 'loading') {
+    return <section data-testid="dashboard-v2-receiving" aria-busy="true">{loadingHeader}<DashboardSectionSkeleton label="Carregando fila de recebimento..." cards={5} /></section>;
+  }
+  if (status === 'error') {
+    return <section data-testid="dashboard-v2-receiving">{loadingHeader}<DashboardSectionError onRetry={retry} /></section>;
+  }
+  if (!data) return null;
 
   const operational = !!data.shared;
   const summary = data.shared ?? data.managerial ?? null;
@@ -87,6 +94,7 @@ export function DashboardV2ReceivingSection() {
         <h2 style={sectionTitle}>{operational ? 'Fila compartilhada — Recebimento' : 'Visão gerencial — Recebimento'}</h2>
         <Pill kind={operational ? 'compartilhado' : 'gerencial'} />
         {!operational && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Visão gerencial</span>}
+        <SectionInfo {...DASHBOARD_SECTION_HELP.receiving} />
       </div>
 
       {showEmpty ? (

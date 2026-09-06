@@ -5656,6 +5656,118 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.ToTable("OperationInvoiceShortCloses");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationalStageState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsBackfilled")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("StageCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime?>("StageEnteredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("IX_OperationalStageState_RequestId");
+
+                    b.HasIndex("Domain", "StageCode")
+                        .HasDatabaseName("IX_OperationalStageState_Domain_Stage");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Domain", "StageCode"), new[] { "StageEnteredAtUtc" });
+
+                    b.HasIndex("EntityType", "EntityId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationalStageState_Entity");
+
+                    b.ToTable("OperationalStageStates");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationalStageTransition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("FromStageCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ToStageCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("TransitionSource")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("IX_OperationalStageTransition_RequestId");
+
+                    b.HasIndex("EntityType", "EntityId", "OccurredAtUtc")
+                        .HasDatabaseName("IX_OperationalStageTransition_Entity_Occurred");
+
+                    b.ToTable("OperationalStageTransitions");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>
                 {
                     b.Property<Guid>("Id")

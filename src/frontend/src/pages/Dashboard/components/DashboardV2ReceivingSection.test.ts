@@ -6,7 +6,7 @@ import src from './DashboardV2ReceivingSection.tsx?raw';
 // operational drill-down only for the entitled (shared) plane, no aging, no money, dark-mode safe.
 describe('DashboardV2ReceivingSection — structure', () => {
   it('fetches the Receiving section from the server (no client recompute)', () => {
-    expect(src).toMatch(/api\.dashboardV2\.getReceiving\(\)/);
+    expect(src).toMatch(/api\.dashboardV2\.getReceiving\(/);
   });
 
   it('renders under COMPARTILHADO/GERENCIAL, never Pessoal/Minha Operação', () => {
@@ -62,7 +62,12 @@ describe('DashboardV2ReceivingSection — structure', () => {
     expect(src).toMatch(/--color-text-main|--color-text-muted|--color-bg-surface/);
   });
 
-  it('error isolation: a failed fetch does not throw (renders nothing)', () => {
-    expect(src).toMatch(/\.catch\(\(\) => \{ if \(alive\) setData\(null\); \}\)/);
+  it('uses the shared section-state hook + skeleton + error primitives (no per-section fetch logic)', () => {
+    expect(src).toMatch(/useSectionData/);
+    expect(src).toMatch(/status === 'loading'/);
+    expect(src).toMatch(/<DashboardSectionSkeleton/);
+    expect(src).toMatch(/<DashboardSectionError onRetry=\{retry\}/);
+    // Error is a distinct state now, never a silent null.
+    expect(src).not.toMatch(/if \(loading \|\| !data\) return null/);
   });
 });
