@@ -2,7 +2,56 @@
 
 ## Current Version
 
-v2.238.0
+v2.240.0
+
+## [v2.240.0] - 2026-09-06
+
+### Dashboard V2 — Canonicalization (B5–B9)
+
+Replaces the legacy operational cockpit with canonical, self-fetching Dashboard V2 sections and adds an
+additive operational-stage-tracking foundation:
+
+- **Personal & shared work (B5):** canonical "Minha Operação" (personal actions the signed-in user owns),
+  alongside the already-integrated Buyer/Finance/Receiving shared queues, with scoped personal vs
+  managerial semantics.
+- **Operational Pipeline (B6):** entity-aware canonical pipeline (REQUEST / APPROVAL_BATCH / PO_GROUP),
+  overlap-allowed, grouped by operational stage — no scalar-status flattening.
+- **Financial Summary (B7):** authoritative current exposure by currency (never summed across currencies,
+  explicit UNKNOWN bucket) plus paid history; managerial-gated.
+- **Attention Alerts (B8):** canonical Buyer need-by and Finance scheduled-date alerts over entities with an
+  open action; compact preview + full-list drawer; PESSOAL / COMPARTILHADO / GERENCIAL planes.
+- **Stage Aging / Gargalos (B9):** new `OperationalStageState` / `OperationalStageTransition` persistence;
+  live capture for APPROVAL_BATCH + PO_GROUP; exclusive current-stage dwell (`PAYMENT_COMPLETED` → `REC_READY`,
+  never a lingering `FIN_PAID` aging clock); Africa/Luanda calendar-day age; honest unknown historical age;
+  managerial read-only Gargalos UI; operational thresholds are guidance, not formal SLA; Buyer/REQUEST aging
+  is out of scope in this release.
+- **Performance / cleanup (B9.6):** the legacy `GET /api/v1/requests/cockpit-summary` endpoint, `BottleneckTable`
+  and `MyWorkQueue` are removed; ~22 legacy DB round-trips per Dashboard load are eliminated (per the B9.4
+  source/query audit — not a live benchmark); every V2 section loads/errors/retries independently.
+
+**Database:** one additive migration `20260905203852_AddOperationalStageTracking` (two tables + five indexes,
+no data or destructive operation). After deploying the migration, the Stage Aging backfill must be run (DEV
+already done) before the Gargalos UI shows populated data; the section shows an honest empty state until then.
+Not yet applied to TEST or PROD.
+
+## [v2.239.0] - 2026-09-03
+
+### Dashboard V2 — B4 (Receiving Shared Queue)
+
+Adds the Receiving shared queue to Dashboard V2. A Receiving-role user sees an operational
+"Fila compartilhada — Recebimento" (Compartilhado) with group-level actionable counts and exact
+drill-downs into the Receiving workspace; a Local Manager / System Administrator without the Receiving
+role sees a view-only "Visão gerencial — Recebimento" (Gerencial) with the same counts and no
+navigation. Managerial visibility never implies operational ownership — the Shared plane requires the
+real Receiving role. All counts come from the canonical `ReceivingActionEvaluator` (extracted
+behavior-preserving from the `MoveToReceipt`/`ConfirmReceiving` guards) via a new group-level
+`ReceivingQueueProjection`, so the Dashboard reconciles exactly with the new
+`GET /api/v1/receiving/queue`: `ActionableGroups` = actionable RequestPoGroup rows; each bucket count =
+its bucket-filtered rows; `ActionableRequests` = distinct RequestId over those rows. `PAYMENT_COMPLETED`
+hands off from Finance to Receiving (bucket `READY_FOR_RECEIPT`); `WAITING_PO` is excluded. No DB
+migration; no Receiving workflow/permission change; the request-scalar `ProcessTransition` path is
+intentionally unchanged; no monetary totals and no aging (deferred by product decision); the legacy
+Dashboard remains live.
 
 ## [v2.238.0] - 2026-09-02
 

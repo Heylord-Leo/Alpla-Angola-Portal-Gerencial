@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { DropdownPortal } from './DropdownPortal';
 import { Z_INDEX } from '../../constants/ui';
 import { motion, AnimatePresence } from 'framer-motion';
+import { computeTooltipPosition } from './tooltipPosition';
 
 interface ModernTooltipProps {
     children: React.ReactNode;
@@ -40,78 +41,61 @@ export function ModernTooltip({
     // Set by a click/tap or Enter/Space; survives mouseleave so the content can actually be read.
     const [isPinned, setIsPinned] = useState(false);
     const triggerRef = useRef<HTMLDivElement>(null);
+    const tooltipRef = useRef<HTMLDivElement>(null);
     const [tooltipStyles, setTooltipStyles] = useState<React.CSSProperties>({});
     const [transformOrigin, setTransformOrigin] = useState<string>('bottom');
+    // False until the popover has been measured and viewport-corrected — kept hidden while measuring so
+    // there is no corner-flash flicker.
+    const [positioned, setPositioned] = useState(false);
 
-    useEffect(() => {
-        if (isVisible && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            
-            let top: string = 'auto';
-            let left: string = 'auto';
-            let transform: string = '';
-            let tOrigin = 'center';
-
-            // Side positioning
-            if (side === 'top') {
-                top = `${rect.top - 8}px`;
-                transform = 'translateY(-100%)';
-                tOrigin = 'bottom';
-            } else if (side === 'bottom') {
-                top = `${rect.bottom + 8}px`;
-                transform = 'translateY(0)';
-                tOrigin = 'top';
-            } else if (side === 'left') {
-                left = `${rect.left - 8}px`;
-                transform = 'translateX(-100%)';
-                tOrigin = 'right';
-            } else { // right
-                left = `${rect.right + 8}px`;
-                transform = 'translateX(0)';
-                tOrigin = 'left';
-            }
-
-            // Alignment positioning
-            if (side === 'top' || side === 'bottom') {
-                if (align === 'start') {
-                    left = `${rect.left}px`;
-                    transform += ' translateX(0)';
-                } else if (align === 'end') {
-                    left = `${rect.right}px`;
-                    transform += ' translateX(-100%)';
-                } else { // center
-                    left = `${rect.left + rect.width / 2}px`;
-                    transform += ' translateX(-50%)';
-                }
-            } else { // side is left or right
-                if (align === 'start') {
-                    top = `${rect.top}px`;
-                    transform += ' translateY(0)';
-                } else if (align === 'end') {
-                    top = `${rect.bottom}px`;
-                    transform += ' translateY(-100%)';
-                } else { // center
-                    top = `${rect.top + rect.height / 2}px`;
-                    transform += ' translateY(-50%)';
-                }
-            }
-            
-            setTransformOrigin(tOrigin);
-            setTooltipStyles({
-                position: 'fixed',
-                top,
-                left,
-                transform,
-                zIndex: Z_INDEX.TOOLTIP as any,
-                // A pinned tooltip must be interactive (scroll/select); a hover one must not
-                // steal the pointer from the element underneath.
-                pointerEvents: isPinned ? 'auto' : 'none',
-                minWidth: 'auto',
-                maxWidth: `${maxWidth}px`,
-                fontSize: '0.8rem',
-            });
-        }
+    // Viewport-aware placement: measure the trigger AND the (already width-constrained) popover, then
+    // flip/clamp into the viewport so no edge is ever crossed. See computeTooltipPosition (pure, tested).
+    useLayoutEffect(() => {
+        if (!isVisible || !triggerRef.current || !tooltipRef.current) return;
+        const trigger = triggerRef.current.getBoundingClientRect();
+        const el = tooltipRef.current;
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        const p = computeTooltipPosition(
+            trigger,
+            { width: el.offsetWidth, height: el.offsetHeight },
+            side, align, viewport, maxWidth, 12,
+        );
+        setTransformOrigin(p.transformOrigin);
+        setTooltipStyles({
+            position: 'fixed',
+            top: `${p.top}px`,
+            left: `${p.left}px`,
+            zIndex: Z_INDEX.TOOLTIP as any,
+            // A pinned tooltip must be interactive (scroll/select); a hover one must not steal the
+            // pointer from the element underneath.
+            pointerEvents: isPinned ? 'auto' : 'none',
+            minWidth: 'auto',
+            maxWidth: `${p.maxWidth}px`,
+            maxHeight: `${p.maxHeight}px`,
+            overflowY: 'auto',
+            fontSize: '0.8rem',
+        });
+        setPositioned(true);
     }, [isVisible, isPinned, side, align, maxWidth]);
+
+    // Reset the measure gate whenever the popover closes so the next open re-measures cleanly.
+    useEffect(() => { if (!isVisible) setPositioned(false); }, [isVisible]);
+
+    // Off-screen measuring style: width already constrained to the viewport so the wrapped height is
+    // correct before we compute the final placement; hidden until positioned.
+    const measuringStyles: React.CSSProperties = {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        visibility: 'hidden',
+        zIndex: Z_INDEX.TOOLTIP as any,
+        pointerEvents: 'none',
+        minWidth: 'auto',
+        maxWidth: `${typeof window !== 'undefined' ? Math.min(maxWidth, window.innerWidth - 24) : maxWidth}px`,
+        maxHeight: `${typeof window !== 'undefined' ? window.innerHeight - 24 : 600}px`,
+        overflowY: 'auto',
+        fontSize: '0.8rem',
+    };
 
     // Escape closes a pinned tooltip, and dismissing returns focus to the trigger.
     useEffect(() => {
@@ -155,8 +139,8 @@ export function ModernTooltip({
             <AnimatePresence>
                 {isVisible && (
                     <DropdownPortal>
-                        <div style={tooltipStyles}>
-                            <motion.div 
+                        <div ref={tooltipRef} style={positioned ? tooltipStyles : measuringStyles}>
+                            <motion.div
                                 initial={{ opacity: 0, scale: 0.95, y: side === 'top' ? 5 : side === 'bottom' ? -5 : 0, x: side === 'left' ? 5 : side === 'right' ? -5 : 0 }}
                                 animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
                                 exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.1 } }}

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { PlusCircle, LayoutList, Package, CheckSquare, CreditCard, Truck } from 'lucide-react';
 import { useAuth } from '../../../features/auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
+import { SectionInfo } from '../../../components/ui/SectionInfo';
+import { DASHBOARD_SECTION_HELP } from '../dashboardSectionHelp';
 
 interface QuickActionItemProps {
     label: string;
@@ -127,14 +129,17 @@ export function QuickActions() {
 
     return (
         <section>
-            <h2 style={{
-                fontSize: '1.1rem',
-                fontWeight: 700,
-                color: 'var(--color-text)',
-                margin: '0 0 12px 0'
-            }}>
-                Ações Rápidas
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 12px 0' }}>
+                <h2 style={{
+                    fontSize: '1.1rem',
+                    fontWeight: 700,
+                    color: 'var(--color-text-main)',
+                    margin: 0
+                }}>
+                    Ações Rápidas
+                </h2>
+                <SectionInfo {...DASHBOARD_SECTION_HELP.quickActions} />
+            </div>
             <div style={{ 
                 display: 'grid', 
                 gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 

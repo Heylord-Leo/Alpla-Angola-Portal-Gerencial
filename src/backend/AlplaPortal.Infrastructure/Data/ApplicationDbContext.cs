@@ -1,6 +1,13 @@
+using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Infrastructure.Services.Dashboard;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace AlplaPortal.Infrastructure.Data;
 
@@ -65,6 +72,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<ApprovalBatchAdjustmentFieldChange> ApprovalBatchAdjustmentFieldChanges => Set<ApprovalBatchAdjustmentFieldChange>();
     public DbSet<ApprovalBatchCandidateReview> ApprovalBatchCandidateReviews => Set<ApprovalBatchCandidateReview>();
     public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
+
+    // Dashboard V2 B9.1 — canonical operational stage tracking (persistence foundation; no capture yet).
+    public DbSet<OperationalStageState> OperationalStageStates => Set<OperationalStageState>();
+    public DbSet<OperationalStageTransition> OperationalStageTransitions => Set<OperationalStageTransition>();
 
     // Integration Foundation (Phase 0)
     public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
@@ -1558,4 +1569,69 @@ public class ApplicationDbContext : DbContext
             new ITEquipmentModel { Id = Guid.Parse("e0000001-0000-0000-0000-000000000009"), ManufacturerId = Guid.Parse("b0000001-0000-0000-0000-000000000011"), Name = "M90", EquipmentTypeCode = "MOUSE", SortOrder = 1, IsActive = true, CreatedAt = seedDate }
         );
     }
+
+    // ── Dashboard V2 B9.2 — canonical stage capture (lot grains: PO_GROUP + APPROVAL_BATCH). ──
+    // Both SaveChanges paths route through the same detect→lookup→apply flow so the sync path can never
+    // skip tracking and the two never diverge. Capture is atomic with the business change (same write
+    // unit) — if stage persistence fails, the business SaveChanges fails too, by design. No retrying
+    // execution strategy is configured, so this runs exactly once per SaveChanges; the pending-guard also
+    // makes a manual retry-after-failure on the same context idempotent (no duplicate transitions).
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        if (!StageCaptureAlreadyPrepared())
+        {
+            var candidates = OperationalStageTracker.DetectCandidates(ChangeTracker);
+            if (candidates.Count > 0)
+                OperationalStageTracker.Apply(this, candidates, FetchCurrentStages(candidates), DateTime.UtcNow);
+        }
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        if (!StageCaptureAlreadyPrepared())
+        {
+            var candidates = OperationalStageTracker.DetectCandidates(ChangeTracker);
+            if (candidates.Count > 0)
+                OperationalStageTracker.Apply(this, candidates, await FetchCurrentStagesAsync(candidates, cancellationToken), DateTime.UtcNow);
+        }
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    // If a prior SaveChanges in this same context already staged transition rows that have not persisted
+    // (a manual retry after a failed save), do not stage them again — the pending rows will be saved as-is.
+    private bool StageCaptureAlreadyPrepared()
+        => ChangeTracker.Entries<OperationalStageTransition>().Any(e => e.State == EntityState.Added);
+
+    // ONE bounded snapshot lookup for all candidate keys (never per-entity). Tracked (not AsNoTracking) so
+    // Apply can update/remove the returned snapshots. Called only when candidates.Count > 0.
+    private Dictionary<StageEntityKey, OperationalStageState> FetchCurrentStages(IReadOnlyList<StageChangeCandidate> candidates)
+    {
+        var (groupIds, batchIds) = SplitKeys(candidates);
+        var rows = StageSnapshotQuery(groupIds, batchIds).ToList();
+        return Index(rows);
+    }
+
+    private async Task<Dictionary<StageEntityKey, OperationalStageState>> FetchCurrentStagesAsync(
+        IReadOnlyList<StageChangeCandidate> candidates, CancellationToken ct)
+    {
+        var (groupIds, batchIds) = SplitKeys(candidates);
+        var rows = await StageSnapshotQuery(groupIds, batchIds).ToListAsync(ct);
+        return Index(rows);
+    }
+
+    private IQueryable<OperationalStageState> StageSnapshotQuery(List<Guid> groupIds, List<Guid> batchIds)
+        => OperationalStageStates.Where(s =>
+            (s.EntityType == OperationalStageEntityTypes.PoGroup && groupIds.Contains(s.EntityId)) ||
+            (s.EntityType == OperationalStageEntityTypes.ApprovalBatch && batchIds.Contains(s.EntityId)));
+
+    private static (List<Guid> groupIds, List<Guid> batchIds) SplitKeys(IReadOnlyList<StageChangeCandidate> candidates)
+    {
+        var groupIds = candidates.Where(c => c.EntityType == OperationalStageEntityTypes.PoGroup).Select(c => c.EntityId).Distinct().ToList();
+        var batchIds = candidates.Where(c => c.EntityType == OperationalStageEntityTypes.ApprovalBatch).Select(c => c.EntityId).Distinct().ToList();
+        return (groupIds, batchIds);
+    }
+
+    private static Dictionary<StageEntityKey, OperationalStageState> Index(List<OperationalStageState> rows)
+        => rows.ToDictionary(s => new StageEntityKey(s.EntityType, s.EntityId));
 }

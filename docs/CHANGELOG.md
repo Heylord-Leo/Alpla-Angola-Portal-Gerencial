@@ -4,7 +4,96 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.238.0
+v2.240.0
+
+## [v2.240.0] - 2026-09-06 — Dashboard V2 Canonicalization
+
+Replaces the legacy operational cockpit with canonical, self-fetching Dashboard V2 sections and introduces
+an additive operational-stage-tracking foundation. Additive and read-only except the removal of the legacy
+cockpit read path. Not yet deployed to TEST or PROD.
+
+### Dashboard — Personal & Operational Work
+- Canonical personal actions ("Minha Operação") — only work the signed-in user personally owns.
+- Buyer / Finance / Receiving shared queues integrated (Compartilhado / Gerencial planes).
+- Scoped personal vs managerial semantics; current-user ownership always wins.
+
+### Dashboard — Pipeline
+- Entity-aware canonical operational pipeline (REQUEST / APPROVAL_BATCH / PO_GROUP).
+- Request overlap support (one request may appear in several stages); distinct active-request denominator.
+- Operational stage grouping by domain — no scalar Request.Status histogram.
+
+### Dashboard — Financial
+- Authoritative current financial exposure per currency (never summed across currencies; explicit UNKNOWN).
+- Paid history (recent confirmed payment evidence, by currency; no FX; refunds not netted).
+- Managerial entitlement gate (null section hidden by the frontend).
+
+### Dashboard — Alerts
+- Canonical Buyer deadline alerts (need-by, gated to an open buyer action).
+- Finance scheduled-date alerts (still-scheduled payments, per PO group).
+- Compact preview + full-list drawer; explicit truncation metadata.
+- PESSOAL / COMPARTILHADO / GERENCIAL planes.
+
+### Dashboard — Stage Aging / Gargalos
+- New `OperationalStageState` (current snapshot) + `OperationalStageTransition` (immutable history).
+- Live stage capture for APPROVAL_BATCH + PO_GROUP via an atomic SaveChanges path.
+- Exclusive current-stage dwell semantics (`PAYMENT_COMPLETED` → `REC_READY`; `FIN_PAID` is B6-informational only).
+- Africa/Luanda calendar-day age (UTC storage, no browser timezone).
+- Honest unknown historical age — never fabricated, never rendered as 0.
+- Managerial read-only Gargalos UI (risk-ranked; severity only where thresholds are defined).
+- Operational thresholds are guidance, not formal SLA (Approval/PO 3/7 days; Receiving 7/14; Finance/Documentation none).
+- Buyer/REQUEST aging is out of scope in this release.
+
+### Dashboard — Performance / Cleanup
+- Legacy `GET /api/v1/requests/cockpit-summary` endpoint removed.
+- `BottleneckTable` removed (replaced by canonical Stage Aging section).
+- `MyWorkQueue` removed (replaced by canonical personal actions in B5).
+- ~22 legacy DB round-trips per Dashboard load eliminated (from the B9.4 source/query audit — not a live benchmark).
+- V2 sections load / error / retry independently; no page-level cockpit gate.
+
+### Database
+- Migration: `20260905203852_AddOperationalStageTracking` — additive: two tables, five indexes.
+- No business-data or destructive operation.
+- Backfill required after applying the migration and before the Gargalos frontend is populated (an honest
+  empty state is shown until then). Applied to DEV only; TEST/PROD pending.
+
+## [v2.239.0] - 2026-09-03
+
+### Dashboard V2 — B4 (Receiving Shared Queue)
+
+Additive, read-only: a new `GET /api/dashboard/v2/receiving` endpoint, a new canonical group-level
+`GET /api/v1/receiving/queue` endpoint, and a Receiving dashboard section. No DB migration; no change to
+Receiving operational workflow (`MoveToReceipt`/`ConfirmReceiving` transitions, history, side effects),
+Finance/PO/Buyer/Approval/Adjustment/payment semantics, security/SSO, or deployment workflows. The
+request-scalar `ProcessTransition` generic path is intentionally unchanged. The legacy Dashboard remains
+live.
+
+### Added
+- Dashboard V2 Receiving Shared queue (operational, for Receiving-role users)
+- Receiving managerial aggregate (view-only) for Local Manager / System Administrator
+- canonical group-level Receiving queue endpoint `GET /api/v1/receiving/queue`
+- `ReceivingActionEvaluator` as the single source of Receiving actionability
+- exact group-level drill-downs from the Dashboard into the Receiving workspace
+- distinct actionable-request count (`ActionableRequests`) alongside `ActionableGroups`
+- canonical Receiving workspace mode driven by Dashboard filters
+
+### Changed
+- `MoveToReceipt` and `ConfirmReceiving` status guards now delegate to the canonical
+  `ReceivingActionEvaluator` with behavior preserved (same accepted/rejected statuses, role checks,
+  response codes/messages, transitions and side effects)
+
+### Clarified
+- `PAYMENT_COMPLETED` hands off from Finance to Receiving (bucket `READY_FOR_RECEIPT`)
+- `WAITING_PO` is excluded from Receiving workload
+- Receiving is Shared / Managerial, never Personal
+- Local Manager managerial visibility does not imply Receiving ownership
+- Receiving aging is intentionally deferred
+
+### Technical
+- no migration
+- no formal Receiving SLA
+- no monetary totals in Dashboard B4
+- legacy Dashboard remains
+- `ProcessTransition` generic request-scalar path intentionally unchanged
 
 ## [v2.238.0] - 2026-09-02
 

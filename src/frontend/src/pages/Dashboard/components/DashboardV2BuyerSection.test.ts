@@ -5,7 +5,7 @@ import src from './DashboardV2BuyerSection.tsx?raw';
 // Dashboard V2 Buyer section: three planes, server-sourced, unassigned pinned & never a person.
 describe('DashboardV2BuyerSection — structure', () => {
   it('fetches the canonical Buyer section from the server (no client recompute)', () => {
-    expect(src).toMatch(/api\.dashboardV2\.getBuyer\(\)/);
+    expect(src).toMatch(/api\.dashboardV2\.getBuyer\(/);
   });
 
   it('renders the three planes with explicit ownership pills', () => {

@@ -66,6 +66,24 @@ export function financePaymentsHref(key: FinanceDrillKey): string {
   }
 }
 
+// ── Receiving drill-down route (single source of truth; canonical group-level workspace mode) ──
+// The Receiving workspace enters canonical group-level mode when these params are present (else it keeps
+// its existing request-scalar behavior). `queue=actionable` = all actionable groups; `receivingBucket=X`
+// = one bucket, mirroring ReceivingActionEvaluator.Buckets.
+export const RECEIVING_WORKSPACE_ROUTE = '/receiving/workspace';
+export type ReceivingDrillKey =
+  | 'actionable' | 'readyForReceipt' | 'waitingReceipt' | 'followUp' | 'waitingSupplierDelivery';
+
+export function receivingWorkspaceHref(key: ReceivingDrillKey): string {
+  switch (key) {
+    case 'actionable': return `${RECEIVING_WORKSPACE_ROUTE}?queue=actionable`;
+    case 'readyForReceipt': return `${RECEIVING_WORKSPACE_ROUTE}?receivingBucket=READY_FOR_RECEIPT`;
+    case 'waitingReceipt': return `${RECEIVING_WORKSPACE_ROUTE}?receivingBucket=WAITING_RECEIPT`;
+    case 'followUp': return `${RECEIVING_WORKSPACE_ROUTE}?receivingBucket=IN_FOLLOWUP`;
+    case 'waitingSupplierDelivery': return `${RECEIVING_WORKSPACE_ROUTE}?receivingBucket=WAITING_SUPPLIER_DELIVERY`;
+  }
+}
+
 // ── In-cell column bars (each column has its OWN scale) ──
 
 export type WorkloadMetricKey = 'assigned' | 'actionable' | 'pending' | 'ready' | 'attention';

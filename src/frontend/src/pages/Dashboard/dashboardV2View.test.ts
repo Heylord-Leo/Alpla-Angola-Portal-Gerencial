@@ -12,6 +12,8 @@ import {
   BUYER_QUEUE_ROUTE,
   financePaymentsHref,
   FINANCE_PAYMENTS_ROUTE,
+  receivingWorkspaceHref,
+  RECEIVING_WORKSPACE_ROUTE,
 } from './dashboardV2View';
 import type { BuyerWorkloadRowDto, BuyerPersonalSummaryDto, BuyerSharedQueueSummaryDto } from '../../types/dashboardV2';
 
@@ -90,6 +92,15 @@ describe('dashboardV2View', () => {
     expect(financePaymentsHref('dueToday')).toBe('/finance/payments?dueTodayOnly=true');
     expect(financePaymentsHref('overdue')).toBe('/finance/payments?overdueOnly=true');
     expect(financePaymentsHref('paidWaitingReceiving')).toBe('/finance/payments?actionClass=PAID_WAITING_RECEIVING');
+  });
+
+  it('receivingWorkspaceHref maps each card to the canonical group-level workspace params', () => {
+    expect(RECEIVING_WORKSPACE_ROUTE).toBe('/receiving/workspace');
+    expect(receivingWorkspaceHref('actionable')).toBe('/receiving/workspace?queue=actionable');
+    expect(receivingWorkspaceHref('readyForReceipt')).toBe('/receiving/workspace?receivingBucket=READY_FOR_RECEIPT');
+    expect(receivingWorkspaceHref('waitingReceipt')).toBe('/receiving/workspace?receivingBucket=WAITING_RECEIPT');
+    expect(receivingWorkspaceHref('followUp')).toBe('/receiving/workspace?receivingBucket=IN_FOLLOWUP');
+    expect(receivingWorkspaceHref('waitingSupplierDelivery')).toBe('/receiving/workspace?receivingBucket=WAITING_SUPPLIER_DELIVERY');
   });
 
   it('barPercent scales within a column; zero => 0 (no bar); empty column => 0', () => {
