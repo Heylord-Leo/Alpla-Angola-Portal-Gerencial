@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.240.0
+v2.241.0
+
+## [v2.241.0] - 2026-09-08
+
+### Controlled Financial Repair & Discount Hardening
+
+A tightly-scoped, System-Administrator-only capability to correct the confirmed legacy x1000
+monetary-scale defect (incident REQ-11/08/2026-228), plus defensive discount validation. No schema
+migration. DEV validated (real-API preview/apply, idempotency, human acceptance — all PASS); not yet
+deployed to TEST or PROD.
+
+- **Repair action:** `POST /api/v1/admin/repairs/legacy-monetary-scale/{requestId}` — `confirm=false`
+  previews (writes nothing), `confirm=true` applies atomically. Strong-intent body only
+  (`expectedCurrentTotal`, `expectedCorrectTotal`, `reason`) plus the four preview concurrency tokens;
+  the service derives and guards every dependent value. Refuses anything but the exact defect
+  fingerprint; missing tokens → 400/REFUSED, stale tokens → 409/CONFLICT; idempotent; never changes
+  status, PO identity, payment lifecycle or stage aging; appends corrective audit and never rewrites
+  history. The audit actor is the authenticated executing System Administrator (no fallback).
+- **Discount hardening:** line-item create/update reject a negative discount or a discount above the
+  gross subtotal (backend-authoritative).
 
 ## [v2.240.0] - 2026-09-06
 

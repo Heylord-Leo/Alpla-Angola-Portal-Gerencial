@@ -4,7 +4,48 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.240.0
+v2.241.0
+
+## [v2.241.0] - 2026-09-08 — Controlled Financial Repair & Discount Hardening
+
+A tightly-scoped, System-Administrator-only capability to correct the confirmed legacy x1000
+monetary-scale defect (incident REQ-11/08/2026-228), plus defensive discount validation. No schema
+migration. DEV validated; not yet deployed to TEST or PROD.
+
+### Admin Repair
+- New SystemAdministrator-gated controlled repair action for legacy monetary-scale defects.
+- Preview-before-apply using concurrency tokens; explicit dry-run/preview and guarded apply.
+- Corrects the request line, request totals, PO-group total and scheduled payment amount atomically.
+- Preserves workflow state and operational stage aging.
+- Appends corrective audit history without rewriting historical events.
+- Idempotent: an already-correct record returns a no-op.
+
+### Concurrency & Safety
+- Request and PO group protected by RowVersion; line and payment protected by value fingerprints.
+- Missing preview tokens refuse apply (400/REFUSED); stale tokens return conflict (409/CONFLICT).
+- Refuses paid payments, non-AOA currency, IVA/percent/global-discount structures, non-PAYMENT_SCHEDULED
+  state, and mismatched financial fingerprints.
+
+### Audit
+- The corrective audit actor is the authenticated System Administrator executing the repair — no
+  fallback to the request creator or an arbitrary user.
+- The result distinguishes financial rows changed, audit rows inserted and total DB rows affected.
+
+### Discount Hardening
+- Backend rejects negative line discounts and discounts above the line subtotal.
+- Both the add and update line-item paths enforce the rule.
+
+### Validation
+- Backend: 2248 passed / 0 failed / 0 skipped.
+- DEV real-API preview/apply: PASS. DEV idempotency: PASS. Human DEV acceptance: PASS.
+- Verified request list, detail, item total, PO/payment amount, financial audit and actor attribution.
+
+### Database
+- No migration. No schema change.
+
+### Follow-up
+- The OCR mismatch override remains acknowledge-only; OCR-assisted controlled correction redesign
+  remains out of scope for this release.
 
 ## [v2.240.0] - 2026-09-06 — Dashboard V2 Canonicalization
 
