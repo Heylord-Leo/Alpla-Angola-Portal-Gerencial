@@ -5281,6 +5281,11 @@ public class RequestsController : BaseController
             ? (dto.PlantId ?? documentBinding.PlantId)
             : dto.PlantId;
 
+        // Discount hardening (v2.241.0): a discount may never be negative or exceed the subtotal.
+        var discountError = LineItemDiscountRule.Validate(dto.Quantity ?? 0, dto.UnitPrice ?? 0, dto.DiscountAmount);
+        if (discountError != null)
+            return BadRequest(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = discountError, Status = 400 });
+
         // Build + stage the item and its history through the shared factory
         // (same total/status/line-number math as before; single source of truth
         // shared with the buyer reconciliation workaround).
@@ -5582,6 +5587,14 @@ public class RequestsController : BaseController
         // Validate and normalize ItemPriority — backend enforces valid codes
         var validPriorities = new[] { "HIGH", "MEDIUM", "LOW" };
         var itemPriority = validPriorities.Contains(dto.ItemPriority?.ToUpper()) ? dto.ItemPriority!.ToUpper() : "MEDIUM";
+
+        // Discount hardening (v2.241.0): validate the EFFECTIVE post-update values.
+        var effectiveQuantity = dto.Quantity ?? item.Quantity;
+        var effectiveUnitPrice = dto.UnitPrice ?? item.UnitPrice;
+        var effectiveDiscount = dto.DiscountAmount ?? item.DiscountAmount;
+        var updateDiscountError = LineItemDiscountRule.Validate(effectiveQuantity, effectiveUnitPrice, effectiveDiscount);
+        if (updateDiscountError != null)
+            return BadRequest(new ProblemDetails { Title = "Regra de Negócio Violada", Detail = updateDiscountError, Status = 400 });
 
         item.Description = dto.Description;
         item.ItemPriority = itemPriority;
