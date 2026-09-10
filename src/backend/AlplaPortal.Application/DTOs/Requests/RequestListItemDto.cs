@@ -113,4 +113,21 @@ public class RequestListItemDto
     /// the original deadline and the actual payment date.
     /// </summary>
     public DateTime? PaymentCompletedAtUtc { get; set; }
+
+    /// <summary>
+    /// v2.242.0 — true when THIS request has at least one WAITING_PO_CORRECTION P.O. group personally
+    /// owned by the current Buyer (QUOTATION → Request.BuyerId; PAYMENT → group.PoResponsibleBuyerId).
+    /// Populated only by GetRequests (from the same page-scoped PoGroups hydration, no extra query).
+    /// The "Para Minha Ação" carousel MUST key the "Corrigir P.O." card off THIS flag, never off the
+    /// request scalar StatusCode — a mixed QUOTATION correction aggregates its scalar to
+    /// PO_PARTIALLY_UPLOADED yet still needs the correction action.
+    /// </summary>
+    public bool HasMyPoCorrection { get; set; }
+
+    /// <summary>
+    /// v2.242.0 — ONLY the correction groups on this request that the current Buyer personally owns
+    /// (never a sibling group owned by another Buyer). Names the affected supplier(s)/P.O.(s) on the
+    /// card. Empty unless <see cref="HasMyPoCorrection"/> is true.
+    /// </summary>
+    public List<BuyerPoCorrectionGroupDto> MyPoCorrectionGroups { get; set; } = new();
 }

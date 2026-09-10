@@ -552,12 +552,25 @@ describe('resolveGroupFinanceButtons (v2.230.0 per-group gating)', () => {
 });
 
 describe('canReturnGroupStatus', () => {
-    test('PO_ISSUED and PAYMENT_SCHEDULED only', () => {
+    test('PO_ISSUED, PAYMENT_SCHEDULED and the advance-pending states are returnable', () => {
         assert.equal(canReturnGroupStatus('PO_ISSUED'), true);
         assert.equal(canReturnGroupStatus('PAYMENT_SCHEDULED'), true);
+        // v2.242.0 — advance-pending groups can be returned to Purchasing (before payment).
+        assert.equal(canReturnGroupStatus('ADVANCE_PAYMENT_REQUIRED'), true);
+        assert.equal(canReturnGroupStatus('ADVANCE_PAYMENT_SCHEDULED'), true);
+        // Executed / non-returnable states stay false.
+        assert.equal(canReturnGroupStatus('ADVANCE_PAYMENT_COMPLETED'), false);
+        assert.equal(canReturnGroupStatus('WAITING_SUPPLIER_DELIVERY'), false);
         assert.equal(canReturnGroupStatus('PAYMENT_COMPLETED'), false);
         assert.equal(canReturnGroupStatus('WAITING_PO'), false);
         assert.equal(canReturnGroupStatus(null), false);
+    });
+
+    test('fallback resolveGroupFinanceButtons exposes return for an advance-pending group', () => {
+        const req = resolveGroupFinanceButtons({ status: 'ADVANCE_PAYMENT_REQUIRED' });
+        assert.equal(req.return, true);
+        const sched = resolveGroupFinanceButtons({ status: 'ADVANCE_PAYMENT_SCHEDULED' });
+        assert.equal(sched.return, true);
     });
 });
 

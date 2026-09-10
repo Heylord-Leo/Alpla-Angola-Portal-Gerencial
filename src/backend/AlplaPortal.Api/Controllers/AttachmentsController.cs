@@ -600,9 +600,27 @@ public class AttachmentsController : BaseController
                 detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
-                isDeletable = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }.Contains(attachment.Request.Status!.Code);
-                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado ou devolvido para correção.";
+            {
+                // Request-scalar path (legacy / single-group / ambiguous ownership).
+                var poScalarOk = new[] { "APPROVED", RequestConstants.Statuses.WaitingPoCorrection }.Contains(attachment.Request.Status!.Code);
+                // v2.242.0 group-scoped path: in a multi-group request the request scalar may be
+                // PO_PARTIALLY_UPLOADED even though THIS PO's owning group was returned for correction.
+                // Allow the delete when the owning group itself is WAITING_PO_CORRECTION — never for any
+                // other group status, and legacy attachments with no group ownership fall back to the
+                // request-scalar rule above.
+                var poGroupOk = false;
+                if (attachment.RequestPoGroupId.HasValue)
+                {
+                    var owningGroupStatus = await _context.RequestPoGroups
+                        .Where(g => g.Id == attachment.RequestPoGroupId.Value)
+                        .Select(g => g.Status)
+                        .FirstOrDefaultAsync();
+                    poGroupOk = owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+                }
+                isDeletable = poScalarOk || poGroupOk;
+                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado, ou enquanto o grupo P.O correspondente está devolvido para correção.";
                 break;
+            }
             case AttachmentConstants.Types.PaymentSchedule:
                 isDeletable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(attachment.Request.Status!.Code);
                 detail = "O Cronograma de Pagamento só pode ser removido enquanto estiver em emissão de P.O ou agendamento.";

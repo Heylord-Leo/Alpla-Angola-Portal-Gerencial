@@ -125,6 +125,11 @@ describe('operational-state presentation (red is reserved)', () => {
     expect(operationalStateColor({ operationalState: OP.NeedsQuotation, requiresAttention: true })).toBe('var(--color-status-red)');
   });
 
+  it('PO_CORRECTION is a recognized attention state (red)', () => {
+    expect(OP.PoCorrection).toBe('PO_CORRECTION');
+    expect(operationalStateColor({ operationalState: OP.PoCorrection, requiresAttention: true })).toBe('var(--color-status-red)');
+  });
+
   it('deadline chip is separate from need level and only appears for urgent conditions', () => {
     expect(deadlineChip({ deadlineCondition: 'OVERDUE' })!.label).toBe('Vencido');
     expect(deadlineChip({ deadlineCondition: 'DUE_TODAY' })!.label).toBe('Vence hoje');

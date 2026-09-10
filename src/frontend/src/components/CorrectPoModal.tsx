@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, X, AlertTriangle, Download, Trash2, Save, CheckCircle } from 'lucide-react';
+import { Upload, FileText, X, AlertTriangle, Download, Trash2, Save, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { parseFinanceReturnComment } from '../lib/financeReturnReason';
 import { Feedback, FeedbackType } from './ui/Feedback';
 import { DropdownPortal } from './ui/DropdownPortal';
 import { Z_INDEX } from '../constants/ui';
@@ -32,6 +33,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const [returnReason, setReturnReason] = useState<string>('');
     const [returnActor, setReturnActor] = useState<string>('');
     const [returnDate, setReturnDate] = useState<string>('');
+    const [showReturnTechnical, setShowReturnTechnical] = useState(false);
     const [existingPo, setExistingPo] = useState<RequestAttachmentDto | null>(null);
     const [poRemoved, setPoRemoved] = useState(false);
 
@@ -85,18 +87,17 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                 const details = await api.requests.get(requestId);
                 setRequestData(details);
 
-                // Find the latest FINANCE_RETURN_ADJUSTMENT in status history
-                const returnEvent = details.statusHistory
-                    ?.filter((h: any) => h.actionTaken === 'FINANCE_RETURN_ADJUSTMENT')
-                    .sort((a: any, b: any) => new Date(b.createdAtUtc).getTime() - new Date(a.createdAtUtc).getTime())[0];
+                // Find the FINANCE_RETURN_ADJUSTMENT for THIS group (comment carries "GroupId: <id>"),
+                // falling back to the latest return event overall. Keep the RAW comment — the orange
+                // block parses it (parseFinanceReturnComment) so the human message is surfaced above the
+                // technical context; group-specific selection avoids showing a sibling group's reason.
+                const returns = (details.statusHistory ?? [])
+                    .filter((h: any) => h.actionTaken === 'FINANCE_RETURN_ADJUSTMENT')
+                    .sort((a: any, b: any) => new Date(b.createdAtUtc).getTime() - new Date(a.createdAtUtc).getTime());
+                const returnEvent = returns.find((h: any) => (h.comment || '').includes(poGroupId)) ?? returns[0];
 
                 if (returnEvent) {
-                    // Strip the prefix for clean display
-                    let reason = returnEvent.comment || '';
-                    if (reason.startsWith('Devolvido por Finanças para ajuste: ')) {
-                        reason = reason.substring('Devolvido por Finanças para ajuste: '.length);
-                    }
-                    setReturnReason(reason);
+                    setReturnReason(returnEvent.comment || '');
                     setReturnActor(returnEvent.actorName || '');
                     setReturnDate(returnEvent.createdAtUtc || '');
                 }
@@ -128,14 +129,21 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
 
     if (!show) return null;
 
-    // Null-safe expected values - same pattern as RegisterPoModal.tsx. expectedSupplierName is the
+    // v2.242.0 — GROUP-scoped expected context. Resolve the SELECTED RequestPoGroup and read its
+    // TotalAmount / Supplier / Currency. NEVER the request-scalar fields (estimatedTotalAmount /
+    // supplierName / currencyCode), which are 0 / null for a multi-group request and produced the
+    // "0,00 / Não definido" defect + a wrong OCR divergence baseline. expectedSupplierName is the
     // COMPARISON value (null when unset); expectedSupplierDisplay is UI-only text.
-    const totalAmount = resolveExpectedTotalAmount(requestData?.estimatedTotalAmount);
-    const expectedSupplierName = resolveExpectedSupplierName(requestData?.supplierName);
+    const selectedGroup = requestData?.poGroups?.find(g => g.id === poGroupId) ?? null;
+    // A poGroupId that resolves to no group is a hard error — never fall back to 0 / "Não definido".
+    const groupMissing = !loading && !!requestData && !!poGroupId && !selectedGroup;
+    const totalAmount = resolveExpectedTotalAmount(selectedGroup?.totalAmount);
+    const expectedSupplierName = resolveExpectedSupplierName(selectedGroup?.supplierNameSnapshot);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
-    const currencyCode = requestData?.currencyCode || 'AOA';
+    const currencyCode = selectedGroup?.currencyCode || 'AOA';
 
     const runOcrValidation = async (selectedFile: File) => {
+        if (groupMissing) return; // never compare against a missing group's 0/null baseline
         setOcrLoading(true);
         setOcrResult(null);
         setOverrideConfirmed(false);
@@ -247,6 +255,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     };
 
     const handleConfirm = async () => {
+        if (groupMissing) {
+            setFeedback({ type: 'error', message: 'Não foi possível carregar os dados do grupo P.O. selecionado. Atualize a página e tente novamente.' });
+            return;
+        }
         if (!file) {
             setFeedback({ type: 'error', message: 'É obrigatório anexar o novo documento de P.O em formato PDF.' });
             return;
@@ -276,6 +288,12 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                 hasMismatches: ocrResult?.hasMismatches || false,
                 overrideConfirmed,
                 mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : '',
+                // v2.242.0 — forward the ACTUAL OCR extraction so the backend recomputes divergence
+                // against the persisted RequestPoGroup (authoritative "Esperado"), no longer trusting
+                // the frontend hasMismatches flag as the sole source. Only real extracted values are
+                // sent (OCR does not surface a currency in this flow, so it is omitted).
+                extractedTotalAmount: ocrResult?.extractedTotal,
+                extractedSupplierName: ocrResult?.extractedSupplier || undefined,
                 paymentConditionCode: paymentCondition,
                 advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
                 paymentConditionSource: paymentConditionSource || 'USER_SELECTED'
@@ -357,10 +375,21 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 </motion.div>
                                 <p style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>Carregando dados do pedido...</p>
                             </div>
+                        ) : groupMissing ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                <AlertTriangle size={32} style={{ color: 'var(--color-status-red)', marginBottom: '12px' }} />
+                                <p style={{ fontWeight: 700, color: 'var(--color-status-red)', maxWidth: '460px', margin: '0 auto', lineHeight: 1.5 }}>
+                                    Não foi possível carregar os dados do grupo P.O. selecionado. Atualize a página e tente novamente.
+                                </p>
+                            </div>
                         ) : (
                             <>
-                                {/* Finance Return Reason */}
-                                {returnReason && (
+                                {/* Finance Return Reason — the human message is surfaced ABOVE the
+                                    system/technical context (parseFinanceReturnComment); actor/date are
+                                    secondary; the technical bracket collapses behind "Ver detalhes técnicos". */}
+                                {returnReason && (() => {
+                                    const parsed = parseFinanceReturnComment(returnReason);
+                                    return (
                                     <div style={{
                                         marginBottom: '24px',
                                         padding: '20px',
@@ -371,20 +400,44 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                     }}>
                                         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                                             <AlertTriangle size={22} color="#ea580c" style={{ flexShrink: 0, marginTop: '2px' }} />
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: '#c2410c', marginBottom: '6px', letterSpacing: '0.05em' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: '#c2410c', marginBottom: '8px', letterSpacing: '0.05em' }}>
                                                     Motivo da Devolução por Finanças
                                                 </div>
-                                                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#9a3412', lineHeight: 1.5 }}>
-                                                    "{returnReason}"
+                                                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: '#c2410c', letterSpacing: '0.04em', opacity: 0.85 }}>
+                                                    Mensagem de Finanças
                                                 </div>
-                                                <div style={{ marginTop: '10px', fontSize: '0.75rem', color: '#c2410c', fontWeight: 600 }}>
-                                                    — {returnActor} em {returnDate ? new Date(returnDate).toLocaleDateString('pt-AO', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '---'}
+                                                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#9a3412', lineHeight: 1.45, marginTop: '2px' }}>
+                                                    {parsed.message}
                                                 </div>
+                                                {(returnActor || returnDate) && (
+                                                    <div style={{ marginTop: '10px', fontSize: '0.75rem', color: '#c2410c', fontWeight: 600 }}>
+                                                        Devolvido por {returnActor || '—'}{returnDate ? ` · ${new Date(returnDate).toLocaleDateString('pt-AO', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                                                    </div>
+                                                )}
+                                                {parsed.technical && (
+                                                    <div style={{ marginTop: '12px' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowReturnTechnical(v => !v)}
+                                                            aria-expanded={showReturnTechnical}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontSize: '0.72rem', fontWeight: 700, color: '#c2410c' }}
+                                                        >
+                                                            {showReturnTechnical ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                            Ver detalhes técnicos
+                                                        </button>
+                                                        {showReturnTechnical && (
+                                                            <div style={{ marginTop: '6px', fontSize: '0.72rem', color: '#7c2d12', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', opacity: 0.9 }}>
+                                                                {parsed.technical}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
-                                )}
+                                    );
+                                })()}
 
                                 {/* Expected Values */}
                                 <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--color-bg-page)', border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)' }}>

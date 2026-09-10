@@ -86,7 +86,9 @@ export function FinanceActionModal({
         switch (action) {
             case 'SCHEDULE': return 'Informe a data prevista para a saída do pagamento.';
             case 'PAY': return 'Informe o montante efetivamente pago e anexe o comprovante de pagamento.';
-            case 'RETURN': return 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
+            case 'RETURN': return isAdvance
+                ? 'Descreva o motivo da devolução. O adiantamento pendente/agendado deste grupo P.O será CANCELADO e o Comprador deverá re-registrar a P.O. antes de novo agendamento.'
+                : 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             case 'CANCEL_SCHEDULE': return 'Esta ação cancela o agendamento atual deste grupo. O documento de cronograma anexado será marcado como sem efeito.';
             default: return '';

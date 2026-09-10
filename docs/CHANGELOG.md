@@ -4,7 +4,57 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.241.0
+v2.242.0
+
+## [v2.242.0] - 2026-09-10 — Controlled PO Correction & Cross-Type Buyer Ownership
+
+Finance can return an advance-payment P.O. group to the Buyer for correction; the Buyer's correction
+work is owned, discoverable and notified consistently across QUOTATION and PAYMENT. One additive
+migration plus a controlled, PAYMENT-only ownership backfill (preview/apply). DEV validated
+end-to-end; not yet deployed to TEST/PROD.
+
+### Added
+- Persisted `RequestPoGroup.PoResponsibleBuyerId` — durable Buyer ownership for PAYMENT P.O. groups
+  (additive nullable migration `20260909145120_AddPoResponsibleBuyerOwnershipToPoGroups`).
+- Controlled, SysAdmin-gated, PAYMENT-only ownership backfill with read-only preview and idempotent
+  apply (`POST /api/v1/admin/repairs/po-responsible-buyer-backfill`).
+- Cross-type personal PO-correction count and footer sticker (`GET /api/v1/requests/personal-po-corrections/count`).
+- `GET /api/v1/requests/my-actions` — derived Personal Action projection foundation
+  (categories/counts, per-category pagination, deep-link target lookup; group-aware ownership).
+
+### Changed
+- Finance return-for-adjustment supports advance-payment groups (`ADVANCE_PAYMENT_REQUIRED` /
+  `ADVANCE_PAYMENT_SCHEDULED`), cancelling the active advance atomically on return.
+- Buyer Queue (Gestão de Cotações) admits a request of any type that has a live
+  `WAITING_PO_CORRECTION` group; a normal PAYMENT request stays excluded. Ownership is cross-type
+  (QUOTATION → `Request.BuyerId`; PAYMENT correction → `PoResponsibleBuyerId`).
+- PO-correction notifications and the sticker are owner-scoped (no broadcast by broad Buyer role/scope).
+- CorrectPoModal surfaces the human Finance message prominently and collapses the technical metadata;
+  return-history is selected per correction group.
+- Supplier OCR comparison normalized consistently across frontend and backend (accents / punctuation /
+  hyphen / spacing) via a shared `SupplierNameComparer`.
+
+### Fixed
+- Stale duplicate active ADVANCE risk during PO correction (return cancels the old advance; REREGISTER
+  creates exactly one fresh active advance).
+- PAYMENT PO correction shown as "Não atribuído" — the row now shows the responsible Buyer.
+- Quotation coverage/progress leaking onto a non-QUOTATION PO correction row.
+- PO-correction visibility for mixed / multi-group requests (group-based, not request-scalar).
+- CorrectPoModal expected supplier/amount now resolved from the selected P.O. group.
+
+### Safety / Data
+- A cancelled ADVANCE is preserved (never reactivated); a completed/paid advance blocks the return.
+- `RegisterPo` refuses a lingering active advance instead of silently cancelling it.
+- PAYMENT ownership never mutates `Request.BuyerId`; Finance return preserves `PoResponsibleBuyerId`.
+- The PAYMENT backfill leaves conflicting ownership NULL rather than guessing; DEV apply assigned 92
+  groups and left 6 unresolved.
+
+### Deferred
+- "Para Minha Ação" V2 visual redesign, category lanes, deep-link scroll/focus, the 5-second attention
+  highlight, and the sticker's category-specific CTA → v2.243.0.
+- Cleanup of the stale request-scalar `WAITING_PO_CORRECTION` on a few historical PAYMENT requests
+  (their P.O. groups are already `PO_ISSUED`; the new group-state predicates already ignore them)
+  remains a separate task.
 
 ## [v2.241.0] - 2026-09-08 — Controlled Financial Repair & Discount Hardening
 

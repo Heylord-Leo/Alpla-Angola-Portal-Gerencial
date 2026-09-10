@@ -1700,6 +1700,9 @@ public class FinanceController : BaseController
         var r = await _context.Requests
             .Include(req => req.PoGroups)
                 .ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.PoGroups)
+                .ThenInclude(g => g.Payments)
+            .Include(req => req.Attachments)
             .Include(req => req.Status)
             .Include(req => req.RequestType)
             .Include(req => req.Supplier)
@@ -1747,6 +1750,29 @@ public class FinanceController : BaseController
             });
         }
 
+        // v2.242.0 — advance-pending return guard. A group awaiting advance scheduling
+        // (ADVANCE_PAYMENT_REQUIRED) or with a scheduled-but-UNPAID advance (ADVANCE_PAYMENT_SCHEDULED)
+        // may be returned, but ONLY before the advance is executed. A COMPLETED advance blocks the
+        // return regardless of ActualPaidAmount; a non-zero ActualPaidAmount blocks it independently.
+        var isAdvanceReturn = group.Status == RequestConstants.PoGroupStatuses.AdvancePaymentRequired
+            || group.Status == RequestConstants.PoGroupStatuses.AdvancePaymentScheduled;
+        if (isAdvanceReturn)
+        {
+            var advanceExecuted = group.Payments.Any(p =>
+                p.PaymentType == RequestPayment.PaymentTypes.Advance
+                && (p.PaymentStatus == RequestPayment.PaymentStatuses.Completed
+                    || (p.ActualPaidAmount ?? 0m) > 0m));
+            if (advanceExecuted)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Ação Inválida",
+                    Detail = "Não é possível devolver este grupo para correção: o adiantamento já foi executado (pago). A devolução só é permitida antes do pagamento do adiantamento.",
+                    Status = 400
+                });
+            }
+        }
+
         var displaySupplierName = FinanceGroupDisplayResolver.ResolveSupplierName(
             group.SupplierNameSnapshot,
             r.SelectedQuotationId.HasValue,
@@ -1758,8 +1784,71 @@ public class FinanceController : BaseController
             r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
             r.Currency?.Code);
 
+        // v2.242.0 — atomic: cancel active advance payment(s), void schedule attachment, flip the
+        // group to WAITING_PO_CORRECTION and append audit in ONE transaction. If any step fails the
+        // whole return rolls back — a partially-cancelled advance must never be left behind.
+        await using var tx = await _context.Database.BeginTransactionAsync();
+
+        if (isAdvanceReturn)
+        {
+            // Cancel EVERY active (PLANNED/SCHEDULED) advance row for this group; COMPLETED/CANCELLED
+            // rows are never touched. Rows are cancelled (not deleted) so the audit trail survives, and
+            // the RegisterPo active-advance guard then sees zero active rows on re-registration.
+            var activeAdvances = group.Payments
+                .Where(p => p.PaymentType == RequestPayment.PaymentTypes.Advance
+                    && (p.PaymentStatus == RequestPayment.PaymentStatuses.Planned
+                        || p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled))
+                .ToList();
+            var anyWasScheduled = activeAdvances.Any(p => p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled);
+            foreach (var p in activeAdvances)
+            {
+                p.PaymentStatus = RequestPayment.PaymentStatuses.Cancelled;
+                p.ScheduledDateUtc = null;
+                p.ScheduledByUserId = null;
+                p.UpdatedByUserId = CurrentUserId;
+                p.UpdatedAtUtc = DateTime.UtcNow;
+            }
+
+            // Void the group's most-recent non-voided PAYMENT_SCHEDULE attachment if an advance was
+            // actually scheduled (mirrors CancelSchedule's attachment-void semantics).
+            if (anyWasScheduled)
+            {
+                var scheduleAttachment = r.Attachments
+                    .Where(a => a.RequestPoGroupId == group.Id
+                        && a.AttachmentTypeCode == RequestAttachment.TYPE_PAYMENT_SCHEDULE
+                        && !a.IsDeleted && a.VoidedAtUtc == null)
+                    .OrderByDescending(a => a.UploadedAtUtc)
+                    .FirstOrDefault();
+                if (scheduleAttachment != null)
+                {
+                    scheduleAttachment.VoidedAtUtc = DateTime.UtcNow;
+                    scheduleAttachment.VoidedByUserId = CurrentUserId;
+                    scheduleAttachment.VoidReason = $"Adiantamento cancelado por devolução para correção da P.O. Motivo: {requestDto.Notes}";
+                }
+            }
+
+            if (activeAdvances.Count > 0)
+            {
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(),
+                    RequestId = id,
+                    ActorUserId = CurrentUserId,
+                    ActionTaken = "ADVANCE_PAYMENT_CANCELLED_FOR_PO_CORRECTION",
+                    PreviousStatusId = r.StatusId,
+                    NewStatusId = r.StatusId,
+                    Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
+                        + $" Adiantamento(s) cancelado(s) ({activeAdvances.Count}) devido à devolução do grupo P.O para correção. Sequência(s): {string.Join(", ", activeAdvances.Select(p => p.PaymentSequence))}.",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
+        }
+
         // Change ONLY the target group; the request scalar is derived by aggregation afterwards
         // (no scalar-only manual override, so siblings are never masked or regressed).
+        // v2.242.0 — deliberately DO NOT touch group.PoResponsibleBuyerId here: the return must
+        // preserve who owns the P.O. (the last Buyer registrant), so the returned group still routes
+        // to that Buyer's personal correction workload. Only RegisterPo (re-registration) rewrites it.
         group.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection;
         group.UpdatedAtUtc = DateTime.UtcNow;
         r.UpdatedAtUtc = DateTime.UtcNow;
@@ -1780,7 +1869,10 @@ public class FinanceController : BaseController
         await _context.SaveChangesAsync();
 
         // Derive the request scalar from the current group set — sibling groups are respected.
+        // Runs inside the same transaction (shared scoped DbContext) so the whole return is atomic.
         await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
+
+        await tx.CommitAsync();
 
         // [TEMPORARY NON-CENTRAL HOOK]
         try

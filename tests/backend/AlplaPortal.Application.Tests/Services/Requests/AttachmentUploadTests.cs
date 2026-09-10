@@ -96,6 +96,48 @@ public class AttachmentUploadTests : IDisposable
         };
     }
 
+    // v2.242.0 — PO-delete gate is group-scoped: in a multi-group request whose SCALAR is
+    // PO_PARTIALLY_UPLOADED, the PO of a group that is WAITING_PO_CORRECTION may be deleted, while the
+    // PO of a sibling group in another status may NOT.
+    [Fact]
+    public async Task DeletePo_GroupScoped_AllowsCorrectionGroup_BlocksSibling()
+    {
+        var ctx = NewContext();
+        var actor = new User { Id = Guid.NewGuid(), FullName = "Buyer", Email = $"b-{Guid.NewGuid()}@t.local" };
+        ctx.Users.Add(actor);
+        ctx.RequestTypes.Add(new RequestType { Id = 1, Code = RequestConstants.Types.Quotation, Name = "Cotação" });
+        // Request scalar deliberately PO_PARTIALLY_UPLOADED (the mixed-group aggregate).
+        ctx.RequestStatuses.Add(new RequestStatus { Id = 1, Code = RequestConstants.Statuses.PoPartiallyUploaded, Name = "P.O Parcial", DisplayOrder = 12 });
+        await ctx.SaveChangesAsync();
+
+        var request = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "ZZTEST-DELPO-275", Title = "ZZTEST del gate",
+            RequestTypeId = 1, StatusId = 1, RequesterId = actor.Id, DepartmentId = 1, CompanyId = 1, CreatedAtUtc = DateTime.UtcNow
+        };
+        ctx.Requests.Add(request);
+        var correctionGroup = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "KRONES", CurrencyCode = "AOA", TotalAmount = 100m, Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection, CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = actor.Id };
+        var siblingGroup = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "CIVIPARTS", CurrencyCode = "AOA", TotalAmount = 50m, Status = RequestConstants.PoGroupStatuses.AdvancePaymentRequired, CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = actor.Id };
+        ctx.RequestPoGroups.AddRange(correctionGroup, siblingGroup);
+
+        var correctionPo = new RequestAttachment { Id = Guid.NewGuid(), RequestId = request.Id, RequestPoGroupId = correctionGroup.Id, FileName = "po-krones.pdf", FileExtension = ".pdf", AttachmentTypeCode = AttachmentConstants.Types.PurchaseOrder, StorageReference = "zz/po-k.pdf", UploadedByUserId = actor.Id, UploadedAtUtc = DateTime.UtcNow };
+        var siblingPo = new RequestAttachment { Id = Guid.NewGuid(), RequestId = request.Id, RequestPoGroupId = siblingGroup.Id, FileName = "po-civ.pdf", FileExtension = ".pdf", AttachmentTypeCode = AttachmentConstants.Types.PurchaseOrder, StorageReference = "zz/po-c.pdf", UploadedByUserId = actor.Id, UploadedAtUtc = DateTime.UtcNow };
+        ctx.RequestAttachments.AddRange(correctionPo, siblingPo);
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, actor.Id);
+
+        // Sibling group's PO (ADVANCE_PAYMENT_REQUIRED) — blocked.
+        var blocked = await controller.Delete(siblingPo.Id);
+        Assert.IsType<BadRequestObjectResult>(blocked);
+        Assert.False((await ctx.RequestAttachments.AsNoTracking().SingleAsync(a => a.Id == siblingPo.Id)).IsDeleted);
+
+        // Correction group's PO — allowed despite the PO_PARTIALLY_UPLOADED request scalar.
+        var allowed = await controller.Delete(correctionPo.Id);
+        Assert.IsNotType<BadRequestObjectResult>(allowed);
+        Assert.True((await ctx.RequestAttachments.AsNoTracking().SingleAsync(a => a.Id == correctionPo.Id)).IsDeleted);
+    }
+
     private sealed record Seed(Guid RequestId, Guid NcrGroupId, Guid ItecGroupId, Guid ActorId, Guid OtherRequestGroupId, int PoIssuedStatusId);
 
     /// <summary>Mirrors request 100: QUOTATION request, NCR (PO_ISSUED) + ITEC (ADVANCE_PAYMENT_REQUIRED)

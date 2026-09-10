@@ -3,6 +3,7 @@ using System.Diagnostics;
 
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Application.Projections;
+using AlplaPortal.Application.Services.Requests;
 using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Application.DTOs.Common;
@@ -425,6 +426,14 @@ public class RequestsController : BaseController
             ((r.RequesterId == currentUserId || _context.DepartmentManagers.Any(dm => dm.UserId == currentUserId && dm.IsActive && dm.DepartmentId == r.DepartmentId && (dm.PlantId == null || (r.PlantId != null && dm.PlantId == r.PlantId)))) && r.RequestType!.Code == RequestConstants.Types.Quotation && !new[] { RequestConstants.Statuses.Cancelled, RequestConstants.Statuses.Rejected, RequestConstants.Statuses.Completed, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted }.Contains(r.Status!.Code) && r.LineItems.Any(li => !li.IsDeleted && li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed)) ||
             // Financeiro
             (isFinance && ((r.Status!.Code == RequestConstants.Statuses.FinalApproved && r.RequestType!.Code == RequestConstants.Types.Payment) || r.Status!.Code == RequestConstants.Statuses.PoIssued || r.Status!.Code == RequestConstants.Statuses.PaymentRequestSent || r.Status!.Code == RequestConstants.Statuses.PaymentScheduled || r.Status!.Code == "ADVANCE_PAYMENT_REQUIRED" || r.Status!.Code == "WAITING_RECONCILIATION")) ||
+            // v2.242.0 — Comprador: cross-type PO correction ownership. A group returned by Finance
+            // (WAITING_PO_CORRECTION) is personal work for the Buyer who owns that P.O.: Request.BuyerId
+            // for QUOTATION, RequestPoGroup.PoResponsibleBuyerId for PAYMENT (no BuyerId). GROUP-based,
+            // so it is immune to the request scalar (REQ-275 aggregates to PO_PARTIALLY_UPLOADED) and to
+            // stale scalars (a PO_ISSUED group never matches). Mirrors PersonalPoCorrectionPredicate.OwnedBy.
+            (isBuyer && r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                && ((r.RequestType!.Code == RequestConstants.Types.Quotation && r.BuyerId == currentUserId)
+                    || (r.RequestType!.Code == RequestConstants.Types.Payment && g.PoResponsibleBuyerId == currentUserId)))) ||
             // Recebimento (Requester ou Role)
             ((r.RequesterId == currentUserId || isReceiver) && receivingCodes.Contains(r.Status!.Code));
 
@@ -473,6 +482,12 @@ public class RequestsController : BaseController
             .CountAsync(r => r.Status!.Code == RequestConstants.Statuses.WaitingAreaApproval || r.Status!.Code == RequestConstants.Statuses.WaitingFinalApproval || r.Status!.Code == RequestConstants.Statuses.WaitingCostCenter);
         _logger.LogInformation("[PERF GetRequests] 3-PendingMyApproval: {Elapsed}ms", _sw.ElapsedMilliseconds);
 
+        // v2.242.0 — cross-type personal PO-correction count (one set-based aggregate). Computed on the
+        // base-filtered scope BEFORE the list-specific status/attention filters so it reflects the
+        // user's whole owned correction workload, not the selected card. Same predicate as the sticker
+        // endpoint and "Para Minha Ação".
+        var poCorrectionsForMeCount = await query.CountAsync(PersonalPoCorrectionPredicate.OwnedBy(currentUserId));
+
         var summary = new DashboardSummaryDto
         {
             TotalRequests = counts?.Total ?? 0,
@@ -481,7 +496,8 @@ public class RequestsController : BaseController
             PendingMyApproval = pendingMyApprovalCount,
             AwaitingPo = counts?.AwaitingPo ?? 0,
             AwaitingPayment = counts?.AwaitingPayment ?? 0,
-            CompletedRequests = counts?.Completed ?? 0
+            CompletedRequests = counts?.Completed ?? 0,
+            PoCorrectionsForMe = poCorrectionsForMeCount
         };
 
         // 3. Apply List-Specific Filters (Status, Attention)
@@ -791,6 +807,24 @@ public class RequestsController : BaseController
                     item.UnitSummary = RequestWorkflowProjectionBuilder.BuildUnitSummary(projection);
                     item.ResponsibleRoles = projection.Responsibilities.Select(rr => rr.Role).ToList();
 
+                    // v2.242.0 — cross-type personal PO-correction flag + owned groups, from the SAME
+                    // page-scoped PoGroups already loaded (no extra query). Only the groups this Buyer
+                    // owns are surfaced (QUOTATION→BuyerId, PAYMENT→PoResponsibleBuyerId), so a sibling
+                    // group owned by another Buyer never leaks onto this user's card.
+                    var myCorrections = data.PoGroups
+                        .Where(g => PersonalPoCorrectionPredicate.OwnsGroup(
+                            data.RequestType!.Code, data.BuyerId, g.Status, g.PoResponsibleBuyerId, currentUserId))
+                        .Select(g => new BuyerPoCorrectionGroupDto
+                        {
+                            PoGroupId = g.Id,
+                            SupplierId = g.SupplierId,
+                            SupplierName = g.SupplierNameSnapshot,
+                            PurchaseOrderNumber = g.PurchaseOrderNumber
+                        })
+                        .ToList();
+                    item.MyPoCorrectionGroups = myCorrections;
+                    item.HasMyPoCorrection = myCorrections.Count > 0;
+
                     // v2.230.0 historical compatibility (display only, no extra query): a
                     // single-unit request whose scalar lags the group lifecycle (REQ-140 class)
                     // shows the unit's truthful label instead of the stale scalar. Guardrails
@@ -824,6 +858,80 @@ public class RequestsController : BaseController
             },
             Summary = summary
         });
+    }
+
+    /// <summary>
+    /// v2.242.0 — lightweight cross-type personal PO-correction count for the footer sticker's 2-minute
+    /// poll. ONE set-based aggregate over the access-scoped requests (no page, no hydration, no graph),
+    /// using the canonical <see cref="PersonalPoCorrectionPredicate"/> so it can never drift from
+    /// "Para Minha Ação" or the requests summary. Counts distinct requests with ≥1 WAITING_PO_CORRECTION
+    /// group personally owned by the current Buyer (QUOTATION→BuyerId, PAYMENT→PoResponsibleBuyerId).
+    /// </summary>
+    [HttpGet("personal-po-corrections/count")]
+    public async Task<IActionResult> GetPersonalPoCorrectionsCount()
+    {
+        // Buyer-scoped work; a user without the Buyer role owns none by definition.
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+            return Ok(new { count = 0 });
+
+        var scoped = await GetScopedRequestsQuery();
+        var count = await scoped.CountAsync(PersonalPoCorrectionPredicate.OwnedBy(CurrentUserId));
+        return Ok(new { count });
+    }
+
+    /// <summary>
+    /// v2.242.0 Phase 1 — cross-type PERSONAL ACTION projection for the future "Para Minha Ação" V2.
+    /// Returns action ITEMS (one request may yield several — one per actionable group or scalar action),
+    /// grouped into categories with counts, priority-sorted, paginated per category. Access-scoped AND
+    /// ownership-filtered (QUOTATION correction → BuyerId; PAYMENT correction → PoResponsibleBuyerId).
+    /// The legacy GET /requests?isAttention=true carousel feed is intentionally left untouched.
+    /// </summary>
+    [HttpGet("my-actions")]
+    public async Task<ActionResult<MyActionsResponseDto>> GetMyActions(
+        [FromQuery] string? actionType = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? sort = "priority",
+        [FromQuery] Guid? targetRequestId = null,
+        [FromQuery] Guid? targetPoGroupId = null,
+        [FromQuery] string? targetActionType = null)
+    {
+        var currentUserId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        var scoped = await GetScopedRequestsQuery();
+
+        // Bound the working set in SQL to plausibly-actionable requests before projecting in memory.
+        var actionableStatuses = new[]
+        {
+            RequestConstants.Statuses.Draft, RequestConstants.Statuses.AreaAdjustment, RequestConstants.Statuses.FinalAdjustment,
+            RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.WaitingFinalApproval,
+            RequestConstants.Statuses.WaitingQuotation, RequestConstants.Statuses.FinalApproved,
+            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, RequestConstants.Statuses.PaymentScheduled,
+            "ADVANCE_PAYMENT_REQUIRED", "WAITING_RECONCILIATION",
+            "WAITING_RECEIPT", RequestConstants.Statuses.PaymentCompleted, "PAG_REALIZADO", "AG_RECIBO", "WAITING_SUPPLIER_DELIVERY"
+        };
+        var requests = await scoped
+            .Where(r => r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                || (r.RequestType.Code == RequestConstants.Types.Quotation
+                    && r.Status.Code != RequestConstants.Statuses.Cancelled && r.Status.Code != RequestConstants.Statuses.Rejected
+                    && r.Status.Code != RequestConstants.Statuses.Completed)
+                || actionableStatuses.Contains(r.Status.Code))
+            .Include(r => r.RequestType).Include(r => r.Status).Include(r => r.NeedLevel)
+            .Include(r => r.Buyer).Include(r => r.LineItems).Include(r => r.PoGroups)
+            .AsSplitQuery().AsNoTracking()
+            .ToListAsync();
+
+        var ctx = new PersonalActionProjectionService.Context(
+            currentUserId,
+            roles.Contains(RoleConstants.Buyer),
+            roles.Contains(RoleConstants.Finance),
+            roles.Contains(RoleConstants.Receiving),
+            roles.Contains(RoleConstants.FinalApprover),
+            DateTime.UtcNow);
+
+        var result = new PersonalActionProjectionService()
+            .Build(requests, ctx, actionType, page, pageSize, sort, targetRequestId, targetPoGroupId, targetActionType);
+        return Ok(result);
     }
 
     /// <summary>
@@ -6988,17 +7096,19 @@ public class RequestsController : BaseController
 
         if (!string.IsNullOrWhiteSpace(dto.ExtractedSupplierName))
         {
-            var extractedSupplier = dto.ExtractedSupplierName.ToLowerInvariant();
-            var expectedSupplier = poGroup.Supplier?.Name?.ToLowerInvariant() ?? "";
-            
-            var tokens1 = extractedSupplier.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            var tokens2 = expectedSupplier.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            var intersection = tokens1.Intersect(tokens2).Count();
-            var maxLen = Math.Max(tokens1.Length, tokens2.Length);
-            
-            if (maxLen > 0 && ((double)intersection / maxLen) < 0.6)
+            // v2.242.0 — canonical supplier comparison (accent / spacing / hyphen / punctuation
+            // tolerant), matching the frontend ocrPoValidation.calculateSimilarity so the authoritative
+            // check no longer raises a false "Fornecedor divergente" for OCR formatting differences.
+            // Expected source = the group's SupplierNameSnapshot (what the modal displays), with the
+            // loaded Supplier relation as fallback. An ABSENT expected supplier is "unavailable" — never
+            // an automatic false mismatch caused by comparing against an empty string.
+            var expectedSupplierName = !string.IsNullOrWhiteSpace(poGroup.SupplierNameSnapshot)
+                ? poGroup.SupplierNameSnapshot
+                : poGroup.Supplier?.Name;
+            if (!string.IsNullOrWhiteSpace(expectedSupplierName)
+                && !AlplaPortal.Domain.Services.SupplierNameComparer.NamesMatch(dto.ExtractedSupplierName, expectedSupplierName))
             {
-                backendMismatches.Add($"Fornecedor divergente: Identificado \"{dto.ExtractedSupplierName}\" (Esperado: \"{poGroup.Supplier?.Name}\")");
+                backendMismatches.Add($"Fornecedor divergente: Identificado \"{dto.ExtractedSupplierName}\" (Esperado: \"{expectedSupplierName}\")");
             }
         }
 
@@ -7093,12 +7203,39 @@ public class RequestsController : BaseController
         }
         poGroup.UpdatedAtUtc = DateTime.UtcNow;
         poGroup.UpdatedByUserId = CurrentUserId;
+        // v2.242.0 — stamp durable personal ownership of THIS group's P.O. on both the initial
+        // registration and the correction re-registration. The authenticated Buyer (CurrentUserId,
+        // already Buyer-authorized for REGISTER_PO/REREGISTER_PO) becomes the responsible owner used by
+        // the cross-type personal-correction predicate — the ONLY ownership carrier for PAYMENT groups,
+        // which have no Request.BuyerId. Finance return / scheduling / receiving never touch this field,
+        // so it survives a WAITING_PO_CORRECTION return and still names who must correct the P.O.
+        poGroup.PoResponsibleBuyerId = CurrentUserId;
 
         string targetGroupStatusCode;
         string successMsg;
 
         if (isAdvancePayment)
         {
+            // v2.242.0 — duplicate-advance guard. A correct correction return cancels the group's
+            // active advance before the Buyer re-registers, so exactly ZERO active advance rows are
+            // expected here. If a PLANNED/SCHEDULED advance still exists, REFUSE (never silently
+            // cancel it — ReturnForAdjustment owns advance cancellation) so the inconsistency surfaces
+            // rather than stacking a duplicate active advance. CANCELLED/COMPLETED rows are ignored.
+            var activeAdvanceExists = await _context.RequestPayments.AnyAsync(p =>
+                p.RequestPoGroupId == poGroup.Id
+                && p.PaymentType == RequestPayment.PaymentTypes.Advance
+                && (p.PaymentStatus == RequestPayment.PaymentStatuses.Planned
+                    || p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled));
+            if (activeAdvanceExists)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Inconsistência de Adiantamento",
+                    Detail = "Já existe um adiantamento ativo (planeado ou agendado) para este grupo P.O. Cancele-o via devolução do Financeiro antes de re-registrar a P.O.",
+                    Status = 409
+                });
+            }
+
             targetGroupStatusCode = RequestConstants.Statuses.AdvancePaymentRequired;
             successMsg = isCorrection
                 ? "P.O corrigida e re-registrada com sucesso. Adiantamento necessário."

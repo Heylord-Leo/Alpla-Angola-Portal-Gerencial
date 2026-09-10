@@ -361,7 +361,31 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                 marginTop: '8px',
             }}>
                 <div style={{ flex: 1 }}>
-                    {order.statusCode === 'WAITING_QUOTATION' && onQuotationClick ? (
+                    {/* v2.242.0 — cross-type PO correction has PRECEDENCE and is keyed on the personal
+                        ownership flag, NOT the scalar statusCode: a mixed QUOTATION correction (REQ-275)
+                        aggregates its scalar to PO_PARTIALLY_UPLOADED yet still needs the Corrigir P.O.
+                        action. Only the current Buyer's own correction groups reach here. */}
+                    {order.hasMyPoCorrection && onCorrectPoClick ? (
+                        <div
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onCorrectPoClick();
+                            }}
+                            title={`Corrigir P.O devolvida por Finanças${order.myPoCorrectionGroups?.length ? ' — ' + order.myPoCorrectionGroups.map(g => g.supplierName).filter(Boolean).join(', ') : ''}`}
+                            style={{
+                                cursor: 'pointer',
+                                display: 'inline-block',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                            <StatusBadge
+                                statusCode={'WAITING_PO_CORRECTION'}
+                                label={'Corrigir P.O.'}
+                            />
+                        </div>
+                    ) : order.statusCode === 'WAITING_QUOTATION' && onQuotationClick ? (
                         <div 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -408,26 +432,6 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                                 onPaymentClick();
                             }}
                             title="Ir para tela de finanças"
-                            style={{ 
-                                cursor: 'pointer', 
-                                display: 'inline-block',
-                                transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'scale(1.02)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
-                        >
-                            <StatusBadge
-                                statusCode={order.statusCode}
-                                label={resolveSafeStatusLabel(order.statusCode, order.statusName, order.displayStatusName)}
-                            />
-                        </div>
-                    ) : order.statusCode === 'WAITING_PO_CORRECTION' && onCorrectPoClick ? (
-                        <div 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onCorrectPoClick();
-                            }}
-                            title="Corrigir P.O devolvida por Finanças"
                             style={{ 
                                 cursor: 'pointer', 
                                 display: 'inline-block',

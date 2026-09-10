@@ -420,4 +420,396 @@ public class BuyerQueueEndpointTests
         Assert.IsType<NotFoundObjectResult>(result);
         Assert.Empty(ctx.RequestStatusHistories.Where(h => h.ActionTaken == RequestConstants.StatusHistoryActions.Note));
     }
+
+    // ════════════════════ v2.242.0 — PO correction visibility ════════════════════
+
+    private static async Task<(Guid reqId, Guid kronesGroupId)> SeedCorrectionRequestAsync(
+        ApplicationDbContext ctx, Guid actorId, string number, string kronesStatus)
+    {
+        if (!ctx.RequestStatuses.Any(s => s.Id == 3))
+            ctx.RequestStatuses.Add(new RequestStatus { Id = 3, Code = RequestConstants.Statuses.PoPartiallyUploaded, Name = "P.O Parcial" });
+        var req = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = number, Title = $"Pedido {number}", Description = "t",
+            RequestTypeId = QuotationTypeId, StatusId = 3, RequesterId = actorId, CreatedByUserId = actorId,
+            BuyerId = actorId, DepartmentId = 1, CompanyId = 1, PlantId = 1, CreatedAtUtc = DateTime.UtcNow.AddDays(-1)
+        };
+        ctx.Requests.Add(req);
+        ctx.RequestLineItems.Add(new RequestLineItem
+        {
+            Id = Guid.NewGuid(), RequestId = req.Id, LineNumber = 1, Description = "Item", Quantity = 1, UnitPrice = 10,
+            TotalAmount = 10, QuotationLifecycleStatus = RequestConstants.QuotationLifecycleStatuses.QuotationApproved
+        });
+        var krones = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = req.Id, SupplierNameSnapshot = "KRONES ANGOLA", CurrencyCode = "AOA", TotalAmount = 100m, Status = kronesStatus, PurchaseOrderNumber = "ECF10 2026/283", CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = actorId };
+        var civ = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = req.Id, SupplierNameSnapshot = "CIVIPARTS", CurrencyCode = "AOA", TotalAmount = 50m, Status = RequestConstants.PoGroupStatuses.AdvancePaymentRequired, PurchaseOrderNumber = "ECF10 2026/125", CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = actorId };
+        ctx.RequestPoGroups.AddRange(krones, civ);
+        await ctx.SaveChangesAsync();
+        return (req.Id, krones.Id);
+    }
+
+    private static BuyerQueuePageDto Page(Microsoft.AspNetCore.Mvc.ActionResult<BuyerQueuePageDto> r) =>
+        (BuyerQueuePageDto)((OkObjectResult)r.Result!).Value!;
+
+    [Fact]
+    public async Task PoCorrection_MixedRequest_AppearsOnce_AsPoCorrection_WithSupplier()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var actor = await SeedActorAsync(ctx);
+        var (reqId, _) = await SeedCorrectionRequestAsync(ctx, actor, "REQ-20/08/2026-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        var page = Page(await BuildQueueController(ctx, actor).GetQueue());
+        var row = Assert.Single(page.Items.Where(i => i.RequestId == reqId));
+        Assert.Equal(BuyerQueueConstants.OperationalStates.PoCorrection, row.OperationalState);
+        Assert.True(row.RequiresAttention);
+        Assert.Single(row.PoCorrectionGroups);
+        Assert.Equal("KRONES ANGOLA", row.PoCorrectionGroups[0].SupplierName);
+        Assert.Equal("ECF10 2026/283", row.PoCorrectionGroups[0].PurchaseOrderNumber);
+        // v2.242.0 — a QUOTATION correction keeps Request.BuyerId semantics (not neutralized).
+        Assert.Equal("QUOTATION", row.RequestTypeCode);
+        Assert.Equal(actor, row.BuyerId);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Summary_Counts_Once_And_Search_Finds_It()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var actor = await SeedActorAsync(ctx);
+        await SeedCorrectionRequestAsync(ctx, actor, "REQ-20/08/2026-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        var summary = (BuyerQueueSummaryDto)((OkObjectResult)(await BuildQueueController(ctx, actor).GetSummary()).Result!).Value!;
+        Assert.Equal(1, summary.PoCorrections);
+        Assert.True(summary.RequiresAttention >= 1);
+
+        var searched = Page(await BuildQueueController(ctx, actor).GetQueue(query: "275"));
+        Assert.Single(searched.Items);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Respects_MyOwnership()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var owner = await SeedActorAsync(ctx);
+        var other = await SeedActorAsync(ctx);
+        await SeedCorrectionRequestAsync(ctx, owner, "REQ-OWN-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        // Assigned buyer sees it under "me"; a different actor does not.
+        Assert.Single(Page(await BuildQueueController(ctx, owner).GetQueue(ownership: "me")).Items);
+        Assert.Empty(Page(await BuildQueueController(ctx, other).GetQueue(ownership: "me")).Items);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Gone_After_Group_Leaves_Correction()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var actor = await SeedActorAsync(ctx);
+        // Group already re-registered (PO_ISSUED) with a still-PO_PARTIALLY_UPLOADED scalar and no other
+        // Buyer work → the request is not admitted to the queue.
+        var (reqId, _) = await SeedCorrectionRequestAsync(ctx, actor, "REQ-DONE-275", RequestConstants.PoGroupStatuses.PoIssued);
+
+        var page = Page(await BuildQueueController(ctx, actor).GetQueue());
+        Assert.DoesNotContain(page.Items, i => i.RequestId == reqId);
+    }
+
+    // ════════════════════ v2.242.0 — footer-sticker ownership (summary endpoint) ════════════════════
+    // The PO-correction footer sticker reads GetSummary(...).PoCorrections. It must be PERSONAL
+    // (ownership=me) so only the assigned Buyer is notified — the incident where REQ-275 (Samuel's)
+    // surfaced on Celestina's sticker because the hook fetched an unscoped ('all') summary.
+
+    private static BuyerQueueSummaryDto Sum(Microsoft.AspNetCore.Mvc.ActionResult<BuyerQueueSummaryDto> r) =>
+        (BuyerQueueSummaryDto)((OkObjectResult)r.Result!).Value!;
+
+    [Fact]
+    public async Task PoCorrection_Summary_MeScope_CountsOnlyOwnRequests()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var owner = await SeedActorAsync(ctx);   // Samuel — owns REQ-275
+        var other = await SeedActorAsync(ctx);   // Celestina — same broad scope, owns nothing
+        await SeedCorrectionRequestAsync(ctx, owner, "REQ-20/08/2026-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        // ownership=me: owner sees 1 (personal), other sees 0 (not their work) — this is the fix.
+        Assert.Equal(1, Sum(await BuildQueueController(ctx, owner, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+        Assert.Equal(0, Sum(await BuildQueueController(ctx, other, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+
+        // ownership=all (the previous behavior) leaks the org-scoped count to a non-owner Buyer whose
+        // access scope contains the request (no plant/dept scope rows → unfiltered) — the old bug.
+        Assert.Equal(1, Sum(await BuildQueueController(ctx, other, RoleConstants.Buyer).GetSummary(ownership: "all")).PoCorrections);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Summary_MeScope_ExcludesUnassigned()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var buyer = await SeedActorAsync(ctx);
+        var (reqId, _) = await SeedCorrectionRequestAsync(ctx, buyer, "REQ-UNASSIGNED-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+        // Unassign the correction request (BuyerId == null).
+        var req = ctx.Requests.Single(r => r.Id == reqId);
+        req.BuyerId = null;
+        await ctx.SaveChangesAsync();
+
+        // A personal (me) summary never counts unassigned work; it stays in the "Não Atribuídos" pool only.
+        Assert.Equal(0, Sum(await BuildQueueController(ctx, buyer, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+        Assert.Equal(1, Sum(await BuildQueueController(ctx, buyer, RoleConstants.Buyer).GetSummary(ownership: "unassigned")).PoCorrections);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Summary_MeScope_PaymentCorrection_OwnedByAnotherBuyer_NotCounted()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var me = await SeedActorAsync(ctx);
+        var otherBuyer = await SeedActorAsync(ctx);
+        // v2.242.0 Phase 1 — a PAYMENT WAITING_PO_CORRECTION group (REQ-254 class) IS admitted to the
+        // queue now, but its ownership is the group's PoResponsibleBuyerId (PAYMENT carries no BuyerId).
+        // Owned by another Buyer → must NOT count toward my personal correction summary.
+        await SeedPaymentCorrectionAsync(ctx, "REQ-14/08/2026-254", poResponsible: otherBuyer, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        Assert.Equal(0, Sum(await BuildQueueController(ctx, me, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+        // And the actual owner DOES see it (confirms admission works, only ownership scopes it out above).
+        Assert.Equal(1, Sum(await BuildQueueController(ctx, otherBuyer, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+    }
+
+    [Fact]
+    public async Task PoCorrection_Summary_MeScope_MultipleCorrectionGroups_CountsRequestOnce()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var buyer = await SeedActorAsync(ctx);
+        var (reqId, _) = await SeedCorrectionRequestAsync(ctx, buyer, "REQ-MULTI-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+        // Return the sibling (CIVIPARTS) group for correction too → two WAITING_PO_CORRECTION groups, one request.
+        foreach (var g in ctx.RequestPoGroups.Where(g => g.RequestId == reqId))
+            g.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+        await ctx.SaveChangesAsync();
+
+        // Request-based count: two returned groups on one request still count as 1.
+        Assert.Equal(1, Sum(await BuildQueueController(ctx, buyer, RoleConstants.Buyer).GetSummary(ownership: "me")).PoCorrections);
+    }
+
+    // ════════════════════ v2.242.0 — cross-type personal PO-correction count endpoint ════════════════════
+    // RequestsController.GetPersonalPoCorrectionsCount — the footer sticker's source. QUOTATION owner =
+    // Request.BuyerId; PAYMENT owner = RequestPoGroup.PoResponsibleBuyerId (no BuyerId on PAYMENT).
+
+    private static void SeedPaymentType(ApplicationDbContext ctx)
+    {
+        if (!ctx.RequestTypes.Any(t => t.Id == 9))
+            ctx.RequestTypes.Add(new RequestType { Id = 9, Code = RequestConstants.Types.Payment, Name = "Pagamento" });
+        if (!ctx.RequestStatuses.Any(s => s.Id == 3))
+            ctx.RequestStatuses.Add(new RequestStatus { Id = 3, Code = RequestConstants.Statuses.PoPartiallyUploaded, Name = "P.O Parcial" });
+    }
+
+    private static async Task<Guid> SeedPaymentCorrectionAsync(ApplicationDbContext ctx, string number, Guid? poResponsible, string groupStatus)
+    {
+        SeedPaymentType(ctx);
+        var requester = Guid.NewGuid();
+        ctx.Users.Add(new User { Id = requester, FullName = "Solicitante Pagamento", Email = $"req-{requester:N}@t.local", IsActive = true });
+        var reqId = Guid.NewGuid();
+        ctx.Requests.Add(new Request
+        {
+            Id = reqId, RequestNumber = number, Title = number, Description = "t", RequestTypeId = 9, StatusId = 3,
+            RequesterId = requester, CreatedByUserId = requester, BuyerId = null,
+            DepartmentId = 1, CompanyId = 1, PlantId = 1, CreatedAtUtc = DateTime.UtcNow.AddDays(-1)
+        });
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(), RequestId = reqId, SupplierNameSnapshot = "SIMOTECNICA", CurrencyCode = "AOA",
+            TotalAmount = 100m, Status = groupStatus, PurchaseOrderNumber = "FAC2025/125",
+            CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = Guid.NewGuid(), PoResponsibleBuyerId = poResponsible
+        });
+        await ctx.SaveChangesAsync();
+        return reqId;
+    }
+
+    private static int CountVal(IActionResult r)
+    {
+        var val = ((OkObjectResult)r).Value!;
+        return (int)val.GetType().GetProperty("count")!.GetValue(val)!;
+    }
+
+    [Fact]
+    public async Task PersonalCount_Quotation_countsForAssignedBuyer_notOthers()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var samuel = await SeedActorAsync(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        await SeedCorrectionRequestAsync(ctx, samuel, "REQ-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        Assert.Equal(1, CountVal(await BuildRequestsController(ctx, samuel, RoleConstants.Buyer).GetPersonalPoCorrectionsCount()));
+        Assert.Equal(0, CountVal(await BuildRequestsController(ctx, celestina, RoleConstants.Buyer).GetPersonalPoCorrectionsCount()));
+    }
+
+    [Fact]
+    public async Task PersonalCount_Payment_countsForPoResponsibleBuyer_notOthers()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        var samuel = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-254", poResponsible: celestina, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        // Celestina owns the PAYMENT P.O. (registrant) even though BuyerId is null; Samuel does not.
+        Assert.Equal(1, CountVal(await BuildRequestsController(ctx, celestina, RoleConstants.Buyer).GetPersonalPoCorrectionsCount()));
+        Assert.Equal(0, CountVal(await BuildRequestsController(ctx, samuel, RoleConstants.Buyer).GetPersonalPoCorrectionsCount()));
+    }
+
+    [Fact]
+    public async Task PersonalCount_excludesStalePaymentGroup_and_unresolvedOwner()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-STALE", poResponsible: celestina, RequestConstants.PoGroupStatuses.PoIssued); // group already PO_ISSUED
+        await SeedPaymentCorrectionAsync(ctx, "REQ-UNOWNED", poResponsible: null, RequestConstants.PoGroupStatuses.WaitingPoCorrection); // no owner
+
+        Assert.Equal(0, CountVal(await BuildRequestsController(ctx, celestina, RoleConstants.Buyer).GetPersonalPoCorrectionsCount()));
+    }
+
+    [Fact]
+    public async Task PersonalCount_isZeroForNonBuyerRole()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var user = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-254", poResponsible: user, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        // Even though the SysAdmin would "see" it, personal ownership is Buyer-gated at the endpoint.
+        Assert.Equal(0, CountVal(await BuildRequestsController(ctx, user, RoleConstants.SystemAdministrator).GetPersonalPoCorrectionsCount()));
+    }
+
+    // ════════════════════ v2.242.0 Phase 1 — BuyerQueue cross-type admission ════════════════════
+
+    [Fact]
+    public async Task Queue_Admits_PaymentCorrection_AsPoCorrection_ForOwner_NotOthers()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        var samuel = await SeedActorAsync(ctx);
+        var reqId = await SeedPaymentCorrectionAsync(ctx, "REQ-14/08/2026-254", poResponsible: celestina, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        // Todos (all): the PAYMENT correction is admitted and projects as PO_CORRECTION.
+        var all = Page(await BuildQueueController(ctx, celestina, RoleConstants.Buyer).GetQueue());
+        var row = Assert.Single(all.Items.Where(i => i.RequestId == reqId));
+        Assert.Equal(BuyerQueueConstants.OperationalStates.PoCorrection, row.OperationalState);
+        Assert.True(row.RequiresAttention);
+        Assert.Equal("SIMOTECNICA", row.PoCorrectionGroups.Single().SupplierName);
+        // v2.242.0 display fix — the Buyer comes from the WPC group's PoResponsibleBuyerId (Celestina),
+        // NOT "Não atribuído"; ownership reads MINE for the owner; quotation progress is neutralized.
+        Assert.Equal(celestina, row.BuyerId);
+        Assert.NotNull(row.BuyerName);
+        Assert.Equal(BuyerQueueConstants.OwnershipStates.Mine, row.OwnershipState);
+        Assert.Equal("PAYMENT", row.RequestTypeCode);
+        Assert.Equal(0, row.ActiveItemCount);
+        Assert.Equal(0, row.CoveredCount);
+        Assert.Equal(0, row.PendingCount);
+
+        // Meus Pedidos: owner (Celestina) sees it via PoResponsibleBuyerId; a different Buyer does not.
+        Assert.Single(Page(await BuildQueueController(ctx, celestina, RoleConstants.Buyer).GetQueue(ownership: "me")).Items.Where(i => i.RequestId == reqId));
+        Assert.Empty(Page(await BuildQueueController(ctx, samuel, RoleConstants.Buyer).GetQueue(ownership: "me")).Items.Where(i => i.RequestId == reqId));
+    }
+
+    [Fact]
+    public async Task Queue_Excludes_NormalPayment_WithoutLiveCorrection()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var buyer = await SeedActorAsync(ctx);
+        var reqId = await SeedPaymentCorrectionAsync(ctx, "REQ-NORMAL-PAY", poResponsible: buyer, RequestConstants.PoGroupStatuses.PoIssued); // no WPC group
+
+        var all = Page(await BuildQueueController(ctx, buyer, RoleConstants.Buyer).GetQueue());
+        Assert.DoesNotContain(all.Items, i => i.RequestId == reqId);
+    }
+
+    [Fact]
+    public async Task Queue_Summary_PaymentCorrection_FeedsPoCorrections_NotQuotationCounts()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-254", poResponsible: celestina, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        var s = Sum(await BuildQueueController(ctx, celestina, RoleConstants.Buyer).GetSummary());
+        Assert.Equal(1, s.PoCorrections);
+        Assert.True(s.RequiresAttention >= 1);
+        Assert.Equal(1, s.Total);
+        // Must NOT inflate quotation-coverage counters.
+        Assert.Equal(0, s.NeedsAction);       // NeedsQuotation/PartialCoverage/ReadyForApproval/AdjustmentRequired
+        Assert.Equal(0, s.AwaitingApproval);
+    }
+
+    // ════════════════════ v2.242.0 Phase 1 — my-actions personal projection ════════════════════
+
+    private static MyActionsResponseDto Actions(Microsoft.AspNetCore.Mvc.ActionResult<MyActionsResponseDto> r) =>
+        (MyActionsResponseDto)((OkObjectResult)r.Result!).Value!;
+
+    [Fact]
+    public async Task MyActions_PaymentCorrection_ForOwnerOnly()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        var samuel = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-14/08/2026-254", poResponsible: celestina, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        var cel = Actions(await BuildRequestsController(ctx, celestina, RoleConstants.Buyer).GetMyActions());
+        var item = Assert.Single(cel.Items.Where(i => i.ActionType == "PO_CORRECTION"));
+        Assert.Equal("REQ-14/08/2026-254", item.RequestNumber);
+        Assert.Equal("SIMOTECNICA", item.SupplierName);
+        Assert.Contains(cel.Categories, c => c.ActionType == "PO_CORRECTION" && c.Count == 1);
+        Assert.Contains("action=PO_CORRECTION", item.Route);
+        Assert.Contains("poGroupId=", item.Route);
+
+        var sam = Actions(await BuildRequestsController(ctx, samuel, RoleConstants.Buyer).GetMyActions());
+        Assert.DoesNotContain(sam.Items, i => i.ActionType == "PO_CORRECTION" && i.RequestNumber == "REQ-14/08/2026-254");
+    }
+
+    [Fact]
+    public async Task MyActions_QuotationCorrection_ForBuyer()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var samuel = await SeedActorAsync(ctx);
+        await SeedCorrectionRequestAsync(ctx, samuel, "REQ-20/08/2026-275", RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
+        var sam = Actions(await BuildRequestsController(ctx, samuel, RoleConstants.Buyer).GetMyActions(actionType: "PO_CORRECTION"));
+        Assert.Single(sam.Items.Where(i => i.RequestNumber == "REQ-20/08/2026-275"));
+    }
+
+    [Fact]
+    public async Task MyActions_ExcludesStalePaymentGroup()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var celestina = await SeedActorAsync(ctx);
+        await SeedPaymentCorrectionAsync(ctx, "REQ-STALE", poResponsible: celestina, RequestConstants.PoGroupStatuses.PoIssued);
+
+        var cel = Actions(await BuildRequestsController(ctx, celestina, RoleConstants.Buyer).GetMyActions());
+        Assert.DoesNotContain(cel.Items, i => i.ActionType == "PO_CORRECTION");
+    }
+
+    [Fact]
+    public async Task MyActions_TargetLookup_ReturnsItemBeyondFirstPage()
+    {
+        using var ctx = NewContext();
+        SeedLookups(ctx);
+        var buyer = await SeedActorAsync(ctx);
+        // Seed several PAYMENT corrections owned by the buyer; page size 1 forces paging.
+        Guid targetReq = Guid.Empty; Guid targetGroup = Guid.Empty;
+        for (int i = 0; i < 4; i++)
+        {
+            var rid = await SeedPaymentCorrectionAsync(ctx, $"REQ-PC-{i:D2}", poResponsible: buyer, RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+            if (i == 3) { targetReq = rid; targetGroup = ctx.RequestPoGroups.Single(g => g.RequestId == rid).Id; }
+        }
+
+        var res = Actions(await BuildRequestsController(ctx, buyer, RoleConstants.Buyer)
+            .GetMyActions(actionType: "PO_CORRECTION", page: 1, pageSize: 1, targetRequestId: targetReq, targetPoGroupId: targetGroup, targetActionType: "PO_CORRECTION"));
+        Assert.Equal(4, res.TotalCount);
+        Assert.Single(res.Items);
+        Assert.Equal(targetReq, res.Items[0].RequestId); // target surfaced onto its own page
+    }
 }

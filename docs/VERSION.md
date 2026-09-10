@@ -2,7 +2,28 @@
 
 ## Current Version
 
-v2.241.0
+v2.242.0
+
+## [v2.242.0] - 2026-09-10
+
+### Controlled PO Correction & Cross-Type Buyer Ownership
+
+Finance can now return an advance-payment P.O. group to the Buyer for correction, and the Buyer's
+correction workload — for QUOTATION and PAYMENT alike — is owned, discoverable and notified
+consistently. DEV validated end-to-end (REQ-20/08/2026-275 REREGISTER_PO round-trip PASS; migration
+applied; PAYMENT ownership backfill applied — 92 assigned / 6 left unresolved). Not yet deployed to
+TEST or PROD.
+
+- **Schema:** ONE additive, nullable migration —
+  `20260909145120_AddPoResponsibleBuyerOwnershipToPoGroups` (adds `RequestPoGroups.PoResponsibleBuyerId`,
+  no FK, no index). Down drops the column.
+- **Backfill (per environment, after migration):** a controlled, SysAdmin-gated, PAYMENT-only
+  ownership backfill — `POST /api/v1/admin/repairs/po-responsible-buyer-backfill` (`confirm=false`
+  previews and writes nothing; `confirm=true` applies with a required reason). It NEVER auto-runs on
+  startup or migration, is idempotent, never overwrites a non-null owner, and leaves conflicting rows
+  NULL rather than guessing.
+- **Operator sequence (TEST/PROD):** migration → backfill **preview** → human review → backfill
+  **apply** → validation. **Do NOT** run the B9 `OperationalStageBackfill` as part of this release.
 
 ## [v2.241.0] - 2026-09-08
 

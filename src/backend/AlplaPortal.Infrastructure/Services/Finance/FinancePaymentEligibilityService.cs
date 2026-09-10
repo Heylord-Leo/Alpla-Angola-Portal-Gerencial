@@ -71,12 +71,18 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         RequestConstants.Statuses.PaymentScheduled
     };
 
-    // Group-scoped return: the group's OWN status is authoritative. Same two states as the legacy
-    // parent guard, but read from the group so one group can be returned without regressing siblings.
+    // Group-scoped return: the group's OWN status is authoritative, so one group can be returned
+    // without regressing siblings. Includes the advance-pending states (v2.242.0): a group awaiting
+    // advance scheduling or with a scheduled-but-UNPAID advance can be returned to Purchasing for PO
+    // correction. ReturnForAdjustment enforces the pre-payment guard and cancels the active advance
+    // RequestPayment; a COMPLETED/paid advance leaves ADVANCE_PAYMENT_* (→ WAITING_SUPPLIER_DELIVERY)
+    // and so is never in this set.
     private static readonly string[] ReturnableGroupStatuses =
     {
         RequestConstants.Statuses.PoIssued,
-        RequestConstants.Statuses.PaymentScheduled
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.AdvancePaymentRequired,
+        RequestConstants.Statuses.AdvancePaymentScheduled
     };
 
     // Mirrors FinanceController.CancelSchedule's guard. Group-status-only, no type-branching:

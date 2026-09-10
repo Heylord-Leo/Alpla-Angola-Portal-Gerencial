@@ -278,3 +278,34 @@ describe('message constants', () => {
         assert.equal(CLIENT_PROCESSING_ERROR_MESSAGE, 'Os dados foram extraídos do documento, mas ocorreu um erro ao processar o resultado.');
     });
 });
+
+// v2.242.0 — group-scoped baseline (CorrectPoModal must pass the SELECTED PO group's values).
+describe('group-scoped OCR baseline (KRONES correction)', () => {
+    const KRONES_TOTAL = 4616502.39;
+    const KRONES_SUPPLIER = 'KRONES ANGOLA-Representações, Comércio e Indústria';
+
+    test('the group amount/supplier are used verbatim as the baseline (not the request scalar 0/null)', () => {
+        assert.equal(resolveExpectedTotalAmount(KRONES_TOTAL), KRONES_TOTAL);
+        assert.equal(resolveExpectedSupplierName(KRONES_SUPPLIER), KRONES_SUPPLIER);
+        // The old request-scalar sources would have produced these — the defect being fixed.
+        assert.equal(resolveExpectedTotalAmount(0), 0);
+        assert.equal(resolveExpectedSupplierName(null), null);
+    });
+
+    test('a correct KRONES PO produces NO divergence against the group baseline', () => {
+        const { hasMismatches } = buildOcrMismatchResult(KRONES_TOTAL, KRONES_TOTAL, KRONES_SUPPLIER, KRONES_SUPPLIER);
+        assert.equal(hasMismatches, false);
+    });
+
+    test('a wrong total is flagged against the group baseline', () => {
+        const { hasMismatches, details } = buildOcrMismatchResult(2407000, KRONES_TOTAL, KRONES_SUPPLIER, KRONES_SUPPLIER);
+        assert.equal(hasMismatches, true);
+        assert.ok(details.some(d => d.includes('Total divergente')));
+    });
+
+    test('a wrong supplier is flagged against the group baseline', () => {
+        const { hasMismatches, details } = buildOcrMismatchResult(KRONES_TOTAL, KRONES_TOTAL, 'AFRI INDUS COMERCIAL (SU), LDA', KRONES_SUPPLIER);
+        assert.equal(hasMismatches, true);
+        assert.ok(details.some(d => d.includes('Fornecedor divergente')));
+    });
+});

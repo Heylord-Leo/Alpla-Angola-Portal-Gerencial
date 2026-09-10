@@ -48,11 +48,15 @@ public static class BuyerQueueProjectionInputFactory
             (a.AttachmentTypeCode == AttachmentConstants.Types.Proforma
              || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted);
 
+        // v2.242.0 — any PO group returned by Finance for correction.
+        var hasPoCorrection = poGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+
         return new Proj.RequestInput(
             r.Id, r.RequestNumber ?? string.Empty, r.Title,
             r.RequestType.Code, r.Status.Code, r.IsCancelled,
             r.BuyerId, r.NeedLevel?.Code, r.NeedByDateUtc, r.CreatedAtUtc,
             r.SupplierId.HasValue, hasProformaOrQuotation,
-            items, batches, quotationItems, supersededIds);
+            items, batches, quotationItems, supersededIds,
+            hasPoCorrection);
     }
 }

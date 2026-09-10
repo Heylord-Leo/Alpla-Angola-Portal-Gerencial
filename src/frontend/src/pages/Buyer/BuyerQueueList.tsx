@@ -58,6 +58,9 @@ export function BuyerQueueList() {
   // Product default: a fresh queue (no needLevel param) opens on CRITICAL. 'ALL' is the explicit "Todos".
   const needLevel = resolveNeedLevel(params.get('needLevel'));
   const deadline = params.get('deadline') || '';
+  // v2.242.0 — a direct operationalState deep-link (e.g. the PO-corrections footer card →
+  // ?operationalState=PO_CORRECTION) narrows the list even when no KPI card owns that state.
+  const operationalStateParam = params.get('operationalState') || '';
   const includeCompleted = params.get('includeCompleted') === 'true';
   const page = parseInt(params.get('page') || '1', 10);
 
@@ -111,13 +114,13 @@ export function BuyerQueueList() {
       company: company ? Number(company) : undefined,
       plant: plant ? Number(plant) : undefined,
       department: department ? Number(department) : undefined,
-      operationalState: selectedCard.apply.operationalState,
+      operationalState: operationalStateParam || selectedCard.apply.operationalState,
       priority: selectedCard.apply.priority,
       deadline: deadline || undefined,
       needLevel: needLevelApiValue(needLevel),
       includeCompleted, page, pageSize: PAGE_SIZE,
     }).then(setQueue).catch(e => setError(e?.message || 'Erro ao carregar a fila.')).finally(() => setLoading(false));
-  }, [ownership, buyer, search, sort, company, plant, department, selectedCard, deadline, needLevel, includeCompleted, page]);
+  }, [ownership, buyer, search, sort, company, plant, department, selectedCard, operationalStateParam, deadline, needLevel, includeCompleted, page]);
 
   const loadSummary = useCallback(() => {
     // Summary scope = authorization + ownership + search + org filters (NOT the selected card).
@@ -344,6 +347,7 @@ export function BuyerQueueList() {
             onCancel={() => { setCancelItem(item); setCancelReason(''); }}
             onClaim={() => doClaim(item)}
             onOpenWorkspace={() => navigate(`/buyer/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
+            onCorrectPo={() => navigate(`/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
           />
         ))}
       </div>
@@ -402,10 +406,11 @@ export function BuyerQueueList() {
 }
 
 // ── Request row (one complete Request; never a line item) ──
-function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, onOpenWorkspace }: {
+function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, onOpenWorkspace, onCorrectPo }: {
   item: BuyerQueueItem; busy: boolean; isOwn: boolean;
-  onDetails: () => void; onNote: () => void; onCancel: () => void; onClaim: () => void; onOpenWorkspace: () => void;
+  onDetails: () => void; onNote: () => void; onCancel: () => void; onClaim: () => void; onOpenWorkspace: () => void; onCorrectPo: () => void;
 }) {
+  const isPoCorrection = item.operationalState === 'PO_CORRECTION';
   const stateColor = operationalStateColor(item);
   const dChip = deadlineChip(item);
   const noteTip = resolveNoteTooltip(item);
@@ -498,22 +503,38 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
             </span>
           )}
         </div>
-        {/* coverage mini-bar (server "treated" — never implies approved) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 2 }} aria-hidden>
-            {Array.from({ length: cov.segments }).map((_, i) => (
-              <span key={i} style={{ width: 12, height: 6, borderRadius: 2, background: i < cov.filled ? 'var(--color-primary)' : 'color-mix(in srgb, var(--color-text-muted) 22%, transparent)' }} />
+        {/* v2.242.0 — Finance-returned PO group(s): name the affected supplier(s) without splitting the request row. */}
+        {isPoCorrection && (item.poCorrectionGroups?.length ?? 0) > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {item.poCorrectionGroups!.map(g => (
+              <span key={g.poGroupId} title={g.purchaseOrderNumber ?? undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-status-red) 12%, transparent)', color: 'var(--color-status-red)', fontWeight: 700, fontSize: '0.68rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {g.supplierName || 'Fornecedor'}
+              </span>
             ))}
           </div>
-          <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-            {item.coveredCount}/{item.activeItemCount} tratados{item.pendingCount > 0 ? ` · ${item.pendingCount} pendente${item.pendingCount === 1 ? '' : 's'}` : ''}
-          </span>
-        </div>
+        )}
+        {/* coverage mini-bar (server "treated" — never implies approved). v2.242.0 — a non-QUOTATION
+            PO correction (e.g. a PAYMENT returned by Finance) has no quotation coverage, so the bar is
+            suppressed; the PO-correction chips above carry the real detail. */}
+        {!(isPoCorrection && item.requestTypeCode && item.requestTypeCode !== 'QUOTATION') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 2 }} aria-hidden>
+              {Array.from({ length: cov.segments }).map((_, i) => (
+                <span key={i} style={{ width: 12, height: 6, borderRadius: 2, background: i < cov.filled ? 'var(--color-primary)' : 'color-mix(in srgb, var(--color-text-muted) 22%, transparent)' }} />
+              ))}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+              {item.coveredCount}/{item.activeItemCount} tratados{item.pendingCount > 0 ? ` · ${item.pendingCount} pendente${item.pendingCount === 1 ? '' : 's'}` : ''}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* AÇÕES */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-        {unassigned && item.canClaim ? (
+        {isPoCorrection ? (
+          <button onClick={onCorrectPo} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}>Corrigir P.O. <ArrowRight size={15} /></button>
+        ) : unassigned && item.canClaim ? (
           <button onClick={onClaim} disabled={busy} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}><UserPlus size={15} /> Atribuir a Mim</button>
         ) : (
           <button onClick={onOpenWorkspace} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}>Abrir Workspace <ArrowRight size={15} /></button>
