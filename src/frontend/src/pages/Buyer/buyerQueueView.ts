@@ -15,6 +15,7 @@ export const OP = {
   AwaitingApproval: 'AWAITING_APPROVAL',
   AdjustmentRequired: 'ADJUSTMENT_REQUIRED',
   AwaitingRequesterDecision: 'AWAITING_REQUESTER_DECISION',
+  PoCorrection: 'PO_CORRECTION',
   CompletedForBuyer: 'COMPLETED_FOR_BUYER',
   NoBuyerAction: 'NO_BUYER_ACTION',
 } as const;

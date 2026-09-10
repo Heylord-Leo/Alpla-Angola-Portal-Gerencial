@@ -69,9 +69,20 @@ public class BuyerQueueController : BaseController
         // Note metadata is loaded ONLY for the returned page slice (never for the whole set).
         var notes = await LoadNoteMetadataAsync(pageRows.Select(r => r.R.Id).ToList());
 
+        // v2.242.0 — resolve the display Buyer name for PAYMENT PO-correction rows (owner =
+        // the WPC group's PoResponsibleBuyerId, since PAYMENT requests carry no Request.BuyerId).
+        var responsibleIds = pageRows
+            .SelectMany(r => r.R.PoGroups)
+            .Where(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection && g.PoResponsibleBuyerId.HasValue)
+            .Select(g => g.PoResponsibleBuyerId!.Value)
+            .Distinct().ToList();
+        var responsibleNames = responsibleIds.Count == 0 ? new Dictionary<Guid, string>()
+            : await _context.Users.AsNoTracking().Where(u => responsibleIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
         return Ok(new BuyerQueuePageDto
         {
-            Items = pageRows.Select(r => MapItem(r, notes)).ToList(),
+            Items = pageRows.Select(r => MapItem(r, notes, responsibleNames)).ToList(),
             Page = page,
             PageSize = pageSize,
             TotalCount = totalCount,
@@ -128,6 +139,9 @@ public class BuyerQueueController : BaseController
                 BuyerQueueConstants.OperationalStates.ReadyForApproval,
                 BuyerQueueConstants.OperationalStates.AdjustmentRequired),
             AwaitingApproval = Count(BuyerQueueConstants.OperationalStates.AwaitingApproval),
+            // v2.242.0 — request-based count of Finance-returned PO corrections (one per Request, even
+            // with several returned groups). Feeds the "Correções de P.O. pendentes" footer card.
+            PoCorrections = Count(BuyerQueueConstants.OperationalStates.PoCorrection),
             Unassigned = projected.Count(x => x.P.OwnershipState == BuyerQueueConstants.OwnershipStates.Unassigned),
             ByOperationalState = byState
         });
@@ -144,13 +158,27 @@ public class BuyerQueueController : BaseController
         var currentUserId = CurrentUserId;
         var scoped = await GetScopedRequestsQuery();
 
-        var q = scoped.Where(r => r.RequestType.Code == RequestConstants.Types.Quotation);
+        // v2.242.0 — cross-type admission: the quotation queue also admits a request of ANY type that
+        // has a LIVE Buyer P.O. correction (WAITING_PO_CORRECTION group) — e.g. a PAYMENT request
+        // returned by Finance for correction. A normal PAYMENT request (no WPC group) stays excluded.
+        var q = scoped.Where(r => r.RequestType.Code == RequestConstants.Types.Quotation
+            || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection));
 
-        // Ownership (auth-scope-first: scope already applied; this narrows within it).
+        // Ownership (auth-scope-first: scope already applied; this narrows within it). Correction
+        // ownership is cross-type: QUOTATION → Request.BuyerId; PAYMENT correction → the WPC group's
+        // PoResponsibleBuyerId (PAYMENT requests carry no BuyerId).
         switch ((ownership ?? "all").ToLowerInvariant())
         {
-            case "me": q = q.Where(r => r.BuyerId == currentUserId); break;
-            case "unassigned": q = q.Where(r => r.BuyerId == null); break;
+            case "me":
+                q = q.Where(r => r.BuyerId == currentUserId
+                    || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                        && g.PoResponsibleBuyerId == currentUserId));
+                break;
+            case "unassigned":
+                q = q.Where(r => (r.RequestType.Code == RequestConstants.Types.Quotation && r.BuyerId == null)
+                    || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                        && g.PoResponsibleBuyerId == null && r.RequestType.Code == RequestConstants.Types.Payment));
+                break;
         }
 
         // Explicit buyer filter (used by the Dashboard V2 workload drill-down). Applied within the
@@ -175,8 +203,13 @@ public class BuyerQueueController : BaseController
 
         // Bound the working set: when completed is hidden, keep only Buyer-active request statuses in
         // SQL (residual completed dropped after projection). Keeps hydration small at any data volume.
+        // v2.242.0 — ALSO admit a request that has any PO group returned by Finance for correction
+        // (WAITING_PO_CORRECTION), because its Request scalar aggregates to PO_PARTIALLY_UPLOADED /
+        // WAITING_PO_CORRECTION (outside the quotation-active set) yet the Buyer has actionable work.
+        // Strictly WAITING_PO_CORRECTION — no other post-approval PO status is admitted.
         if (!includeCompleted)
-            q = q.Where(r => BuyerActiveRequestStatusCodes.Contains(r.Status.Code));
+            q = q.Where(r => BuyerActiveRequestStatusCodes.Contains(r.Status.Code)
+                || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection));
 
         var requests = await q
             .Include(r => r.RequestType)
@@ -235,7 +268,7 @@ public class BuyerQueueController : BaseController
             .ThenBy(x => x.R.CreatedAtUtc),
     };
 
-    private BuyerQueueItemDto MapItem(Row row, Dictionary<Guid, NoteMeta> notes)
+    private BuyerQueueItemDto MapItem(Row row, Dictionary<Guid, NoteMeta> notes, Dictionary<Guid, string> responsibleNames)
     {
         var r = row.R;
         var p = row.P;
@@ -244,7 +277,28 @@ public class BuyerQueueController : BaseController
         var isLocalManager = CurrentUserRoles.Contains(RoleConstants.LocalManager);
         var isBuyer = CurrentUserRoles.Contains(RoleConstants.Buyer);
 
-        var canClaim = p.OwnershipState == BuyerQueueConstants.OwnershipStates.Unassigned && isBuyer;
+        // v2.242.0 — cross-type correction display. For a PAYMENT PO correction the owner is the WPC
+        // group's PoResponsibleBuyerId (Request.BuyerId is null by design), so the row must show that
+        // Buyer — not "Não atribuído" — and read as Mine/Other accordingly. Display-only; never mutates
+        // Request.BuyerId. QUOTATION rows keep the standard Request.Buyer semantics untouched.
+        var displayBuyerId = r.BuyerId;
+        var displayBuyerName = r.Buyer?.FullName;
+        var ownershipState = p.OwnershipState;
+        var isNonQuotationCorrection = p.OperationalState == BuyerQueueConstants.OperationalStates.PoCorrection
+            && r.RequestType.Code != RequestConstants.Types.Quotation;
+        if (isNonQuotationCorrection)
+        {
+            var wpc = r.PoGroups.Where(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection).ToList();
+            // Prefer the current user's own group (multi-owner: show only their ownership), else the first.
+            var owner = (wpc.FirstOrDefault(g => g.PoResponsibleBuyerId == CurrentUserId) ?? wpc.FirstOrDefault())?.PoResponsibleBuyerId;
+            displayBuyerId = owner;
+            displayBuyerName = owner.HasValue && responsibleNames.TryGetValue(owner.Value, out var n) ? n : null;
+            ownershipState = owner == null ? BuyerQueueConstants.OwnershipStates.Unassigned
+                : owner == CurrentUserId ? BuyerQueueConstants.OwnershipStates.Mine
+                : BuyerQueueConstants.OwnershipStates.Other;
+        }
+
+        var canClaim = ownershipState == BuyerQueueConstants.OwnershipStates.Unassigned && isBuyer;
         var canReassign = isSystemAdmin || isLocalManager;
 
         return new BuyerQueueItemDto
@@ -258,26 +312,40 @@ public class BuyerQueueController : BaseController
             PlantName = r.Plant?.Name,
             DepartmentName = r.Department?.Name,
             RequestStatusCode = r.Status.Code,
+            RequestTypeCode = r.RequestType.Code,
             NeedLevelCode = r.NeedLevel?.Code,
             NeedByDateUtc = r.NeedByDateUtc,
             CreatedAtUtc = r.CreatedAtUtc,
             PriorityBand = p.PriorityBand,
             DeadlineCondition = p.DeadlineCondition,
-            BuyerId = r.BuyerId,
-            BuyerName = r.Buyer?.FullName,
-            OwnershipState = p.OwnershipState,
+            BuyerId = displayBuyerId,
+            BuyerName = displayBuyerName,
+            OwnershipState = ownershipState,
             OperationalState = p.OperationalState,
             OperationalStateLabel = p.OperationalStateLabel,
             NextActions = p.NextBuyerActions.Select(a => new BuyerNextActionDto { Code = a.Code, Label = a.Label, Actionable = a.Actionable }).ToList(),
-            CoverageStatus = p.CoverageStatus,
-            ActiveItemCount = p.ActiveItemCount,
-            CoveredCount = p.CoveredCount,
-            PendingCount = p.PendingCount,
-            QuotationCount = r.Quotations.Count,
-            ActiveBatchCount = p.ActiveBatchCount,
-            CoverageCounts = new Dictionary<string, int>(p.CoverageCounts),
+            // Non-QUOTATION corrections have no quotation coverage — neutralize the quotation progress
+            // metrics so the row never renders a false "x/y tratados" bar (the PO-correction chips carry
+            // the real detail). QUOTATION rows keep their genuine coverage figures.
+            CoverageStatus = isNonQuotationCorrection ? BuyerQueueConstants.CoverageStatuses.FullyCovered : p.CoverageStatus,
+            ActiveItemCount = isNonQuotationCorrection ? 0 : p.ActiveItemCount,
+            CoveredCount = isNonQuotationCorrection ? 0 : p.CoveredCount,
+            PendingCount = isNonQuotationCorrection ? 0 : p.PendingCount,
+            QuotationCount = isNonQuotationCorrection ? 0 : r.Quotations.Count,
+            ActiveBatchCount = isNonQuotationCorrection ? 0 : p.ActiveBatchCount,
+            CoverageCounts = isNonQuotationCorrection ? new Dictionary<string, int>() : new Dictionary<string, int>(p.CoverageCounts),
             AttentionSignals = p.AttentionSignals.Select(s => new BuyerAttentionSignalDto { Code = s.Code, Severity = s.Severity }).ToList(),
             RequiresAttention = p.RequiresAttention,
+            // v2.242.0 — name the Finance-returned PO group(s) on the row (from the already-loaded graph).
+            PoCorrectionGroups = r.PoGroups
+                .Where(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                .Select(g => new BuyerPoCorrectionGroupDto
+                {
+                    PoGroupId = g.Id,
+                    SupplierId = g.SupplierId,
+                    SupplierName = g.SupplierNameSnapshot,
+                    PurchaseOrderNumber = g.PurchaseOrderNumber
+                }).ToList(),
             HasNotes = note != null && note.Count > 0,
             NoteCount = note?.Count ?? 0,
             LatestNoteText = note?.LatestText,

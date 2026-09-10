@@ -20,6 +20,10 @@ public static class BuyerQueueConstants
         public const string AwaitingApproval = "AWAITING_APPROVAL";
         public const string AdjustmentRequired = "ADJUSTMENT_REQUIRED";
         public const string AwaitingRequesterDecision = "AWAITING_REQUESTER_DECISION";
+        // v2.242.0 — a PO group was returned by Finance (WAITING_PO_CORRECTION); the Buyer must
+        // correct and re-register the P.O. Post-approval, group-derived — NOT part of the quotation
+        // phase and NEVER HiddenByDefault.
+        public const string PoCorrection = "PO_CORRECTION";
         public const string CompletedForBuyer = "COMPLETED_FOR_BUYER";
         public const string NoBuyerAction = "NO_BUYER_ACTION";
 
@@ -31,6 +35,7 @@ public static class BuyerQueueConstants
             AwaitingApproval => "Em Aprovação",
             AdjustmentRequired => "Ajuste Solicitado",
             AwaitingRequesterDecision => "Aguardando Decisão",
+            PoCorrection => "Correção de P.O.",
             CompletedForBuyer => "Concluído para Compras",
             NoBuyerAction => "Sem Ação do Comprador",
             _ => code
@@ -46,6 +51,7 @@ public static class BuyerQueueConstants
         public const string AddQuotation = "ADD_QUOTATION";
         public const string SubmitBatch = "SUBMIT_BATCH";
         public const string ResolveAdjustment = "RESOLVE_ADJUSTMENT";
+        public const string CorrectPo = "CORRECT_PO";
         public const string None = "NONE";
     }
 
@@ -96,6 +102,7 @@ public static class BuyerQueueConstants
     public static class AttentionCodes
     {
         public const string AdjustmentRequired = "ADJUSTMENT_REQUIRED";
+        public const string PoCorrection = "PO_CORRECTION";
         public const string Overdue = "OVERDUE";
         public const string DueToday = "DUE_TODAY";
         public const string SupersededBatch = "SUPERSEDED_BATCH";

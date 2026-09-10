@@ -65,6 +65,12 @@ export interface RequestListItemDto {
     // Virtual
     completedAtUtc?: string;
     paymentCompletedAtUtc?: string;
+
+    // v2.242.0 — cross-type personal PO-correction (GetRequests only). hasMyPoCorrection drives the
+    // "Corrigir P.O." action in Para Minha Ação (keyed on ownership, never the scalar statusCode);
+    // myPoCorrectionGroups lists ONLY the correction groups this Buyer personally owns.
+    hasMyPoCorrection?: boolean;
+    myPoCorrectionGroups?: { poGroupId: string; supplierId?: number | null; supplierName?: string | null; purchaseOrderNumber?: string | null }[];
 }
 
 /**
@@ -1023,6 +1029,8 @@ export interface DashboardSummaryDto {
     awaitingPo: number;
     awaitingPayment: number;
     completedRequests: number;
+    /** v2.242.0 — cross-type personal PO-correction count (QUOTATION→BuyerId, PAYMENT→PoResponsibleBuyerId). */
+    poCorrectionsForMe?: number;
 
     filteredTotal: number;
     filteredCurrencyCodes: string[];

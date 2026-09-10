@@ -429,6 +429,14 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao carregar pedidos.');
             return response.json();
         },
+        // v2.242.0 — lightweight cross-type personal PO-correction count for the footer sticker poll.
+        // One aggregate; shares the backend PersonalPoCorrectionPredicate with Para Minha Ação.
+        personalPoCorrectionsCount: async (): Promise<number> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/personal-po-corrections/count`);
+            if (!response.ok) return 0;
+            const data = await response.json();
+            return data?.count ?? 0;
+        },
         get: async (id: string): Promise<RequestDetailsDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar detalhes do pedido.');

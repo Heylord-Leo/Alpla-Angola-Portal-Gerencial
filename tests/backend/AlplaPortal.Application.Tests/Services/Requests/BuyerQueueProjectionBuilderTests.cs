@@ -36,7 +36,8 @@ public class BuyerQueueProjectionBuilderTests
         string? needLevel = null,
         DateTime? needBy = null,
         bool requestHasSupplier = false,
-        bool hasProforma = false)
+        bool hasProforma = false,
+        bool hasPoCorrection = false)
         => new(
             Guid.NewGuid(), "REQ-001", "Test", type, status, isCancelled,
             buyerId, needLevel, needBy, Today.AddDays(-10),
@@ -44,7 +45,30 @@ public class BuyerQueueProjectionBuilderTests
             (items ?? Array.Empty<Proj.ItemInput>()).ToList(),
             (batches ?? Array.Empty<Proj.BatchInput>()).ToList(),
             (quotationItems ?? Array.Empty<Proj.QuotationItemInput>()).ToList(),
-            (superseded ?? Array.Empty<Guid>()).ToList());
+            (superseded ?? Array.Empty<Guid>()).ToList(),
+            hasPoCorrection);
+
+    [Fact]
+    public void PoCorrection_wins_over_pastBuyerPhase_and_is_attention()
+    {
+        // Request scalar past the quotation phase (would normally be CompletedForBuyer) but a PO group
+        // was returned by Finance → PO_CORRECTION, actionable, attention.
+        var p = Proj.Build(Req(status: "PO_PARTIALLY_UPLOADED", hasPoCorrection: true), Me, Today);
+        Assert.Equal(S.OperationalStates.PoCorrection, p.OperationalState);
+        Assert.Equal("Correção de P.O.", p.OperationalStateLabel);
+        Assert.True(p.RequiresAttention);
+        Assert.Equal(S.PriorityBands.ExceptionOrOverdue, p.PriorityBand);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.CorrectPo && a.Actionable);
+        Assert.Contains(p.AttentionSignals, s => s.Code == S.AttentionCodes.PoCorrection);
+        Assert.DoesNotContain(p.OperationalState, S.OperationalStates.HiddenByDefault);
+    }
+
+    [Fact]
+    public void No_PoCorrection_past_phase_stays_CompletedForBuyer()
+    {
+        var p = Proj.Build(Req(status: "PO_PARTIALLY_UPLOADED", hasPoCorrection: false), Me, Today);
+        Assert.Equal(S.OperationalStates.CompletedForBuyer, p.OperationalState);
+    }
 
     // A quotation item MAPPED to a given line, optionally held by a batch.
     private static (Proj.QuotationItemInput qi, Proj.ItemInput item) MappedCandidate(string recon = "MAPPED")

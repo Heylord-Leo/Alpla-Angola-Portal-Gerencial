@@ -23,6 +23,9 @@ public class BuyerQueueItemDto
     public string? PlantName { get; set; }
     public string? DepartmentName { get; set; }
     public string RequestStatusCode { get; set; } = string.Empty;
+    /// <summary>v2.242.0 — request type (QUOTATION/PAYMENT). Lets the row suppress quotation-only
+    /// progress for a non-QUOTATION PO correction.</summary>
+    public string RequestTypeCode { get; set; } = string.Empty;
 
     // Priority / deadline
     public string? NeedLevelCode { get; set; }
@@ -49,6 +52,11 @@ public class BuyerQueueItemDto
     public Dictionary<string, int> CoverageCounts { get; set; } = new();
     public List<BuyerAttentionSignalDto> AttentionSignals { get; set; } = new();
     public bool RequiresAttention { get; set; }
+
+    // v2.242.0 — the PO group(s) of this request returned by Finance for correction (empty unless
+    // OperationalState == PO_CORRECTION). Lets the row name the affected supplier(s) without turning
+    // the request into one-row-per-group.
+    public List<BuyerPoCorrectionGroupDto> PoCorrectionGroups { get; set; } = new();
 
     // Notes (request-level annotations; loaded only for the returned page slice)
     public bool HasNotes { get; set; }
@@ -78,6 +86,16 @@ public class BuyerAttentionSignalDto
     public string Severity { get; set; } = string.Empty;
 }
 
+/// <summary>A PO group returned by Finance for correction, shown on the Buyer queue row so the
+/// affected supplier(s) are named without splitting the request into multiple rows.</summary>
+public class BuyerPoCorrectionGroupDto
+{
+    public Guid PoGroupId { get; set; }
+    public int? SupplierId { get; set; }
+    public string? SupplierName { get; set; }
+    public string? PurchaseOrderNumber { get; set; }
+}
+
 /// <summary>Request-level paginated queue page. TotalCount counts REQUESTS, never line-items.</summary>
 public class BuyerQueuePageDto
 {
@@ -95,6 +113,8 @@ public class BuyerQueueSummaryDto
     public int RequiresAttention { get; set; }
     public int NeedsAction { get; set; }
     public int AwaitingApproval { get; set; }
+    /// <summary>v2.242.0 — request-based count of Finance-returned PO corrections.</summary>
+    public int PoCorrections { get; set; }
     public int Unassigned { get; set; }
     public Dictionary<string, int> ByOperationalState { get; set; } = new();
 }

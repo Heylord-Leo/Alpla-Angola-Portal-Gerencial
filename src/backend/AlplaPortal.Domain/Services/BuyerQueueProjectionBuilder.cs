@@ -59,7 +59,10 @@ public static class BuyerQueueProjectionBuilder
         bool RequestHasSupplier, bool HasProformaOrQuotationAttachment,
         IReadOnlyList<ItemInput> Items, IReadOnlyList<BatchInput> Batches,
         IReadOnlyList<QuotationItemInput> QuotationItems,
-        IReadOnlyCollection<Guid> SupersededBatchIds);
+        IReadOnlyCollection<Guid> SupersededBatchIds,
+        // v2.242.0 — true when any PO group of this request is WAITING_PO_CORRECTION (returned by
+        // Finance). Group-derived; drives the PO_CORRECTION operational state.
+        bool HasPoCorrection = false);
 
     // ── Outputs ──
     public sealed record BuyerNextAction(string Code, string Label, bool Actionable);
@@ -174,7 +177,13 @@ public static class BuyerQueueProjectionBuilder
         var pastBuyerPhase = r.RequestTypeCode == RequestConstants.Types.Quotation
             && !BuyerActiveRequestStatuses.Contains(r.RequestStatusCode);
 
-        if (notBuyerPhase) state = BuyerQueueConstants.OperationalStates.NoBuyerAction;
+        // v2.242.0 — a Finance-returned PO group is actionable Buyer work that WINS over every other
+        // classification, including notBuyerPhase (a PAYMENT request carries RequestTypeCode != QUOTATION
+        // yet a WAITING_PO_CORRECTION group is genuine Buyer/Purchasing work) and past-buyer-phase /
+        // terminal. It occurs only after the quotation phase, so it cannot conflict with the
+        // active-quotation states evaluated below. This is why it is evaluated FIRST.
+        if (r.HasPoCorrection) state = BuyerQueueConstants.OperationalStates.PoCorrection;
+        else if (notBuyerPhase) state = BuyerQueueConstants.OperationalStates.NoBuyerAction;
         else if (terminal || pastBuyerPhase) state = BuyerQueueConstants.OperationalStates.CompletedForBuyer;
         else if (anyAdjustment) state = BuyerQueueConstants.OperationalStates.AdjustmentRequired;
         else if (anyInApproval) state = BuyerQueueConstants.OperationalStates.AwaitingApproval;
@@ -190,6 +199,7 @@ public static class BuyerQueueProjectionBuilder
         // ── Attention signals ──
         var signals = new List<BuyerAttentionSignal>();
         if (anyAdjustment) signals.Add(new(BuyerQueueConstants.AttentionCodes.AdjustmentRequired, BuyerQueueConstants.AttentionSeverities.Blocking));
+        if (r.HasPoCorrection) signals.Add(new(BuyerQueueConstants.AttentionCodes.PoCorrection, BuyerQueueConstants.AttentionSeverities.Blocking));
         if (deadline == BuyerQueueConstants.DeadlineConditions.Overdue) signals.Add(new(BuyerQueueConstants.AttentionCodes.Overdue, BuyerQueueConstants.AttentionSeverities.UrgentDeadline));
         else if (deadline == BuyerQueueConstants.DeadlineConditions.DueToday) signals.Add(new(BuyerQueueConstants.AttentionCodes.DueToday, BuyerQueueConstants.AttentionSeverities.UrgentDeadline));
         var hasSuperseded = r.SupersededBatchIds.Count > 0;
@@ -202,12 +212,14 @@ public static class BuyerQueueProjectionBuilder
         // ── Priority band (only for buyer-active states; completed/no-action never Band 1) ──
         var isBuyerActive = state is not (BuyerQueueConstants.OperationalStates.CompletedForBuyer or BuyerQueueConstants.OperationalStates.NoBuyerAction);
         var band = isBuyerActive && (state == BuyerQueueConstants.OperationalStates.AdjustmentRequired
+                    || state == BuyerQueueConstants.OperationalStates.PoCorrection
                     || deadline == BuyerQueueConstants.DeadlineConditions.Overdue)
             ? BuyerQueueConstants.PriorityBands.ExceptionOrOverdue
             : BuyerQueueConstants.PriorityBands.Standard;
 
         var requiresAttention = isBuyerActive &&
             (state == BuyerQueueConstants.OperationalStates.AdjustmentRequired
+             || state == BuyerQueueConstants.OperationalStates.PoCorrection
              || deadline == BuyerQueueConstants.DeadlineConditions.Overdue
              || hasSuperseded);
 
@@ -278,6 +290,8 @@ public static class BuyerQueueProjectionBuilder
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.SubmitBatch, "Enviar itens para aprovação", true) };
             case BuyerQueueConstants.OperationalStates.AdjustmentRequired:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.ResolveAdjustment, "Revisar e reenviar lote", true) };
+            case BuyerQueueConstants.OperationalStates.PoCorrection:
+                return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true) };
             case BuyerQueueConstants.OperationalStates.AwaitingApproval:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.None, "Aguardando aprovação", false) };
             case BuyerQueueConstants.OperationalStates.AwaitingRequesterDecision:

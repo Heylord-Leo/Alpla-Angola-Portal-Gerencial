@@ -76,4 +76,33 @@ public class AdminRepairsController : BaseController
             _ => BadRequest(result), // REFUSED (safety gate / not found / missing reason)
         };
     }
+
+    /// <summary>
+    /// v2.242.0 — PAYMENT-only backfill of RequestPoGroup.PoResponsibleBuyerId. <c>confirm=false</c>
+    /// (default) is a read-only preview that writes nothing; <c>confirm=true</c> applies (requires a
+    /// body with a non-empty reason). Conservative: assigns only when UpdatedByUserId resolves to an
+    /// active Buyer and history does not contradict it; idempotent; never touches QUOTATION groups.
+    /// </summary>
+    [HttpPost("po-responsible-buyer-backfill")]
+    public async Task<IActionResult> PoResponsibleBuyerBackfill(
+        [FromQuery] bool confirm = false,
+        [FromBody] PoResponsibleBuyerBackfillRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+
+        var service = new PoResponsibleBuyerBackfillService(_context);
+
+        if (!confirm)
+            return Ok(await service.PreviewAsync(ct));
+
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason))
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+
+        var result = await service.ApplyAsync(CurrentUserId, body.Reason, ct);
+        return result.Status == PoResponsibleBuyerBackfillResult.Statuses.Refused
+            ? BadRequest(result)
+            : Ok(result);
+    }
 }

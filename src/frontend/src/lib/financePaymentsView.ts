@@ -227,8 +227,10 @@ export function resolveObligationRowFlags(o: { actionClass?: string | null; isOv
     return { isPaid, isNoFinance, isOverdue, muted: isPaid };
 }
 
-/** Mirrors FinancePaymentEligibilityService.CanReturnGroup's ReturnableGroupStatuses. */
-const RETURNABLE_GROUP_STATUSES = ['PO_ISSUED', 'PAYMENT_SCHEDULED'];
+/** Mirrors FinancePaymentEligibilityService.CanReturnGroup's ReturnableGroupStatuses (incl. the
+ *  advance-pending states, v2.242.0 — a COMPLETED/paid advance is never in ADVANCE_PAYMENT_* so is
+ *  excluded automatically). */
+const RETURNABLE_GROUP_STATUSES = ['PO_ISSUED', 'PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED'];
 export function canReturnGroupStatus(status: string | null | undefined): boolean {
     return status != null && RETURNABLE_GROUP_STATUSES.includes(status);
 }

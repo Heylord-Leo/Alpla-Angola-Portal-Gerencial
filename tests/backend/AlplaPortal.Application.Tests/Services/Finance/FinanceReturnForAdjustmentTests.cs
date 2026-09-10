@@ -36,6 +36,9 @@ public class FinanceReturnForAdjustmentTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            // v2.242.0: ReturnForAdjustment now opens an explicit transaction; InMemory treats it as
+            // a no-op only when this warning is suppressed.
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ApplicationDbContext(options);
     }
@@ -272,6 +275,42 @@ public class FinanceReturnForAdjustmentTests
     }
 
     [Fact]
+    public async Task Return_Preserves_PoResponsibleBuyerId_SoOwnerStillOwnsTheCorrection()
+    {
+        var ctx = NewContext();
+        var actor = new User { Id = Guid.NewGuid(), FullName = "Finance Tester", Email = $"fin-{Guid.NewGuid()}@test.local" };
+        var registrant = Guid.NewGuid(); // the Buyer who registered the P.O. (owns the correction)
+        ctx.Users.Add(actor);
+        ctx.RequestTypes.Add(new RequestType { Id = 1, Code = RequestConstants.Types.Payment, Name = "Pagamento" });
+        SeedStatuses(ctx);
+        await ctx.SaveChangesAsync();
+
+        var request = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "REQ-14/08/2026-254", Title = "ZZTEST Preserve Owner",
+            RequestTypeId = 1, StatusId = StatusId(ctx, RequestConstants.Statuses.PoIssued),
+            RequesterId = actor.Id, DepartmentId = 1, CompanyId = 1, CreatedAtUtc = DateTime.UtcNow
+        };
+        ctx.Requests.Add(request);
+        ctx.RequestPoGroups.Add(new RequestPoGroup
+        {
+            Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "SIMOTECNICA", CurrencyCode = "AOA",
+            TotalAmount = 1000m, Status = RequestConstants.Statuses.PoIssued, CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            CreatedByUserId = actor.Id, PoResponsibleBuyerId = registrant
+        });
+        var groupId = ctx.RequestPoGroups.Local.Single().Id;
+        await ctx.SaveChangesAsync();
+
+        var controller = BuildController(ctx, actor.Id); // Finance actor returns it — must NOT become the owner
+        var result = await controller.ReturnForAdjustment(request.Id, new FinanceActionRequestDto { Notes = ValidReason });
+
+        Assert.IsType<OkResult>(result);
+        var refreshed = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == groupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingPoCorrection, refreshed.Status);
+        Assert.Equal(registrant, refreshed.PoResponsibleBuyerId); // preserved — Finance return never rewrites ownership
+    }
+
+    [Fact]
     public async Task Return_WrongRequestAssociation_NotFound()
     {
         var ctx = NewContext();
@@ -295,5 +334,219 @@ public class FinanceReturnForAdjustmentTests
         var attr = typeof(FinanceController).GetCustomAttribute<AuthorizeAttribute>();
         Assert.NotNull(attr);
         Assert.Contains(RoleConstants.Finance, attr!.Roles ?? string.Empty);
+    }
+
+    // ── v2.242.0 — advance-pending Return to Purchasing ─────────────────────────────────────────
+
+    private sealed record AdvSeed(Guid RequestId, Guid GroupId, Guid ActorId, Guid? SiblingGroupId);
+
+    private static async Task<AdvSeed> SeedAdvanceAsync(
+        ApplicationDbContext ctx,
+        string groupStatus,
+        (string status, decimal? actualPaid, bool scheduled)[] advancePayments,
+        bool addSibling = false,
+        bool addRegisterPoHistory = false,
+        bool addScheduleAttachment = false)
+    {
+        var now = DateTime.UtcNow;
+        var actor = new User { Id = Guid.NewGuid(), FullName = "Fin", Email = $"f-{Guid.NewGuid()}@t.local" };
+        ctx.Users.Add(actor);
+        ctx.RequestTypes.Add(new RequestType { Id = 2, Code = RequestConstants.Types.Quotation, Name = "Cotação" });
+        SeedStatuses(ctx);
+        await ctx.SaveChangesAsync();
+
+        var request = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "REQ-20/08/2026-275", Title = "ZZTEST Adv",
+            RequestTypeId = 2, StatusId = StatusId(ctx, RequestConstants.Statuses.AdvancePaymentRequired),
+            RequesterId = actor.Id, DepartmentId = 1, CompanyId = 1, CreatedAtUtc = now
+        };
+        ctx.Requests.Add(request);
+        var group = new RequestPoGroup
+        {
+            Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "KRONES ANGOLA", CurrencyCode = "AOA",
+            TotalAmount = 4616502.39m, Status = groupStatus, PurchaseOrderNumber = "ECF10 2026/283",
+            PaymentConditionCode = "ADVANCE_FULL", AdvancePaymentPercent = 100m, CreatedAtUtc = now, CreatedByUserId = actor.Id
+        };
+        ctx.RequestPoGroups.Add(group);
+        int seq = 1;
+        foreach (var ap in advancePayments)
+            ctx.RequestPayments.Add(new RequestPayment
+            {
+                RequestId = request.Id, RequestPoGroupId = group.Id, PaymentType = RequestPayment.PaymentTypes.Advance,
+                PaymentSequence = seq++, PlannedPercent = 100m, PlannedAmount = 4616502.39m, CurrencyCode = "AOA",
+                PaymentStatus = ap.status, ActualPaidAmount = ap.actualPaid,
+                ScheduledDateUtc = ap.scheduled ? now : (DateTime?)null, ScheduledByUserId = ap.scheduled ? actor.Id : (Guid?)null,
+                CreatedByUserId = actor.Id, CreatedAtUtc = now
+            });
+        Guid? sibling = null;
+        if (addSibling)
+        {
+            var sib = new RequestPoGroup
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = "CIVIPARTS", CurrencyCode = "AOA",
+                TotalAmount = 477000m, Status = RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+                PurchaseOrderNumber = "ECF10 2026/125", PaymentConditionCode = "ADVANCE_FULL", AdvancePaymentPercent = 100m,
+                CreatedAtUtc = now, CreatedByUserId = actor.Id
+            };
+            ctx.RequestPoGroups.Add(sib);
+            ctx.RequestPayments.Add(new RequestPayment
+            {
+                RequestId = request.Id, RequestPoGroupId = sib.Id, PaymentType = RequestPayment.PaymentTypes.Advance,
+                PaymentSequence = 99, PlannedPercent = 100m, PlannedAmount = 477000m, CurrencyCode = "AOA",
+                PaymentStatus = RequestPayment.PaymentStatuses.Planned, CreatedByUserId = actor.Id, CreatedAtUtc = now
+            });
+            sibling = sib.Id;
+        }
+        if (addRegisterPoHistory)
+            ctx.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, ActorUserId = actor.Id, ActionTaken = "REGISTER_PO",
+                PreviousStatusId = request.StatusId, NewStatusId = request.StatusId,
+                Comment = "Divergência OCR confirmada pelo comprador. Justificativa: Avançar.", CreatedAtUtc = now.AddDays(-1)
+            });
+        if (addScheduleAttachment)
+            ctx.RequestAttachments.Add(new RequestAttachment
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, RequestPoGroupId = group.Id, FileName = "cronograma.pdf",
+                FileExtension = ".pdf", AttachmentTypeCode = RequestAttachment.TYPE_PAYMENT_SCHEDULE,
+                StorageReference = "zz/sched-" + Guid.NewGuid().ToString("N")[..8] + ".pdf",
+                UploadedByUserId = actor.Id, UploadedAtUtc = now
+            });
+        await ctx.SaveChangesAsync();
+        return new AdvSeed(request.Id, group.Id, actor.Id, sibling);
+    }
+
+    private static string GroupStatus(ApplicationDbContext ctx, Guid gid) =>
+        ctx.RequestPoGroups.AsNoTracking().Single(g => g.Id == gid).Status;
+
+    [Fact]
+    public async Task Return_AdvancePaymentRequired_Planned_Succeeds_And_Cancels_Advance()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[] { (RequestPayment.PaymentStatuses.Planned, (decimal?)null, false) }, addRegisterPoHistory: true);
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var result = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        Assert.IsType<OkResult>(result);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingPoCorrection, GroupStatus(ctx, seed.GroupId));
+        var adv = await ctx.RequestPayments.AsNoTracking().FirstAsync(p => p.RequestPoGroupId == seed.GroupId);
+        Assert.Equal(RequestPayment.PaymentStatuses.Cancelled, adv.PaymentStatus);
+        // Both audit rows appended; original REGISTER_PO preserved.
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "FINANCE_RETURN_ADJUSTMENT"));
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "ADVANCE_PAYMENT_CANCELLED_FOR_PO_CORRECTION"));
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "REGISTER_PO"));
+    }
+
+    [Fact]
+    public async Task Return_AdvancePaymentScheduled_Cancels_Payment_ClearsSchedule_VoidsAttachment()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentScheduled,
+            new[] { (RequestPayment.PaymentStatuses.Scheduled, (decimal?)null, true) }, addScheduleAttachment: true);
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var result = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        Assert.IsType<OkResult>(result);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingPoCorrection, GroupStatus(ctx, seed.GroupId));
+        var adv = await ctx.RequestPayments.AsNoTracking().FirstAsync(p => p.RequestPoGroupId == seed.GroupId);
+        Assert.Equal(RequestPayment.PaymentStatuses.Cancelled, adv.PaymentStatus);
+        Assert.Null(adv.ScheduledDateUtc);
+        Assert.Null(adv.ScheduledByUserId);
+        var att = await ctx.RequestAttachments.AsNoTracking().FirstAsync(a => a.RequestPoGroupId == seed.GroupId && a.AttachmentTypeCode == RequestAttachment.TYPE_PAYMENT_SCHEDULE);
+        Assert.NotNull(att.VoidedAtUtc);
+    }
+
+    [Theory]
+    [InlineData("COMPLETED", 100.0)]   // completed + paid
+    [InlineData("COMPLETED", null)]    // completed, null paid → still blocked
+    [InlineData("COMPLETED", 0.0)]     // completed, zero paid → still blocked
+    [InlineData("PLANNED", 100.0)]     // anomalous: planned but paid amount present → blocked
+    public async Task Return_Refused_When_Advance_Executed(string status, double? actualPaid)
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[] { (status, (decimal?)(actualPaid.HasValue ? (decimal)actualPaid.Value : (decimal?)null), false) });
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var result = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(RequestConstants.PoGroupStatuses.AdvancePaymentRequired, GroupStatus(ctx, seed.GroupId)); // untouched
+        Assert.Equal(0, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "FINANCE_RETURN_ADJUSTMENT"));
+    }
+
+    [Fact]
+    public async Task Return_Cancels_All_Active_Advances()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[]
+            {
+                (RequestPayment.PaymentStatuses.Planned, (decimal?)null, false),
+                (RequestPayment.PaymentStatuses.Scheduled, (decimal?)null, true),
+            });
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var result = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        Assert.IsType<OkResult>(result);
+        var advances = await ctx.RequestPayments.AsNoTracking().Where(p => p.RequestPoGroupId == seed.GroupId).ToListAsync();
+        Assert.All(advances, a => Assert.Equal(RequestPayment.PaymentStatuses.Cancelled, a.PaymentStatus));
+    }
+
+    [Fact]
+    public async Task Return_MultiGroup_Advance_LeavesSibling_And_ScalarPartiallyUploaded()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[] { (RequestPayment.PaymentStatuses.Planned, (decimal?)null, false) }, addSibling: true);
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var result = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        Assert.IsType<OkResult>(result);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingPoCorrection, GroupStatus(ctx, seed.GroupId));
+        // Sibling CIVIPARTS untouched (still advance-pending, its advance still PLANNED).
+        Assert.Equal(RequestConstants.PoGroupStatuses.AdvancePaymentRequired, GroupStatus(ctx, seed.SiblingGroupId!.Value));
+        var sibAdv = await ctx.RequestPayments.AsNoTracking().FirstAsync(p => p.RequestPoGroupId == seed.SiblingGroupId!.Value);
+        Assert.Equal(RequestPayment.PaymentStatuses.Planned, sibAdv.PaymentStatus);
+        // Aggregate request scalar for {WAITING_PO_CORRECTION + ADVANCE_PAYMENT_REQUIRED} = PO_PARTIALLY_UPLOADED.
+        var scalar = ctx.RequestStatuses.AsNoTracking().Single(s => s.Id == ctx.Requests.AsNoTracking().Single(r => r.Id == seed.RequestId).StatusId).Code;
+        Assert.Equal(RequestConstants.Statuses.PoPartiallyUploaded, scalar);
+    }
+
+    [Fact]
+    public async Task Return_DoubleReturn_Refused()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[] { (RequestPayment.PaymentStatuses.Planned, (decimal?)null, false) });
+        var controller = BuildController(ctx, seed.ActorId);
+
+        var first = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+        Assert.IsType<OkResult>(first);
+        var second = await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+        Assert.IsType<BadRequestObjectResult>(second); // now WAITING_PO_CORRECTION — not returnable
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "FINANCE_RETURN_ADJUSTMENT"));
+    }
+
+    [Fact]
+    public async Task Return_Advance_EmitsStageTransition_ToPoCorrection()
+    {
+        var ctx = NewContext();
+        var seed = await SeedAdvanceAsync(ctx, RequestConstants.PoGroupStatuses.AdvancePaymentRequired,
+            new[] { (RequestPayment.PaymentStatuses.Planned, (decimal?)null, false) });
+        var controller = BuildController(ctx, seed.ActorId);
+
+        await controller.ReturnForAdjustment(seed.RequestId, new FinanceActionRequestDto { RequestPoGroupId = seed.GroupId, Notes = ValidReason });
+
+        var stage = await ctx.Set<OperationalStageState>().AsNoTracking().FirstOrDefaultAsync(s => s.EntityId == seed.GroupId);
+        Assert.NotNull(stage);
+        Assert.Equal("PO_CORRECTION", stage!.StageCode);
+        Assert.True(await ctx.Set<OperationalStageTransition>().AnyAsync(t => t.EntityId == seed.GroupId && t.ToStageCode == "PO_CORRECTION"));
     }
 }

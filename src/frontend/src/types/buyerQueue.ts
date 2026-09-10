@@ -24,6 +24,8 @@ export interface BuyerQueueItem {
   plantName?: string | null;
   departmentName?: string | null;
   requestStatusCode: string;
+  /** v2.242.0 — request type (QUOTATION/PAYMENT); suppresses quotation progress for non-QUOTATION PO corrections. */
+  requestTypeCode?: string;
 
   needLevelCode?: string | null;
   needByDateUtc?: string | null;
@@ -47,6 +49,8 @@ export interface BuyerQueueItem {
   coverageCounts: Record<string, number>;
   attentionSignals: BuyerAttentionSignal[];
   requiresAttention: boolean;
+  // v2.242.0 — PO group(s) returned by Finance for correction (present when operationalState === PO_CORRECTION).
+  poCorrectionGroups?: BuyerPoCorrectionGroup[];
 
   hasNotes: boolean;
   noteCount: number;
@@ -59,6 +63,13 @@ export interface BuyerQueueItem {
   canReassign: boolean;
   canCancel: boolean;
   cancelBlockReason?: string | null;
+}
+
+export interface BuyerPoCorrectionGroup {
+  poGroupId: string;
+  supplierId?: number | null;
+  supplierName?: string | null;
+  purchaseOrderNumber?: string | null;
 }
 
 export interface BuyerQueuePage {
@@ -74,6 +85,8 @@ export interface BuyerQueueSummary {
   requiresAttention: number;
   needsAction: number;
   awaitingApproval: number;
+  // v2.242.0 — request-based count of Finance-returned PO corrections.
+  poCorrections: number;
   unassigned: number;
   byOperationalState: Record<string, number>;
 }

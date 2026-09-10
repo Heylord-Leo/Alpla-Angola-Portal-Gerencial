@@ -52,6 +52,17 @@ public class RequestPoGroup
     public DateTime? UpdatedAtUtc { get; set; }
     public Guid? UpdatedByUserId { get; set; }
 
+    /// <summary>
+    /// v2.242.0 — the Buyer who most recently REGISTERED or REREGISTERED this group's current P.O.
+    /// The durable, structured personal-ownership carrier for PAYMENT PO corrections (PAYMENT requests
+    /// carry no <see cref="Request.BuyerId"/>). Stamped ONLY by RegisterPo (REGISTER_PO / REREGISTER_PO)
+    /// with the authenticated Buyer; NEVER cleared by Finance return, scheduling, mark-paid, receiving,
+    /// fiscal documentation, or generic group updates. Nullable scalar (no FK / no navigation), matching
+    /// the existing RequestPoGroup user-reference convention. Null = unresolved → treated as UNASSIGNED,
+    /// never as "any Buyer". QUOTATION correction ownership continues to come from Request.BuyerId.
+    /// </summary>
+    public Guid? PoResponsibleBuyerId { get; set; }
+
     // ── Concurrency (Post-Payment Completion Workflow — Release 1 foundation) ──
     /// <summary>
     /// SQL Server rowversion. Guards the parallel post-payment dimensions: Operational Receipt,

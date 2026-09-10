@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { GuidedTourProvider } from '../features/guided-tour/GuidedTourProvider';
 import { PendingApprovalsSticker } from '../components/ui/PendingApprovalsSticker';
 import { PendingReceivingSticker } from '../components/ui/PendingReceivingSticker';
+import { PendingPoCorrectionsSticker } from '../components/ui/PendingPoCorrectionsSticker';
 import { EnvironmentBanner } from '../components/ui/EnvironmentBanner';
 import { useEnvironment } from '../contexts/EnvironmentContext';
 
@@ -128,6 +129,7 @@ export function AppShell({ children }: AppShellProps) {
                 }}>
                     <PendingApprovalsSticker />
                     <PendingReceivingSticker />
+                    <PendingPoCorrectionsSticker />
                 </div>
             </div>
         </GuidedTourProvider>
