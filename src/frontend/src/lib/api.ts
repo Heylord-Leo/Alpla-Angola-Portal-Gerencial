@@ -8,6 +8,8 @@ import {
 } from '../types/paymentSourceDocument';
 import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
 import { MyActionsResponse, MyActionsParams } from '../types/myActions';
+import { ApprovalHistoryPage, ApprovalHistoryQuery, ApprovalTimelineEvent } from '../types/approvalHistory';
+import { ApprovalAnalytics, ApprovalAnalyticsQuery } from '../types/approvalAnalytics';
 import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto, DashboardV2ReceivingSectionDto, ReceivingQueueResponseDto, DashboardV2PersonalSectionDto, DashboardV2PipelineDto, DashboardV2FinancialDto, DashboardV2AlertsDto, DashboardV2StageAgingDto } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
@@ -147,6 +149,23 @@ async function handleApiError(
         errJson
     );
     throw apiError;
+}
+
+// v2.244.0 Phase 2 — shared param builder so the HISTÓRICO table and its CSV export send the SAME
+// filters/scope (paging/sort are added by each caller as appropriate).
+function buildApprovalHistoryParams(q: ApprovalHistoryQuery): URLSearchParams {
+    const p = new URLSearchParams();
+    if (q.search) p.append('search', q.search);
+    if (q.decision) p.append('decision', q.decision);
+    if (q.stage) p.append('stage', q.stage);
+    if (q.approverId) p.append('approverId', q.approverId);
+    if (q.requestType) p.append('requestType', q.requestType);
+    if (q.departmentId != null) p.append('departmentId', q.departmentId.toString());
+    if (q.companyId != null) p.append('companyId', q.companyId.toString());
+    if (q.plantId != null) p.append('plantId', q.plantId.toString());
+    if (q.dateFrom) p.append('dateFrom', q.dateFrom);
+    if (q.dateTo) p.append('dateTo', q.dateTo);
+    return p;
 }
 
 export const api = {
@@ -1300,7 +1319,46 @@ export const api = {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/${id}/finance-trend?resolution=${resolution}&scope=${scope}`);
             if (!response.ok) return handleApiError(response, 'Falha ao carregar tendência financeira.');
             return response.json();
-        }
+        },
+        // v2.244.0 Phase 2 — read-only approval history + audit timeline + CSV export.
+        getHistory: async (q: ApprovalHistoryQuery = {}): Promise<ApprovalHistoryPage> => {
+            const params = buildApprovalHistoryParams(q);
+            params.append('page', (q.page ?? 1).toString());
+            params.append('pageSize', (q.pageSize ?? 25).toString());
+            params.append('sort', q.sort ?? 'dateDesc');
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/history?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar histórico de aprovações.');
+            return response.json();
+        },
+        exportHistory: async (q: ApprovalHistoryQuery = {}): Promise<Blob> => {
+            const params = buildApprovalHistoryParams(q);
+            if (q.sort) params.append('sort', q.sort);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/history/export?${params.toString()}`, {
+                headers: { 'Accept': 'text/csv' },
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao exportar histórico de aprovações.');
+            return response.blob();
+        },
+        getTimeline: async (requestId: string): Promise<ApprovalTimelineEvent[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/history/${requestId}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar a linha do tempo de aprovações.');
+            return response.json();
+        },
+        // v2.244.0 Phase 3 — read-only approval analytics (SLA/bottleneck/approvers/trend).
+        getAnalytics: async (q: ApprovalAnalyticsQuery = {}): Promise<ApprovalAnalytics> => {
+            const p = new URLSearchParams();
+            if (q.dateFrom) p.append('dateFrom', q.dateFrom);
+            if (q.dateTo) p.append('dateTo', q.dateTo);
+            p.append('resolution', q.resolution ?? 'day');
+            if (q.requestType) p.append('requestType', q.requestType);
+            if (q.departmentId != null) p.append('departmentId', q.departmentId.toString());
+            if (q.companyId != null) p.append('companyId', q.companyId.toString());
+            if (q.plantId != null) p.append('plantId', q.plantId.toString());
+            if (q.approverId) p.append('approverId', q.approverId);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/approvals/analytics?${p.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar análises de aprovações.');
+            return response.json();
+        },
     },
     dev: {
         seedIntelligence: async (): Promise<any> => {
