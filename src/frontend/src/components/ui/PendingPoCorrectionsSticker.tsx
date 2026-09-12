@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { X, FileWarning, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Z_INDEX } from '../../constants/ui';
@@ -9,13 +9,12 @@ import { usePendingPoCorrectionsCount } from '../../hooks/usePendingPoCorrection
 /**
  * v2.242.0 — footer sticker for PO groups returned by Finance for Buyer correction. Same visual
  * architecture as the approvals/receiving stickers; amber accent to distinguish it. Cross-type,
- * personal count (QUOTATION + PAYMENT corrections the Buyer owns); CTA lands on the personal work
- * surface "Para Minha Ação" (/requests?isAttention=true), which now surfaces both types.
+ * personal count (QUOTATION + PAYMENT corrections the Buyer owns); CTA lands on the PO-corrections
+ * category of "Para Minha Ação" (/requests?action=PO_CORRECTION) — category-only, no fabricated target.
  */
 export function PendingPoCorrectionsSticker() {
     const { count, loading } = usePendingPoCorrectionsCount();
     const navigate = useNavigate();
-    const location = useLocation();
     const [dismissed, setDismissed] = useState(() => {
         return sessionStorage.getItem('pendingPoCorrectionsDismissed') === 'true';
     });
@@ -36,12 +35,16 @@ export function PendingPoCorrectionsSticker() {
 
     const handleNavigate = () => {
         handleDismiss();
-        // Cross-type personal correction work lives in "Para Minha Ação" (QUOTATION + PAYMENT). The
-        // Buyer queue is QUOTATION-only, so the CTA lands on the requests personal-action surface.
-        navigate('/requests?isAttention=true');
+        // v2.243.0 Phase 3 — land directly on the PO-corrections category of Para Minha Ação. The count
+        // endpoint returns only a number, so this is CATEGORY-ONLY navigation (no requestId/poGroupId,
+        // no fabricated target, no not-found note).
+        navigate('/requests?action=PO_CORRECTION');
     };
 
-    const onQueuePage = location.pathname === '/requests';
+    // v2.243.0 Phase 3 fix — no route-based suppression. Previously the sticker hid itself on
+    // /requests (its CTA destination), but /requests is now the operational home (Para Minha Ação),
+    // so a Buyer with a pending correction never saw it. Visibility depends ONLY on the personal
+    // count + dismiss state (ownership semantics unchanged); the dismiss button still hides it.
 
     const title = count === 1 ? 'Correção de P.O. pendente' : 'Correções de P.O. pendentes';
     const body = count === 1
@@ -50,7 +53,7 @@ export function PendingPoCorrectionsSticker() {
 
     return (
         <AnimatePresence>
-            {isVisible && !onQueuePage && (
+            {isVisible && (
                 <motion.div
                     key="pending-po-corrections-sticker"
                     initial={{ opacity: 0, x: 60, scale: 0.95 }}

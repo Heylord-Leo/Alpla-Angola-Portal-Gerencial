@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.242.0
+v2.243.0
+
+## [v2.243.0] - 2026-09-12
+
+### Para Minha Ação V2
+
+A personal operational action queue on `/requests` that replaces the legacy "first-15" action
+carousel. It consumes the released `GET /api/v1/requests/my-actions` projection (categories, counts,
+per-category pagination, backend-owned priority) and adds deep-link targeting from the PO-correction
+sticker and the Buyer queue. **Frontend-only.**
+
+- **NO MIGRATION REQUIRED** — no schema change, no EF migration after the v2.242.0 chain.
+- **No database backfill** required for this release.
+- **Deployment (TEST/PROD):** normal application deployment only; do **not** run an EF database update
+  for v2.243.0. The `/my-actions` endpoint, ownership predicate, and Finance/PO workflow are unchanged
+  (released in v2.242.0); legacy `isAttention` consumers remain available.
 
 ## [v2.242.0] - 2026-09-10
 

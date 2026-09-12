@@ -23,6 +23,7 @@ import {
   OWNERSHIP_TABS, DEFAULT_OWNERSHIP, countAdvancedFilters, resolveNoteTooltip,
   operationalStateColor, deadlineChip, NEED_LEVEL_LABEL, coverageProgress, pctOfTotal,
   resolvePlantOnCompanyChange, resolveNeedLevel, needLevelApiValue, NEED_LEVEL_ALL, isOwnRequest,
+  buildPoCorrectionDeepLink,
 } from './buyerQueueView';
 import { useAuth } from '../../features/auth/AuthContext';
 
@@ -347,7 +348,7 @@ export function BuyerQueueList() {
             onCancel={() => { setCancelItem(item); setCancelReason(''); }}
             onClaim={() => doClaim(item)}
             onOpenWorkspace={() => navigate(`/buyer/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
-            onCorrectPo={() => navigate(`/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
+            onCorrectPo={() => navigate(buildPoCorrectionDeepLink(item.requestId, item.poCorrectionGroups?.[0]?.poGroupId))}
           />
         ))}
       </div>

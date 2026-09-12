@@ -4,7 +4,42 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.242.0
+v2.243.0
+
+## [v2.243.0] - 2026-09-12 — Para Minha Ação V2
+
+A personal operational action queue on `/requests` powered by the released
+`GET /api/v1/requests/my-actions` projection, replacing the legacy "first-15" action carousel.
+Frontend-only: no backend business-rule changes, no schema migration, no database backfill.
+
+### Added
+- Personal operational action queue (categories + counts + per-category pagination) fed by
+  `/requests/my-actions`; backend-owned priority order (no frontend re-sort).
+- Category-based navigation (Todos + backend-returned categories per role/data); the action category
+  is reflected in the URL (`?action=<ActionType>`) and supports Back/Forward.
+- Action-target deep links (`?action=…&requestId=…&poGroupId=…`) with backend target-page resolution,
+  auto category selection, scroll-into-view and a soft ~5s target highlight (reduced-motion safe).
+
+### Changed
+- Replaced the legacy `ActionCarouselWidget` ("first-15-forever" carousel) in the Requests dashboard
+  with the compact, bounded, internally-scrolling personal action queue.
+- The PO-corrections footer sticker CTA now opens the PO-corrections category
+  (`/requests?action=PO_CORRECTION`, category-only — no fabricated target).
+- The Buyer-queue "Corrigir P.O." CTA hands off to Para Minha Ação via a deep link built from the
+  request id and the real `WAITING_PO_CORRECTION` P.O.-group id.
+
+### Fixed
+- StrictMode-induced infinite "Carregando ações…" in the personal-action hook (mountedRef re-arm).
+- Case-sensitive GUID target matching (uppercase deep-link vs lowercase serialization) causing a false
+  "not available" on a valid target.
+- The PO-corrections sticker being hidden on `/requests` (its own destination).
+- Same-route query navigation not updating the category (URL is now reactive; no remount required).
+- Duplicate target handling / navigation loops after transient-id URL cleanup.
+
+### Safety / Compatibility
+- No backend business-rule changes, no schema migration, no database backfill.
+- Legacy `isAttention` endpoints/consumers remain available for other screens.
+- Personal action ownership and priority remain backend-scoped; the frontend duplicates no business rule.
 
 ## [v2.242.0] - 2026-09-10 — Controlled PO Correction & Cross-Type Buyer Ownership
 
