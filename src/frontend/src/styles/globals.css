@@ -421,6 +421,19 @@ tr:hover td {
     animation: spin 1s linear infinite;
 }
 
+/* v2.243.0 Para Minha Ação V2 — deep-link target emphasis. One gentle pulse (no flashing); the tinted
+   background + red left accent are applied inline for ~5s. Disabled under reduced-motion (static only). */
+@keyframes pmaTargetPulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-red) 40%, transparent); }
+    100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-status-red) 0%, transparent); }
+}
+.pma-targeted {
+    animation: pmaTargetPulse 1.2s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+    .pma-targeted { animation: none; }
+}
+
 @keyframes slideInFromRight {
     from { transform: translateX(100%); opacity: 0; }
     to   { transform: translateX(0);    opacity: 1; }

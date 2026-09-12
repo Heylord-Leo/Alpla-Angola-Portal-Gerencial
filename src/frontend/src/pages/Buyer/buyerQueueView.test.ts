@@ -5,7 +5,9 @@ import {
   OWNERSHIP_TABS, DEFAULT_OWNERSHIP, QUEUE_DEFAULT_SORT, OP,
   coverageProgress, pctOfTotal, resolvePlantOnCompanyChange,
   resolveNeedLevel, needLevelApiValue, isOwnRequest, NEED_LEVEL_DEFAULT, NEED_LEVEL_ALL,
+  buildPoCorrectionDeepLink,
 } from './buyerQueueView';
+import listSrc from './BuyerQueueList.tsx?raw';
 
 const summary = {
   total: 52, requiresAttention: 34, needsAction: 40, awaitingApproval: 11, unassigned: 15,
@@ -217,5 +219,26 @@ describe('isOwnRequest (canonical identity, never name)', () => {
     expect(isOwnRequest(null, 'u1')).toBe(false);
     expect(isOwnRequest('u1', null)).toBe(false);
     expect(isOwnRequest(undefined, undefined)).toBe(false);
+  });
+});
+
+describe('buildPoCorrectionDeepLink + BuyerQueue "Corrigir P.O." navigation (v2.243.0 Phase 3)', () => {
+  it('builds a Para Minha Ação PO_CORRECTION deep-link with requestId and poGroupId', () => {
+    const url = buildPoCorrectionDeepLink('9b2b23e7-3f4e-4c1c-a5ab-cbccc66392ac', '5772d42c-336f-41e2-9530-6d69ac941eab');
+    expect(url).toBe('/requests?action=PO_CORRECTION&requestId=9b2b23e7-3f4e-4c1c-a5ab-cbccc66392ac&poGroupId=5772d42c-336f-41e2-9530-6d69ac941eab');
+  });
+  it('omits poGroupId when absent (falls back to requestId+action target on the queue side)', () => {
+    expect(buildPoCorrectionDeepLink('req-1')).toBe('/requests?action=PO_CORRECTION&requestId=req-1');
+    expect(buildPoCorrectionDeepLink('req-1', null)).toBe('/requests?action=PO_CORRECTION&requestId=req-1');
+  });
+  it('BuyerQueueList "Corrigir P.O." navigates via the deep-link using the REAL correction group id', () => {
+    // Uses the backend-projected PoCorrectionGroups[0] (always a WAITING_PO_CORRECTION group),
+    // never a request scalar or an arbitrary sibling group, and no longer the old request-detail nav.
+    expect(listSrc).toMatch(/onCorrectPo=\{\(\) => navigate\(buildPoCorrectionDeepLink\(item\.requestId, item\.poCorrectionGroups\?\.\[0\]\?\.poGroupId\)\)\}/);
+    expect(listSrc).not.toMatch(/onCorrectPo=\{\(\) => navigate\(`\/requests\/\$\{item\.requestId\}`/);
+  });
+  it('does not alter non-correction CTAs (claim / open workspace still present)', () => {
+    expect(listSrc).toMatch(/Atribuir a Mim/);
+    expect(listSrc).toMatch(/Abrir Workspace/);
   });
 });

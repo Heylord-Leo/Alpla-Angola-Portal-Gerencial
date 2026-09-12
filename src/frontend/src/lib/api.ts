@@ -7,6 +7,7 @@ import {
     PaymentSourceDocumentConflictDto
 } from '../types/paymentSourceDocument';
 import { BuyerQueuePage, BuyerQueueSummary, BuyerQueueParams } from '../types/buyerQueue';
+import { MyActionsResponse, MyActionsParams } from '../types/myActions';
 import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto, DashboardV2ReceivingSectionDto, ReceivingQueueResponseDto, DashboardV2PersonalSectionDto, DashboardV2PipelineDto, DashboardV2FinancialDto, DashboardV2AlertsDto, DashboardV2StageAgingDto } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
@@ -436,6 +437,22 @@ export const api = {
             if (!response.ok) return 0;
             const data = await response.json();
             return data?.count ?? 0;
+        },
+        // v2.243.0 — Para Minha Ação V2 personal action queue (categories + counts + paged items).
+        // Backend owns categories, priority ordering and per-category pagination; the frontend renders
+        // in response order and never re-sorts. Target params exist for Phase 2 deep-linking.
+        myActions: async (opts: MyActionsParams = {}): Promise<MyActionsResponse> => {
+            const params = new URLSearchParams();
+            if (opts.actionType) params.append('actionType', opts.actionType);
+            params.append('page', String(opts.page ?? 1));
+            params.append('pageSize', String(opts.pageSize ?? 20));
+            params.append('sort', opts.sort ?? 'priority');
+            if (opts.targetRequestId) params.append('targetRequestId', opts.targetRequestId);
+            if (opts.targetPoGroupId) params.append('targetPoGroupId', opts.targetPoGroupId);
+            if (opts.targetActionType) params.append('targetActionType', opts.targetActionType);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/my-actions?${params.toString()}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar as ações pendentes.');
+            return response.json();
         },
         get: async (id: string): Promise<RequestDetailsDto> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}`);

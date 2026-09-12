@@ -198,3 +198,12 @@ export function pctOfTotal(count: number, total: number): number | null {
   if (!total || total <= 0) return null;
   return Math.round((count / total) * 100);
 }
+
+// v2.243.0 Phase 3 — build the Para Minha Ação PO-correction deep-link for a Buyer-queue row's
+// "Corrigir P.O." CTA. Uses the row's REAL correction group id (from the backend-projected
+// PoCorrectionGroups — always a WAITING_PO_CORRECTION group), never a scalar/sibling group.
+export function buildPoCorrectionDeepLink(requestId: string, poGroupId?: string | null): string {
+  const p = new URLSearchParams({ action: 'PO_CORRECTION', requestId });
+  if (poGroupId) p.set('poGroupId', poGroupId);
+  return `/requests?${p.toString()}`;
+}

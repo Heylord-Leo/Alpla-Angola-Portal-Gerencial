@@ -4,7 +4,7 @@ import { Plus, Search, Filter, Pin, PinOff, ArrowUpRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../../lib/api';
 import { RequestListItemDto, DashboardSummaryDto } from '../../../../types';
-import { ActionCarouselWidget } from './ActionCarouselWidget';
+import { ParaMinhaAcaoV2 } from '../../../../components/ParaMinhaAcao/ParaMinhaAcaoV2';
 import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
 import { FilterDropdown } from '../../../../components/ui/FilterDropdown';
@@ -366,17 +366,13 @@ export function RequestsDashboard() {
                 )}
             </AnimatePresence>
 
-            {/* ── Action Carousel & Stats ── */}
-            {summary && (
-                <div data-tour="requests-action-carousel">
-                <ActionCarouselWidget
-                    summary={summary}
-                    onRowClick={handleRowClick}
-                    onCorrectPoClick={(requestId) => navigate(`/requests/${requestId}`)}
-                    onHelpClick={() => setCurrentHelpSection('action')}
-                />
-                </div>
-            )}
+            {/* ── Para Minha Ação V2 (personal operational queue) ── */}
+            {/* v2.243.0 — replaces the legacy ActionCarouselWidget ("first-15-forever" carousel) with a
+                categorized, per-category paginated personal action queue fed by /api/v1/requests/my-actions.
+                Self-contained (fetches its own data), so it renders regardless of `summary`. */}
+            <div data-tour="requests-action-carousel">
+                <ParaMinhaAcaoV2 />
+            </div>
 
             {/* ── Explorer Section ── */}
             <section data-tour="requests-explorer" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
