@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.243.0
+v2.244.0
+
+## [v2.244.0] - 2026-09-12
+
+### Approval Center V2
+
+`/approvals` becomes a three-tab operational workspace — **Pendentes | Histórico | Análises**.
+Pendentes re-homes the existing approval queue in a compact layout; Histórico is a searchable,
+paginated approval-decision history with an audit-timeline drawer and CSV export; Análises adds
+read-only SLA/duration, Área-vs-Final bottleneck, decision-mix, trend and approver-performance
+analytics. History and analytics are **derived read-only projections** over the existing
+`RequestStatusHistories` audit log — no new persistence.
+
+- **NO MIGRATION REQUIRED** — no schema change, no EF migration after the v2.242.0 chain. This release
+  **does change backend application code** (three read-only endpoints under `api/v1/approvals`) but
+  **not the database schema**.
+- **No database backfill** required.
+- **Deployment (TEST/PROD):** normal application deployment only; **do not** run an EF database update
+  for v2.244.0. Approval mutation logic, eligibility and scoping are unchanged; visibility remains
+  access-scoped via the canonical `GetScopedRequestsQuery` + approver/admin roles.
 
 ## [v2.243.0] - 2026-09-12
 

@@ -4,7 +4,50 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.243.0
+v2.244.0
+
+## [v2.244.0] - 2026-09-12 — Approval Center V2
+
+`/approvals` becomes a three-tab operational workspace: **Pendentes | Histórico | Análises**. History
+and analytics are derived **read-only** projections over the existing `RequestStatusHistories` audit
+log — no schema migration, no backfill, no approval write-path change.
+
+### Added
+- Three-tab Approval Center (Pendentes / Histórico / Análises) with URL-synchronized tab state
+  (`?tab=…`, refresh/Back-Forward safe, invalid → Pendentes).
+- Searchable, server-side-paginated approval-decision **history** with stage / decision / request-type
+  / date / approver filters and result-mix counts (Aprovadas / Rejeitadas / Devolvidas / Reenviadas).
+- Read-only per-request **audit timeline** drawer (chronological, actor from `ActorUserId`).
+- **CSV export** of approval history (same filters/scope as the table).
+- Approval **analytics**: total-approval, Área and Final durations as mean / median / **P90**
+  (nearest-rank), Área-vs-Final **bottleneck** comparison, decision-outcome mix, decisions **trend**,
+  and per-approver workload/speed table.
+- Centralized approval classifier + SLA calculator + statistics helpers (pure Domain), reused across
+  history and analytics.
+
+### Changed
+- Pending approval queues redesigned into compact operational lists with a bounded scroll and item
+  aging; Área and Final remain clearly separated. Supplier and contract approvals preserved.
+- Historical PAYMENT (and legacy pre-batch QUOTATION) approval level is derived from proven
+  `PreviousStatus → NewStatus` transitions, never from `ActionTaken = "APPROVE"` alone.
+- QUOTATION batch history classified from batch action codes; `Lote #N` shown as display attribution.
+- Repetitive `BATCH_CANDIDATES_SUBMITTED` timeline events grouped for readability (expandable, order
+  and originals preserved); decisions never grouped.
+- Known system-generated comments shown in human-readable Portuguese while the raw text stays
+  accessible ("Ver detalhes técnicos").
+
+### Fixed
+- Approval Center tab-strip spurious vertical scrollbar artifact.
+- History decision-mix summary now includes resubmitted (Reenviadas) decisions.
+- Multi-batch analytics avoid total-SLA double counting (per-lote stage durations exact; batch total
+  is one request-level sample).
+
+### Safety / Data
+- **No database migration, no backfill, no approval write-path changes.**
+- History/analytics are derived read-only projections from existing data; ambiguous batch attribution
+  is left null/excluded, never guessed (no fabricated `ApprovalBatchId`).
+- Approval visibility remains access-scoped (`GetScopedRequestsQuery` + approver/admin roles); no new
+  broad history or analytics permission.
 
 ## [v2.243.0] - 2026-09-12 — Para Minha Ação V2
 

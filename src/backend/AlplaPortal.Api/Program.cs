@@ -124,6 +124,10 @@ builder.Services.AddScoped<IFinancePaymentEligibilityService, FinancePaymentElig
 
 // Approval Intelligence
 builder.Services.AddScoped<IApprovalIntelligenceService, ApprovalIntelligenceService>();
+// Approval History (v2.244.0 Phase 2 — read-only)
+builder.Services.AddScoped<IApprovalHistoryService, AlplaPortal.Infrastructure.Services.Approvals.ApprovalHistoryService>();
+// Approval Analytics (v2.244.0 Phase 3 — read-only)
+builder.Services.AddScoped<IApprovalAnalyticsService, AlplaPortal.Infrastructure.Services.Approvals.ApprovalAnalyticsService>();
 builder.Services.AddScoped<IRequestStatusSyncService, RequestStatusSyncService>();
 builder.Services.AddScoped<IAdjustmentCycleService, AdjustmentCycleService>();
 
