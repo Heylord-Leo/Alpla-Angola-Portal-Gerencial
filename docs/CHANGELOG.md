@@ -4,7 +4,59 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.244.0
+v2.245.0
+
+## [v2.245.0] - 2026-09-16 — Request Print View & Receiving Reliability
+
+A browser-native **Request Print View** plus a cluster of **Receiving reliability** fixes and two
+**controlled, SysAdmin-only legacy-data repairs**. No schema migration, no backfill of business data,
+no fabricated receiving/payment events; existing payment-divergence semantics unchanged.
+
+### Added
+- **Request Details print workflow** — a print button in the Request Details view.
+- **Full printable request document** — every group, line item, attachment metadata, quotation,
+  approval and history event (no truncation), with humanized history/document labels and compact
+  corporate print styling; browser-native print only (no PDF library).
+- **Generated-by metadata** — the printed document is stamped with the current user.
+- **Dynamic PDF/browser title** — `Portal Gerencial - Pedido <número seguro> - <YYYY-MM-DD>`, with a
+  sanitized request number, restored to the original `document.title` after printing.
+- **Controlled receiving-finalization-drift repair** — `POST api/v1/admin/repairs/receiving-finalization-drift`
+  (SysAdmin, preview/apply, idempotent) restoring the missing winning-quotation-item link.
+- **Controlled PAYMENT receiving-status-drift repair** — `POST api/v1/admin/repairs/payment-receiving-status-drift`
+  (SysAdmin, preview/apply, idempotent) promoting legacy backfilled PENDING PAYMENT groups to
+  PAYMENT_COMPLETED.
+
+### Changed
+- Receiving item/group resolution — winning-quotation-item receipts resolve to their line item by an
+  unambiguous LineNumber match when the explicit link is missing; item→group frontend fallback.
+- Receiving workflow guidance — post-confirmation groups guide to attaching the supplier receipt and
+  finalizing; partial vs complete states are distinct.
+- Single vs multi operational-unit guidance — a single-unit request shows the normal responsible /
+  next-action panel and no longer emits the false "múltiplos grupos operacionais" message.
+- Canonical receiving-eligibility helpers — a single frontend rule mirroring the backend evaluator for
+  general receiving access and a dedicated one-time confirm-action rule.
+- Post-confirmation guidance surfaced consistently for confirmed groups.
+
+### Fixed
+- Legacy quotation item/group linkage drift leaving groups stuck IN_FOLLOWUP after receipt.
+- Stuck receiving groups after full receipt (auto-sync stale-navigation fix).
+- Legacy PAYMENT groups stuck in PENDING (never inheriting payment completion from the backfill).
+- Empty `RequestPoGroupId` confirm-receiving calls (frontend resolver + defensive modal guard).
+- False multi-group message on single-unit requests.
+- Duplicate `CONFIRM_RECEIVING` — a second confirm on an already-confirmed (WAITING_RECEIPT) group now
+  returns 409 and writes no duplicate history.
+- Confirm button remaining clickable after the group reached WAITING_RECEIPT.
+- Frontend/backend receiving-eligibility mismatch (workspace request-scalar admission vs group-status
+  actions).
+
+### Safety / Compatibility
+- **No migration** — no schema change, no EF migration.
+- Repairs are **SysAdmin-only**, preview/apply, with a mandatory reason on apply, transaction-safe and
+  idempotent; preview writes nothing.
+- No fabricated receiving/payment events; technical repair audits only (never `CONFIRM_RECEIVING` /
+  `PAYMENT_COMPLETED` transitions).
+- Existing payment-divergence semantics unchanged (informational, non-blocking).
+- Print uses browser-native printing only — no PDF library, no external calls, no auth data embedded.
 
 ## [v2.244.0] - 2026-09-12 — Approval Center V2
 

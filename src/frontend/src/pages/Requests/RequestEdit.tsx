@@ -8,9 +8,10 @@ import {
     X, 
     ShieldCheck, 
     ShieldAlert, 
-    Trash2, 
-    Send, 
-    ArrowLeft
+    Trash2,
+    Send,
+    ArrowLeft,
+    Printer
 } from 'lucide-react';
 import { QuickSupplierModal } from '../../components/Buyer/QuickSupplierModal';
 import { api, ApiError } from '../../lib/api';
@@ -36,6 +37,9 @@ import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { RequestGeneralDataSection } from './components/RequestGeneralDataSection';
+import { RequestPrintDocument } from './components/print/RequestPrintDocument';
+import { toPrintFileTitle } from './components/print/requestPrintModel';
+import { printService } from '../../lib/printService';
 import { PaymentSourceDocumentsSection } from './components/PaymentSourceDocumentsSection';
 import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocument';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
@@ -90,6 +94,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         setAttachments,
         quotations,
         selectedQuotationId,
+        detail,
         units,
         currencies,
         needLevels,
@@ -164,6 +169,25 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
 
     const isDrawerMode = !!onDrawerClose;
     const { user } = useAuth();
+
+    // v2.245.0 Request Print View — data-driven print of the ENTIRE request (complete history + all
+    // groups), independent of collapsed sections / scroll. The hidden print subtree is always mounted;
+    // the button just waits for the DOM commit (two rAFs, no setTimeout hacks) then opens the native
+    // print dialog. The browser print call is behind printService so it can be spied on in tests.
+    const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+    const handlePrint = useCallback(() => {
+        if (!detail) return;
+        setIsPreparingPrint(true);
+        // Dynamic title → a meaningful Save-as-PDF filename; printService restores the original after.
+        const documentTitle = toPrintFileTitle(detail.requestNumber);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            try {
+                printService.print({ documentTitle });
+            } finally {
+                setIsPreparingPrint(false);
+            }
+        }));
+    }, [detail]);
 
     // Mirrors LookupsController.CanCreateSupplierContextuallyAsync. The scope half is proxied by the
     // lookup lists this screen loaded, which are themselves scoped to the user; the server remains
@@ -420,6 +444,23 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         ),
         secondaryActions: (
             <>
+                {detail && (
+                    <button
+                        type="button"
+                        onClick={handlePrint}
+                        disabled={isPreparingPrint}
+                        aria-label="Imprimir o pedido"
+                        style={{
+                            height: '36px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)', cursor: isPreparingPrint ? 'default' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            fontWeight: 800, fontFamily: 'var(--font-family-display)', fontSize: '0.7rem', color: 'var(--color-text-main)',
+                            boxShadow: 'var(--shadow-sm)', transition: 'all 0.2s', opacity: isPreparingPrint ? 0.7 : 1
+                        }}
+                    >
+                        <Printer size={14} /> {isPreparingPrint ? 'PREPARANDO...' : 'IMPRIMIR'}
+                    </button>
+                )}
                 <button
                     type="button"
                     onClick={() => navigate(`/requests`)}
@@ -510,6 +551,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1440px', margin: '0 auto', minWidth: 0 }}
         >
 
+            {/* v2.245.0 — hidden on screen, printed under @media print (portals to <body>). */}
+            <RequestPrintDocument detail={detail} projection={workflowProjection} printedByName={user?.fullName ?? null} />
+
             {/* Sticky Header Unit - Feedback, Banners, and Main Action Header */}
             <RequestActionHeader {...headerProps}>
                 <RequestStatusActionPanels
@@ -534,7 +578,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     getRequestGuidance={getRequestGuidance}
                     suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
                     completionGuidance={release4Guidance}
-                    hideLegacyGuidance={!!multiUnitGuidance || !!singleUnitGuidance}
+                    hideLegacyGuidance={!!multiUnitGuidance}
                 />
             </RequestActionHeader>
 

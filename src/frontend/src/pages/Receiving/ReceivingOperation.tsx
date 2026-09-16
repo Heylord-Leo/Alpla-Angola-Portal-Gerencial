@@ -18,6 +18,7 @@ import { RequestActionHeader } from '../Requests/components/RequestActionHeader'
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { StandardTable } from '../../components/ui/StandardTable';
+import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed } from '../../lib/receivingEligibility';
 import { motion } from 'framer-motion';
 
 const highlightStyles = `
@@ -89,7 +90,12 @@ const ReceivingOperation: React.FC = () => {
     
     return winningQuotation 
       ? winningQuotation.items.map((qi: any) => {
-          const correspondingLineItem = request.lineItems?.find((li: any) => li.selectedQuotationItemId === qi.id);
+          // v2.245.0: resolve the item's PO group. Priority: explicit selectedQuotationItemId link;
+          // then the canonical, unambiguous LineNumber match (LineNumber is unique within a request's
+          // line items and within a quotation). Never guess when the line number is ambiguous.
+          const byLink = request.lineItems?.find((li: any) => li.selectedQuotationItemId === qi.id);
+          const byNumber = (request.lineItems ?? []).filter((li: any) => li.lineNumber === qi.lineNumber);
+          const correspondingLineItem = byLink ?? (byNumber.length === 1 ? byNumber[0] : undefined);
           const requestPoGroupId = correspondingLineItem?.requestPoGroupId;
           return {
             id: qi.id,
@@ -150,8 +156,30 @@ const ReceivingOperation: React.FC = () => {
     }
   };
 
+  // v2.245.0: never open confirm-receiving without a real RequestPoGroupId. Group-based receiving
+  // always needs a concrete group id — an empty id would POST { requestPoGroupId: '' } and the backend
+  // (correctly) returns "Grupo P.O. não encontrado."
   const handleFinalizeClick = (groupId: string, groupName: string) => {
+    if (!groupId) {
+      setFeedback({ type: 'error', message: 'Não foi possível identificar o grupo de recebimento. Atualize a página e tente novamente.' });
+      return;
+    }
     setFinalizeModalState({ show: true, groupId, groupName });
+  };
+
+  // v2.245.0: the top-level action must resolve a real group — never guess with an empty id.
+  // Exactly one resolvable receiving group → use it; zero → blocker; multiple → require the
+  // group-specific confirm buttons (no first-group guess).
+  const handleTopLevelFinalize = () => {
+    const resolvable = (request?.poGroups ?? []).filter((g: any) =>
+      operationalItems.some((i: any) => i.requestPoGroupId === g.id));
+    if (resolvable.length === 1) {
+      handleFinalizeClick(resolvable[0].id, resolvable[0].supplierNameSnapshot ?? '');
+    } else if (resolvable.length === 0) {
+      setFeedback({ type: 'error', message: 'Não foi possível identificar o grupo de recebimento. Atualize a página e tente novamente.' });
+    } else {
+      setFeedback({ type: 'error', message: 'Este pedido possui múltiplos grupos. Confirme o recebimento em cada grupo individualmente.' });
+    }
   };
 
 
@@ -206,9 +234,10 @@ const ReceivingOperation: React.FC = () => {
             </div>
         }
         primaryActions={
-            !isReadOnly && (!request.poGroups || request.poGroups.length === 0) && (
+            !isReadOnly && (!request.poGroups || request.poGroups.length === 0)
+              && canConfirmReceiving(request.statusCode, allReceived) && (
                 <button
-                    onClick={() => handleFinalizeClick('', '')}
+                    onClick={handleTopLevelFinalize}
                     className="btn-primary"
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
@@ -260,8 +289,30 @@ const ReceivingOperation: React.FC = () => {
               const groupItems = operationalItems.filter((i: any) => i.requestPoGroupId === group.id);
               if (groupItems.length === 0) return null;
               
-              const isGroupReadOnly = isReadOnly || !['WAITING_RECEIPT', 'IN_FOLLOWUP', 'PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'PAG_REALIZADO', 'RECEBIMENTO_ANDAMENTO'].includes(group.status);
-              
+              // v2.245.0 §16: single canonical eligibility rule (mirror of the backend evaluator). A group
+              // whose GROUP status is not a valid receiving phase (e.g. the PAYMENT PENDING drift) is
+              // read-only — the backend would reject any receiving action on it.
+              const groupActionable = isReceivingActionableGroupStatus(group.status);
+              const isGroupReadOnly = isReadOnly || !groupActionable;
+              // v2.245.0 §15: a group that is not yet in a valid receiving phase (and whose request is not
+              // terminal) gets an explicit read-only blocker instead of a silently dead card.
+              const showPhaseBlocker = !isReadOnly && !groupActionable;
+              // v2.245.0 duplicate-confirm fix (REQ-06/07/2026-023): the CONFIRM action is a one-time
+              // attestation — offered only from a PRE-confirmation status AND once every item is received,
+              // and NEVER once the group is already confirmed (WAITING_RECEIPT). Distinct from item-receipt
+              // access (isGroupReadOnly).
+              const groupAllReceived = groupItems.length > 0 && groupItems.every((i: any) => i.statusCode === 'RECEIVED');
+              const receivedCount = groupItems.filter((i: any) => i.statusCode === 'RECEIVED').length;
+              const groupConfirmed = isReceivingConfirmed(group.status);
+              const showConfirmButton = !isReadOnly && canConfirmReceiving(group.status, groupAllReceived);
+              // Three canonical states: (1) confirmed → next guidance is the fiscal receipt/finalization;
+              // (2) all received but not yet confirmed → prompt to confirm; (3) still receiving → progress.
+              const groupHint = groupConfirmed
+                ? 'Recebimento confirmado. Anexar recibo do fornecedor e finalizar pedido.'
+                : groupAllReceived
+                ? 'Recebimento completo — confirme o recebimento.'
+                : `${receivedCount} de ${groupItems.length} itens recebidos. Existem quantidades pendentes.`;
+
               return (
                 <div key={group.id} className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
                   <div style={sectionHeaderStyle}>
@@ -279,17 +330,35 @@ const ReceivingOperation: React.FC = () => {
                          <Info size={12} /> Status: {group.statusName || group.status}
                       </div>
                       {!isGroupReadOnly && (
-                        <button
-                            onClick={() => handleFinalizeClick(group.id, group.supplierNameSnapshot)}
-                            className="btn-primary"
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
-                        >
-                            <CheckCircle size={14} />
-                            CONFIRMAR RECEBIMENTO
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: groupConfirmed ? 'var(--color-primary)' : groupAllReceived ? 'var(--color-status-green, #16a34a)' : 'var(--color-text-muted)' }}>
+                            {groupHint}
+                          </span>
+                          {showConfirmButton && (
+                            <button
+                                onClick={() => handleFinalizeClick(group.id, group.supplierNameSnapshot)}
+                                className="btn-primary"
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
+                            >
+                                <CheckCircle size={14} />
+                                CONFIRMAR RECEBIMENTO
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
+                  {showPhaseBlocker && (
+                    <div style={{ margin: '16px 24px 0', padding: '12px 16px', backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E' }}>
+                        {RECEIVING_PHASE_BLOCKER}
+                        <span style={{ display: 'block', fontWeight: 600, marginTop: '2px' }}>
+                          Status atual do grupo: {group.statusName || group.status}. Não é possível registar recebimento nesta fase.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div style={{ overflowX: 'auto' }}>
                     <StandardTable>
                       <thead>
@@ -511,18 +580,26 @@ const ReceivingOperation: React.FC = () => {
         </div>
       </div>
 
-      {selectedItem && (
-        <ReceivingModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
-          onConfirm={handleConfirmReceiving}
-          itemDescription={selectedItem.description}
-          authorizedQty={selectedItem.quantity}
-          currentReceivedQty={selectedItem.receivedQty}
-          unit={selectedItem.unit}
-          readOnly={isReadOnly}
-        />
-      )}
+      {selectedItem && (() => {
+        // v2.245.0 §15: never allow the item-receipt action for a group whose status is not a valid
+        // receiving phase — the backend rejects it. Groups exist ⇒ gate on the item's own group status;
+        // the legacy no-group branch keeps request-level read-only only.
+        const selectedGroupId = operationalItems.find((i: any) => i.id === selectedItem.id)?.requestPoGroupId;
+        const selectedGroup = selectedGroupId ? request.poGroups?.find((g: any) => g.id === selectedGroupId) : undefined;
+        const selectedItemReadOnly = isReadOnly || (!!selectedGroup && !isReceivingActionableGroupStatus(selectedGroup.status));
+        return (
+          <ReceivingModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            onConfirm={handleConfirmReceiving}
+            itemDescription={selectedItem.description}
+            authorizedQty={selectedItem.quantity}
+            currentReceivedQty={selectedItem.receivedQty}
+            unit={selectedItem.unit}
+            readOnly={selectedItemReadOnly}
+          />
+        );
+      })()}
 
       <FinalizeReceivingModal
         requestId={request.id}

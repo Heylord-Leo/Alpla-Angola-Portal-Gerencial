@@ -25,6 +25,8 @@ public class ReceivingActionEvaluatorTests
     public void CanMoveToReceipt_only_from_payment_completed(string status, bool expected)
         => Assert.Equal(expected, RE.CanMoveToReceipt(status));
 
+    // Broad queue-membership set (dashboard/receiving queue): still includes the post-confirmation
+    // WAITING_RECEIPT so the fiscal-receipt follow-up stays surfaced.
     [Theory]
     [InlineData("WAITING_RECEIPT", true)]
     [InlineData("IN_FOLLOWUP", true)]
@@ -33,8 +35,37 @@ public class ReceivingActionEvaluatorTests
     [InlineData("WAITING_PO", false)]
     [InlineData("COMPLETED", false)]
     [InlineData("CANCELLED", false)]
-    public void CanConfirmReceiving_matches_the_endpoint_guard(string status, bool expected)
+    public void CanConfirmReceiving_is_the_broad_queue_membership_set(string status, bool expected)
         => Assert.Equal(expected, RE.CanConfirmReceiving(status));
+
+    // v2.245.0 duplicate-confirm fix: the dedicated CONFIRM action guard excludes the post-confirmation
+    // WAITING_RECEIPT (and other confirmed states) — this is the guard the endpoint actually uses.
+    [Theory]
+    [InlineData("PAYMENT_COMPLETED", true)]
+    [InlineData("IN_FOLLOWUP", true)]
+    [InlineData("WAITING_SUPPLIER_DELIVERY", true)]
+    [InlineData("WAITING_RECEIPT", false)]   // post-confirmation → NOT re-confirmable
+    [InlineData("WAITING_FISCAL_RECEIPT", false)]
+    [InlineData("COMPLETED", false)]
+    [InlineData("PENDING", false)]
+    [InlineData("WAITING_PO", false)]
+    public void CanConfirmReceivingAction_excludes_post_confirmation_states(string status, bool expected)
+        => Assert.Equal(expected, RE.CanConfirmReceivingAction(status));
+
+    [Theory]
+    [InlineData("WAITING_RECEIPT", true)]
+    [InlineData("WAITING_FISCAL_RECEIPT", true)]
+    [InlineData("COMPLETED", true)]
+    [InlineData("PAYMENT_COMPLETED", false)]
+    [InlineData("IN_FOLLOWUP", false)]
+    [InlineData("WAITING_SUPPLIER_DELIVERY", false)]
+    [InlineData("PENDING", false)]
+    public void IsReceivingConfirmed_flags_post_confirmation_states(string status, bool expected)
+        => Assert.Equal(expected, RE.IsReceivingConfirmed(status));
+
+    [Fact]
+    public void CanConfirmReceivingAction_null_is_false()
+        => Assert.False(RE.CanConfirmReceivingAction(null));
 
     [Fact]
     public void PaymentCompleted_exposes_both_actions()

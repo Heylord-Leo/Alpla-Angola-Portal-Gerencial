@@ -7873,9 +7873,23 @@ public class RequestsController : BaseController
             var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
             if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
 
-            // Status Rule: WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY.
-            // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
-            if (!ReceivingActionEvaluator.CanConfirmReceiving(poGroup.Status))
+            // v2.245.0 duplicate-confirm guard (REQ-06/07/2026-023): a group whose receiving was ALREADY
+            // confirmed (post-confirmation state — WAITING_RECEIPT / WAITING_FISCAL_RECEIPT / COMPLETED) must
+            // not be confirmed again. Controlled 409, no duplicate CONFIRM_RECEIVING/history written.
+            if (ReceivingActionEvaluator.IsReceivingConfirmed(poGroup.Status))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Recebimento já confirmado",
+                    Detail = $"O recebimento deste grupo já foi confirmado. Status atual: {poGroup.Status}. Prossiga para o recibo do fornecedor / finalização.",
+                    Status = 409
+                });
+            }
+
+            // Confirm action is available only from a PRE-confirmation receiving status
+            // (PAYMENT_COMPLETED, IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY) — the dedicated action guard, NOT
+            // the broad queue-membership set.
+            if (!ReceivingActionEvaluator.CanConfirmReceivingAction(poGroup.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -7887,7 +7901,12 @@ public class RequestsController : BaseController
 
             // Determine next status: WAITING_RECEIPT (all received) or IN_FOLLOWUP (partial)
             // Business rule: Receiving NEVER moves to COMPLETED
-            string nextStatusCode = RequestWorkflowHelper.DetermineGroupPostConfirmReceivingStatus(poGroup);
+            // v2.245.0: pass the winning quotation's items so completion recognizes a receipt that lives
+            // on the winning QuotationItem even when RequestLineItem.SelectedQuotationItemId is null.
+            var winningQuotationItems = request.SelectedQuotationId.HasValue
+                ? request.Quotations.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value)?.Items?.ToList()
+                : null;
+            string nextStatusCode = RequestWorkflowHelper.DetermineGroupPostConfirmReceivingStatus(poGroup, winningQuotationItems);
             var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == nextStatusCode);
             if (targetStatus == null) return StatusCode(500, $"Status '{nextStatusCode}' não configurado.");
 
@@ -7925,7 +7944,7 @@ public class RequestsController : BaseController
             if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
             {
                 if (poGroup.OperationalReceiptCompletedAtUtc == null &&
-                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup))
+                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup, winningQuotationItems))
                 {
                     var receiptStampedAt = DateTime.UtcNow;
                     poGroup.OperationalReceiptCompletedAtUtc = receiptStampedAt;

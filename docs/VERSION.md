@@ -2,7 +2,29 @@
 
 ## Current Version
 
-v2.244.0
+v2.245.0
+
+## [v2.245.0] - 2026-09-16
+
+### Request Print View & Receiving Reliability
+
+Adds a browser-native **Request Print View** (print button in Request Details → a full,
+data-driven printable document covering every group, item, attachment metadata, quotation,
+approval and history event, with humanized labels, a generated-by stamp, and a dynamic
+title/filename `Portal Gerencial - Pedido <número> - <YYYY-MM-DD>` restored after print), plus a
+cluster of **Receiving reliability** fixes: safe winning-quotation-item→line-item resolution by
+LineNumber, item→group frontend fallback, an auto-sync stale-navigation fix, corrected single/multi
+workflow guidance, a canonical receiving-eligibility helper shared by UI and backend, and a
+**duplicate-confirm guard** (WAITING_RECEIPT is post-confirmation — the confirm button disappears
+and a second confirm returns 409, writing no duplicate history). Two **controlled, SysAdmin-only
+repairs** (preview/apply, idempotent, technical-audit-only) recover legacy data drift: the
+receiving-finalization-linkage repair and the PAYMENT receiving-status-drift repair.
+
+- **NO MIGRATION REQUIRED** — no schema change, no EF migration after the v2.244.0 chain. This
+  release **does change backend application code** (two `api/v1/admin/repairs` actions, the
+  confirm-receiving guard, receiving resolution helpers) but **not the database schema**.
+- Repairs are **operator-triggered only**, never run automatically, and fabricate no
+  receiving/payment business events. Existing payment-divergence semantics are unchanged.
 
 ## [v2.244.0] - 2026-09-12
 

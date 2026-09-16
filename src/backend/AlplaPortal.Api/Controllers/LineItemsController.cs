@@ -813,10 +813,12 @@ public class LineItemsController : BaseController
         else if (receivedQty > 0) statusCode = "PARTIALLY_RECEIVED";
 
         var status = await _context.LineItemStatuses.FirstOrDefaultAsync(s => s.Code == statusCode);
-        if (status != null) item.LineItemStatusId = status.Id;
+        // v2.245.0: set BOTH the FK and the navigation so the subsequent receiving sync (which re-reads
+        // LineItemStatus.Code) never evaluates a stale navigation and mis-stamps IN_FOLLOWUP.
+        if (status != null) { item.LineItemStatusId = status.Id; item.LineItemStatus = status; }
 
         var actorId = CurrentUserId;
-        
+
         // Granular History Registration
         var actionQty = receivedQty - oldReceivedQty;
         var unit = await _context.Units.FindAsync(item.UnitId);
@@ -860,7 +862,9 @@ public class LineItemsController : BaseController
         else if (receivedQty > 0) statusCode = "PARTIALLY_RECEIVED";
 
         var status = await _context.LineItemStatuses.FirstOrDefaultAsync(s => s.Code == statusCode);
-        if (status != null) qi.LineItemStatusId = status.Id;
+        // v2.245.0: set BOTH the FK and the navigation (see ProcessItemReceivingAsync) so the receiving
+        // sync's winning-quotation completion check reads a fresh RECEIVED status, not a stale nav.
+        if (status != null) { qi.LineItemStatusId = status.Id; qi.LineItemStatus = status; }
 
         var actorId = CurrentUserId;
         // Granular History Registration

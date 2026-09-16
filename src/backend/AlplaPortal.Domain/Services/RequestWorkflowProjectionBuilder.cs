@@ -131,8 +131,17 @@ public static class RequestWorkflowProjectionBuilder
     // Per-unit guidance. Labels reuse the SAME strings the legacy single-status header
     // (frontend lib/utils.ts getRequestGuidance) shows today so single-unit requests remain
     // string-identical — the compatibility rule of this release.
-    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status) => status switch
+    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status, bool allItemsReceived = false)
     {
+        // v2.245.0: an IN_FOLLOWUP group whose items are ALL physically received is not "pending items"
+        // — it only awaits the operator's explicit confirmation. Speak to the real fact.
+        if (status == RequestConstants.PoGroupStatuses.InFollowup)
+            return allItemsReceived
+                ? ("Recebimento", "CONFIRM_RECEIVING", "Recebimento completo — confirmar recebimento", 67)
+                : ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67);
+
+        return status switch
+        {
         RequestConstants.PoGroupStatuses.Pending
             => ("Aprovador Final", "FINAL_APPROVE", "Aguardar decisão da aprovação final", 20),
         RequestConstants.PoGroupStatuses.WaitingPo
@@ -161,10 +170,9 @@ public static class RequestWorkflowProjectionBuilder
             => ("Recebimento", "RECONCILE", "Concluir a reconciliação do recebimento", 66),
         RequestConstants.PoGroupStatuses.WaitingFiscalReceipt
             => ("Financeiro", "ATTACH_FISCAL_RECEIPT", "Registrar o Recibo Fiscal para concluir o grupo", 70),
-        RequestConstants.PoGroupStatuses.InFollowup
-            => ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67),
         _ => ("Sem ação", "NONE", "Sem ação pendente", 999),
-    };
+        };
+    }
 
     private static (string Role, string ActionType, string Label, int Priority) BatchGuidance(string status) => status switch
     {
@@ -184,6 +192,13 @@ public static class RequestWorkflowProjectionBuilder
         string displayWorkflowStateCode)
     {
         var lineItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        // v2.245.0: winning quotation items (when loaded) let group guidance recognize a receipt that
+        // lives on the winning QuotationItem. Null-safe: absent data → no fallback, prior wording stands.
+        var winningQuotationItems = request.RequestType != null
+            && request.RequestType.Code == RequestConstants.Types.Quotation
+            && request.SelectedQuotationId.HasValue
+                ? request.Quotations?.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value)?.Items?.ToList()
+                : null;
         var allGroups = request.PoGroups.ToList();
         var allBatches = request.ApprovalBatches.ToList();
         var requestStatusCode = request.Status?.Code ?? "";
@@ -225,7 +240,7 @@ public static class RequestWorkflowProjectionBuilder
                 {
                     continue;
                 }
-                units.Add(BuildGroupUnit(group, lineItems));
+                units.Add(BuildGroupUnit(group, lineItems, winningQuotationItems));
             }
         }
 
@@ -287,10 +302,14 @@ public static class RequestWorkflowProjectionBuilder
             NextAction: new WorkflowNextAction("BATCH", batch.Id, label, guidance.ActionType, guidance.Label, guidance.Role, guidance.Priority));
     }
 
-    private static WorkflowUnit BuildGroupUnit(RequestPoGroup group, IReadOnlyList<RequestLineItem> lineItems)
+    private static WorkflowUnit BuildGroupUnit(RequestPoGroup group, IReadOnlyList<RequestLineItem> lineItems, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
     {
         var coveredItems = lineItems.Where(li => li.RequestPoGroupId == group.Id).ToList();
-        var guidance = GroupGuidance(group.Status);
+        // Best-effort receipt fact for guidance wording; safe when statuses/quotations aren't loaded
+        // (returns false → the neutral "resolver itens pendentes" wording, i.e. no worse than before).
+        var allItemsReceived = group.Status == RequestConstants.PoGroupStatuses.InFollowup
+            && OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
+        var guidance = GroupGuidance(group.Status, allItemsReceived);
         var label = string.IsNullOrWhiteSpace(group.SupplierNameSnapshot)
             ? "Grupo sem fornecedor definido"
             : $"Grupo {group.SupplierNameSnapshot}";

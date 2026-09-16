@@ -415,10 +415,11 @@ public class BatchModelReceivingChainTests
             Assert.NotNull(firstStamp);
         }
 
-        // WAITING_RECEIPT is an allowed ConfirmReceiving entry state — replay the confirmation.
+        // v2.245.0 duplicate-confirm fix: WAITING_RECEIPT is the POST-confirmation state — replaying the
+        // confirmation is now REFUSED (controlled 409), never a duplicate.
         using (var ctx = NewContext(options))
         {
-            Assert.IsType<OkObjectResult>(
+            Assert.IsType<ConflictObjectResult>(
                 await ConfirmAsync(BuildRequestsController(ctx, seed.ActorId, flags), seed));
         }
 
@@ -429,6 +430,8 @@ public class BatchModelReceivingChainTests
             Assert.Equal(firstStamp, group.OperationalReceiptCompletedAtUtc); // original instant preserved
             var orKey = PostPaymentIdempotencyKeys.OperationalReceiptCompleted(seed.GroupId);
             Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.IdempotencyKey == orKey));
+            // No duplicate CONFIRM_RECEIVING from the refused replay.
+            Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.ActionTaken == "CONFIRM_RECEIVING"));
             Assert.False(await ctx.RequestStatusHistories.AnyAsync(
                 h => h.ActionTaken == WorkflowEventCodes.GroupCompleted));
         }

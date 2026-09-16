@@ -44,12 +44,22 @@ public static class RequestWorkflowHelper
     public static bool AreAllGroupItemsReceived(RequestPoGroup group)
         => AlplaPortal.Domain.Services.OperationalReceiptFacts.AreAllGroupItemsReceived(group);
 
+    /// <summary>v2.245.0: group completion aware of the winning quotation items (line-number fallback).</summary>
+    public static bool AreAllGroupItemsReceived(RequestPoGroup group, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
+        => AlplaPortal.Domain.Services.OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
+
     /// <summary>
     /// Determines the next status for a PO Group after a Receiving "confirm receiving" action.
     /// </summary>
     public static string DetermineGroupPostConfirmReceivingStatus(RequestPoGroup group)
     {
         return AreAllGroupItemsReceived(group) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
+    }
+
+    /// <summary>v2.245.0 overload: honors the winning-quotation-item receipt via the canonical resolver.</summary>
+    public static string DetermineGroupPostConfirmReceivingStatus(RequestPoGroup group, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
+    {
+        return AreAllGroupItemsReceived(group, winningQuotationItems) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
     }
 
     /// <summary>

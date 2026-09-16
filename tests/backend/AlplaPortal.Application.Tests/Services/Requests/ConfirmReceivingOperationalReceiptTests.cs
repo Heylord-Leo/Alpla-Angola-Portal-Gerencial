@@ -275,6 +275,39 @@ public class ConfirmReceivingOperationalReceiptTests
             h => h.ActionTaken == WorkflowEventCodes.OperationalReceiptCompleted));
     }
 
+    // ── v2.245.0 duplicate-confirm guard (REQ-06/07/2026-023) ──
+    // A group already confirmed (WAITING_RECEIPT) must refuse a second confirm with a controlled 409,
+    // writing no duplicate CONFIRM_RECEIVING and no duplicate OPERATIONAL_RECEIPT_COMPLETED.
+
+    [Fact]
+    public async Task DuplicateConfirm_OnAlreadyConfirmedGroup_Refused_NoDuplicateHistory()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED", "RECEIVED" });
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: true, completion: false));
+
+        var first = await ConfirmAsync(controller, seed);
+        Assert.IsType<OkObjectResult>(first);
+        var afterFirst = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingReceipt, afterFirst.Status);
+
+        // Second confirm on the now-WAITING_RECEIPT (post-confirmation) group.
+        var second = await ConfirmAsync(controller, seed);
+
+        // §12 E — controlled refusal (409 Conflict), not an OK.
+        var conflict = Assert.IsType<ConflictObjectResult>(second);
+        Assert.Equal(409, ((ProblemDetails)conflict.Value!).Status);
+
+        // §12 F/G — exactly one CONFIRM_RECEIVING and one OPERATIONAL_RECEIPT_COMPLETED remain.
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(h => h.ActionTaken == "CONFIRM_RECEIVING"));
+        Assert.Equal(1, await ctx.RequestStatusHistories.CountAsync(
+            h => h.ActionTaken == WorkflowEventCodes.OperationalReceiptCompleted));
+
+        // Group status unchanged by the refused attempt.
+        var afterSecond = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingReceipt, afterSecond.Status);
+    }
+
     // ── D: CompletionEnabled=true — receiving hands the group to Phase 1 (antechamber) ──
 
     [Fact]

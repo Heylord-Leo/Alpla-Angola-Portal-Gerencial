@@ -105,4 +105,64 @@ public class AdminRepairsController : BaseController
             ? BadRequest(result)
             : Ok(result);
     }
+
+    /// <summary>
+    /// v2.245.0 — receiving-finalization-drift repair (incident REQ-01/07/2026-013 class).
+    /// <c>confirm=false</c> (default) is a read-only preview that writes nothing; <c>confirm=true</c>
+    /// applies (requires a body with a non-empty reason). Conservative: restores only the missing
+    /// SelectedQuotationItemId link + syncs receiving facts from the RECEIVED winning quotation item;
+    /// idempotent; never advances group/request status, never writes CONFIRM_RECEIVING, never touches
+    /// payment/PO/approval; refuses ambiguous line numbers.
+    /// </summary>
+    [HttpPost("receiving-finalization-drift")]
+    public async Task<IActionResult> ReceivingFinalizationDrift(
+        [FromQuery] bool confirm = false,
+        [FromBody] ReceivingFinalizationRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+
+        var service = new ReceivingFinalizationDriftRepairService(_context);
+
+        if (!confirm)
+            return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));
+
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason))
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+
+        var result = await service.RunAsync(apply: true, actorId: CurrentUserId, reason: body.Reason, ct: ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// v2.245.0 — payment-receiving-status-drift repair (incident REQ-06/07/2026-023 class).
+    /// <c>confirm=false</c> (default) is a read-only preview that writes nothing; <c>confirm=true</c>
+    /// applies (requires a body with a non-empty reason). Conservative: promotes the single operational
+    /// group of a legacy PAYMENT request from PENDING → PAYMENT_COMPLETED (the state the current pay flow
+    /// would have produced) ONLY when authoritative PAYMENT_COMPLETED history exists, there is exactly one
+    /// operational group, and the payment ledger does not contradict completion. Never writes
+    /// CONFIRM_RECEIVING, never fabricates receipt/payment rows, never touches Request.Status/PO/approval/
+    /// divergence; divergence never excludes a candidate; idempotent.
+    /// </summary>
+    [HttpPost("payment-receiving-status-drift")]
+    public async Task<IActionResult> PaymentReceivingStatusDrift(
+        [FromQuery] bool confirm = false,
+        [FromBody] PaymentReceivingDriftRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+
+        var service = new PaymentReceivingStatusDriftRepairService(_context);
+
+        if (!confirm)
+            return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));
+
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason))
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+
+        var result = await service.RunAsync(apply: true, actorId: CurrentUserId, reason: body.Reason, ct: ct);
+        return Ok(result);
+    }
 }

@@ -338,7 +338,17 @@ public static class GroupCompletionProjector
 /// </summary>
 public static class OperationalReceiptFacts
 {
+    /// <summary>Explicit-link-only overload (backward-compatible: no winning-quotation fallback).</summary>
     public static bool AreAllGroupItemsReceived(RequestPoGroup group)
+        => AreAllGroupItemsReceived(group, null);
+
+    /// <summary>
+    /// v2.245.0: an item counts as received via <see cref="WinningQuotationReceiptResolver"/> — its own
+    /// RECEIVED status, its explicit SelectedQuotationItem, OR (when <paramref name="winningQuotationItems"/>
+    /// is supplied) the unambiguous winning quotation item at the same line number. Passing null keeps the
+    /// pre-fix explicit-link behavior exactly.
+    /// </summary>
+    public static bool AreAllGroupItemsReceived(RequestPoGroup group, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
     {
         ArgumentNullException.ThrowIfNull(group);
 
@@ -349,9 +359,6 @@ public static class OperationalReceiptFacts
         if (activeItems.Count == 0)
             return false;
 
-        return activeItems.All(li =>
-            li.LineItemStatus?.Code == "RECEIVED"
-            || (li.SelectedQuotationItemId.HasValue
-                && li.SelectedQuotationItem?.LineItemStatus?.Code == "RECEIVED"));
+        return activeItems.All(li => WinningQuotationReceiptResolver.IsLineItemReceived(li, winningQuotationItems));
     }
 }
