@@ -2,7 +2,22 @@
 
 ## Current Version
 
-v2.245.0
+v2.245.1
+
+## [v2.245.1] - 2026-09-16
+
+### Receiving entry fix — no premature WAITING_RECEIPT
+
+Fixes a workflow regression found during v2.245.0 TEST validation: the Request Details "Mover para
+Recebimento" action transitioned a PAYMENT_COMPLETED group directly to **WAITING_RECEIPT** (the
+post-confirmation state) before item conference, permanently hiding **Confirmar Recebimento**.
+Entering the receiving operation is now a **non-mutating navigation**: the operator conducts item
+conference and confirms there, and WAITING_RECEIPT is reached **only** via the dedicated confirmation.
+The legacy `move-to-receipt` endpoint is retained but deprecated — it writes nothing and returns a
+controlled 409.
+
+- **NO MIGRATION** and **no data repair** in this patch. Frontend navigation + a defensive backend
+  guard only. All v2.245.0 receiving-eligibility, confirm and repair semantics are preserved.
 
 ## [v2.245.0] - 2026-09-16
 

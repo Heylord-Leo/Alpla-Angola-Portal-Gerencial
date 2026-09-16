@@ -820,17 +820,8 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao completar pagamento.');
             return response.json();
         },
-        moveToReceipt: async (id: string, groupId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/move-to-receipt`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ requestPoGroupId: groupId, comment }),
-            });
-            if (!response.ok) return handleApiError(response, 'Falha ao mover para aguardando recibo.');
-            return response.json();
-        },
+        // v2.245.1: the legacy `move-to-receipt` client wrapper was removed. Entering the receiving
+        // operation is now a non-mutating navigation; WAITING_RECEIPT is reached only via confirmReceiving.
         confirmReceiving: async (id: string, groupId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/confirm-receiving`, {
                 method: 'POST',

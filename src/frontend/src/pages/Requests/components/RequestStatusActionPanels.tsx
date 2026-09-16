@@ -234,17 +234,20 @@ export function RequestStatusActionPanels({
                             </div>
                         )}
 
-                        {/* Receiving actions */}
+                        {/* Receiving actions — v2.245.1: entering the receiving operation is a NON-MUTATING
+                            navigation. It must NOT transition the group to WAITING_RECEIPT (that is the
+                            post-confirmation state, reached only via the dedicated Confirmar Recebimento).
+                            The operator conducts item conference in the receiving operation and confirms there. */}
                         {isReceiving && (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {poGroups && poGroups.filter(g => g.status === 'PAYMENT_COMPLETED' || g.status === 'PAG_REALIZADO').map(group => (
-                                    <button 
-                                        key={`move-to-receipt-${group.id}`}
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'MOVE_TO_RECEIPT', groupId: group.id })}
+                                    <button
+                                        key={`open-receiving-${group.id}`}
+                                        onClick={() => { if (onDrawerClose) onDrawerClose(); navigate(`/receiving/operation/${requestId}`); }}
                                         className="btn-primary"
                                         style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        <ArrowRight size={14} /> MOVER PARA RECEBIMENTO ({group.supplierNameSnapshot})
+                                        <ArrowRight size={14} /> INICIAR RECEBIMENTO ({group.supplierNameSnapshot})
                                     </button>
                                 ))}
                             </div>

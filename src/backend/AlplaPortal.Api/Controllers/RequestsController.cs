@@ -7779,62 +7779,30 @@ public class RequestsController : BaseController
             new[] { RequestConstants.Statuses.WaitingSupplierDelivery }, dto.Comment, "Entrega/serviço confirmado. Pedido em reconciliação.");
     }
 
+    /// <summary>
+    /// [DEPRECATED — v2.245.1] Legacy "move to receipt" step. Under v2.245.x semantics WAITING_RECEIPT is
+    /// the POST-confirmation state, reached ONLY via the dedicated confirm-receiving after item conference.
+    /// This endpoint used to transition a PAYMENT_COMPLETED group straight to WAITING_RECEIPT, which
+    /// prematurely landed the group in the post-confirmation state and permanently hid the Confirmar
+    /// Recebimento action (TEST incident on a PAYMENT request). Entering the receiving operation is now a
+    /// non-mutating navigation. The endpoint is retained only to fail safely: it performs NO writes and
+    /// returns a controlled 409, so no client (or stale cache) can reintroduce the premature transition.
+    /// </summary>
     [HttpPost("{id}/operational/move-to-receipt")]
-    public async Task<IActionResult> MoveToReceipt(Guid id, [FromBody] ConfirmReceivingDto dto)
+    public IActionResult MoveToReceipt(Guid id, [FromBody] ConfirmReceivingDto dto)
     {
         var roles = CurrentUserRoles;
         if (!roles.Contains(RoleConstants.Receiving))
             return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode acessar esta função.");
 
-        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
-
-        var request = await _context.Requests
-            .Include(r => r.RequestType)
-            .Include(r => r.Status)
-            .Include(r => r.PoGroups)
-            .FirstOrDefaultAsync(r => r.Id == id);
-
-        if (request == null) return NotFound();
-
-        var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
-        if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
-
-        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types.
-        // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
-        if (!ReceivingActionEvaluator.CanMoveToReceipt(poGroup.Status))
+        return Conflict(new ProblemDetails
         {
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Ação Inválida",
-                Detail = $"O grupo não está em um status válido para mover para recebimento. Status atual: {poGroup.Status}.",
-                Status = 400
-            });
-        }
-
-        var oldStatusId = request.StatusId;
-        poGroup.Status = "WAITING_RECEIPT";
-        poGroup.UpdatedAtUtc = DateTime.UtcNow;
-
-        var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == "WAITING_RECEIPT");
-        if (targetStatus == null) return StatusCode(500, "Status 'WAITING_RECEIPT' não configurado.");
-
-        var history = new RequestStatusHistory
-        {
-            Id = Guid.NewGuid(),
-            RequestId = request.Id,
-            ActorUserId = CurrentUserId,
-            ActionTaken = "MOVE_TO_RECEIPT",
-            PreviousStatusId = oldStatusId, // Keep parent status id for tracking
-            NewStatusId = targetStatus.Id,
-            Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " + (dto.Comment ?? "Pedido movido para aguardando recibo."),
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestStatusHistories.Add(history);
-
-        await _context.SaveChangesAsync();
-        await _statusAggregationService.AggregateRequestStatusAsync(request.Id, CurrentUserId);
-
-        return Ok(new { Message = "Grupo movido para aguardando recibo.", StatusCode = "WAITING_RECEIPT" });
+            Title = "Ação Descontinuada",
+            Detail = "A ação 'Mover para Recebimento' foi descontinuada. O recebimento é iniciado diretamente " +
+                     "na operação de recebimento (conferência de itens); a fase 'Aguardando Recibo' ocorre " +
+                     "apenas após a confirmação do recebimento.",
+            Status = 409
+        });
     }
 
     [HttpPost("{id}/operational/confirm-receiving")]

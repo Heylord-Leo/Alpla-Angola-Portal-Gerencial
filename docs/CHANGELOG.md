@@ -4,7 +4,34 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.0
+v2.245.1
+
+## [v2.245.1] - 2026-09-16 — Receiving entry fix (no premature WAITING_RECEIPT)
+
+A workflow regression found during v2.245.0 TEST validation. No migration, no data repair.
+
+### Fixed
+- Premature transition to WAITING_RECEIPT: the Request Details "Mover para Recebimento" action moved a
+  PAYMENT_COMPLETED group straight to WAITING_RECEIPT before item conference, permanently hiding
+  Confirmar Recebimento (WAITING_RECEIPT is the post-confirmation state).
+
+### Changed
+- Entering the receiving operation from Request Details is now a **non-mutating navigation** — the
+  operator registers quantities and confirms in the receiving operation; WAITING_RECEIPT is reached
+  only via the dedicated Confirmar Recebimento.
+- Removed the misleading "Mover para Recibo / aguardando recibo" confirmation modal for this action;
+  the action label now describes entering receiving ("Iniciar Recebimento").
+- The legacy `move-to-receipt` endpoint is **deprecated**: it performs no writes and returns a
+  controlled 409.
+
+### Safety / Compatibility
+- **No migration** and **no data repair** in this patch.
+- v2.245.0 semantics preserved unchanged: general receiving-actionable statuses (PAYMENT_COMPLETED,
+  WAITING_RECEIPT, IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY); confirm-action statuses (PAYMENT_COMPLETED,
+  IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY); WAITING_RECEIPT non-re-confirmable; duplicate confirm → 409;
+  post-confirmation guidance "Recebimento confirmado. Anexar recibo do fornecedor e finalizar pedido.";
+  single/multi-unit guidance unchanged.
+- No fabricated receiving/payment/PO/approval/history events; no request-ID-specific runtime logic.
 
 ## [v2.245.0] - 2026-09-16 — Request Print View & Receiving Reliability
 

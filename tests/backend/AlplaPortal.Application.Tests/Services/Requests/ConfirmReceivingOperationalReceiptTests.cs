@@ -275,6 +275,37 @@ public class ConfirmReceivingOperationalReceiptTests
             h => h.ActionTaken == WorkflowEventCodes.OperationalReceiptCompleted));
     }
 
+    // ── v2.245.1: the legacy move-to-receipt step is deprecated and NON-MUTATING ──
+    // Entering receiving must never transition a PAYMENT_COMPLETED group to the post-confirmation
+    // WAITING_RECEIPT state (which would permanently hide Confirmar Recebimento). The endpoint now
+    // returns a controlled 409 and writes nothing.
+
+    [Fact]
+    public async Task MoveToReceipt_IsDeprecated_Returns409_AndWritesNothing()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED", "PENDING" });
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: true, completion: false));
+
+        var result = controller.MoveToReceipt(seed.RequestId, new ConfirmReceivingDto
+        {
+            RequestPoGroupId = seed.GroupId,
+            Comment = "tentativa legada"
+        });
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(409, ((ProblemDetails)conflict.Value!).Status);
+
+        // No premature transition, no MOVE_TO_RECEIPT history, no OR stamp.
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.PaymentCompleted, group.Status);
+        Assert.Null(group.OperationalReceiptCompletedAtUtc);
+        Assert.False(await ctx.RequestStatusHistories.AnyAsync(h => h.ActionTaken == "MOVE_TO_RECEIPT"));
+        var req = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+        Assert.Equal(RequestConstants.Statuses.PaymentCompleted,
+            (await ctx.RequestStatuses.AsNoTracking().SingleAsync(s => s.Id == req.StatusId)).Code);
+    }
+
     // ── v2.245.0 duplicate-confirm guard (REQ-06/07/2026-023) ──
     // A group already confirmed (WAITING_RECEIPT) must refuse a second confirm with a controlled 409,
     // writing no duplicate CONFIRM_RECEIVING and no duplicate OPERATIONAL_RECEIPT_COMPLETED.

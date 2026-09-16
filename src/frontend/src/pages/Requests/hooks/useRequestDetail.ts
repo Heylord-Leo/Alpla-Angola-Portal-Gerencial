@@ -934,9 +934,6 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 result = await api.requests.confirmAdvancePayment(id, { requestPoGroupId: groupId, actualPaidAmount: Number(formData.estimatedTotalAmount) || 0, paidDate: new Date().toISOString(), comment: approvalComment });
             } else if (action === 'CONFIRM_DELIVERY') {
                 result = await api.requests.confirmDelivery(id, approvalComment);
-            } else if (action === 'MOVE_TO_RECEIPT') {
-                if (!showApprovalModal.groupId) throw new Error("Grupo P.O. não especificado.");
-                result = await api.requests.moveToReceipt(id, showApprovalModal.groupId, approvalComment);
             } else if (action === 'FINALIZE') {
                 result = await api.requests.finalize(id, approvalComment);
             } else if (action === 'CANCEL_REQUEST') {
