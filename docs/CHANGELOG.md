@@ -4,7 +4,41 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.1
+v2.245.2
+
+## [v2.245.2] - 2026-09-17 — Receiving/receipt domain correction
+
+Corrects the premature request-level WAITING_RECEIPT transition and hardens finalization. No migration,
+no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- Item-quantity registration (including reaching 100% received) no longer advances a grouped request to
+  WAITING_RECEIPT, and no longer writes a RECEIVING_PROGRESS transition to WAITING_RECEIPT. WAITING_RECEIPT
+  is entered exclusively by the explicit CONFIRM_RECEIVING action.
+- Finance finalization is now blocked (409, no writes) whenever any active operational group is still
+  unconfirmed (PAYMENT_COMPLETED / IN_FOLLOWUP / WAITING_SUPPLIER_DELIVERY / …) — **independent of the
+  PostPaymentCompletion feature flag**, closing the finalize-before-confirmation integrity gap.
+- The main Finance payment endpoint now validates the payment-proof attachment TYPE (must be
+  PAYMENT_PROOF, belong to the request, and be active), rejecting RECEIPT / FISCAL_RECEIPT /
+  RECEIVING_EVIDENCE / foreign / missing attachments — parity with the advance-payment path.
+
+### Changed
+- Item registration uses a dedicated `DetermineItemRegistrationSyncStatus` (pre-confirmation IN_FOLLOWUP)
+  instead of reusing the post-confirmation rule; legacy groupless requests preserve prior behavior.
+- Canonical, display-only terminology (no DB/migration change): WAITING_RECEIPT →
+  "Aguardando Recibo do Fornecedor" (status labels + Request Details header override); print history labels
+  for RECEIVING_PROGRESS, OPERATIONAL_RECEIPT_COMPLETED, CONFIRM_RECEIVING ("Recebimento confirmado"),
+  the two receiving repairs and PAYMENT_DIVERGENCE_DETECTED; print document-type labels for RECEIPT
+  ("Recibo do Fornecedor"), FISCAL_RECEIPT ("Recibo Fiscal") and RECEIVING_EVIDENCE
+  ("Comprovativo de Recebimento/Execução"); Finalize button labeled "Recibo do Fornecedor".
+- The Request Details Finalize action is hidden unless every active group is confirmed (backend is
+  authoritative; frontend is supplementary).
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no fabricated events; internal status codes and the four
+  attachment type codes are unchanged and never merged/reclassified. All v2.245.x behavior preserved
+  (non-mutating INICIAR RECEBIMENTO, deprecated move-to-receipt 409, duplicate-confirm 409, receiving
+  repairs, print coverage, single/multi guidance, authorization).
 
 ## [v2.245.1] - 2026-09-16 — Receiving entry fix (no premature WAITING_RECEIPT)
 

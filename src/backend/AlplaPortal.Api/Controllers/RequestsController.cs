@@ -8514,6 +8514,57 @@ public class RequestsController : BaseController
                 });
             }
 
+            // ── v2.245.2 always-on operational-confirmation guard (feature-flag independent) ──
+            // Finance finalization requires PROVEN operational confirmation — regardless of
+            // PostPaymentCompletion. This closes the integrity gap where a prematurely-advanced request scalar
+            // could allow finalizing before CONFIRM_RECEIVING. Direct query (the request navigation is not
+            // eagerly loaded here).
+            var activeGroupsForFinalize = await _context.RequestPoGroups
+                .Where(g => g.RequestId == id && g.Status != RequestConstants.PoGroupStatuses.Cancelled)
+                .Select(g => new { g.Status, g.SupplierNameSnapshot })
+                .ToListAsync();
+
+            if (activeGroupsForFinalize.Count > 0)
+            {
+                // Grouped request: EVERY active group must be explicitly confirmed (WAITING_RECEIPT) or
+                // terminally complete. A group still in a pre-confirmation state blocks finalization.
+                var notReadyGroups = activeGroupsForFinalize
+                    .Where(g => !RequestConstants.PoGroupStatuses.ReadyToFinalize.Contains(g.Status))
+                    .ToList();
+                if (notReadyGroups.Any())
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = $"Existem {notReadyGroups.Count} grupo(s) operacional(is) que ainda não tiveram o recebimento " +
+                                 $"confirmado: {string.Join(", ", notReadyGroups.Select(g => $"{g.SupplierNameSnapshot} ({g.Status})"))}. " +
+                                 "Confirme o recebimento de todos os grupos antes de finalizar.",
+                        Status = 409
+                    });
+                }
+            }
+            else
+            {
+                // Groupless legacy request: there is NO group to confirm and no groupless confirmation path
+                // (ConfirmReceiving requires a group). Fail closed — require auditable evidence that operational
+                // receiving was explicitly confirmed at some point (a real CONFIRM_RECEIVING history event).
+                // Absent that proof, finalization is refused (409, no writes) and requires controlled
+                // administrative remediation; we NEVER auto-confirm or fabricate confirmation history.
+                var hasConfirmEvidence = await _context.RequestStatusHistories
+                    .AnyAsync(h => h.RequestId == id && h.ActionTaken == "CONFIRM_RECEIVING");
+                if (!hasConfirmEvidence)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = "Este pedido legado não possui grupos operacionais nem confirmação de recebimento " +
+                                 "auditável (CONFIRM_RECEIVING). A finalização requer remediação administrativa controlada — " +
+                                 "não é possível finalizar apenas com o registo de quantidades.",
+                        Status = 409
+                    });
+                }
+            }
+
             // ── Phase 8: QUOTATION-specific finalization guards ──
             if (request.RequestType!.Code == RequestConstants.Types.Quotation)
             {

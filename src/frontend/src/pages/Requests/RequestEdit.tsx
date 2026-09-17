@@ -33,6 +33,7 @@ import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivin
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance, MultiUnitGuidance } from './components/RequestActionHeader';
 import { RequestGroupProgress } from './components/RequestGroupProgress';
 import { buildActiveFlows, resolveDrawerBadgeOverride, resolveSingleUnitGuidance, effectivePanelStatus } from '../../lib/workflowProjection';
+import { canonicalStatusLabel } from '../../lib/statusLabels';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
@@ -405,7 +406,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 statusBadgeColor === 'green' ? 'success' :
                 statusBadgeColor || 'neutral'
             }`} style={{ marginLeft: '8px' }}>
-                {drawerBadgeOverride?.label ?? statusFullName}
+                {drawerBadgeOverride?.label ?? canonicalStatusLabel(status, statusFullName)}
             </span>
         ),
         contextBadges: (

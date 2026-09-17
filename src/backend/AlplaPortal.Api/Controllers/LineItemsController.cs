@@ -922,8 +922,10 @@ public class LineItemsController : BaseController
 
             if (request == null) return;
 
-            // 1. Authoritative Status Determination
-            string nextStatusCode = RequestWorkflowHelper.DeterminePostReceivingStatus(request);
+            // 1. Authoritative Status Determination — v2.245.2: item registration NEVER enters WAITING_RECEIPT
+            // (grouped or groupless). WAITING_RECEIPT is reached exclusively via the explicit CONFIRM_RECEIVING
+            // action.
+            string nextStatusCode = RequestWorkflowHelper.DetermineItemRegistrationSyncStatus(request);
 
             if (nextStatusCode != request.Status!.Code)
             {

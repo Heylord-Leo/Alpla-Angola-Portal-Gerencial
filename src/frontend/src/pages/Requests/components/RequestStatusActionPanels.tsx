@@ -299,14 +299,21 @@ export function RequestStatusActionPanels({
                                     // lifecycle completes automatically (backend refuses this
                                     // action with "Fluxo Atualizado"); its real actions live in
                                     // "Fatura Final — Cobertura" and "Conclusão do Pedido".
-                                    isFinance && status === 'WAITING_RECEIPT' && !suppressLegacyFinalize && (
+                                    // v2.245.2: Finalize is offered only when there is at least one active
+                                    // operational group AND EVERY active group has been confirmed
+                                    // (WAITING_RECEIPT/COMPLETED). Groupless legacy requests are intentionally NOT
+                                    // finalizable from the UI — they have no groupless confirmation path and require
+                                    // controlled administrative remediation (backend fails closed with 409). Backend
+                                    // is authoritative; this hides an action the backend would reject.
+                                    isFinance && status === 'WAITING_RECEIPT' && !suppressLegacyFinalize
+                                      && !!poGroups?.length && poGroups.every(g => g.status === 'WAITING_RECEIPT' || g.status === 'COMPLETED') && (
                                         <div style={{ display: 'flex', gap: '8px' }}>
                                             <button
                                                 onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
                                                 className="btn-success"
                                                 style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                             >
-                                                <CheckCircle size={14} /> FINALIZAR PEDIDO (Recibo Fiscal)
+                                                <CheckCircle size={14} /> FINALIZAR PEDIDO (Recibo do Fornecedor)
                                             </button>
                                         </div>
                                     )

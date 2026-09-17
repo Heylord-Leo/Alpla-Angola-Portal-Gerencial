@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.245.1
+v2.245.2
+
+## [v2.245.2] - 2026-09-17
+
+### Receiving/receipt domain correction — WAITING_RECEIPT is post-confirmation only
+
+Corrects the premature request-level transition found in v2.245.1 TEST validation and hardens the
+finalization guard. Item-quantity registration (including reaching 100%) no longer advances a grouped
+request to WAITING_RECEIPT; that state is reached exclusively by the explicit CONFIRM_RECEIVING action.
+Finance finalization now always requires every active operational group to be confirmed
+(WAITING_RECEIPT/terminal), independent of the PostPaymentCompletion feature flag. The main Finance
+payment endpoint now validates the attachment TYPE (PAYMENT_PROOF), matching the advance-payment path.
+User-facing terminology is canonicalized at the display layer only.
+
+- **NO MIGRATION** and **no data repair** in this patch. Backend behavior + display labels only. Internal
+  status codes and attachment type codes (RECEIPT, FISCAL_RECEIPT, PAYMENT_PROOF, RECEIVING_EVIDENCE) are
+  unchanged and not merged/reclassified. Legacy groupless requests preserve their existing behavior.
 
 ## [v2.245.1] - 2026-09-16
 

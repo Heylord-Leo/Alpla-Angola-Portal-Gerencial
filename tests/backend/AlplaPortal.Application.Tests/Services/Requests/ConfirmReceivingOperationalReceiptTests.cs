@@ -458,4 +458,149 @@ public class ConfirmReceivingOperationalReceiptTests
         Assert.Null(group.OperationalReceiptCompletedByUserId);
         Assert.False(await ctx.RequestStatusHistories.AnyAsync(h => h.IdempotencyKey != null));
     }
+
+    // ── v2.245.2: finalization requires every active group confirmed (feature-flag independent) ──
+    private const int STATUS_WAITING_RECEIPT_ID = 16;
+
+    private static async Task SetRequestStatusAsync(ApplicationDbContext ctx, Guid requestId, int statusId)
+    {
+        var r = await ctx.Requests.SingleAsync(x => x.Id == requestId);
+        r.StatusId = statusId;
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+    }
+
+    private static async Task AddReceiptAsync(ApplicationDbContext ctx, Guid requestId, Guid actorId)
+    {
+        ctx.RequestAttachments.Add(new RequestAttachment
+        {
+            Id = Guid.NewGuid(), RequestId = requestId, AttachmentTypeCode = RequestAttachment.TYPE_RECEIPT,
+            FileName = "recibo.pdf", FileExtension = "pdf", FileSizeMBytes = 0.01m, StorageReference = "x/recibo.pdf",
+            UploadedByUserId = actorId, UploadedAtUtc = DateTime.UtcNow, IsDeleted = false
+        });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+    }
+
+    [Theory]
+    [InlineData("PAYMENT_COMPLETED")]
+    [InlineData("IN_FOLLOWUP")]
+    [InlineData("WAITING_SUPPLIER_DELIVERY")]
+    public async Task V2452_Finalize_WithUnconfirmedGroup_FeatureDisabled_Rejected_NoWrites(string groupStatus)
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" }, mutateGroup: g => g.Status = groupStatus);
+        // Simulate the (premature) request scalar already at WAITING_RECEIPT while the group is unconfirmed.
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        var historyBefore = await ctx.RequestStatusHistories.CountAsync();
+
+        // Feature DISABLED — exactly the TEST/PROD configuration.
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "x" });
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(409, ((ProblemDetails)conflict.Value!).Status);
+
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(groupStatus, group.Status);                                   // group unchanged
+        var req = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+        Assert.Equal(STATUS_WAITING_RECEIPT_ID, req.StatusId);                     // request unchanged
+        Assert.Equal(historyBefore, await ctx.RequestStatusHistories.CountAsync()); // no history written
+        Assert.False(await ctx.RequestStatusHistories.AnyAsync(h => h.ActionTaken == "FINALIZE"));
+    }
+
+    [Fact]
+    public async Task V2452_Finalize_AllGroupsConfirmed_FeatureDisabled_Succeeds()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
+            mutateGroup: g => g.Status = RequestConstants.PoGroupStatuses.WaitingReceipt);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        await AddReceiptAsync(ctx, seed.RequestId, seed.ActorId); // mandatory supplier receipt
+
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "ok" });
+
+        Assert.IsType<OkObjectResult>(result); // group WAITING_RECEIPT passes the group-readiness guard
+        var req = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+        Assert.Equal(RequestConstants.Statuses.Completed, req.Status!.Code);
+    }
+
+    // ── v2.245.2 groupless legacy finalize: fail closed without auditable confirmation ──
+    /// <summary>A GROUPLESS legacy request at WAITING_RECEIPT scalar (historical data), one RECEIVED line
+    /// item, NO PO group. Optionally seed a real CONFIRM_RECEIVING history event as auditable evidence.</summary>
+    private static async Task<Guid> SeedGrouplessAtWaitingReceiptAsync(ApplicationDbContext ctx, Guid actorId, bool withConfirmHistory)
+    {
+        var actor = new User { Id = actorId, FullName = "ZZTEST GL", Email = $"gl-{Guid.NewGuid():N}@t.local" };
+        ctx.Users.Add(actor);
+        ctx.RequestTypes.Add(new RequestType { Id = 2, Code = RequestConstants.Types.Payment, Name = "Pagamento" });
+        ctx.RequestStatuses.AddRange(
+            new RequestStatus { Id = 14, Code = RequestConstants.Statuses.PaymentCompleted, Name = "Pagamento Concluído", DisplayOrder = 14 },
+            new RequestStatus { Id = 16, Code = RequestConstants.Statuses.WaitingReceipt, Name = "Aguardando Recibo", DisplayOrder = 17 },
+            new RequestStatus { Id = 18, Code = RequestConstants.Statuses.InFollowup, Name = "Em Acompanhamento", DisplayOrder = 18 },
+            new RequestStatus { Id = 17, Code = RequestConstants.Statuses.Completed, Name = "Finalizado", DisplayOrder = 19 });
+        var received = new LineItemStatus { Id = 91, Code = "RECEIVED", Name = "Recebido" };
+        ctx.LineItemStatuses.Add(received);
+
+        var request = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "ZZTEST-GLF-" + Guid.NewGuid().ToString("N")[..8], Title = "GL finalize",
+            RequestTypeId = 2, StatusId = 16 /* WAITING_RECEIPT */, RequesterId = actor.Id, DepartmentId = 1, CompanyId = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-40)
+        };
+        ctx.Requests.Add(request);
+        ctx.RequestLineItems.Add(new RequestLineItem
+        {
+            Id = Guid.NewGuid(), RequestId = request.Id, RequestPoGroupId = null, LineNumber = 1,
+            Description = "GL item", Quantity = 1, ReceivedQuantity = 1, LineItemStatusId = 91
+        });
+        ctx.RequestAttachments.Add(new RequestAttachment
+        {
+            Id = Guid.NewGuid(), RequestId = request.Id, AttachmentTypeCode = RequestAttachment.TYPE_RECEIPT,
+            FileName = "r.pdf", FileExtension = "pdf", FileSizeMBytes = 0.01m, StorageReference = "x/r.pdf",
+            UploadedByUserId = actor.Id, UploadedAtUtc = DateTime.UtcNow, IsDeleted = false
+        });
+        if (withConfirmHistory)
+            ctx.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, ActorUserId = actor.Id, ActionTaken = "CONFIRM_RECEIVING",
+                PreviousStatusId = 14, NewStatusId = 16, Comment = "Recebimento confirmado (legado).", CreatedAtUtc = DateTime.UtcNow.AddDays(-1)
+            });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+        return request.Id;
+    }
+
+    [Fact]
+    public async Task V2452_Groupless_Finalize_WithoutConfirmEvidence_Rejected_NoWrites()
+    {
+        using var ctx = NewContext();
+        var actorId = Guid.NewGuid();
+        var requestId = await SeedGrouplessAtWaitingReceiptAsync(ctx, actorId, withConfirmHistory: false);
+        var historyBefore = await ctx.RequestStatusHistories.CountAsync();
+
+        var controller = BuildController(ctx, actorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(requestId, new ApprovalActionDto { Comment = "x" });
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(409, ((ProblemDetails)conflict.Value!).Status);
+        var req = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == requestId);
+        Assert.Equal(RequestConstants.Statuses.WaitingReceipt, req.Status!.Code);       // unchanged (not COMPLETED)
+        Assert.Equal(historyBefore, await ctx.RequestStatusHistories.CountAsync());     // no writes
+    }
+
+    [Fact]
+    public async Task V2452_Groupless_Finalize_WithConfirmEvidence_Succeeds()
+    {
+        using var ctx = NewContext();
+        var actorId = Guid.NewGuid();
+        var requestId = await SeedGrouplessAtWaitingReceiptAsync(ctx, actorId, withConfirmHistory: true);
+
+        var controller = BuildController(ctx, actorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(requestId, new ApprovalActionDto { Comment = "ok" });
+
+        Assert.IsType<OkObjectResult>(result); // auditable CONFIRM_RECEIVING evidence exists → allowed
+        var req = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == requestId);
+        Assert.Equal(RequestConstants.Statuses.Completed, req.Status!.Code);
+    }
 }

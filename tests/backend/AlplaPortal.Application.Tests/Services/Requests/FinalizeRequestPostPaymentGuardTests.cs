@@ -197,8 +197,11 @@ public class FinalizeRequestPostPaymentGuardTests
                                       .Select(r => r.CompletionCycleId).FirstAsync());
     }
 
+    // v2.245.2: the legacy groupless auto-finalize fallback is REMOVED. A groupless request with no
+    // auditable CONFIRM_RECEIVING evidence fails closed (409, no writes) — it must not complete merely
+    // because a RECEIPT was attached at a WAITING_RECEIPT scalar.
     [Fact]
-    public async Task Finalize_still_completes_a_groupless_request_while_the_feature_is_disabled()
+    public async Task Finalize_groupless_withoutConfirmEvidence_isBlocked_whileFeatureDisabled()
     {
         using var ctx = NewContext();
         var seed = await SeedFinalizableAsync(
@@ -208,7 +211,10 @@ public class FinalizeRequestPostPaymentGuardTests
 
         var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto());
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<ConflictObjectResult>(result);
+        var status = await ctx.Requests.Where(r => r.Id == seed.RequestId).Select(r => r.Status!.Code).FirstAsync();
+        Assert.Equal(RequestConstants.Statuses.WaitingReceipt, status); // NOT completed
+        Assert.False(await ctx.RequestStatusHistories.AnyAsync(h => h.RequestId == seed.RequestId && h.ActionTaken == "FINALIZE"));
     }
 
     // ── The guard is real once enabled (not part of Release 1 behaviour) ──
@@ -301,10 +307,10 @@ public class FinalizeRequestPostPaymentGuardTests
         Assert.IsType<OkObjectResult>(result);
     }
 
+    // v2.245.2: groupless fail-closed also applies with the feature enabled.
     [Fact]
-    public async Task Enabled_feature_still_allows_the_groupless_legacy_fallback()
+    public async Task Enabled_feature_groupless_withoutConfirmEvidence_isBlocked()
     {
-        // The only state in which the legacy endpoint remains permitted once the feature is on.
         using var ctx = NewContext();
         var seed = await SeedFinalizableAsync(
             ctx, RequestConstants.OperationInvoiceStatuses.Unclassified, withPoGroup: false);
@@ -313,7 +319,7 @@ public class FinalizeRequestPostPaymentGuardTests
 
         var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto());
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<ConflictObjectResult>(result);
     }
 
     [Fact]

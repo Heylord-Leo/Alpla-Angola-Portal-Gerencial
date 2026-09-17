@@ -231,6 +231,67 @@ public class BatchModelReceivingChainTests
         return new Seed(request.Id, group.Id, lineItem.Id, quotationItem.Id, actor.Id);
     }
 
+    /// <summary>A GROUPLESS legacy request: one line item with RequestPoGroupId = null, request scalar in a
+    /// receiving-eligible state, and NO PO group at all. Mirrors historical pre-grouping data.</summary>
+    private static async Task<Seed> SeedGrouplessAsync(ApplicationDbContext ctx, decimal authorizedQuantity = 1m)
+    {
+        var actor = new User { Id = Guid.NewGuid(), FullName = "ZZTEST Groupless", Email = $"gl-{Guid.NewGuid():N}@test.local" };
+        ctx.Users.Add(actor);
+        ctx.RequestTypes.Add(new RequestType { Id = 1, Code = RequestConstants.Types.Quotation, Name = "Cotação" });
+        ctx.RequestStatuses.AddRange(
+            new RequestStatus { Id = 14, Code = RequestConstants.Statuses.PaymentCompleted, Name = "Pagamento Concluído", DisplayOrder = 14 },
+            new RequestStatus { Id = 16, Code = RequestConstants.Statuses.WaitingReceipt, Name = "Aguardando Recibo", DisplayOrder = 17 },
+            new RequestStatus { Id = 18, Code = RequestConstants.Statuses.InFollowup, Name = "Em Acompanhamento", DisplayOrder = 18 },
+            new RequestStatus { Id = 17, Code = RequestConstants.Statuses.Completed, Name = "Finalizado", DisplayOrder = 19 });
+        var received = new LineItemStatus { Id = 91, Code = "RECEIVED", Name = "Recebido" };
+        var partial = new LineItemStatus { Id = 92, Code = "PARTIALLY_RECEIVED", Name = "Parcial" };
+        var pending = new LineItemStatus { Id = 93, Code = "PENDING", Name = "Pendente" };
+        ctx.LineItemStatuses.AddRange(received, partial, pending);
+
+        var request = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "ZZTEST-GL-" + Guid.NewGuid().ToString("N")[..8],
+            Title = "ZZTEST groupless legacy", RequestTypeId = 1, StatusId = 14, // PAYMENT_COMPLETED scalar
+            SelectedQuotationId = null, RequesterId = actor.Id, DepartmentId = 1, CompanyId = 1,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-40)
+        };
+        ctx.Requests.Add(request);
+        var lineItem = new RequestLineItem
+        {
+            Id = Guid.NewGuid(), RequestId = request.Id, RequestPoGroupId = null, SelectedQuotationItemId = null,
+            LineNumber = 1, Description = "ZZTEST groupless item", Quantity = authorizedQuantity, ReceivedQuantity = 0m,
+            LineItemStatusId = pending.Id
+        };
+        ctx.RequestLineItems.Add(lineItem);
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+        return new Seed(request.Id, Guid.Empty, lineItem.Id, Guid.Empty, actor.Id);
+    }
+
+    // v2.245.2 groupless invariant: final item registration on a GROUPLESS request never enters
+    // WAITING_RECEIPT and never fabricates confirmation history.
+    [Fact]
+    public async Task V2452_Groupless_FinalRegistration_NeverEntersWaitingReceipt_NoConfirmationFabricated()
+    {
+        var options = NewOptions();
+        var seed = await SeedGrouplessAsync(NewContext(options), authorizedQuantity: 1m);
+
+        using (var ctx = NewContext(options))
+            Assert.IsType<NoContentResult>(await RegisterAsync(BuildLineItemsController(ctx, seed.ActorId, Flags()), seed, 1m));
+
+        using (var ctx = NewContext(options))
+        {
+            var request = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+            Assert.NotEqual(RequestConstants.Statuses.WaitingReceipt, request.Status!.Code); // never WAITING_RECEIPT
+            Assert.Equal(RequestConstants.Statuses.InFollowup, request.Status!.Code);
+            Assert.False(await ctx.RequestStatusHistories.AnyAsync(
+                h => h.ActionTaken == "RECEIVING_PROGRESS" && h.NewStatusId == WAITING_RECEIPT_ID));
+            // No confirmation events fabricated.
+            Assert.False(await ctx.RequestStatusHistories.AnyAsync(
+                h => h.ActionTaken == "CONFIRM_RECEIVING" || h.ActionTaken == "OPERATIONAL_RECEIPT_COMPLETED"));
+        }
+    }
+
     private static Task<IActionResult> RegisterAsync(
         LineItemsController controller, Seed seed, decimal receivedQuantity) =>
         controller.UpdateReceiving(seed.LineItemId, new UpdateItemReceivingDto
@@ -469,6 +530,89 @@ public class BatchModelReceivingChainTests
         {
             var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
             Assert.Null(group.OperationalReceiptCompletedAtUtc); // reading readiness wrote nothing
+        }
+    }
+
+    // ── v2.245.2: item registration is PRE-confirmation and must NEVER enter WAITING_RECEIPT ──
+    private const int WAITING_RECEIPT_ID = 16, IN_FOLLOWUP_ID = 18;
+
+    // F1: final item registration on a grouped request keeps a pre-confirmation state; group unchanged;
+    // no RECEIVING_PROGRESS row transitions to WAITING_RECEIPT; explicit confirm then moves the GROUP.
+    [Fact]
+    public async Task V2452_FinalItemRegistration_GroupedRequest_NeverEntersWaitingReceipt()
+    {
+        var options = NewOptions();
+        var flags = Flags();
+        var seed = await SeedBatchShapeAsync(NewContext(options), authorizedQuantity: 1m,
+            groupStatus: RequestConstants.PoGroupStatuses.PaymentCompleted);
+
+        using (var ctx = NewContext(options))
+            Assert.IsType<NoContentResult>(await RegisterAsync(BuildLineItemsController(ctx, seed.ActorId, flags), seed, 1m));
+
+        using (var ctx = NewContext(options))
+        {
+            var request = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+            Assert.NotEqual(RequestConstants.Statuses.WaitingReceipt, request.Status!.Code);   // NOT WAITING_RECEIPT
+            Assert.Equal(RequestConstants.Statuses.InFollowup, request.Status!.Code);           // pre-confirmation
+
+            var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+            Assert.Equal(RequestConstants.PoGroupStatuses.PaymentCompleted, group.Status);      // group untouched
+
+            // No RECEIVING_PROGRESS row ever transitioned to WAITING_RECEIPT.
+            Assert.False(await ctx.RequestStatusHistories.AnyAsync(
+                h => h.ActionTaken == "RECEIVING_PROGRESS" && h.NewStatusId == WAITING_RECEIPT_ID));
+        }
+
+        // Explicit confirm is available (group is PAYMENT_COMPLETED) and moves the GROUP to WAITING_RECEIPT.
+        using (var ctx = NewContext(options))
+            Assert.IsType<OkObjectResult>(await ConfirmAsync(BuildRequestsController(ctx, seed.ActorId, flags), seed));
+
+        using (var ctx = NewContext(options))
+        {
+            var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+            Assert.Equal(RequestConstants.PoGroupStatuses.WaitingReceipt, group.Status);
+        }
+    }
+
+    // F2: partial registration enters/stays IN_FOLLOWUP, never WAITING_RECEIPT.
+    [Fact]
+    public async Task V2452_PartialRegistration_EntersFollowup_NotWaitingReceipt()
+    {
+        var options = NewOptions();
+        var seed = await SeedBatchShapeAsync(NewContext(options), authorizedQuantity: 2m,
+            groupStatus: RequestConstants.PoGroupStatuses.PaymentCompleted);
+
+        using (var ctx = NewContext(options))
+            Assert.IsType<NoContentResult>(await RegisterAsync(BuildLineItemsController(ctx, seed.ActorId, Flags()), seed, 1m));
+
+        using (var ctx = NewContext(options))
+        {
+            var request = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+            Assert.Equal(RequestConstants.Statuses.InFollowup, request.Status!.Code);
+            var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+            Assert.Equal(RequestConstants.PoGroupStatuses.PaymentCompleted, group.Status);
+            Assert.False(await ctx.RequestStatusHistories.AnyAsync(
+                h => h.ActionTaken == "RECEIVING_PROGRESS" && h.NewStatusId == WAITING_RECEIPT_ID));
+        }
+    }
+
+    // F3: reaching 100% from WAITING_SUPPLIER_DELIVERY does not auto-enter WAITING_RECEIPT.
+    [Fact]
+    public async Task V2452_WaitingSupplierDelivery_FullRegistration_DoesNotEnterWaitingReceipt()
+    {
+        var options = NewOptions();
+        var seed = await SeedBatchShapeAsync(NewContext(options), authorizedQuantity: 1m,
+            groupStatus: RequestConstants.PoGroupStatuses.WaitingSupplierDelivery);
+
+        using (var ctx = NewContext(options))
+            Assert.IsType<NoContentResult>(await RegisterAsync(BuildLineItemsController(ctx, seed.ActorId, Flags()), seed, 1m));
+
+        using (var ctx = NewContext(options))
+        {
+            var request = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+            Assert.NotEqual(RequestConstants.Statuses.WaitingReceipt, request.Status!.Code);
+            var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+            Assert.Equal(RequestConstants.PoGroupStatuses.WaitingSupplierDelivery, group.Status); // group untouched
         }
     }
 

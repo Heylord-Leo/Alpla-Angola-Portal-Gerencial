@@ -287,6 +287,89 @@ public class FinanceDirectPayLedgerTests
         Assert.Equal(40000m, actualPaidSum); // previously 0 (no ledger row) — undercount eliminated
     }
 
+    // ── v2.245.2: MarkAsPaid must enforce the PAYMENT_PROOF attachment TYPE (parity with advance path) ──
+    private static Guid AddAttachment(ApplicationDbContext ctx, Guid reqId, Guid actorId, string typeCode, bool deleted = false)
+    {
+        var att = new RequestAttachment
+        {
+            Id = Guid.NewGuid(), RequestId = reqId, AttachmentTypeCode = typeCode,
+            FileName = "doc.pdf", FileExtension = "pdf", FileSizeMBytes = 0.01m, StorageReference = "x/doc.pdf",
+            UploadedByUserId = actorId, UploadedAtUtc = DateTime.UtcNow, IsDeleted = deleted
+        };
+        ctx.RequestAttachments.Add(att);
+        ctx.SaveChanges();
+        return att.Id;
+    }
+
+    [Theory]
+    [InlineData("RECEIPT")]
+    [InlineData("FISCAL_RECEIPT")]
+    [InlineData("RECEIVING_EVIDENCE")]
+    public async Task MarkAsPaid_WrongAttachmentType_Rejected_NoWrites(string wrongType)
+    {
+        var ctx = NewContext();
+        var (reqId, ids, actorId) = await SeedQuotationAsync(ctx, (RequestConstants.PoGroupStatuses.PoIssued, 5000m));
+        var wrong = AddAttachment(ctx, reqId, actorId, wrongType);
+
+        var result = await BuildController(ctx, actorId).MarkAsPaid(reqId, new ConfirmPaymentDto
+        { RequestPoGroupId = ids[0], PaymentProofAttachmentId = wrong, ActualPaidAmount = 5000m, PaidDate = DateTime.UtcNow.Date });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(FinalBalancesFor(ctx, ids[0]));               // no ledger row written
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == ids[0]);
+        Assert.Equal(RequestConstants.PoGroupStatuses.PoIssued, group.Status); // group unchanged
+    }
+
+    [Fact]
+    public async Task MarkAsPaid_ProofFromAnotherRequest_Rejected_NoWrites()
+    {
+        var ctx = NewContext();
+        var (reqId, ids, actorId) = await SeedQuotationAsync(ctx, (RequestConstants.PoGroupStatuses.PoIssued, 5000m));
+        // A PAYMENT_PROOF that belongs to a DIFFERENT request.
+        var otherReq = new Request
+        {
+            Id = Guid.NewGuid(), RequestNumber = "ZZTEST-OTHER", Title = "other", RequestTypeId = 2,
+            StatusId = StatusId(ctx, RequestConstants.Statuses.PoIssued), RequesterId = actorId,
+            DepartmentId = 1, CompanyId = 1, CreatedAtUtc = DateTime.UtcNow
+        };
+        ctx.Requests.Add(otherReq); ctx.SaveChanges();
+        var foreignProof = AddAttachment(ctx, otherReq.Id, actorId, RequestAttachment.TYPE_PAYMENT_PROOF);
+
+        var result = await BuildController(ctx, actorId).MarkAsPaid(reqId, new ConfirmPaymentDto
+        { RequestPoGroupId = ids[0], PaymentProofAttachmentId = foreignProof, ActualPaidAmount = 5000m, PaidDate = DateTime.UtcNow.Date });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(FinalBalancesFor(ctx, ids[0]));
+    }
+
+    [Fact]
+    public async Task MarkAsPaid_DeletedProof_Rejected_NoWrites()
+    {
+        var ctx = NewContext();
+        var (reqId, ids, actorId) = await SeedQuotationAsync(ctx, (RequestConstants.PoGroupStatuses.PoIssued, 5000m));
+        var deleted = AddAttachment(ctx, reqId, actorId, RequestAttachment.TYPE_PAYMENT_PROOF, deleted: true);
+
+        var result = await BuildController(ctx, actorId).MarkAsPaid(reqId, new ConfirmPaymentDto
+        { RequestPoGroupId = ids[0], PaymentProofAttachmentId = deleted, ActualPaidAmount = 5000m, PaidDate = DateTime.UtcNow.Date });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(FinalBalancesFor(ctx, ids[0]));
+    }
+
+    [Fact]
+    public async Task MarkAsPaid_ValidPaymentProof_Succeeds()
+    {
+        var ctx = NewContext();
+        var (reqId, ids, actorId) = await SeedQuotationAsync(ctx, (RequestConstants.PoGroupStatuses.PoIssued, 5000m));
+        var proof = AddAttachment(ctx, reqId, actorId, RequestAttachment.TYPE_PAYMENT_PROOF);
+
+        var result = await BuildController(ctx, actorId).MarkAsPaid(reqId, new ConfirmPaymentDto
+        { RequestPoGroupId = ids[0], PaymentProofAttachmentId = proof, ActualPaidAmount = 5000m, PaidDate = DateTime.UtcNow.Date });
+
+        Assert.IsType<OkResult>(result);
+        Assert.Single(FinalBalancesFor(ctx, ids[0]));
+    }
+
     // 3/13. Re-pay guard: an already-PAYMENT_COMPLETED group is rejected and no extra row is created.
     [Fact]
     public async Task Pay_AlreadyCompletedGroup_Rejected_NoNewRow()

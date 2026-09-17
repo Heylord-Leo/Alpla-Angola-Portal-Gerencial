@@ -85,7 +85,7 @@ public static class RequestWorkflowProjectionBuilder
         ["PAYMENT_REQUEST_SENT"] = "Solicitação Pagamento Enviada",
         ["PAYMENT_SCHEDULED"] = "Pagamento Agendado",
         ["PAYMENT_COMPLETED"] = "Pagamento Realizado",
-        ["WAITING_RECEIPT"] = "Aguardando Recibo",
+        ["WAITING_RECEIPT"] = "Aguardando Recibo do Fornecedor",
         ["WAITING_RECONCILIATION"] = "Ag. Reconciliação",
         ["WAITING_FISCAL_RECEIPT"] = "Ag. Recibo Fiscal",
         ["IN_FOLLOWUP"] = "Em Acompanhamento",

@@ -1458,6 +1458,30 @@ public class FinanceController : BaseController
             });
         }
 
+        // ── v2.245.2: enforce the attachment TYPE (parity with the advance-payment path). The proof must
+        // exist, belong to THIS request, be active, and be a PAYMENT_PROOF — never a RECEIPT / FISCAL_RECEIPT /
+        // RECEIVING_EVIDENCE or an attachment from another request. Runs before any mutation (no writes on reject).
+        var paymentProof = await _context.RequestAttachments
+            .FirstOrDefaultAsync(a => a.Id == requestDto.PaymentProofAttachmentId && a.RequestId == id && !a.IsDeleted);
+        if (paymentProof == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Anexo Inválido",
+                Detail = "O comprovativo de pagamento não foi encontrado ou não pertence a este pedido.",
+                Status = 400
+            });
+        }
+        if (paymentProof.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Anexo Inválido",
+                Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.",
+                Status = 400
+            });
+        }
+
         // ── Minimum-Amount Guard: partial payments are not supported by this action — a group
         // must never be silently closed as fully paid for less than the required amount. This
         // check runs before any mutation. Overpayment remains allowed (existing divergence
