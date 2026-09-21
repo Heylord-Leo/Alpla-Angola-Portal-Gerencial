@@ -405,6 +405,9 @@ public class ReopenReceivingCorrectionTests
         Assert.Contains($"GroupId: {seed.GroupId.ToString().Substring(0, 8)}", audit.Comment);
         Assert.Contains("Motivo: Item registado no grupo errado", audit.Comment);
         Assert.Contains("WAITING_RECEIPT → IN_FOLLOWUP", audit.Comment);
+        // v2.245.6: the event's resulting status is the group's target (IN_FOLLOWUP), never the pre-reopen scalar
+        Assert.Equal(STATUS_IN_FOLLOWUP_ID, audit.NewStatusId);
+        Assert.Equal(STATUS_WAITING_RECEIPT_ID, audit.PreviousStatusId);
         // §2 the scalar is recomputed ONLY by the canonical aggregator
         h.Aggregator.Verify(a => a.AggregateRequestStatusAsync(seed.RequestId, seed.ActorId, It.IsAny<System.Threading.CancellationToken>()), Times.Once);
     }

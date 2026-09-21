@@ -145,6 +145,26 @@ describe('drawer projection helpers (single-unit historical compatibility)', () 
         assert.equal(effectivePanelStatus(p, 'WAITING_QUOTATION'), 'WAITING_QUOTATION');
     });
 
+    // v2.245.6 — Request Details after REABRIR RECEBIMENTO at 2/2: the scalar is IN_FOLLOWUP and the
+    // projection unit (authoritative, computed by the backend from the receipt facts) says "complete".
+    test('reopened IN_FOLLOWUP unit with every item received → complete-receiving guidance (no local recalculation)', () => {
+        const p = projection([unit('IN_FOLLOWUP', 'Em Acompanhamento', 'Recebimento', 'Recebimento completo — confirmar recebimento')]);
+        assert.deepEqual(resolveSingleUnitGuidance(p, 'IN_FOLLOWUP'),
+            { responsible: 'Recebimento', nextAction: 'Recebimento completo — confirmar recebimento' });
+        assert.equal(resolveDrawerBadgeOverride(p, 'IN_FOLLOWUP'), null); // unit agrees with the scalar
+    });
+
+    test('reopened IN_FOLLOWUP unit with a pending item → pending guidance', () => {
+        const p = projection([unit('IN_FOLLOWUP', 'Em Acompanhamento', 'Recebimento', 'Resolver itens pendentes e confirmar recebimento')]);
+        assert.deepEqual(resolveSingleUnitGuidance(p, 'IN_FOLLOWUP'),
+            { responsible: 'Recebimento', nextAction: 'Resolver itens pendentes e confirmar recebimento' });
+    });
+
+    test('PAYMENT_COMPLETED unit fully received → complete-receiving guidance', () => {
+        const p = projection([unit('PAYMENT_COMPLETED', 'Pagamento Concluído', 'Recebimento', 'Recebimento completo — confirmar recebimento')]);
+        assert.equal(resolveSingleUnitGuidance(p, 'PAYMENT_COMPLETED').nextAction, 'Recebimento completo — confirmar recebimento');
+    });
+
     test('terminal scalars stay authoritative', () => {
         const p = projection([unit('PO_ISSUED', 'P.O Emitida')]);
         for (const t of ['CANCELLED', 'REJECTED', 'COMPLETED']) {

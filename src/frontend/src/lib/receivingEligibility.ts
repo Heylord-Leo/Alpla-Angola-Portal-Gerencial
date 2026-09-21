@@ -103,6 +103,22 @@ export function receivingItemActionLabel(
   return (receivedQty ?? 0) > 0 ? 'AJUSTAR' : 'REGISTRAR';
 }
 
+/**
+ * v2.245.6 — success wording after submitting an ABSOLUTE accumulated quantity. Mirrors the backend audit
+ * rule: a decrease (including a reset to zero) is an adjustment (ITEM_RECEIVING_ADJUSTMENT); a first
+ * registration or an increase is a registration. Derived from the pre-submit vs submitted quantities,
+ * never from the button label.
+ */
+export const RECEIPT_REGISTERED_MESSAGE = 'Recebimento registrado com sucesso.';
+export const RECEIPT_ADJUSTED_MESSAGE = 'Recebimento ajustado com sucesso.';
+
+export function receiptSubmitSuccessMessage(
+  previousReceivedQty: number | null | undefined,
+  submittedReceivedQty: number,
+): string {
+  return submittedReceivedQty < (previousReceivedQty ?? 0) ? RECEIPT_ADJUSTED_MESSAGE : RECEIPT_REGISTERED_MESSAGE;
+}
+
 /** Roles allowed to REABRIR RECEBIMENTO — mirrors the backend (Receiving or System Administrator). */
 export const RECEIVING_REOPEN_ROLES = [ROLES.RECEIVING, ROLES.SYSTEM_ADMINISTRATOR] as const;
 

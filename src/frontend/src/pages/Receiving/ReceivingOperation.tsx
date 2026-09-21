@@ -18,7 +18,7 @@ import { RequestActionHeader } from '../Requests/components/RequestActionHeader'
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { StandardTable } from '../../components/ui/StandardTable';
-import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed, canRegisterItemReceipt, canShowReopenReceiving, receivingItemActionLabel } from '../../lib/receivingEligibility';
+import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed, canRegisterItemReceipt, canShowReopenReceiving, receivingItemActionLabel, receiptSubmitSuccessMessage } from '../../lib/receivingEligibility';
 import ReopenReceivingModal from '../../components/modals/ReopenReceivingModal';
 import { useAuth } from '../../features/auth/AuthContext';
 import { motion } from 'framer-motion';
@@ -155,14 +155,17 @@ const ReceivingOperation: React.FC = () => {
 
   const handleConfirmReceiving = async (receivedQty: number, notes: string) => {
     if (!selectedItem) return;
-    
+    // v2.245.6: the accumulated quantity shown BEFORE this submit decides the wording (decrease/reset =
+    // adjustment, first registration/increase = registration) — the same rule as the backend audit fact.
+    const previousReceivedQty: number = selectedItem.receivedQty ?? 0;
+
     try {
       if (selectedItem.type === 'QUOTATION_ITEM') {
         await api.requests.updateItemReceiving(selectedItem.id, receivedQty, notes);
       } else {
         await api.lineItems.updateReceiving(selectedItem.id, receivedQty, notes);
       }
-      setFeedback({ type: 'success', message: 'Recebimento registrado com sucesso.' });
+      setFeedback({ type: 'success', message: receiptSubmitSuccessMessage(previousReceivedQty, receivedQty) });
       fetchRequest();
     } catch (err: any) {
       console.error('Error updating receiving:', err);

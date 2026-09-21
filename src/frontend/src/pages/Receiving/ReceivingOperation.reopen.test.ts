@@ -98,6 +98,22 @@ describe('api.requests.reopenReceiving — group-scoped endpoint', () => {
   });
 });
 
+describe('ReceivingOperation — receipt toast follows the operation semantics (v2.245.6)', () => {
+  it('captures the pre-submit accumulated quantity BEFORE the API call and derives the wording from it', () => {
+    expect(op).toMatch(/const previousReceivedQty: number = selectedItem\.receivedQty \?\? 0/);
+    const captureIdx = op.indexOf('const previousReceivedQty');
+    const callIdx = op.indexOf('api.lineItems.updateReceiving(selectedItem.id, receivedQty, notes)');
+    expect(captureIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(captureIdx);
+    expect(op).toMatch(/message: receiptSubmitSuccessMessage\(previousReceivedQty, receivedQty\)/);
+  });
+
+  it('no hard-coded success literal remains in the operation (the rule lives in receivingEligibility)', () => {
+    expect(op).not.toMatch(/message: 'Recebimento registrado com sucesso\.'/);
+    expect(op).not.toMatch(/AJUSTAR' \?/); // wording is never inferred from the button label
+  });
+});
+
 describe('print/history labels', () => {
   it('names the new audit events', () => {
     expect(printModel).toMatch(/ITEM_RECEIVING_ADJUSTMENT: 'Ajuste de recebimento de item'/);

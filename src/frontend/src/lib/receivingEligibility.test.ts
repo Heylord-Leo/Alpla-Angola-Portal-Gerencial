@@ -11,6 +11,9 @@ import {
   receivingItemActionLabel,
   userCanReopenReceiving,
   canShowReopenReceiving,
+  receiptSubmitSuccessMessage,
+  RECEIPT_ADJUSTED_MESSAGE,
+  RECEIPT_REGISTERED_MESSAGE,
 } from './receivingEligibility';
 import { ROLES } from '../constants/roles';
 
@@ -166,5 +169,31 @@ describe('receivingEligibility — v2.245.5 registration, correction and reopen'
     expect(canConfirmReceiving('IN_FOLLOWUP', false)).toBe(false); // corrected incomplete → no confirm
     expect(canConfirmReceiving('IN_FOLLOWUP', true)).toBe(true);   // corrected complete → confirm again
     expect(canShowReopenReceiving('IN_FOLLOWUP', [ROLES.RECEIVING], false)).toBe(false); // no reopen while open
+  });
+});
+
+// v2.245.6 — the success toast follows the operation semantics (pre-submit vs submitted accumulated quantity).
+describe('receivingEligibility — receiptSubmitSuccessMessage (v2.245.6)', () => {
+  it('a decrease is an adjustment', () => {
+    expect(receiptSubmitSuccessMessage(2, 1)).toBe('Recebimento ajustado com sucesso.');
+    expect(receiptSubmitSuccessMessage(2, 1)).toBe(RECEIPT_ADJUSTED_MESSAGE);
+  });
+
+  it('a reset to zero is an adjustment', () => {
+    expect(receiptSubmitSuccessMessage(1, 0)).toBe('Recebimento ajustado com sucesso.');
+  });
+
+  it('a first registration keeps the registration wording', () => {
+    expect(receiptSubmitSuccessMessage(0, 1)).toBe('Recebimento registrado com sucesso.');
+    expect(receiptSubmitSuccessMessage(null, 1)).toBe(RECEIPT_REGISTERED_MESSAGE);
+    expect(receiptSubmitSuccessMessage(undefined, 2)).toBe(RECEIPT_REGISTERED_MESSAGE);
+  });
+
+  it('an increase keeps the registration wording', () => {
+    expect(receiptSubmitSuccessMessage(1, 2)).toBe('Recebimento registrado com sucesso.');
+  });
+
+  it('re-submitting the same accumulated quantity is not an adjustment', () => {
+    expect(receiptSubmitSuccessMessage(2, 2)).toBe(RECEIPT_REGISTERED_MESSAGE);
   });
 });

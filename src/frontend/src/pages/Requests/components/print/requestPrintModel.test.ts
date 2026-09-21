@@ -134,6 +134,19 @@ describe('buildRequestPrintModel (§27)', () => {
     expect(m.history[0].actionLabel).toBe('P.O. registrada');
     expect(m.history[0].actionCode).toBe('REGISTER_PO');
   });
+  it('v2.245.6: RECEIVING_REOPENED renders its label and the backend-provided resulting status (never a local guess)', () => {
+    const statusHistory = [
+      { id: 'h1', actionTaken: 'RECEIVING_REOPENED', newStatusName: 'Em Acompanhamento', actorName: 'X', createdAtUtc: '2026-09-21T10:00:00Z',
+        comment: '[Grupo P.O.: F | GroupId: 12345678] Recebimento reaberto para correção (WAITING_RECEIPT → IN_FOLLOWUP). Motivo: x', fieldChanges: [] },
+      { id: 'h2', actionTaken: 'STATUS_SYNC', newStatusName: 'Em Acompanhamento', actorName: 'X', createdAtUtc: '2026-09-21T10:00:01Z', fieldChanges: [] },
+    ];
+    const m = buildRequestPrintModel(baseDetail({ statusHistory: statusHistory as any }));
+    expect(m.history[0].actionLabel).toBe('Recebimento reaberto para correção');
+    expect(m.history[0].newStatus).toBe('Em Acompanhamento');
+    expect(m.history[0].newStatus).not.toBe('Aguardando Recibo');
+    expect(m.history[1].actionLabel).toBe('Sincronização de estado');
+    expect(m.history[1].newStatus).toBe('Em Acompanhamento');
+  });
   it('D: known document type gets a human label', () => {
     expect(humanizeDocumentType('PAYMENT_SOURCE_DOCUMENT')).toBe('Documento de origem do pagamento');
     expect(humanizeDocumentType('QUOTATION')).toBe('Cotação');

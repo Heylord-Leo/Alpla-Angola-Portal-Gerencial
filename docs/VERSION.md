@@ -2,7 +2,27 @@
 
 ## Current Version
 
-v2.245.5
+v2.245.6
+
+## [v2.245.6] - 2026-09-21
+
+### Receiving corrections — presentation, guidance and audit fixes from TEST validation of v2.245.5
+
+Three presentation/guidance/audit corrections found while validating the reopen → adjust → register →
+confirm cycle in TEST (the validated workflow behavior itself is unchanged):
+1. Request Details guidance for a single pre-confirmation group with every item received now reads
+   "Recebimento completo — confirmar recebimento" (partial keeps "Resolver itens pendentes…"): the
+   `workflow-projection` endpoint now loads the receipt facts (item statuses / winning quotation items)
+   the v2.245.3 projection rule already consumed but never received at runtime.
+2. The `RECEIVING_REOPENED` history event records IN_FOLLOWUP ("→ Em Acompanhamento") as its resulting
+   status — the same semantics as CONFIRM_RECEIVING — instead of echoing the pre-reopen scalar
+   ("→ Aguardando Recibo"). The aggregator's STATUS_SYNC event is unchanged. New events only; no
+   historical record is rewritten.
+3. Decreasing or resetting an item's accumulated quantity now shows "Recebimento ajustado com sucesso.";
+   first registration/increase keeps "Recebimento registrado com sucesso." (derived from the pre-submit
+   vs submitted quantity, never from the button label).
+
+- **NO MIGRATION**, **no data repair**, no workflow/authorization change.
 
 ## [v2.245.5] - 2026-09-21
 

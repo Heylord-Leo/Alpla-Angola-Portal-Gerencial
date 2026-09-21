@@ -944,14 +944,25 @@ public class RequestsController : BaseController
     [HttpGet("{id:guid}/workflow-projection")]
     public async Task<IActionResult> GetWorkflowProjection(Guid id)
     {
+        // v2.245.6: the projection's receiving guidance (v2.245.3 "Recebimento completo — confirmar
+        // recebimento") is derived from the receipt FACTS — each group item's LineItemStatus (and, for
+        // QUOTATION requests, the winning quotation items). Those facts were never loaded here, so the
+        // builder always saw "not received" and Request Details kept the stale "pendentes" wording even
+        // for a 2/2 group. Load exactly what OperationalReceiptFacts consumes.
         var request = await _context.Requests
             .AsNoTracking()
             .Include(r => r.RequestType)
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .ThenInclude(li => li.LineItemStatus)
             .Include(r => r.ApprovalBatches)
                 .ThenInclude(b => b.Items)
             .Include(r => r.PoGroups)
+                .ThenInclude(g => g.LineItems.Where(li => !li.IsDeleted))
+                    .ThenInclude(li => li.LineItemStatus)
+            .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
+                    .ThenInclude(qi => qi.LineItemStatus)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
@@ -8081,6 +8092,14 @@ public class RequestsController : BaseController
                     Status = 409
                 });
 
+            // v2.245.6: the event records the GROUP's resulting status (IN_FOLLOWUP) — the same semantics as
+            // CONFIRM_RECEIVING, which records its target status and lets the aggregator's STATUS_SYNC state
+            // the scalar. Copying the pre-reopen scalar here displayed "→ Aguardando Recibo" on a reopen.
+            var inFollowupStatus = await _context.RequestStatuses
+                .FirstOrDefaultAsync(s => s.Code == RequestConstants.PoGroupStatuses.InFollowup);
+            if (inFollowupStatus == null)
+                return StatusCode(500, $"Status '{RequestConstants.PoGroupStatuses.InFollowup}' não configurado.");
+
             var previousGroupStatus = poGroup.Status;
             poGroup.Status = RequestConstants.PoGroupStatuses.InFollowup;
             poGroup.UpdatedAtUtc = DateTime.UtcNow;
@@ -8097,7 +8116,7 @@ public class RequestsController : BaseController
                 ActorUserId = actorId,
                 ActionTaken = "RECEIVING_REOPENED",
                 PreviousStatusId = request.StatusId,
-                NewStatusId = request.StatusId, // the scalar changes only through the aggregator (STATUS_SYNC)
+                NewStatusId = inFollowupStatus.Id, // the request scalar itself is still recomputed by the aggregator (STATUS_SYNC)
                 Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " +
                           $"Recebimento reaberto para correção ({previousGroupStatus} → {RequestConstants.PoGroupStatuses.InFollowup}). " +
                           $"Quantidades recebidas preservadas; nova confirmação obrigatória. Motivo: {dto.Reason.Trim()}",

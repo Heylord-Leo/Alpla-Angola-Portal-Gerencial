@@ -4,7 +4,38 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.5
+v2.245.6
+
+## [v2.245.6] - 2026-09-21 — Receiving corrections: guidance, audit-status and toast fixes from TEST validation
+
+Presentation/guidance/audit corrections discovered during the TEST validation of v2.245.5. The validated
+reopen → adjust → register → confirm workflow, its authorization and its data-integrity rules are unchanged.
+No migration, no data repair.
+
+### Fixed
+- **Request Details guidance after reopen (and any pre-confirmation state)**: for a single operational
+  group in PAYMENT_COMPLETED / IN_FOLLOWUP with every active item fully received, the drawer now shows
+  "Recebimento completo — confirmar recebimento"; partial receiving keeps "Resolver itens pendentes e
+  confirmar recebimento". Root cause: `GET /api/v1/requests/{id}/workflow-projection` loaded line items
+  without `LineItemStatus` and groups without their items, so the v2.245.3 projection rule
+  (`RequestWorkflowProjectionBuilder`) never saw a received item at runtime. The endpoint now loads the
+  same receipt facts `OperationalReceiptFacts` consumes (item statuses and, for QUOTATION requests, the
+  winning quotation items). The frontend keeps using the projection (no competing calculation).
+- **`RECEIVING_REOPENED` history status**: the event now records IN_FOLLOWUP ("→ Em Acompanhamento") as
+  its resulting status — matching CONFIRM_RECEIVING, which records the group's target status — instead
+  of copying the pre-reopen request scalar ("→ Aguardando Recibo"). The row is still written inside the
+  reopen transaction before the aggregator; the authoritative STATUS_SYNC event is preserved. Applies to
+  newly generated events only; existing records are untouched.
+- **Receipt toast**: decreasing or resetting an accumulated quantity shows "Recebimento ajustado com
+  sucesso."; a first registration or an increase keeps "Recebimento registrado com sucesso." — decided
+  by the pre-submit vs submitted quantity (`receiptSubmitSuccessMessage`), the same rule that produces
+  the `ITEM_RECEIVING_ADJUSTMENT` audit fact.
+
+### Tests
+- Backend: endpoint-level projection guidance (IN_FOLLOWUP 2/2 → CONFIRM_RECEIVING, partial →
+  RESOLVE_FOLLOWUP, PAYMENT_COMPLETED 2/2, reopen → projection chain); reopen audit status assertions.
+- Frontend: toast wording rule; single-unit guidance from the projection at IN_FOLLOWUP; print/history
+  rendering of RECEIVING_REOPENED; all v2.245.5 reopen/authorization/freeze/correction tests kept.
 
 ## [v2.245.5] - 2026-09-21 — Receiving corrections: frozen quantities after confirmation, audited adjustments, REABRIR RECEBIMENTO
 
