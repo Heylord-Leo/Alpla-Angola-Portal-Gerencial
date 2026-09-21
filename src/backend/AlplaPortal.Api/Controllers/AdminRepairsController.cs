@@ -2,12 +2,14 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using AlplaPortal.Application.DTOs.Admin;
+using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Repairs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AlplaPortal.Api.Controllers;
 
@@ -155,6 +157,38 @@ public class AdminRepairsController : BaseController
         if (guard != null) return guard;
 
         var service = new PaymentReceivingStatusDriftRepairService(_context);
+
+        if (!confirm)
+            return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));
+
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason))
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+
+        var result = await service.RunAsync(apply: true, actorId: CurrentUserId, reason: body.Reason, ct: ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// v2.245.4 — payment-group-item-linkage repair. <c>confirm=false</c> (default) is a read-only preview
+    /// that writes nothing; <c>confirm=true</c> applies (requires a body with a non-empty reason). Per
+    /// request, in ONE transaction: links active unlinked line items to the single non-cancelled group;
+    /// demotes a WAITING_RECEIPT group that has NO group-correlated confirmation but provable
+    /// move-from-PAYMENT_COMPLETED + payment evidence back to PAYMENT_COMPLETED; reconciles the request
+    /// scalar through the canonical aggregator; writes one technical audit. Fails closed on ambiguity
+    /// (>1 group), conflicting/uncorrelatable evidence and terminal states. Never fabricates
+    /// CONFIRM_RECEIVING / OPERATIONAL_RECEIPT_COMPLETED / PAYMENT_COMPLETED, quantities or statuses.
+    /// </summary>
+    [HttpPost("payment-group-item-linkage")]
+    public async Task<IActionResult> PaymentGroupItemLinkage(
+        [FromQuery] bool confirm = false,
+        [FromBody] PaymentGroupItemLinkageRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+
+        var aggregator = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+        var service = new PaymentGroupItemLinkageRepairService(_context, aggregator);
 
         if (!confirm)
             return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));

@@ -2,7 +2,28 @@
 
 ## Current Version
 
-v2.245.3
+v2.245.4
+
+## [v2.245.4] - 2026-09-21
+
+### PAYMENT group item linkage — producer fix, atomic repair, fail-closed receiving
+
+Fixes a v2.245.3 TEST finding ("0/N items, no conference table"). PAYMENT groups built from the header
+(legacy/single-group) plan were created without linking the request's line items
+(`RequestPoGroupId = NULL`), so the receiving operation found no items for the group and the group could
+never be confirmed; some of those groups had additionally been pushed to WAITING_RECEIPT by the deprecated
+move-to-receipt action without any operational confirmation. The producer now attributes every active line
+item to the single header group (never when more than one active group exists; document-based multi-group
+plans are unchanged); `payment-po-repair` inherits the fix. A new controlled repair
+(`POST api/v1/admin/repairs/payment-group-item-linkage`, SysAdmin, preview/apply, reason, idempotent,
+one atomic transaction per request) links the items and — only for WAITING_RECEIPT groups with no
+group-correlated confirmation and provable move-from-PAYMENT_COMPLETED + payment evidence — restores
+PAYMENT_COMPLETED, reconciling the request scalar exclusively through the canonical aggregator. The
+receiving operation now shows a read-only remediation blocker for a group whose items are unlinked.
+
+- **NO MIGRATION** and **no automatic data repair**. Backend behavior + controlled repair + display only.
+  Nothing fabricates CONFIRM_RECEIVING / OPERATIONAL_RECEIPT_COMPLETED / PAYMENT_COMPLETED, quantities,
+  item statuses or completion stamps. Internal status and attachment codes unchanged.
 
 ## [v2.245.3] - 2026-09-21
 

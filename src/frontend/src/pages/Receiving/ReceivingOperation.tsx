@@ -131,6 +131,14 @@ const ReceivingOperation: React.FC = () => {
   const allReceived = operationalItems.every((item: any) => item.statusCode === 'RECEIVED');
   const isReadOnly = request?.statusCode === 'COMPLETED' || request?.statusCode === 'CANCELLED';
 
+  // v2.245.4: items that belong to NO active group of this request (RequestPoGroupId null or pointing at an
+  // unknown/cancelled group). Such items can never be received against a group, so the page must fail
+  // closed with a visible remediation blocker instead of silently rendering nothing.
+  const unlinkedItems = useMemo(() => {
+    const groupIds = new Set((request?.poGroups ?? []).map((g: any) => g.id));
+    return operationalItems.filter((i: any) => !i.requestPoGroupId || !groupIds.has(i.requestPoGroupId));
+  }, [request, operationalItems]);
+
   const handleOpenModal = (item: any) => {
     setSelectedItem(item);
     setModalOpen(true);
@@ -287,7 +295,35 @@ const ReceivingOperation: React.FC = () => {
           {(request.poGroups && request.poGroups.length > 0) ? (
             request.poGroups.map((group: any) => {
               const groupItems = operationalItems.filter((i: any) => i.requestPoGroupId === group.id);
-              if (groupItems.length === 0) return null;
+              if (groupItems.length === 0) {
+                // A group with no items is only silent when every item of the request belongs to some
+                // other active group. If the request holds UNLINKED items, this group is the victim of a
+                // linkage defect: render a read-only blocker — no REGISTRAR, no CONFIRMAR, nothing that
+                // could bypass the missing linkage. Progress stays 0/N, consistent with the blocked state.
+                if (unlinkedItems.length === 0) return null;
+                return (
+                  <div key={group.id} style={cardStyle} data-testid="linkage-blocker">
+                    <div style={sectionHeaderStyle}>
+                      <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <FileText size={18} color="var(--color-primary)" />
+                        Conferência: {group.supplierNameSnapshot}
+                      </h3>
+                      <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
+                        <Info size={12} /> Status: {group.statusName || group.status}
+                      </div>
+                    </div>
+                    <div style={{ margin: '16px 24px 24px', padding: '12px 16px', backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E' }}>
+                        Este pedido contém {unlinkedItems.length} item(ns) não vinculado(s) ao grupo de recebimento.
+                        <span style={{ display: 'block', fontWeight: 600, marginTop: '2px' }}>
+                          O recebimento não pode ser registado nem confirmado até que a vinculação seja corrigida por remediação administrativa controlada.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               
               // v2.245.0 §16: single canonical eligibility rule (mirror of the backend evaluator). A group
               // whose GROUP status is not a valid receiving phase (e.g. the PAYMENT PENDING drift) is

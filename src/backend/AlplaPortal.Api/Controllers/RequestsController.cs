@@ -10000,6 +10000,20 @@ public class RequestsController : BaseController
 
         if (plan.Count == 0) return;
 
+        // v2.245.4: the header (legacy) plan attributes EVERY active line item to its single header group
+        // (see BuildLegacyPaymentPlanAsync). That attribution is only unambiguous when the request has at
+        // most ONE non-cancelled group. With several groups (an inconsistent legacy topology) we never
+        // mass-assign items to one of them — linkage is left to the controlled repair, which refuses it as
+        // AMBIGUOUS. Document-based plans are per-document and are not affected.
+        if (documents.Count == 0
+            && existingGroups.Count(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled) > 1)
+        {
+            _logger.LogWarning(
+                "BuildPaymentPoGroups — Request {RequestId} ({RequestNumber}): header plan with more than one active group; item linkage skipped (ambiguous).",
+                request.Id, request.RequestNumber);
+            plan = plan.Select(p => p with { LineItemIds = Array.Empty<Guid>() }).ToList();
+        }
+
         var currencies = await _context.Currencies.AsNoTracking().ToListAsync();
         var created = 0;
 
@@ -10147,6 +10161,11 @@ public class RequestsController : BaseController
                 .Where(c => c.Id == request.CurrencyId.Value).Select(c => c.Code).FirstOrDefaultAsync())
             : null;
 
+        // v2.245.4: the single header group owns EVERY active line item of the request. Leaving this empty
+        // (as before) created groups whose RequestLineItems carried RequestPoGroupId = NULL — the receiving
+        // operation then found no items for the group ("0/N, no conference table"). The caller
+        // (BuildPaymentPoGroupsAsync) guarantees request.LineItems is loaded and refuses the attribution when
+        // more than one active group exists.
         return new[]
         {
             new PlannedPaymentGroup
@@ -10157,7 +10176,7 @@ public class RequestsController : BaseController
                 SupplierNameSnapshot = supplier?.Name,
                 SupplierTaxIdSnapshot = supplier?.TaxId,
                 TotalAmount = request.EstimatedTotalAmount,
-                LineItemIds = Array.Empty<Guid>(),
+                LineItemIds = request.LineItems.Where(li => !li.IsDeleted).Select(li => li.Id).ToList(),
                 SourceDocumentIds = Array.Empty<Guid>()
             }
         };

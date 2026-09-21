@@ -4,7 +4,46 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.3
+v2.245.4
+
+## [v2.245.4] - 2026-09-21 — PAYMENT group item linkage (producer fix, atomic repair, fail-closed receiving)
+
+Fixes a v2.245.3 TEST finding. No migration, no automatic data repair; internal status/attachment codes
+unchanged.
+
+### Fixed
+- PAYMENT groups built from the header (single-group) plan were created with their line items unlinked
+  (`RequestPoGroupId = NULL`): the receiving operation rendered "0/N" with no conference table and the
+  group could never be confirmed. The legacy plan now attributes every active line item to the group.
+- Groups created by `admin/payment-po-repair` (same builder) are now linked as well.
+- Some unlinked groups had been pushed to WAITING_RECEIPT by the deprecated move-to-receipt action
+  without any operational confirmation, making them appear finalization-ready; the new repair restores
+  the provable prior state.
+
+### Added
+- **Controlled repair** `POST api/v1/admin/repairs/payment-group-item-linkage` (SysAdmin-only,
+  `confirm=false` preview / `confirm=true` + reason apply, idempotent). Per request, in ONE transaction:
+  links active unlinked items to the single non-cancelled group; demotes a WAITING_RECEIPT group that has
+  NO group-correlated confirmation but provable move-from-PAYMENT_COMPLETED + payment evidence back to
+  PAYMENT_COMPLETED; reconciles the request scalar only through `StatusAggregationService` (STATUS_SYNC);
+  writes one technical audit (`PAYMENT_GROUP_ITEM_LINK_REPAIR`). PREVIEW and APPLY share one classifier.
+  Fails closed: AMBIGUOUS (>1 active group), CONFLICTING (foreign/mixed linkage, or a CONFIRM_RECEIVING
+  that cannot be correlated with the current group), REFUSED (terminal states, insufficient evidence,
+  advance-payment flows).
+- Confirmation correlation is strict: an `OPERATIONAL_RECEIPT_COMPLETED` row with this group's
+  idempotency key, or a `CONFIRM_RECEIVING` written after the group's creation carrying this group's
+  `GroupId:` tag, or — only for a request that never had another group — an untagged `CONFIRM_RECEIVING`
+  written after the group's creation.
+- Receiving operation: a group whose request items are not linked to it now shows a read-only remediation
+  blocker instead of rendering nothing; no item registration or confirmation is offered for it.
+
+### Safety / Compatibility
+- **No migration**, **no automatic repair**; never fabricates `CONFIRM_RECEIVING` /
+  `OPERATIONAL_RECEIPT_COMPLETED` / `PAYMENT_COMPLETED`, received quantities, item statuses, completion
+  timestamps or attachments; never deletes receipts. Document-based multi-group payment plans unchanged;
+  items are never mass-assigned when more than one active group exists. All v2.245.x invariants preserved
+  (registration never enters WAITING_RECEIPT; only explicit confirmation does; finalization requires
+  confirmed groups + supplier RECEIPT; duplicate confirm 409).
 
 ## [v2.245.3] - 2026-09-21 — Finance finalization modal routing & pre-confirmation guidance
 

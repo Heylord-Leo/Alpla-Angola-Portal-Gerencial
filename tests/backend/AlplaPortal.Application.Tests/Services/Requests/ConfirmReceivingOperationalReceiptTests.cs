@@ -642,6 +642,32 @@ public class ConfirmReceivingOperationalReceiptTests
         Assert.Equal(historyBefore, await ctx.RequestStatusHistories.CountAsync());
     }
 
+    // v2.245.4: the demoted shape — group back at PAYMENT_COMPLETED (pre-confirmation), request scalar at
+    // WAITING_RECEIPT, supplier RECEIPT present → finalization is STILL blocked (409) until an explicit
+    // CONFIRM_RECEIVING moves the group to WAITING_RECEIPT.
+    [Fact]
+    public async Task V2454_Finalize_AfterDemotion_WithReceipt_StillBlockedUntilExplicitConfirm()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
+            mutateGroup: g => g.Status = RequestConstants.PoGroupStatuses.PaymentCompleted);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        await AddReceiptAsync(ctx, seed.RequestId, seed.ActorId);
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+
+        var blocked = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "x" });
+        Assert.IsType<ConflictObjectResult>(blocked); // RECEIPT alone never unlocks finalization
+
+        // Explicit operational confirmation is the ONLY way forward.
+        Assert.IsType<OkObjectResult>(await ConfirmAsync(controller, seed));
+        var group = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == seed.GroupId);
+        Assert.Equal(RequestConstants.PoGroupStatuses.WaitingReceipt, group.Status);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID); // aggregator is mocked in this harness
+
+        var ok = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "ok" });
+        Assert.IsType<OkObjectResult>(ok);
+    }
+
     [Fact]
     public async Task V2453_Finalize_DeletedReceipt_DoesNotSatisfy_Rejected()
     {
