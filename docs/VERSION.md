@@ -2,7 +2,27 @@
 
 ## Current Version
 
-v2.245.4
+v2.245.5
+
+## [v2.245.5] - 2026-09-21
+
+### Receiving corrections — frozen quantities after confirmation, audited adjustments, REABRIR RECEBIMENTO
+
+Fixes a v2.245.4 TEST finding: after receiving was formally confirmed (group WAITING_RECEIPT) every item
+still offered an active "REGISTRAR" action, and the registration endpoint still accepted direct changes.
+Item quantities are now editable only in a pre-confirmation status (PAYMENT_COMPLETED / IN_FOLLOWUP /
+WAITING_SUPPLIER_DELIVERY): a pending item offers REGISTRAR, an already-received item offers AJUSTAR
+(absolute accumulated correction through the existing entry modal), and any decrease is audited as an
+append-only `ITEM_RECEIVING_ADJUSTMENT` fact. Once confirmed, quantities are read-only and the backend
+rejects direct changes with 409. A new group-scoped action, REABRIR RECEBIMENTO
+(`POST {id}/operational/groups/{groupId}/reopen-receiving`, Receiving or SysAdmin, mandatory reason),
+returns only that group from WAITING_RECEIPT to IN_FOLLOWUP, preserves all received quantities and
+history, writes a `RECEIVING_REOPENED` audit, recomputes the request scalar through the canonical
+aggregator, and requires a new confirmation. Reopening is refused for terminal requests, non-confirmed
+groups, and when an active supplier RECEIPT already exists (Finance must remove/invalidate it first).
+
+- **NO MIGRATION** and **no data repair**. The existing absolute-quantity model + append-only history
+  already support auditable reversals. Internal status and attachment codes unchanged.
 
 ## [v2.245.4] - 2026-09-21
 

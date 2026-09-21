@@ -8019,6 +8019,109 @@ public class RequestsController : BaseController
     }
 
     /// <summary>
+    /// v2.245.5 — REABRIR RECEBIMENTO: returns ONE confirmed group (WAITING_RECEIPT) to the pre-confirmation
+    /// correction state (IN_FOLLOWUP) so the Receiving user can fix an incorrect receipt (wrong item, wrong
+    /// quantity, confirmed too early) and confirm again. Receiving or SysAdmin only; mandatory reason;
+    /// group-scoped (sibling groups untouched); refused when the request is terminal, the group is not
+    /// WAITING_RECEIPT, or an active supplier RECEIPT already exists (Finance must remove/invalidate it
+    /// first). Never touches received quantities or historical events: it only clears the group's
+    /// operational-completion stamp (that assertion no longer holds) and writes a RECEIVING_REOPENED audit.
+    /// The request scalar is recomputed exclusively by the canonical aggregator. A second call finds the
+    /// group at IN_FOLLOWUP and is refused (409) — never a duplicate reopen.
+    /// </summary>
+    [HttpPost("{id}/operational/groups/{groupId:guid}/reopen-receiving")]
+    public async Task<IActionResult> ReopenReceiving(Guid id, Guid groupId, [FromBody] ReopenReceivingDto? dto)
+    {
+        var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Receiving) && !roles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, "Apenas o Almoxarifado/Recebimento (ou o Administrador do Sistema) pode reabrir um recebimento.");
+
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Reason))
+            return BadRequest(new ProblemDetails { Title = "Motivo Obrigatório", Detail = "Informe o motivo da reabertura do recebimento.", Status = 400 });
+
+        var statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var request = await _context.Requests
+                .Include(r => r.Status)
+                .Include(r => r.PoGroups)
+                .FirstOrDefaultAsync(r => r.Id == id);
+            if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+            var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == groupId);
+            if (poGroup == null)
+                return NotFound(new ProblemDetails { Title = "Grupo P.O. não encontrado neste pedido.", Status = 404 });
+
+            if (request.Status!.Code is RequestConstants.Statuses.Completed or RequestConstants.Statuses.Cancelled or RequestConstants.Statuses.Rejected)
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Reabertura Não Permitida",
+                    Detail = $"O pedido está em estado terminal ({request.Status.Code}) — o recebimento não pode ser reaberto.",
+                    Status = 409
+                });
+
+            if (poGroup.Status != RequestConstants.PoGroupStatuses.WaitingReceipt)
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Reabertura Não Permitida",
+                    Detail = $"Apenas um grupo com recebimento confirmado (WAITING_RECEIPT) pode ser reaberto. Status atual: {poGroup.Status}.",
+                    Status = 409
+                });
+
+            // An ACTIVE supplier receipt (RECEIPT only — not FISCAL_RECEIPT / RECEIVING_EVIDENCE / PAYMENT_PROOF;
+            // deleted or voided receipts do not count) means Finance has already taken over.
+            if (await HasAttachmentAsync(id, RequestAttachment.TYPE_RECEIPT))
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Recibo do Fornecedor já anexado",
+                    Detail = "Existe um Recibo do Fornecedor ativo neste pedido. O Financeiro deve remover ou invalidar o recibo antes de o recebimento poder ser reaberto.",
+                    Status = 409
+                });
+
+            var previousGroupStatus = poGroup.Status;
+            poGroup.Status = RequestConstants.PoGroupStatuses.InFollowup;
+            poGroup.UpdatedAtUtc = DateTime.UtcNow;
+            poGroup.UpdatedByUserId = actorId;
+            // The "operationally complete" assertion no longer holds until a NEW confirmation. Received
+            // quantities, item statuses and every historical event are preserved untouched.
+            poGroup.OperationalReceiptCompletedAtUtc = null;
+            poGroup.OperationalReceiptCompletedByUserId = null;
+
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "RECEIVING_REOPENED",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId, // the scalar changes only through the aggregator (STATUS_SYNC)
+                Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " +
+                          $"Recebimento reaberto para correção ({previousGroupStatus} → {RequestConstants.PoGroupStatuses.InFollowup}). " +
+                          $"Quantidades recebidas preservadas; nova confirmação obrigatória. Motivo: {dto.Reason.Trim()}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            await statusAggregationService.AggregateRequestStatusAsync(request.Id, actorId);
+            await transaction.CommitAsync();
+
+            return Ok(new
+            {
+                Message = "Recebimento reaberto. Corrija os itens necessários e confirme novamente o recebimento.",
+                StatusCode = RequestConstants.PoGroupStatuses.InFollowup
+            });
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao Reabrir Recebimento", Detail = ex.Message, Status = 500 });
+        }
+    }
+
+    /// <summary>
     /// Release 4 Phase 1b: the operation-invoice obligations of a request, derived on read.
     ///
     /// <para>Strictly read-only and diagnostic. The status is RECOMPUTED from authoritative inputs

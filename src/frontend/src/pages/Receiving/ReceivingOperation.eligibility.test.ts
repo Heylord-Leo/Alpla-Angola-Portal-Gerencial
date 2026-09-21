@@ -25,7 +25,9 @@ describe('ReceivingOperation — invalid-phase blocker (§15 F)', () => {
   });
 
   it('H: the item-receipt modal is read-only when the item\'s group is not actionable', () => {
-    expect(op).toMatch(/isReceivingActionableGroupStatus\(selectedGroup\.status\)/);
+    // v2.245.5: the modal gate is the PRE-confirmation registration rule (canRegisterItemReceipt), which is a
+    // strict subset of the general receiving-access rule — a confirmed (WAITING_RECEIPT) group is read-only.
+    expect(op).toMatch(/canRegisterItemReceipt\(selectedGroup\.status\)/);
     expect(op).toMatch(/readOnly=\{selectedItemReadOnly\}/);
   });
 

@@ -18,7 +18,9 @@ import { RequestActionHeader } from '../Requests/components/RequestActionHeader'
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { StandardTable } from '../../components/ui/StandardTable';
-import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed } from '../../lib/receivingEligibility';
+import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed, canRegisterItemReceipt, canShowReopenReceiving, receivingItemActionLabel } from '../../lib/receivingEligibility';
+import ReopenReceivingModal from '../../components/modals/ReopenReceivingModal';
+import { useAuth } from '../../features/auth/AuthContext';
 import { motion } from 'framer-motion';
 
 const highlightStyles = `
@@ -50,6 +52,13 @@ const ReceivingOperation: React.FC = () => {
   } | null>(null);
 
   const [finalizeModalState, setFinalizeModalState] = useState<{ show: boolean, groupId: string | null, groupName?: string }>({ show: false, groupId: null });
+
+  // v2.245.5: REABRIR RECEBIMENTO — Receiving or SysAdmin only (the backend enforces the same rule).
+  const { user: currentUser } = useAuth();
+  const currentUserRoles: string[] = currentUser?.roles ?? [];
+  const [reopenState, setReopenState] = useState<{ show: boolean; groupId: string | null; groupName?: string }>({ show: false, groupId: null });
+  const [reopenProcessing, setReopenProcessing] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
 
   const fetchRequest = async () => {
     if (!id) return;
@@ -161,6 +170,26 @@ const ReceivingOperation: React.FC = () => {
       
       logger.error(`Erro ao atualizar recebimento do item ${selectedItem.id} no pedido ${request?.requestNumber}: ${errorMessage}`, err, 'Global');
       setFeedback({ type: 'error', message: errorMessage });
+    }
+  };
+
+  // v2.245.5: reopen a confirmed group for correction. The backend is authoritative (403/400/404/409);
+  // a 409 (e.g. an active supplier RECEIPT already attached) is surfaced verbatim inside the modal.
+  const handleReopenReceiving = async (reason: string) => {
+    if (!id || !reopenState.groupId) return;
+    try {
+      setReopenProcessing(true);
+      setReopenError(null);
+      const result = await api.requests.reopenReceiving(id, reopenState.groupId, reason);
+      setReopenState({ show: false, groupId: null });
+      setFeedback({ type: 'success', message: result?.message || 'Recebimento reaberto. Corrija os itens e confirme novamente.' });
+      await fetchRequest();
+    } catch (err: any) {
+      const errorMessage = err instanceof Error ? err.message : (err?.response?.data?.message || 'Falha ao reabrir o recebimento.');
+      logger.error(`Erro ao reabrir recebimento do pedido ${request?.requestNumber}: ${errorMessage}`, err, 'Global');
+      setReopenError(errorMessage);
+    } finally {
+      setReopenProcessing(false);
     }
   };
 
@@ -341,6 +370,11 @@ const ReceivingOperation: React.FC = () => {
               const receivedCount = groupItems.filter((i: any) => i.statusCode === 'RECEIVED').length;
               const groupConfirmed = isReceivingConfirmed(group.status);
               const showConfirmButton = !isReadOnly && canConfirmReceiving(group.status, groupAllReceived);
+              // v2.245.5: item quantities are editable (REGISTRAR / AJUSTAR) ONLY before confirmation. After
+              // CONFIRMAR RECEBIMENTO (WAITING_RECEIPT) they are frozen read-only; the authorized user may
+              // REABRIR RECEBIMENTO, which returns the group to acompanhamento and requires a new confirmation.
+              const groupRegistrable = !isReadOnly && canRegisterItemReceipt(group.status);
+              const showReopenButton = canShowReopenReceiving(group.status, currentUserRoles, isReadOnly);
               // Three canonical states: (1) confirmed → next guidance is the fiscal receipt/finalization;
               // (2) all received but not yet confirmed → prompt to confirm; (3) still receiving → progress.
               const groupHint = groupConfirmed
@@ -378,6 +412,17 @@ const ReceivingOperation: React.FC = () => {
                             >
                                 <CheckCircle size={14} />
                                 CONFIRMAR RECEBIMENTO
+                            </button>
+                          )}
+                          {showReopenButton && (
+                            <button
+                                onClick={() => { setReopenError(null); setReopenState({ show: true, groupId: group.id, groupName: group.supplierNameSnapshot }); }}
+                                className="btn-secondary"
+                                title="Devolve este grupo ao Recebimento para correção. Será necessária nova confirmação."
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
+                            >
+                                <History size={14} />
+                                REABRIR RECEBIMENTO
                             </button>
                           )}
                         </div>
@@ -440,9 +485,11 @@ const ReceivingOperation: React.FC = () => {
                               <button
                                 onClick={() => handleOpenModal(item)}
                                 className="btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isGroupReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                                style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: groupRegistrable ? 1 : 0.7, borderRadius: '6px' }}
                               >
-                                {isGroupReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                                {/* v2.245.5: pending → REGISTRAR; already (partially) received → AJUSTAR (absolute
+                                    accumulated correction, audited); confirmed/frozen → read-only view. */}
+                                {receivingItemActionLabel(group.status, item.receivedQty, isReadOnly)}
                               </button>
                             </td>
                           </tr>
@@ -512,9 +559,10 @@ const ReceivingOperation: React.FC = () => {
                           <button
                             onClick={() => handleOpenModal(item)}
                             className="btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                            style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: (isReadOnly || !canRegisterItemReceipt(request.statusCode)) ? 0.7 : 1, borderRadius: '6px' }}
                           >
-                            {isReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                            {/* v2.245.5: groupless legacy requests follow the same rule on the request scalar. */}
+                            {receivingItemActionLabel(request.statusCode, item.receivedQty, isReadOnly)}
                           </button>
                         </td>
                       </tr>
@@ -622,7 +670,10 @@ const ReceivingOperation: React.FC = () => {
         // the legacy no-group branch keeps request-level read-only only.
         const selectedGroupId = operationalItems.find((i: any) => i.id === selectedItem.id)?.requestPoGroupId;
         const selectedGroup = selectedGroupId ? request.poGroups?.find((g: any) => g.id === selectedGroupId) : undefined;
-        const selectedItemReadOnly = isReadOnly || (!!selectedGroup && !isReceivingActionableGroupStatus(selectedGroup.status));
+        // v2.245.5: the quantity modal is editable ONLY while the item's group is in a pre-confirmation
+        // status (canRegisterItemReceipt); a confirmed group (WAITING_RECEIPT) opens it read-only.
+        const selectedItemReadOnly = isReadOnly || (!!selectedGroup && !canRegisterItemReceipt(selectedGroup.status))
+          || (!selectedGroup && !canRegisterItemReceipt(request.statusCode));
         return (
           <ReceivingModal
             open={modalOpen}
@@ -636,6 +687,15 @@ const ReceivingOperation: React.FC = () => {
           />
         );
       })()}
+
+      <ReopenReceivingModal
+        open={reopenState.show}
+        groupName={reopenState.groupName}
+        processing={reopenProcessing}
+        error={reopenError}
+        onClose={() => { if (!reopenProcessing) { setReopenState({ show: false, groupId: null }); setReopenError(null); } }}
+        onConfirm={handleReopenReceiving}
+      />
 
       <FinalizeReceivingModal
         requestId={request.id}

@@ -820,6 +820,18 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao completar pagamento.');
             return response.json();
         },
+        // v2.245.5: REABRIR RECEBIMENTO — returns ONE confirmed group (WAITING_RECEIPT) to the correction
+        // state (IN_FOLLOWUP). Mandatory reason; the backend refuses terminal requests, non-confirmed groups
+        // and requests that already carry an active supplier RECEIPT.
+        reopenReceiving: async (id: string, groupId: string, reason: string): Promise<{ message: string; statusCode: string }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/groups/${groupId}/reopen-receiving`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao reabrir o recebimento.');
+            return response.json();
+        },
         // v2.245.1: the legacy `move-to-receipt` client wrapper was removed. Entering the receiving
         // operation is now a non-mutating navigation; WAITING_RECEIPT is reached only via confirmReceiving.
         confirmReceiving: async (id: string, groupId: string, comment?: string): Promise<{ message: string; statusCode: string }> => {

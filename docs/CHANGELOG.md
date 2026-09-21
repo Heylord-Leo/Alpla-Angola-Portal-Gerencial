@@ -4,7 +4,45 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.4
+v2.245.5
+
+## [v2.245.5] - 2026-09-21 — Receiving corrections: frozen quantities after confirmation, audited adjustments, REABRIR RECEBIMENTO
+
+Fixes a v2.245.4 TEST finding. No migration, no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- After CONFIRMAR RECEBIMENTO (group WAITING_RECEIPT) every item still rendered an active "REGISTRAR"
+  action and the receipt-registration endpoint still accepted direct changes. Registration/correction is
+  now a PRE-confirmation action (canonical `ReceivingActionEvaluator.CanRegisterItemReceipt`): confirmed
+  groups are read-only in the UI and the backend rejects direct item changes with **409**, explaining that
+  REABRIR RECEBIMENTO is required.
+
+### Added
+- **AJUSTAR** on already-received items (pre-confirmation only): the existing entry modal records the
+  absolute accumulated quantity, so an incorrect receipt can be reduced or reset before confirmation. A
+  decrease is audited as an append-only **`ITEM_RECEIVING_ADJUSTMENT`** fact (delta + corrected
+  accumulated); increases keep `ITEM_RECEIVING_REGISTRATION`. Quantities can never go negative (400).
+  If a correction leaves any item incomplete, CONFIRMAR RECEBIMENTO is no longer offered.
+- **REABRIR RECEBIMENTO** — `POST /api/v1/requests/{id}/operational/groups/{groupId}/reopen-receiving`
+  (`{ "reason": "…" }`): Receiving or System Administrator only; mandatory reason (400); returns ONLY the
+  selected group from WAITING_RECEIPT to IN_FOLLOWUP; preserves received quantities, item statuses and all
+  history; clears only the group's operational-completion stamp; writes a **`RECEIVING_REOPENED`** audit
+  (actor, timestamp, group tag, reason); recomputes the request scalar exclusively through
+  `StatusAggregationService`; transactional; a repeated call is refused (409) because the group is no
+  longer WAITING_RECEIPT. Refused (409) for COMPLETED/CANCELLED/REJECTED requests, non-WAITING_RECEIPT
+  groups, and when an active supplier **RECEIPT** exists (FISCAL_RECEIPT, RECEIVING_EVIDENCE and
+  PAYMENT_PROOF never count; deleted/voided receipts do not block) — Finance must remove or invalidate
+  the receipt first. A new confirmation is required before the group can return to WAITING_RECEIPT.
+- Receiving operation UX: pending → REGISTRAR; received → AJUSTAR; all complete → CONFIRMAR RECEBIMENTO;
+  WAITING_RECEIPT → read-only quantities + REABRIR RECEBIMENTO (authorized users) with a dedicated
+  reason modal explaining the consequences; COMPLETED → entirely read-only.
+- Print/history labels for `ITEM_RECEIVING_ADJUSTMENT` and `RECEIVING_REOPENED`.
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no deleted history; existing over-receipt warning, authorization,
+  group-linkage and active-item validations preserved; multi-group requests isolated (reopen touches one
+  group only); finalization guard and Finance workflow unchanged (a reopened group is no longer
+  finalization-ready until re-confirmed). All v2.245.x invariants hold.
 
 ## [v2.245.4] - 2026-09-21 — PAYMENT group item linkage (producer fix, atomic repair, fail-closed receiving)
 

@@ -5,6 +5,7 @@
 //
 // PENDING is deliberately absent and must stay absent: it is the pre-approval group status, never a
 // valid receiving phase.
+import { ROLES } from '../constants/roles';
 
 /** Canonical backend-valid receiving group statuses (verbatim mirror of the server evaluator). */
 export const RECEIVING_ACTIONABLE_GROUP_STATUSES = [
@@ -70,4 +71,50 @@ export function isPreConfirmReceivingStatus(groupStatus?: string | null): boolea
  */
 export function canConfirmReceiving(groupStatus: string | null | undefined, allItemsReceived: boolean): boolean {
   return isPreConfirmReceivingStatus(groupStatus) && allItemsReceived && !isReceivingConfirmed(groupStatus);
+}
+
+// ── v2.245.5 item registration / correction ──────────────────────────────────
+// Registering or correcting an item's accumulated quantity (REGISTRAR / AJUSTAR) is a PRE-confirmation
+// action. Once the operator confirmed receiving (WAITING_RECEIPT and beyond) quantities are frozen; a
+// correction first requires the explicit, audited REABRIR RECEBIMENTO (which returns the group to
+// IN_FOLLOWUP). Mirrors the backend ReceivingActionEvaluator.CanRegisterItemReceipt.
+export function canRegisterItemReceipt(groupStatus?: string | null): boolean {
+  return isPreConfirmReceivingStatus(groupStatus);
+}
+
+/** Only a confirmed-but-not-yet-finalized group (WAITING_RECEIPT) can be reopened for correction. */
+export function canReopenReceiving(groupStatus?: string | null): boolean {
+  return groupStatus === 'WAITING_RECEIPT';
+}
+
+export type ReceivingItemActionLabel = 'REGISTRAR' | 'AJUSTAR' | 'VER DETALHES';
+
+/**
+ * The per-item action label. Pre-confirmation: a pending item is REGISTERED, an already (partially)
+ * received item is ADJUSTED (absolute accumulated correction, audited). Any read-only context —
+ * including a confirmed (WAITING_RECEIPT) or COMPLETED group — only allows viewing.
+ */
+export function receivingItemActionLabel(
+  groupStatus: string | null | undefined,
+  receivedQty: number | null | undefined,
+  readOnly: boolean,
+): ReceivingItemActionLabel {
+  if (readOnly || !canRegisterItemReceipt(groupStatus)) return 'VER DETALHES';
+  return (receivedQty ?? 0) > 0 ? 'AJUSTAR' : 'REGISTRAR';
+}
+
+/** Roles allowed to REABRIR RECEBIMENTO — mirrors the backend (Receiving or System Administrator). */
+export const RECEIVING_REOPEN_ROLES = [ROLES.RECEIVING, ROLES.SYSTEM_ADMINISTRATOR] as const;
+
+export function userCanReopenReceiving(roles: readonly string[] | null | undefined): boolean {
+  return !!roles?.some((r) => (RECEIVING_REOPEN_ROLES as readonly string[]).includes(r));
+}
+
+/** REABRIR RECEBIMENTO is offered only on a confirmed group, to an authorized user, outside read-only views. */
+export function canShowReopenReceiving(
+  groupStatus: string | null | undefined,
+  roles: readonly string[] | null | undefined,
+  readOnly: boolean,
+): boolean {
+  return !readOnly && canReopenReceiving(groupStatus) && userCanReopenReceiving(roles);
 }

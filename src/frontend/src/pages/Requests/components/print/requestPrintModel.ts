@@ -78,6 +78,8 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   RECEIVING_PROGRESS: 'Acompanhamento do recebimento',
   OPERATIONAL_RECEIPT_COMPLETED: 'Recebimento operacional concluído',
   ITEM_RECEIVING_REGISTRATION: 'Registo de recebimento de item',
+  ITEM_RECEIVING_ADJUSTMENT: 'Ajuste de recebimento de item',
+  RECEIVING_REOPENED: 'Recebimento reaberto para correção',
   PAYMENT_DIVERGENCE_DETECTED: 'Divergência de pagamento',
   RECEIVING_LINKAGE_REPAIR: 'Reparo de vínculo de recebimento',
   RECEIVING_PAYMENT_GROUP_SYNC_REPAIR: 'Sincronização de status de recebimento (pagamento)',

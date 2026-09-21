@@ -84,6 +84,15 @@ public static class ReceivingActionEvaluator
     public static bool CanConfirmReceivingAction(string? groupStatus)
         => groupStatus != null && ConfirmActionStatuses.Contains(groupStatus);
 
+    /// <summary>
+    /// v2.245.5 — item-quantity registration AND correction are allowed ONLY while the group is in a
+    /// PRE-confirmation receiving status (the same set as the confirm action). Once the operator has
+    /// confirmed receiving (WAITING_RECEIPT and beyond) quantities are frozen: a correction first requires
+    /// the explicit, audited REABRIR RECEBIMENTO, which returns the group to IN_FOLLOWUP.
+    /// </summary>
+    public static bool CanRegisterItemReceipt(string? groupStatus)
+        => groupStatus != null && ConfirmActionStatuses.Contains(groupStatus);
+
     /// <summary>True when the group has already had its receiving confirmed (post-confirmation state).</summary>
     public static bool IsReceivingConfirmed(string? groupStatus)
         => groupStatus != null && PostConfirmStatuses.Contains(groupStatus);
