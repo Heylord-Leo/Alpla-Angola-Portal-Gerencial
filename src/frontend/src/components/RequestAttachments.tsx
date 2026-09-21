@@ -52,7 +52,7 @@ const TYPE_LABELS: Record<string, string> = {
     'PO': 'P.O',
     'PAYMENT_SCHEDULE': 'Cronograma de Pagamento',
     'PAYMENT_PROOF': 'Comprovante de Pagamento',
-    'RECEIPT': 'Recibo',
+    'RECEIPT': 'Recibo do Fornecedor',
     'SUPPORTING': 'Documentos de Apoio'
 };
 

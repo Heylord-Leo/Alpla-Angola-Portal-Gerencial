@@ -2,7 +2,26 @@
 
 ## Current Version
 
-v2.245.2
+v2.245.3
+
+## [v2.245.3] - 2026-09-21
+
+### Finance finalization modal routing & pre-confirmation guidance
+
+Fixes a v2.245.2 TEST finding. The Finance "Finalizar Pedido (Recibo do Fornecedor)" action no longer
+opens the operational receiving-confirmation modal (which asked to re-attest goods received and called
+confirm-receiving); it now uses the standard finalization flow (`api.requests.finalize` →
+`POST /operational/finalize`). The Finalize action is offered only when an active supplier **RECEIPT**
+attachment exists — otherwise Request Details guides the user to attach the "Recibo do Fornecedor".
+Supplier receipt (RECEIPT), physical receiving evidence (RECEIVING_EVIDENCE), the post-payment fiscal
+receipt (FISCAL_RECEIPT) and the payment proof (PAYMENT_PROOF) remain distinct — none but RECEIPT
+satisfies finalization. Request Details guidance now uses group/unit truth: a fully-received but
+unconfirmed group reads "Recebimento completo — confirmar recebimento" instead of the stale scalar
+"Resolver itens pendentes…".
+
+- **NO MIGRATION** and **no data repair**. Frontend routing/guidance + a display-layer projection guidance
+  refinement only. Backend finalization validation is unchanged and remains authoritative (RECEIPT
+  required; duplicate confirm 409; groupless fail-closed). Internal status and attachment codes unchanged.
 
 ## [v2.245.2] - 2026-09-17
 

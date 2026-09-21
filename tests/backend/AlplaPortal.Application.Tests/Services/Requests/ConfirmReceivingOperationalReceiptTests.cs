@@ -603,4 +603,73 @@ public class ConfirmReceivingOperationalReceiptTests
         var req = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == requestId);
         Assert.Equal(RequestConstants.Statuses.Completed, req.Status!.Code);
     }
+
+    // ── v2.245.3: finalization requires the supplier RECEIPT type; no other document satisfies it ──
+    private static async Task AddAttachmentAsync(ApplicationDbContext ctx, Guid requestId, Guid actorId, string typeCode, bool deleted = false)
+    {
+        ctx.RequestAttachments.Add(new RequestAttachment
+        {
+            Id = Guid.NewGuid(), RequestId = requestId, AttachmentTypeCode = typeCode,
+            FileName = "d.pdf", FileExtension = "pdf", FileSizeMBytes = 0.01m, StorageReference = "x/d.pdf",
+            UploadedByUserId = actorId, UploadedAtUtc = DateTime.UtcNow, IsDeleted = deleted
+        });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+    }
+
+    // Groups ready + request WAITING_RECEIPT, but the only attachment is a NON-RECEIPT type (or none / deleted /
+    // foreign) → finalization rejected (400) with no writes. Feature disabled = TEST/PROD config.
+    [Theory]
+    [InlineData(null)]                    // no attachment at all
+    [InlineData("RECEIVING_EVIDENCE")]
+    [InlineData("FISCAL_RECEIPT")]
+    [InlineData("PAYMENT_PROOF")]
+    public async Task V2453_Finalize_WithoutValidReceipt_Rejected_NoWrites(string? wrongType)
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
+            mutateGroup: g => g.Status = RequestConstants.PoGroupStatuses.WaitingReceipt);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        if (wrongType != null) await AddAttachmentAsync(ctx, seed.RequestId, seed.ActorId, wrongType);
+        var historyBefore = await ctx.RequestStatusHistories.CountAsync();
+
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "x" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var req = await ctx.Requests.Include(r => r.Status).AsNoTracking().SingleAsync(r => r.Id == seed.RequestId);
+        Assert.Equal(RequestConstants.Statuses.WaitingReceipt, req.Status!.Code); // not completed
+        Assert.Equal(historyBefore, await ctx.RequestStatusHistories.CountAsync());
+    }
+
+    [Fact]
+    public async Task V2453_Finalize_DeletedReceipt_DoesNotSatisfy_Rejected()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
+            mutateGroup: g => g.Status = RequestConstants.PoGroupStatuses.WaitingReceipt);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        await AddAttachmentAsync(ctx, seed.RequestId, seed.ActorId, RequestAttachment.TYPE_RECEIPT, deleted: true);
+
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "x" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task V2453_Finalize_ForeignReceipt_DoesNotSatisfy_Rejected()
+    {
+        using var ctx = NewContext();
+        var seed = await SeedAsync(ctx, new[] { "RECEIVED" },
+            mutateGroup: g => g.Status = RequestConstants.PoGroupStatuses.WaitingReceipt);
+        await SetRequestStatusAsync(ctx, seed.RequestId, STATUS_WAITING_RECEIPT_ID);
+        // A RECEIPT that belongs to a DIFFERENT request must not satisfy this request's gate.
+        await AddAttachmentAsync(ctx, Guid.NewGuid(), seed.ActorId, RequestAttachment.TYPE_RECEIPT);
+
+        var controller = BuildController(ctx, seed.ActorId, Flags(enabled: false, completion: false));
+        var result = await controller.FinalizeRequest(seed.RequestId, new ApprovalActionDto { Comment = "x" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
 }

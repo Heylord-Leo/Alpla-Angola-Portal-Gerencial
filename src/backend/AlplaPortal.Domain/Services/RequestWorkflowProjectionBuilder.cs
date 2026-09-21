@@ -133,12 +133,15 @@ public static class RequestWorkflowProjectionBuilder
     // string-identical — the compatibility rule of this release.
     private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status, bool allItemsReceived = false)
     {
-        // v2.245.0: an IN_FOLLOWUP group whose items are ALL physically received is not "pending items"
-        // — it only awaits the operator's explicit confirmation. Speak to the real fact.
+        // v2.245.0 / v2.245.3: a PRE-confirmation receiving group (PAYMENT_COMPLETED or IN_FOLLOWUP) whose
+        // items are ALL physically received is not "pending items" and is no longer "move to receiving" — it
+        // only awaits the operator's explicit confirmation. Speak to the real fact.
+        if (allItemsReceived && (status == RequestConstants.PoGroupStatuses.InFollowup
+                                 || status == RequestConstants.PoGroupStatuses.PaymentCompleted))
+            return ("Recebimento", "CONFIRM_RECEIVING", "Recebimento completo — confirmar recebimento", 67);
+
         if (status == RequestConstants.PoGroupStatuses.InFollowup)
-            return allItemsReceived
-                ? ("Recebimento", "CONFIRM_RECEIVING", "Recebimento completo — confirmar recebimento", 67)
-                : ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67);
+            return ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67);
 
         return status switch
         {
@@ -306,8 +309,12 @@ public static class RequestWorkflowProjectionBuilder
     {
         var coveredItems = lineItems.Where(li => li.RequestPoGroupId == group.Id).ToList();
         // Best-effort receipt fact for guidance wording; safe when statuses/quotations aren't loaded
-        // (returns false → the neutral "resolver itens pendentes" wording, i.e. no worse than before).
-        var allItemsReceived = group.Status == RequestConstants.PoGroupStatuses.InFollowup
+        // (returns false → the pre-confirmation "conferir itens" / "resolver pendentes" wording).
+        // v2.245.3: a PAYMENT_COMPLETED group whose items are ALL received (registration complete, not yet
+        // confirmed) must guide to "confirmar recebimento", not "mover para recebimento" — the item
+        // registration no longer advances the group, so 100%-received groups sit at PAYMENT_COMPLETED.
+        var allItemsReceived = (group.Status == RequestConstants.PoGroupStatuses.InFollowup
+                                || group.Status == RequestConstants.PoGroupStatuses.PaymentCompleted)
             && OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
         var guidance = GroupGuidance(group.Status, allItemsReceived);
         var label = string.IsNullOrWhiteSpace(group.SupplierNameSnapshot)

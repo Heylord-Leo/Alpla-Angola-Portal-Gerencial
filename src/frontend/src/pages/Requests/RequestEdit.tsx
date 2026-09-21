@@ -29,7 +29,6 @@ import { CorrectPoModal } from '../../components/CorrectPoModal';
 import { ReconciliationModal } from '../../components/ui/ReconciliationModal';
 import { CatalogItemReconciliationModal } from '../../components/CatalogItemReconciliationModal';
 import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
-import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance, MultiUnitGuidance } from './components/RequestActionHeader';
 import { RequestGroupProgress } from './components/RequestGroupProgress';
 import { buildActiveFlows, resolveDrawerBadgeOverride, resolveSingleUnitGuidance, effectivePanelStatus } from '../../lib/workflowProjection';
@@ -577,6 +576,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     navigate={navigate}
                     onDrawerClose={onDrawerClose}
                     getRequestGuidance={getRequestGuidance}
+                    singleUnitGuidance={singleUnitGuidance}
+                    hasSupplierReceipt={(attachments || []).some((a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted && !a.voidedAtUtc)}
                     suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
                     completionGuidance={release4Guidance}
                     hideLegacyGuidance={!!multiUnitGuidance}
@@ -941,43 +942,28 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 </div>
             </CollapsibleSection>
 
-            {/* Approval Modal */}
-            {showApprovalModal.type === 'FINALIZE' ? (
-                <FinalizeReceivingModal
-                    requestId={id!}
-                    requestNumber={requestNumber || ''}
-                    attachments={attachments}
-                    show={showApprovalModal.show}
-                    onClose={() => {
-                        setShowApprovalModal({ show: false, type: null });
-                        setModalFeedback({ type: 'error', message: null });
-                    }}
-                    onSuccess={(msg) => {
-                        setShowApprovalModal({ show: false, type: null });
-                        setFeedback({ type: 'success', message: msg || 'Finalizado com sucesso.' });
-                        loadData();
-                    }}
-                />
-            ) : (
-                <ApprovalModal
-                    selectedQuotationName={quotations.find(q => q.isSelected)?.supplierNameSnapshot}
-                    show={showApprovalModal.show}
-                    type={showApprovalModal.type}
-                    status={status}
-                    isReworkStatus={isReworkStatus}
-                    onClose={() => {
-                        setShowApprovalModal({ show: false, type: null });
-                        setApprovalComment('');
-                        setModalFeedback({ type: 'error', message: null });
-                    }}
-                    onConfirm={(action) => handleRequestAction(action!)}
-                    comment={approvalComment}
-                    setComment={setApprovalComment}
-                    processing={approvalProcessing || saving || submitting}
-                    feedback={modalFeedback}
-                    onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
-                />
-            )}
+            {/* Approval Modal — v2.245.3: the Finance FINALIZE action now uses the standard ApprovalModal
+                (type FINALIZE → handleRequestAction → api.requests.finalize → POST /operational/finalize).
+                It must NOT reuse the operational receiving-confirmation modal (CONFIRM_RECEIVING), which
+                belongs exclusively to the receiving operation page. */}
+            <ApprovalModal
+                selectedQuotationName={quotations.find(q => q.isSelected)?.supplierNameSnapshot}
+                show={showApprovalModal.show}
+                type={showApprovalModal.type}
+                status={status}
+                isReworkStatus={isReworkStatus}
+                onClose={() => {
+                    setShowApprovalModal({ show: false, type: null });
+                    setApprovalComment('');
+                    setModalFeedback({ type: 'error', message: null });
+                }}
+                onConfirm={(action) => handleRequestAction(action!)}
+                comment={approvalComment}
+                setComment={setApprovalComment}
+                processing={approvalProcessing || saving || submitting}
+                feedback={modalFeedback}
+                onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
+            />
 
             {/* Register PO Modal */}
             {poGroupIdForUpload && (

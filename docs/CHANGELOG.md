@@ -4,7 +4,36 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.2
+v2.245.3
+
+## [v2.245.3] - 2026-09-21 — Finance finalization modal routing & pre-confirmation guidance
+
+Fixes a v2.245.2 TEST finding. No migration, no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- The Finance "Finalizar Pedido (Recibo do Fornecedor)" action opened the operational
+  receiving-confirmation modal (attestation of goods received + optional RECEIVING_EVIDENCE, calling
+  confirm-receiving) instead of the finalization flow. It now routes through the standard `ApprovalModal`
+  (type FINALIZE → `api.requests.finalize` → `POST /operational/finalize`).
+- Request Details showed "Resolver itens pendentes e confirmar recebimento" at 6/6 (all items received)
+  because it used the raw scalar `IN_FOLLOWUP` guidance.
+
+### Changed
+- The receiving-confirmation modal is used exclusively by the receiving operation page; RequestEdit no
+  longer imports or renders it.
+- Finalize is offered only when an active supplier **RECEIPT** attachment exists; otherwise Request
+  Details guides the user to attach the "Recibo do Fornecedor" (the supplier-receipt upload card is now
+  labeled "Recibo do Fornecedor"). RECEIVING_EVIDENCE, FISCAL_RECEIPT and PAYMENT_PROOF never satisfy it.
+- Request Details guidance uses group/unit projection truth: a fully-received-but-unconfirmed group
+  (PAYMENT_COMPLETED or IN_FOLLOWUP) reads "Recebimento completo — confirmar recebimento"; partial keeps
+  the pending wording; after confirmation it reads "Anexar recibo do fornecedor e finalizar pedido".
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no fabricated events. Backend finalization remains authoritative:
+  a valid active RECEIPT belonging to the request is required, foreign/deleted/other-type attachments are
+  rejected with no writes, duplicate confirm returns 409, groupless fail-closed is unchanged. Internal
+  status codes and the four attachment type codes (RECEIPT, FISCAL_RECEIPT, RECEIVING_EVIDENCE,
+  PAYMENT_PROOF) are unchanged and never merged.
 
 ## [v2.245.2] - 2026-09-17 — Receiving/receipt domain correction
 
