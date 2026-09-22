@@ -36,7 +36,9 @@ describe('Quick View and full page share ONE details component (one projection f
 
 describe('precedence: the header strip and the status panel consume the same rule', () => {
   it('RequestEdit derives the header guidance through resolveHeaderGuidance (Release-4 → loading → projection → scalar)', () => {
-    expect(edit).toMatch(/operationalGuidance: resolveHeaderGuidance\(\{\s*status, requestTypeCode, load: projectionLoad, release4Guidance, scalarGuidance: getRequestGuidance,\s*\}\)/);
+    // v2.245.8: the Release-4 slot now carries `completionGuidance` (Release-4 lifecycle guidance, else the
+    // legacy readiness guidance) — precedence order unchanged.
+    expect(edit).toMatch(/operationalGuidance: resolveHeaderGuidance\(\{\s*status, requestTypeCode, load: projectionLoad, release4Guidance: completionGuidance, scalarGuidance: getRequestGuidance,\s*\}\)/);
     // the old inline chain that let the scalar map win for non-QUOTATION requests is gone
     expect(edit).not.toMatch(/\|\| singleUnitGuidance\s+\/\/ projection truth/);
   });

@@ -2,7 +2,28 @@
 
 ## Current Version
 
-v2.245.7
+v2.245.8
+
+## [v2.245.8] - 2026-09-22
+
+### Legacy P.O. group classification from the Request Details drawer ("Classificar Documento de Origem")
+
+TEST finding on v2.245.7: a PAYMENT group created before the post-payment feature was active carried the
+schema defaults (no `SourceDocumentType`, `UNCLASSIFIED`, no obligation flags, no expected total). The
+coverage card showed "Classificação Pendente" with undefined expected/remaining/coverage, "Registrar
+Fatura Final" was offered but always failed ("nenhum grupo classificado…") after uploading the file,
+"Propor Encerramento com Saldo" could never appear, "Finalizar Pedido" was offered but refused by R15,
+and no screen or API could classify the group. v2.245.8 adds the group-scoped, audited classification
+(`POST …/po-groups/{groupId}/operation-invoice-classification`, Finance/SysAdmin), the drawer action and
+modal, a backend create preflight so no file is uploaded for an inadmissible registration, server-owned
+recovery of an interrupted registration (unclaimed-attachment listing + idempotent create per attachment
++ explicit, narrow release of a superseded upload; claim and release serialized by a `UPDLOCK, ROWLOCK`
+row lock on the attachment inside `ReadCommitted` transactions, pinned on LocalDB; only the same
+session's own upload is restored automatically — discovered uploads are listed for an explicit
+"Reutilizar"/"Descartar" decision and never selected on their own), the hiding of impossible invoice
+actions with an explanatory blocker, and readiness-owned WAITING_RECEIPT guidance (classification
+pending → finalize suppressed; then final invoice). No migration, no data repair; v2.245.5–v2.245.7
+receiving behavior unchanged.
 
 ## [v2.245.7] - 2026-09-21
 

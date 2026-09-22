@@ -51,7 +51,7 @@ import { RequestLineItemsSection } from './components/RequestLineItemsSection';
 import { ConfirmationDialog } from '../../components/common/ConfirmationDialog';
 import { canCreateSupplierContextually } from '../../lib/supplierQuickCreate';
 import { plantMismatches } from '../../lib/paymentSourceDocuments';
-import { completionNextActionGuidance } from '../../lib/operationInvoiceView';
+import { completionNextActionGuidance, legacyCompletionGuidance } from '../../lib/operationInvoiceView';
 
 export interface RequestEditProps { requestId?: string | null; onClose?: () => void; }
 export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose }: RequestEditProps = {}) {
@@ -297,6 +297,27 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     const release4Guidance = (release4LegacyFinalizeSuppressed && completionReadiness)
         ? completionNextActionGuidance(completionReadiness)
         : null;
+
+    // ── v2.245.8: legacy-path (lifecycle off) completion guidance from the SAME readiness facts ──
+    // An open group with CLASSIFICATION_PENDING makes the backend's legacy FinalizeRequest refuse
+    // (R15), so "Finalizar Pedido" is suppressed and the header/panel name the classification as the
+    // next action with its readiness ownership; once classified, an unsatisfied invoice obligation is
+    // the next blocker named (finalization stays available in that Phase-3B window). The projection's
+    // WAITING_RECEIPT wording stands when readiness reports nothing to do.
+    const legacyGuidance = useMemo(
+        () => legacyCompletionGuidance(completionReadiness, status),
+        [completionReadiness, status]);
+    const legacyFinalizeBlocked = !!legacyGuidance?.blocksLegacyFinalize;
+    const completionGuidance = release4Guidance
+        ?? (legacyGuidance ? { responsible: legacyGuidance.responsible, nextAction: legacyGuidance.nextAction } : null);
+
+    // ── v2.245.8: a group classification changes obligations, readiness and (via items/attachments)
+    // the request detail — refresh every consumer from its own source, one fetch each.
+    const [postPaymentRefreshKey, setPostPaymentRefreshKey] = useState(0);
+    const handleObligationsChanged = useCallback(() => {
+        setPostPaymentRefreshKey(k => k + 1);
+        void loadData();
+    }, [loadData]);
 
     /**
      * Stable by construction. An inline arrow here is a new function every render, and the
@@ -548,8 +569,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         ),
         // v2.245.7: ONE precedence rule (lib/workflowProjection resolveHeaderGuidance): Release-4 completion
         // guidance → loading placeholder → projection single-unit truth → legacy scalar fallback.
+        // v2.245.8: `completionGuidance` = Release-4 lifecycle guidance, else the legacy readiness guidance.
         operationalGuidance: resolveHeaderGuidance({
-            status, requestTypeCode, load: projectionLoad, release4Guidance, scalarGuidance: getRequestGuidance,
+            status, requestTypeCode, load: projectionLoad, release4Guidance: completionGuidance, scalarGuidance: getRequestGuidance,
         }) as OperationalGuidance | null,
         multiUnitGuidance,
         feedback,
@@ -597,8 +619,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     singleUnitGuidance={singleUnitGuidance}
                     guidanceLoading={singleUnitGuidanceLoading}
                     hasSupplierReceipt={(attachments || []).some((a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted && !a.voidedAtUtc)}
-                    suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
-                    completionGuidance={release4Guidance}
+                    suppressLegacyFinalize={release4LegacyFinalizeSuppressed || legacyFinalizeBlocked}
+                    completionGuidance={completionGuidance}
                     hideLegacyGuidance={!!multiUnitGuidance}
                 />
             </RequestActionHeader>
@@ -702,10 +724,12 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         requestId={id}
                         coverageEnabled={featureFlags.postPaymentCompletionEnabled}
                         statusCode={status || null}
+                        requestTypeCode={requestTypeCode || null}
                         isFinance={isFinance}
                         isBuyer={isBuyer}
                         isAdmin={user?.roles?.includes('System Administrator') ?? false}
                         currentUserId={user?.id ?? null}
+                        onObligationsChanged={handleObligationsChanged}
                     />
                 )}
 
@@ -721,6 +745,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                         isFinance={isFinance}
                         isAdmin={user?.roles?.includes('System Administrator') ?? false}
                         onReadiness={setCompletionReadiness}
+                        refreshKey={postPaymentRefreshKey}
                     />
                 )}
 

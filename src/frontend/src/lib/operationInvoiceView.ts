@@ -187,6 +187,34 @@ export function isGroupAllocatable(obligation: OperationInvoiceObligationDto): b
         obligation.derivedStatus !== 'UNCLASSIFIED';
 }
 
+// ── v2.245.8 — classification-pending presentation ──────────────────────────────────────────
+
+/**
+ * The group still has no document identity (legacy / pre-activation group): the read model derives
+ * its obligation fail-closed (UNCLASSIFIED ⇒ "owed"), but nothing — invoice registration, allocation,
+ * short-close, completion — can proceed until Finance classifies it.
+ */
+export function isClassificationPending(obligation: OperationInvoiceObligationDto): boolean {
+    return obligation.derivedStatus === 'UNCLASSIFIED' || !obligation.sourceDocumentType;
+}
+
+/**
+ * "Registrar Fatura Final" is meaningful only when at least one obligation could receive the invoice
+ * (the backend create gate refuses otherwise with OPERATION_INVOICE_NO_OBLIGATION). Mirrors the
+ * allocation eligibility — never a second rulebook.
+ */
+export function hasRegistrableObligation(obligations: readonly OperationInvoiceObligationDto[]): boolean {
+    return obligations.some(isGroupAllocatable);
+}
+
+export const REGISTER_BLOCKED_BY_CLASSIFICATION =
+    'A Fatura Final só pode ser registada depois de classificar o documento de origem do grupo. ' +
+    'Utilize "Classificar Documento de Origem" no cartão do grupo.';
+
+export const CLASSIFICATION_PENDING_CARD_TEXT =
+    'Este grupo ainda não tem o documento de origem classificado, por isso o valor esperado da fatura ' +
+    'final não está definido e nenhuma Fatura Final pode ser registada ou distribuída.';
+
 /** Structural short-close eligibility: real remaining beyond tolerance, not already closed. */
 function isShortCloseStructurallyProposable(obligation: OperationInvoiceObligationDto): boolean {
     return isGroupAllocatable(obligation) &&
@@ -264,6 +292,18 @@ const ERROR_MESSAGES: Record<string, string> = {
         'Esta proposta de encerramento já foi decidida.',
     OI_SHORTCLOSE_SELF_APPROVAL:
         'Quem propôs o encerramento não pode aprová-lo — é necessária uma segunda pessoa.',
+    // ── v2.245.8: interrupted-registration recovery ──
+    OPERATION_INVOICE_ATTACHMENT_CLAIMED:
+        'Este ficheiro já está registado como uma fatura final — recarregue a lista de faturas.',
+    OPERATION_INVOICE_ATTACHMENT_NOT_RELEASABLE:
+        'Só um ficheiro de Fatura Final ativo e ainda sem fatura associada pode ser descartado.',
+    // ── v2.245.8: group classification ──
+    OI_CLASSIFICATION_ALREADY_SET:
+        'Este grupo já tem o documento de origem classificado. Recarregue os dados para ver o estado atual.',
+    OI_CLASSIFICATION_ACTIVITY_EXISTS:
+        'Este grupo já tem faturas finais distribuídas, encerramento com saldo, reconciliação ou recibo fiscal — a classificação não pode ser definida sob essa evidência.',
+    OI_CLASSIFICATION_NOT_ELIGIBLE:
+        'O estado atual do pedido ou do grupo não permite classificar o documento de origem.',
     // ── Phase 4B/4D: fiscal receipt binding ──
     FISCAL_RECEIPT_REQUEST_STATE:
         'O estado atual do pedido ou do grupo não permite registar o Recibo Fiscal.',
@@ -283,7 +323,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 const CONCURRENCY_CODES = new Set([
     'OPERATION_INVOICE_CONCURRENCY',
     'OI_SHORTCLOSE_CONCURRENCY',
-    'FISCAL_RECEIPT_CONCURRENCY'
+    'FISCAL_RECEIPT_CONCURRENCY',
+    'OI_CLASSIFICATION_CONCURRENCY'
 ]);
 
 export interface MappedApiError {
@@ -444,6 +485,63 @@ export function completionNextActionGuidance(
         responsible: 'Sistema',
         nextAction: 'Conclusão automática em andamento — nenhuma ação manual necessária'
     };
+}
+
+// ── v2.245.8 — legacy (CompletionEnabled=false) WAITING_RECEIPT guidance from readiness facts ──
+
+export interface LegacyCompletionGuidance {
+    responsible: string;
+    nextAction: string;
+    /**
+     * The backend's legacy FinalizeRequest necessarily refuses (R15: an UNCLASSIFIED group blocks
+     * finalization) — the UI must not offer "Finalizar Pedido". Every other blocker leaves the legacy
+     * finalization available (Phase 3B window) and only redirects the guidance.
+     */
+    blocksLegacyFinalize: boolean;
+}
+
+/**
+ * Header / panel guidance for a WAITING_RECEIPT request governed by the LEGACY finalization path
+ * (completion lifecycle off), derived ONLY from the completion-readiness read model — the same
+ * authoritative facts "Conclusão do Pedido" renders, never a client-side rulebook:
+ *   • an open group with CLASSIFICATION_PENDING → classify first (finalization is refused by the
+ *     backend until then, so the action is suppressed too);
+ *   • otherwise an open group whose invoice obligation is unsatisfied → register/validate the
+ *     Fatura Final (legacy finalization stays available);
+ *   • otherwise null → the projection's own WAITING_RECEIPT wording stands.
+ * Never applies while the lifecycle is active (completionNextActionGuidance owns that case).
+ */
+export function legacyCompletionGuidance(
+    readiness: CompletionReadinessDto | null | undefined,
+    requestStatusCode: string | null | undefined
+): LegacyCompletionGuidance | null {
+    if (!readiness || readiness.completionLifecycleEnabled) return null;
+    if ((requestStatusCode ?? '').toUpperCase() !== 'WAITING_RECEIPT') return null;
+
+    const open = readiness.groups.filter(g =>
+        !isGroupPersistedCompleted(g) && (g.groupStatusCode ?? '').toUpperCase() !== 'CANCELLED');
+    if (open.length === 0) return null;
+
+    const classification = open
+        .flatMap(g => g.blockingReasons)
+        .find(r => r.code === 'CLASSIFICATION_PENDING');
+    if (classification) {
+        return {
+            responsible: COMPLETION_OWNER_LABELS[classification.ownerCode] ?? COMPLETION_OWNER_LABELS.FINANCE_ADMIN,
+            nextAction: 'Classificar o documento de origem do grupo (Fatura Final — Cobertura) antes de finalizar',
+            blocksLegacyFinalize: true
+        };
+    }
+
+    if (open.some(g => !g.operationInvoiceSatisfied)) {
+        return {
+            responsible: COMPLETION_OWNER_LABELS.FINANCE,
+            nextAction: 'Registrar / validar a Fatura Final e finalizar o pedido',
+            blocksLegacyFinalize: false
+        };
+    }
+
+    return null;
 }
 
 /**

@@ -112,7 +112,10 @@ export function RequestStatusActionPanels({
     // fully-received-but-unconfirmed group reads "Recebimento completo — confirmar recebimento" rather than
     // the stale scalar IN_FOLLOWUP "Resolver itens pendentes…". The scalar remains the fallback.
     // v2.245.7: while the owning projection loads, show the placeholder (same rule as the header strip).
-    const guidance = (status === 'WAITING_RECEIPT' && suppressLegacyFinalize && completionGuidance)
+    // v2.245.8: at WAITING_RECEIPT any completion-readiness guidance the host resolved (Release-4 lifecycle
+    // OR the legacy classification / final-invoice blocker) wins over the status-only wording — the same
+    // precedence as the header strip (resolveHeaderGuidance).
+    const guidance = (status === 'WAITING_RECEIPT' && completionGuidance)
         ? completionGuidance
         : guidanceLoading
             ? GUIDANCE_LOADING

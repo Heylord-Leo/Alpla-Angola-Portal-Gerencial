@@ -31,6 +31,9 @@ interface RequestCompletionSectionProps {
     /** Reports the loaded readiness upward (single fetch, no duplicate call) so the legacy
      *  status header can suppress/replace the manual finalization action (v2.229.7). */
     onReadiness?: (readiness: CompletionReadinessDto | null) => void;
+    /** v2.245.8 — bump to re-read readiness after a sibling section changed a group's obligation
+     *  (classification). Still one fetch per change; never a second call site. */
+    refreshKey?: number;
 }
 
 /**
@@ -43,7 +46,7 @@ interface RequestCompletionSectionProps {
  * the Finance-only fiscal receipt registration (Phase 4B write surface).
  */
 export function RequestCompletionSection({
-    requestId, coverageEnabled, lifecycleEnabled, isFinance, isAdmin, onReadiness
+    requestId, coverageEnabled, lifecycleEnabled, isFinance, isAdmin, onReadiness, refreshKey = 0
 }: RequestCompletionSectionProps) {
     const [readiness, setReadiness] = useState<CompletionReadinessDto | null>(null);
     const [obligations, setObligations] = useState<OperationInvoiceObligationsDto | null>(null);
@@ -76,7 +79,7 @@ export function RequestCompletionSection({
         }
     }, [requestId, coverageEnabled, onReadiness]);
 
-    useEffect(() => { void refresh(); }, [refresh]);
+    useEffect(() => { void refresh(); }, [refresh, refreshKey]);
 
     const obligationByGroup = useMemo(() => {
         const map = new Map<string, NonNullable<typeof obligations>['obligations'][number]>();

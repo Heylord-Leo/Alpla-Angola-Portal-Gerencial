@@ -194,46 +194,24 @@ public class OperationInvoicesController : BaseController
         var request = await LoadScopedRequestAsync(requestId);
         if (request == null) return NotFound(Problem404());
 
-        // Role gate (approved Phase 2 rule): Finance and Buyer register invoices; the requester
-        // and receiving read. SystemAdministrator follows the administrative can-act convention —
-        // and, like everyone, never bypasses the financial-integrity rules below.
-        var roleProblem = GuardMutationRole();
-        if (roleProblem != null) return roleProblem;
-
-        // ── Obligation gate (v2.228.1, approved rule): registration is OBLIGATION-driven, never
-        // type-driven. Any request — PAYMENT or QUOTATION — that owns at least one classified
-        // group owing an operation invoice may register one; a request with no such group may
-        // not, whatever its type. This deliberately tightens legacy PAYMENT requests whose groups
-        // are all UNCLASSIFIED: an invoice that could never be allocated must not be registered.
-        var hasObligationBearingGroup = await _context.RequestPoGroups
-            .AnyAsync(g => g.RequestId == requestId && g.RequiresOperationInvoice);
-        if (!hasObligationBearingGroup)
-        {
-            var problem = new ProblemDetails
-            {
-                Title = "Sem obrigação de Fatura Final",
-                Detail = "Este pedido não possui nenhum grupo classificado que exija Fatura Final.",
-                Status = 409
-            };
-            problem.Extensions["code"] = NoObligationCode;
-            return Conflict(problem);
-        }
-
-        if (!OperationInvoiceLifecyclePolicy.CanCreateInRequestStatus(request.Status?.Code))
-        {
-            return Conflict(new ProblemDetails
-            {
-                Title = "Estado do pedido não permite faturas finais",
-                Detail = "A fatura final só pode ser registada depois da aprovação do pedido " +
-                         "(incluindo após o pagamento) e enquanto o pedido não estiver concluído, " +
-                         "rejeitado ou cancelado.",
-                Status = 409
-            });
-        }
+        // v2.245.8: the admissibility gates (role → obligation → lifecycle status) are shared with the
+        // preflight endpoint below, so the client can ask BEFORE uploading the invoice file and the two
+        // answers can never drift.
+        var admissibilityProblem = await GuardCreateAdmissibilityAsync(requestId, request);
+        if (admissibilityProblem != null) return admissibilityProblem;
 
         // ── Field validation → the standard errors dictionary the frontend already renders ──
         var errors = ValidateNewInvoiceFields(dto);
         if (errors.Count > 0) return BadRequest(new ValidationProblemDetails(errors));
+
+        // ── Claim arbitration (v2.245.8): the attachment row is locked FIRST, inside this
+        // transaction, and every eligibility check below runs under that lock — the same lock the
+        // release endpoint takes — so a create and a release over one attachment are serialized by
+        // SQL Server: whichever commits first decides, the other sees the committed state.
+        using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+        try
+        {
+        await LockAttachmentRowAsync(dto.AttachmentId!.Value);
 
         // ── Idempotent retry (the source-document Create precedent): one attachment is one
         // invoice, so the same attachment offered again IS the same create — a network retry the
@@ -336,12 +314,246 @@ public class OperationInvoicesController : BaseController
             return AttachmentClaimedConflict();
         }
 
+        await transaction.CommitAsync();
+
         _logger.LogInformation(
             "Operation invoice {OperationInvoiceId} registered on request {RequestId} in status {Status}.",
             invoice.Id, requestId, invoice.Status);
 
         return Ok(await ProjectAsync(invoice));
+        }
+        catch (Exception ex) when (IsDeadlockVictim(ex))
+        {
+            // Chosen as the deadlock victim by SQL Server: nothing was written. Mapped to the
+            // established concurrency answer (reload and retry) — never an ambiguous success.
+            _context.ChangeTracker.Clear();
+            return ConcurrencyConflict();
+        }
     }
+
+    // ── Create preflight (v2.245.8) ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The create endpoint's admissibility gates, evaluated WITHOUT writing anything, so the drawer
+    /// can refuse a registration before the evidence file is uploaded (an upload followed by a
+    /// refused create left an orphan OPERATION_INVOICE attachment that cannot be deleted after
+    /// approval). Same guards, same order, same ProblemDetails as <see cref="Create"/>: visibility
+    /// 404 → role 403 → obligation 409 (OPERATION_INVOICE_NO_OBLIGATION) → lifecycle-status 409.
+    /// Field validation and duplicate enforcement remain the create's own, authoritative answer.
+    /// </summary>
+    [HttpPost("preflight")]
+    public async Task<IActionResult> CreatePreflight(Guid requestId)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var admissibilityProblem = await GuardCreateAdmissibilityAsync(requestId, request);
+        if (admissibilityProblem != null) return admissibilityProblem;
+
+        return Ok(new OperationInvoiceCreatePreflightDto { Admissible = true });
+    }
+
+    /// <summary>
+    /// Role gate (approved Phase 2 rule): Finance and Buyer register invoices; the requester and
+    /// receiving read. SystemAdministrator follows the administrative can-act convention — and, like
+    /// everyone, never bypasses the financial-integrity rules.
+    ///
+    /// <para>Obligation gate (v2.228.1, approved rule): registration is OBLIGATION-driven, never
+    /// type-driven. Any request — PAYMENT or QUOTATION — that owns at least one classified group
+    /// owing an operation invoice may register one; a request with no such group may not, whatever
+    /// its type. This deliberately tightens legacy PAYMENT requests whose groups are all
+    /// UNCLASSIFIED: an invoice that could never be allocated must not be registered — the group
+    /// must be classified first (v2.245.8 OperationInvoiceClassificationController).</para>
+    /// </summary>
+    private async Task<IActionResult?> GuardCreateAdmissibilityAsync(Guid requestId, Request request)
+    {
+        var roleProblem = GuardMutationRole();
+        if (roleProblem != null) return roleProblem;
+
+        var hasObligationBearingGroup = await _context.RequestPoGroups
+            .AnyAsync(g => g.RequestId == requestId && g.RequiresOperationInvoice);
+        if (!hasObligationBearingGroup)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Sem obrigação de Fatura Final",
+                Detail = "Este pedido não possui nenhum grupo classificado que exija Fatura Final.",
+                Status = 409
+            };
+            problem.Extensions["code"] = NoObligationCode;
+            return Conflict(problem);
+        }
+
+        if (!OperationInvoiceLifecyclePolicy.CanCreateInRequestStatus(request.Status?.Code))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Estado do pedido não permite faturas finais",
+                Detail = "A fatura final só pode ser registada depois da aprovação do pedido " +
+                         "(incluindo após o pagamento) e enquanto o pedido não estiver concluído, " +
+                         "rejeitado ou cancelado.",
+                Status = 409
+            });
+        }
+
+        return null;
+    }
+
+    // ── Unclaimed attachments: durable recovery of an interrupted registration (v2.245.8) ──────
+
+    public const string AttachmentNotReleasableCode = "OPERATION_INVOICE_ATTACHMENT_NOT_RELEASABLE";
+
+    /// <summary>
+    /// The request's OPERATION_INVOICE attachments that no invoice claims — uploads whose create was
+    /// refused, timed out, or was abandoned (closed modal, reload, another session). Computed from
+    /// the same facts <see cref="Create"/> enforces (attachment row + claim by
+    /// <c>OperationInvoice.AttachmentId</c>), so the drawer can resume a registration with the
+    /// file already in the Portal instead of uploading it again.
+    /// </summary>
+    [HttpGet("unclaimed-attachments")]
+    public async Task<ActionResult<List<OperationInvoiceUnclaimedAttachmentDto>>> ListUnclaimedAttachments(Guid requestId)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var rows = await UnclaimedAttachmentsQuery(requestId)
+            .OrderBy(a => a.UploadedAtUtc)
+            .Select(a => new OperationInvoiceUnclaimedAttachmentDto
+            {
+                AttachmentId = a.Id,
+                FileName = a.FileName,
+                FileSizeMBytes = a.FileSizeMBytes,
+                UploadedAtUtc = a.UploadedAtUtc,
+                UploadedByName = a.UploadedByUser != null ? a.UploadedByUser.FullName : null
+            })
+            .ToListAsync();
+
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// Explicitly discards an uploaded-but-unclaimed OPERATION_INVOICE attachment (the user chose a
+    /// different file, or abandons the interrupted registration). The ONLY deletion this workflow
+    /// performs, and it is narrow by construction: the attachment must belong to this request, be of
+    /// type OPERATION_INVOICE, be neither deleted nor voided, and be claimed by NO invoice.
+    ///
+    /// <para>Arbitration with the claim (v2.245.8): the attachment row is locked FIRST — the same
+    /// <c>UPDLOCK, ROWLOCK</c> the claim paths take — so a create and a release over one attachment
+    /// are serialized by SQL Server. Create wins → this call sees the committed invoice and answers 409
+    /// (<see cref="AttachmentClaimedCode"/>) with no write; release wins → the create sees the deleted
+    /// row and creates nothing. The claim is re-verified after the write as well. Same soft-delete +
+    /// history convention as AttachmentsController.Delete; nothing else is ever touched.</para>
+    /// </summary>
+    [HttpPost("attachments/{attachmentId:guid}/release")]
+    public async Task<IActionResult> ReleaseUnclaimedAttachment(Guid requestId, Guid attachmentId)
+    {
+        var request = await LoadScopedRequestAsync(requestId);
+        if (request == null) return NotFound(Problem404());
+
+        var roleProblem = GuardMutationRole();
+        if (roleProblem != null) return roleProblem;
+
+        using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+        try
+        {
+        await LockAttachmentRowAsync(attachmentId);
+
+        var attachment = await _context.RequestAttachments
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.RequestId == requestId);
+        if (attachment == null) return NotFound(Problem404("Anexo não encontrado."));
+
+        if (!string.Equals(attachment.AttachmentTypeCode, RequestAttachment.TYPE_OPERATION_INVOICE, StringComparison.OrdinalIgnoreCase)
+            || attachment.IsDeleted || attachment.VoidedAtUtc != null)
+        {
+            var problem = new ProblemDetails
+            {
+                Title = "Anexo não libertável",
+                Detail = "Só um anexo de Fatura Final ativo e ainda não associado a uma fatura pode ser descartado.",
+                Status = 409
+            };
+            problem.Extensions["code"] = AttachmentNotReleasableCode;
+            return Conflict(problem);
+        }
+
+        if (await _context.OperationInvoices.AnyAsync(i => i.AttachmentId == attachmentId))
+            return AttachmentClaimedConflict();
+
+        attachment.IsDeleted = true;
+
+        var actor = await _context.Users.FindAsync(CurrentUserId);
+        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(),
+            RequestId = requestId,
+            ActorUserId = CurrentUserId,
+            ActionTaken = "DOCUMENTO REMOVIDO",
+            PreviousStatusId = request.StatusId,
+            NewStatusId = request.StatusId,
+            Comment = $"Documento \"{attachment.FileName}\" ({RequestAttachment.TYPE_OPERATION_INVOICE}) carregado sem fatura " +
+                      $"associada descartado por {actor?.FullName ?? "utilizador"}.",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        // Re-verify inside the transaction: a create that committed between the check above and this
+        // point is visible now — the evidence of a real invoice is never removed.
+        if (await _context.OperationInvoices.AnyAsync(i => i.AttachmentId == attachmentId))
+        {
+            await transaction.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            return AttachmentClaimedConflict();
+        }
+
+        await transaction.CommitAsync();
+        return NoContent();
+        }
+        catch (Exception ex) when (IsDeadlockVictim(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return ConcurrencyConflict();
+        }
+    }
+
+    /// <summary>
+    /// v2.245.8 — the claim/release arbitration lock. Every claim of an OPERATION_INVOICE attachment
+    /// (Create, Update with a new file, Replace) and every release take an exclusive lock on the
+    /// attachment row FIRST, inside their <c>ReadCommitted</c> transaction, and only then evaluate
+    /// eligibility (active? claimed?) — the <c>SystemCounters WITH (UPDLOCK, ROWLOCK)</c> convention of
+    /// SupplierCreationService. UPDLOCK is held until the transaction ends, so two writers over the
+    /// same attachment execute strictly one after the other and the second always reads the first's
+    /// committed outcome: never an invoice referencing a released attachment, never a released
+    /// attachment that an invoice claims. A single lock resource per operation → no lock-order
+    /// deadlock between claim and release. Providers without row locks (the InMemory test provider)
+    /// skip the hint; the mechanism itself is pinned by the LocalDB test.
+    /// </summary>
+    private async Task LockAttachmentRowAsync(Guid attachmentId)
+    {
+        if (!_context.Database.IsSqlServer()) return;
+        await _context.RequestAttachments
+            .FromSqlRaw("SELECT * FROM RequestAttachments WITH (UPDLOCK, ROWLOCK) WHERE Id = {0}", attachmentId)
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
+    /// <summary>SQL Server deadlock victim (error 1205) anywhere in the exception chain.</summary>
+    private static bool IsDeadlockVictim(Exception exception)
+    {
+        for (var e = exception; e != null; e = e.InnerException!)
+        {
+            if (e is Microsoft.Data.SqlClient.SqlException sql && sql.Number == 1205) return true;
+            if (e.InnerException == null) break;
+        }
+        return false;
+    }
+
+    /// <summary>Active OPERATION_INVOICE attachments of the request with no invoice claiming them.</summary>
+    private IQueryable<RequestAttachment> UnclaimedAttachmentsQuery(Guid requestId) =>
+        _context.RequestAttachments.AsNoTracking()
+            .Where(a => a.RequestId == requestId &&
+                        a.AttachmentTypeCode == RequestAttachment.TYPE_OPERATION_INVOICE &&
+                        !a.IsDeleted && a.VoidedAtUtc == null &&
+                        !_context.OperationInvoices.Any(i => i.AttachmentId == a.Id));
 
     // ── Update (Phase 2c) ───────────────────────────────────────────────────────────────────
 
@@ -442,8 +654,11 @@ public class OperationInvoicesController : BaseController
             dto.AttachmentId.Value != Guid.Empty &&
             dto.AttachmentId.Value != invoice.AttachmentId;
 
+        // v2.245.8: a new file is a CLAIM — same arbitration as Create (row lock before eligibility).
+        using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
         if (attachmentReplaced)
         {
+            await LockAttachmentRowAsync(dto.AttachmentId!.Value);
             var attachmentProblem = await GuardAttachmentAsync(
                 requestId, dto.AttachmentId!.Value, excludeInvoiceId: invoice.Id);
             if (attachmentProblem != null) return attachmentProblem;
@@ -540,6 +755,13 @@ public class OperationInvoicesController : BaseController
             _context.ChangeTracker.Clear();
             return AttachmentClaimedConflict();
         }
+        catch (Exception ex) when (IsDeadlockVictim(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return ConcurrencyConflict();
+        }
+
+        await transaction.CommitAsync();
 
         return Ok(await ProjectAsync(invoice));
     }
@@ -760,6 +982,9 @@ public class OperationInvoicesController : BaseController
         // A NEW file is mandatory: the original keeps its attachment forever, and the
         // claimed-check refuses any attempt to reuse it. The file-hash exclusion covers only the
         // original — re-uploading its identical content with a corrected header is legitimate.
+        // v2.245.8: the replacement file is a CLAIM — same arbitration as Create (row lock first).
+        using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+        await LockAttachmentRowAsync(dto.AttachmentId!.Value);
         var attachmentProblem = await GuardAttachmentAsync(
             requestId, dto.AttachmentId!.Value, excludeInvoiceId: original.Id);
         if (attachmentProblem != null) return attachmentProblem;
@@ -848,6 +1073,13 @@ public class OperationInvoicesController : BaseController
             _context.ChangeTracker.Clear();
             return AttachmentClaimedConflict();
         }
+        catch (Exception ex) when (IsDeadlockVictim(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return ConcurrencyConflict();
+        }
+
+        await transaction.CommitAsync();
 
         _logger.LogInformation(
             "Operation invoice {OriginalId} superseded by {ReplacementId} on request {RequestId}.",

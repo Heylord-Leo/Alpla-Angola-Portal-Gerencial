@@ -4,7 +4,111 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.7
+v2.245.8
+
+## [v2.245.8] - 2026-09-22 — Legacy P.O. group classification from the drawer, safe final-invoice registration, readiness-owned completion guidance
+
+TEST finding on v2.245.7 (`2.245.7+7b61344`). No migration, no data repair, no change to the v2.245.5–v2.245.7
+receiving corrections. The completion guards (R15, receipt, confirmation) are not weakened.
+
+### Root cause
+- A PAYMENT group created while `PostPaymentCompletion` was disabled persisted the schema defaults —
+  `SourceDocumentType = null`, `OperationInvoiceStatus = UNCLASSIFIED`, `RequiresOperationInvoice = false`,
+  `RequiresSeparateFiscalReceipt = false`, no expected total. The obligations read model derives the
+  requirement fail-closed (UNCLASSIFIED ⇒ owed), so the coverage card rendered, while every write path
+  reads the persisted columns (`POST operation-invoices` → `OPERATION_INVOICE_NO_OBLIGATION`, short-close
+  → not eligible, `FinalizeRequest` → R15 "Classificação Obrigatória"). The only classification writers
+  were group creation, the multi-document source-document edit and the DRAFT-only header field — the
+  "Release 5 Finance classification" the design deferred to did not exist.
+
+### Added
+- **`POST /api/v1/requests/{requestId}/po-groups/{groupId}/operation-invoice-classification`**
+  `{ sourceDocumentType, justification }` — Finance or System Administrator (the `CLASSIFICATION_PENDING`
+  owner). Gates: feature enabled (else 404), request scope (404), role (403), justification via the
+  existing `ReconciliationJustificationValidator` (400), type via `SourceDocumentTypes.Normalize/IsValid`
+  and `DocumentObligationResolver` in the request's own context (PAYMENT → PaymentRequest, else
+  QuotationManagement; a type that blocks progression such as INVOICE_RECEIPT/OTHER is 400), request
+  mutation window (`OperationInvoiceLifecyclePolicy.CanMutateInRequestStatus`, else 409
+  `OI_CLASSIFICATION_NOT_ELIGIBLE`), group belongs to the request (404), group not CANCELLED/COMPLETED,
+  classification still pending (else 409 `OI_CLASSIFICATION_ALREADY_SET` — duplicate/stale calls),
+  no operation-invoice activity (allocations, PROPOSED/APPROVED short-close, reconciliation snapshot,
+  bound fiscal receipt → 409 `OI_CLASSIFICATION_ACTIVITY_EXISTS`). The operational-receipt stamp,
+  CONFIRM_RECEIVING and the supplier RECEIPT never block. One transaction: identity + the five
+  resolver-derived obligation fields (exactly the group-creation convention), expected total = the
+  group's `TotalAmount`/`CurrencyCode` captured once when an invoice is owed (manual-set audit trio
+  stamped `[CLASSIFICAÇÃO] …`), `IOperationInvoiceCoverageService.RederiveAsync`, Phase-1 completion
+  evaluation (no-op while the lifecycle is off), one `GRUPO_CLASSIFICADO` history row (previous → new
+  display names, obligation transition, expected total, justification); RowVersion conflict → 409
+  `OI_CLASSIFICATION_CONCURRENCY`. Quantities, confirmations, receipts and the request scalar untouched.
+- **`POST /api/v1/requests/{requestId}/operation-invoices/preflight`** — the create endpoint's own
+  admissibility gates (scope 404 → role 403 → obligation 409 → lifecycle 409), shared code path with
+  `Create` so the answers cannot drift, evaluated before any file upload.
+- **Drawer**: the group card shows "Classificar Documento de Origem" (Finance/SysAdmin) with a modal that
+  reuses `SourceDocumentTypeField` + the shared type explanations, states the expected-total consequence,
+  requires a justification (min. 20 chars), submits to the new endpoint and, on success, refreshes coverage,
+  completion readiness and the request (one fetch each). Non-deciders see who classifies.
+
+### Changed
+- "Registrar Fatura Final" renders only when some obligation is classified and allocatable
+  (`hasRegistrableObligation`); otherwise an explanatory blocker points to the classification action.
+- Final-invoice registration order: backend preflight → upload → create, through a serialized submitter
+  (double-clicks/races refused, never queued). The uploaded file is a **server fact**: a create refused
+  or interrupted after the upload leaves an unclaimed `OPERATION_INVOICE` attachment that the new
+  `GET …/operation-invoices/unclaimed-attachments` lists (belongs to the request, active, claimed by no
+  invoice); the create is idempotent per attachment (the same attachment returns the existing
+  invoice; a concurrent second create is refused by the attachment claim / unique index), so a lost
+  successful response is recovered by retrying, never by uploading again. On open the modal re-reads
+  that list: the upload of the **same uninterrupted session** is restored automatically (only while the
+  server still lists it as unclaimed); uploads merely **discovered** (closed modal, reload, another
+  session) are listed as candidates — file, date/time, uploader, newest first, id as tie-break — and
+  are **never selected automatically**: the user chooses "Reutilizar" or "Descartar" per file, and an
+  undecided candidate never satisfies the file requirement nor is submitted. Choosing another local
+  file explicitly releases the selected upload first through
+  `POST …/operation-invoices/attachments/{id}/release` (soft delete + "DOCUMENTO REMOVIDO" history;
+  409 `OPERATION_INVOICE_ATTACHMENT_CLAIMED` when an invoice claims it; never for
+  deleted/voided/non-invoice/foreign attachments); a failed release refuses the new file and keeps the
+  upload listed; every release/claim answer refreshes server truth. No broad cleanup exists; historical
+  orphan attachments are left as they are (they appear as candidates for an explicit decision).
+- **Claim/release arbitration (SQL Server row lock, no migration).** `Create`, `Update` with a new file,
+  `Replace` and the release all execute `SELECT … FROM RequestAttachments WITH (UPDLOCK, ROWLOCK) WHERE
+  Id = @id` as the FIRST statement of a `ReadCommitted` transaction (the `SystemCounters` convention of
+  `SupplierCreationService`) and evaluate eligibility only under that lock, so two writers over one
+  attachment are serialized: create wins → the release reads the committed claim and answers 409 with
+  no write; release wins → the create reads the deleted row (400 "removido ou anulado") and creates
+  nothing. A deadlock victim (SQL 1205) maps to the established 409 concurrency answer, never an
+  ambiguous success. Invariant after every commit: an attachment is either active and claimed by
+  exactly one invoice, or unclaimed/released — never both, never an invoice pointing at an attachment
+  released before its claim committed. Pinned on the real provider by
+  `OperationInvoiceAttachmentClaimReleaseSqlTests` (LocalDB): the competing endpoint is proven BLOCKED
+  while the lock is held, then reads the holder's committed outcome (both orders), plus lost-success
+  retry idempotency.
+- WAITING_RECEIPT guidance under the legacy path is derived from the completion-readiness facts
+  (`legacyCompletionGuidance`): an open group with `CLASSIFICATION_PENDING` → "Classificar o documento de
+  origem … antes de finalizar" (Financeiro / Administração) and "Finalizar Pedido" is suppressed (the
+  backend would refuse); once classified, an unsatisfied invoice obligation → "Registrar / validar a
+  Fatura Final e finalizar o pedido" (finalization stays available in the Phase-3B window); otherwise
+  the projection's wording stands. Header and status panel share the same precedence slot.
+
+### Tests
+- Backend `OperationInvoiceClassificationEndpointTests` (32): Finance/SysAdmin success with every derived
+  field, expected total, audit contents and preserved receiving facts; stamp + receipt never block; INVOICE
+  → NOT_REQUIRED, no expected total, completion reads fiscal-receipt-only; PROFORMA → invoice pending;
+  QUOTATION context; alias normalization; multi-group isolation; 403 no writes; 400 justification/type/null
+  body; 404 unknown/cross-request; duplicate → 409 with one audit; terminal request / P.O. correction /
+  terminal group → 409; allocation / short-close / fiscal receipt → 409; feature off → 404; preflight
+  mirrors create (409 no obligation, admissible after classification, 403/404/409); full legacy path:
+  finalize refused → create refused → classify → create OK → legacy finalization COMPLETED.
+- Backend `OperationInvoiceAttachmentRecoveryTests`: business rejection after upload leaves the file
+  listed and reusable; list excludes claimed/deleted/voided/other-type/foreign; lost response + retry →
+  same invoice; release soft-deletes only the unclaimed file with history and refuses claimed / deleted /
+  voided / non-invoice / foreign / unknown / unauthorized; concurrent retry never creates a second invoice
+  and never deletes the claimed evidence; preflight rejection leaves nothing uploaded.
+- Frontend `operationInvoiceView.test.ts` (classification pending, registrable obligation, legacy guidance
+  matrix, error mapping), `operationInvoiceSubmit.test.ts` (zero uploads on preflight failure, exactly one
+  upload/create, retained reuse, own-upload-only restore, no automatic selection of discovered uploads,
+  deterministic candidate order, explicit release outcomes, busy guard), `v2458ClassificationFlow.test.ts`
+  (structural wiring incl. candidate list, explicit reuse/discard, release-before-new-file, refresh).
+  No jsdom/RTL exists in this repository; behavior is proven at the consumer-boundary units and wiring.
 
 ## [v2.245.7] - 2026-09-21 — Request Details / Quick View: receiving guidance consumes the authoritative projection
 
