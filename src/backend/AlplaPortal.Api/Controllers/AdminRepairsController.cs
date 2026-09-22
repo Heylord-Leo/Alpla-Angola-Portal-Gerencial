@@ -7,6 +7,7 @@ using AlplaPortal.Domain.Constants;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Services.Repairs;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -177,11 +178,70 @@ public class AdminRepairsController : BaseController
     /// scalar through the canonical aggregator; writes one technical audit. Fails closed on ambiguity
     /// (>1 group), conflicting/uncorrelatable evidence and terminal states. Never fabricates
     /// CONFIRM_RECEIVING / OPERATIONAL_RECEIPT_COMPLETED / PAYMENT_COMPLETED, quantities or statuses.
+    ///
+    /// <para><b>Scope (v2.245.10).</b> This route is the GLOBAL population scan. PREVIEW stays read-only
+    /// and unrestricted. A global APPLY must state its scope explicitly — <c>scope=all</c> — otherwise it is
+    /// refused (400) and writes nothing: <c>confirm=true</c> alone can no longer mutate the whole
+    /// population. A single request is repaired ONLY through
+    /// <c>POST …/payment-group-item-linkage/{requestId}</c>; a <c>requestId</c> given to this route is
+    /// refused (400) rather than silently widened to the population.</para>
     /// </summary>
     [HttpPost("payment-group-item-linkage")]
     public async Task<IActionResult> PaymentGroupItemLinkage(
         [FromQuery] bool confirm = false,
+        [FromQuery] string? scope = null,
+        [FromQuery] Guid? requestId = null,
         [FromBody] PaymentGroupItemLinkageRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+
+        // A request id on the population route is an attempt to scope: never widen it to the population.
+        if (requestId.HasValue)
+            return BadRequest(new
+            {
+                error = "Para um único pedido use a rota POST api/v1/admin/repairs/payment-group-item-linkage/{requestId}. " +
+                        "Esta rota é o scan global e ignora requestId por segurança — nada foi executado."
+            });
+
+        var aggregator = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+        var service = new PaymentGroupItemLinkageRepairService(_context, aggregator);
+
+        if (!confirm)
+            return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));
+
+        if (!string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new
+            {
+                error = "A aplicação GLOBAL exige scope=all explícito (confirm=true&scope=all). " +
+                        "Para reparar um único pedido use POST api/v1/admin/repairs/payment-group-item-linkage/{requestId}. Nada foi executado."
+            });
+
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason))
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+
+        var result = await service.RunAsync(apply: true, actorId: CurrentUserId, reason: body.Reason, ct: ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// v2.245.10 — payment-group-item-linkage repair scoped to EXACTLY ONE request. <c>confirm=false</c>
+    /// (default) previews only this request through the same classifier as the global scan and writes
+    /// nothing; 404 when the request does not exist; a request outside the supported defect class (not
+    /// PAYMENT) or refused/ambiguous/conflicting is reported as such. <c>confirm=true</c> requires a body
+    /// with a non-empty <c>reason</c> plus the PREVIEW facts (<c>expectedPoGroupId</c>,
+    /// <c>expectedDecision</c>); the service re-classifies on a fresh tracked load inside the per-request
+    /// transaction, fails closed (409, nothing written) when the live facts differ, repairs only this
+    /// request with the same aggregation, idempotency key and audit, and answers 200 with
+    /// ALREADY_HEALTHY on a repeated call. The route constraint (<c>{requestId:guid}</c>) makes a malformed
+    /// id unroutable — it can never fall back to the population route.
+    /// </summary>
+    [HttpPost("payment-group-item-linkage/{requestId:guid}")]
+    public async Task<IActionResult> PaymentGroupItemLinkageForRequest(
+        Guid requestId,
+        [FromQuery] bool confirm = false,
+        [FromBody] PaymentGroupItemLinkageScopedRepairRequest? body = null,
         CancellationToken ct = default)
     {
         var guard = GuardSysAdmin();
@@ -191,12 +251,23 @@ public class AdminRepairsController : BaseController
         var service = new PaymentGroupItemLinkageRepairService(_context, aggregator);
 
         if (!confirm)
-            return Ok(await service.RunAsync(apply: false, actorId: CurrentUserId, reason: null, ct: ct));
+        {
+            var preview = await service.RunForRequestAsync(requestId, apply: false, actorId: CurrentUserId, reason: null, expected: null, ct: ct);
+            if (preview == null) return NotFound(new { error = "Pedido não encontrado." });
+            return Ok(preview);
+        }
 
         if (body == null || string.IsNullOrWhiteSpace(body.Reason))
-            return BadRequest(new { error = "Para aplicar, envie um corpo com reason." });
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason, expectedPoGroupId e expectedDecision (os factos da pré-visualização)." });
+        if (body.ExpectedPoGroupId == null || body.ExpectedPoGroupId == Guid.Empty || string.IsNullOrWhiteSpace(body.ExpectedDecision))
+            return BadRequest(new { error = "Para aplicar, restate os factos da pré-visualização: expectedPoGroupId e expectedDecision (REPAIR_LINK ou REPAIR_LINK_AND_DEMOTE)." });
 
-        var result = await service.RunAsync(apply: true, actorId: CurrentUserId, reason: body.Reason, ct: ct);
-        return Ok(result);
+        var expected = new PaymentGroupItemLinkageRepairService.ScopedExpectation(body.ExpectedPoGroupId.Value, body.ExpectedDecision.Trim());
+        var result = await service.RunForRequestAsync(requestId, apply: true, actorId: CurrentUserId, reason: body.Reason, expected: expected, ct: ct);
+        if (result == null) return NotFound(new { error = "Pedido não encontrado." });
+
+        if (result.Errors > 0) return StatusCode(StatusCodes.Status500InternalServerError, result);
+        if (result.Repaired > 0 || result.AlreadyHealthy > 0) return Ok(result);
+        return Conflict(result); // REFUSED / AMBIGUOUS / CONFLICTING / facts mismatch — nothing written
     }
 }

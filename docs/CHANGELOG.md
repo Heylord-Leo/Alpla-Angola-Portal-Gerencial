@@ -4,7 +4,65 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.9
+v2.245.10
+
+## [v2.245.10] - 2026-09-22 — Single-request scope for the payment-group-item-linkage repair
+
+Backend-only. No migration, no data repair executed, frontend untouched except the version marker.
+
+### Root cause
+
+`POST api/v1/admin/repairs/payment-group-item-linkage` (v2.245.4) selected its population inside the service —
+every PAYMENT request with an active unlinked item or a prior repair audit — and offered no request selector.
+After the PROD→TEST sync the TEST PREVIEW scanned 117 requests and reported 68 repairable / 49 refused; a
+`confirm=true` call would therefore have applied the repair to up to 68 requests while the operator authorizes
+exactly one (REQ-04/08/2026-209, correctly classified REPAIR_LINK: PAYMENT_COMPLETED group preserved, 2 active /
+2 unlinked items, no receiving, payment evidence). The global APPLY was reachable with `confirm=true` alone.
+
+### Changed
+
+- **Scoped route** `POST api/v1/admin/repairs/payment-group-item-linkage/{requestId:guid}` (SysAdmin only), mirroring
+  the `legacy-monetary-scale/{requestId}` precedent. The service exposes `RunForRequestAsync`, which runs the very
+  same per-request pipeline as the global scan (same loader, `Classify`, per-request transaction, canonical
+  `IStatusAggregationService` reconciliation, `PAY_GROUP_LINK:{groupId}` idempotency key, technical audit).
+  - PREVIEW (`confirm=false`): inspects only the supplied request, returns the same row DTO and safety evidence,
+    writes nothing; 404 when the request does not exist; a request outside the defect class (not PAYMENT) is
+    reported REFUSED; refused / ambiguous / conflicting / terminal cases are reported as such.
+  - APPLY (`confirm=true`): requires a non-empty `reason` AND the PREVIEW facts restated in the body
+    (`expectedPoGroupId`, `expectedDecision` = REPAIR_LINK | REPAIR_LINK_AND_DEMOTE) — 400 otherwise, nothing
+    executed. The classifier re-runs on a fresh tracked load inside the transaction; when the live facts differ
+    (other group, other decision) the case is REFUSED and nothing is written (409). Only the supplied request is
+    ever loaded for mutation. A repeated APPLY answers 200 with ALREADY_HEALTHY, no second audit or STATUS_SYNC.
+- **Global route hardened.** PREVIEW stays read-only and unchanged. APPLY now requires the explicit query
+  parameter `scope=all` (`confirm=true&scope=all`); without it the call is refused (400) and nothing runs. A
+  `requestId` query on the global route is refused (400) instead of being ignored — the population can never be
+  reached by a mis-addressed scoping attempt, and the `{requestId:guid}` route constraint makes a malformed id
+  unroutable rather than a fallback.
+- Result DTO: `scope` ("ALL" | "REQUEST") and `requestId`; new body DTO `PaymentGroupItemLinkageScopedRepairRequest`.
+
+### Tests
+
+- `PaymentGroupItemLinkageScopedRepairTests` (service, InMemory, multi-request population): scoped PREVIEW returns
+  only the supplied request with the REQ-04/08/2026-209-shaped facts and writes nothing; scoped APPLY changes only
+  the supplied request while five other eligible requests stay state-for-state identical (JSON snapshots) and
+  remain eligible; unknown → null; NON_PAYMENT / CANCELLED / REJECTED / COMPLETED / AMBIGUOUS / CONFLICTING /
+  terminal group / no group fail closed on PREVIEW and APPLY with the eligible sibling untouched; facts mismatch
+  (group or decision) → REFUSED, nothing written; repeated APPLY idempotent; the same classifier demotes a
+  premature WAITING_RECEIPT exactly as the global run.
+- `AdminRepairsPaymentGroupItemLinkageEndpointTests` (controller): global APPLY without `scope=all` (null, empty,
+  "request", "ALL ") → 400 and nothing written; `requestId` on the global route → 400 for PREVIEW and APPLY;
+  global PREVIEW unchanged; route templates/constraint pinned by reflection; scoped route: non-SysAdmin → 403
+  for PREVIEW and APPLY; PREVIEW returns exactly that request, unknown → 404; APPLY without reason/facts → 400;
+  facts mismatch → 409; APPLY with PREVIEW facts repairs, repeats as ALREADY_HEALTHY, unknown → 404; the
+  existing global end-to-end apply now passes `scope=all`.
+
+### Operator path for REQ-04/08/2026-209 (not executed here)
+
+1. `POST …/payment-group-item-linkage/6179648b-e1c4-43f7-a56c-98a7d9e59795` (PREVIEW) → expect one row,
+   `decision = REPAIR_LINK`, `poGroupId = e0a8cc5e-c0f3-480e-8db5-15e7e4d65a4c`.
+2. `POST …/payment-group-item-linkage/6179648b-e1c4-43f7-a56c-98a7d9e59795?confirm=true` with body
+   `{ "reason": "...", "expectedPoGroupId": "e0a8cc5e-c0f3-480e-8db5-15e7e4d65a4c", "expectedDecision": "REPAIR_LINK" }`.
+3. Never call the global route with `confirm=true&scope=all` for this authorization.
 
 ## [v2.245.9] - 2026-09-22 — GROUP_COMPLETED audit target and request-level vs group document classification
 

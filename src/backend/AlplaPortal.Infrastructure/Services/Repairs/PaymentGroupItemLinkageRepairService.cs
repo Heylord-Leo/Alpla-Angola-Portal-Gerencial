@@ -34,10 +34,21 @@ namespace AlplaPortal.Infrastructure.Services.Repairs;
 /// request has exactly ONE group ever, the CONFIRM_RECEIVING was written after that group's creation and
 /// carries no group tag at all. A confirmation that exists but cannot be correlated makes the case
 /// CONFLICTING — nothing is linked, changed or preserved by assumption.</para>
+///
+/// <para><b>Scope (v2.245.10):</b> <see cref="RunAsync"/> is the GLOBAL population scan;
+/// <see cref="RunForRequestAsync"/> inspects or repairs EXACTLY ONE request through the very same
+/// per-request pipeline (same loader, same classifier, same transaction, same aggregator, same
+/// idempotency key, same audit). A scoped APPLY additionally fails closed when the live facts differ
+/// from the ones the operator restates from the PREVIEW.</para>
 /// </summary>
 public sealed class PaymentGroupItemLinkageRepairService
 {
     public const string RepairActionCode = "PAYMENT_GROUP_ITEM_LINK_REPAIR";
+    public const string ScopeAll = "ALL";
+    public const string ScopeRequest = "REQUEST";
+
+    /// <summary>The PREVIEW facts a scoped APPLY must find unchanged on its fresh load.</summary>
+    public sealed record ScopedExpectation(Guid PoGroupId, string Decision);
     private const string ConfirmAction = "CONFIRM_RECEIVING";
     private const string MoveAction = "MOVE_TO_RECEIPT";
     private const string OpReceiptAction = "OPERATIONAL_RECEIPT_COMPLETED";
@@ -74,10 +85,11 @@ public sealed class PaymentGroupItemLinkageRepairService
         public bool IsRepairable => Kind is Kind.Link or Kind.LinkAndDemote;
     }
 
+    /// <summary>GLOBAL scan: every PAYMENT request of the defect population (PREVIEW or APPLY).</summary>
     public async Task<PaymentGroupItemLinkageRepairResultDto> RunAsync(
         bool apply, Guid actorId, string? reason, CancellationToken ct = default)
     {
-        var result = new PaymentGroupItemLinkageRepairResultDto { Status = apply ? "APPLIED" : "PREVIEW" };
+        var result = new PaymentGroupItemLinkageRepairResultDto { Status = apply ? "APPLIED" : "PREVIEW", Scope = ScopeAll };
 
         // Population: PAYMENT requests with at least one active unlinked item, plus requests already carrying
         // this repair's audit (so a repaired request re-scans as ALREADY_HEALTHY — idempotency).
@@ -92,17 +104,74 @@ public sealed class PaymentGroupItemLinkageRepairService
             .ToDictionaryAsync(s => s.Id, s => s.Code, ct);
 
         foreach (var id in ids)
+            await ProcessOneAsync(id, apply, actorId, reason, expected: null, statusCodeById, result, ct);
+
+        result.Message = BuildMessage(result, apply);
+        return result;
+    }
+
+    /// <summary>
+    /// v2.245.10 — SINGLE-REQUEST scan: inspects (PREVIEW) or repairs (APPLY) exactly
+    /// <paramref name="requestId"/> and nothing else, through the same per-request pipeline as the global
+    /// run. Returns null when the request does not exist. A request outside the supported defect class
+    /// (not PAYMENT) is reported REFUSED and never touched. On APPLY, <paramref name="expected"/> (the
+    /// PREVIEW facts restated by the operator) must match the fresh classification or nothing is written.
+    /// </summary>
+    public async Task<PaymentGroupItemLinkageRepairResultDto?> RunForRequestAsync(
+        Guid requestId, bool apply, Guid actorId, string? reason, ScopedExpectation? expected, CancellationToken ct = default)
+    {
+        var result = new PaymentGroupItemLinkageRepairResultDto
         {
-            result.ScannedRequests++;
+            Status = apply ? "APPLIED" : "PREVIEW", Scope = ScopeRequest, RequestId = requestId.ToString()
+        };
+
+        var head = await _context.Requests.AsNoTracking()
+            .Where(r => r.Id == requestId)
+            .Select(r => new { r.RequestNumber, TypeCode = r.RequestType.Code })
+            .FirstOrDefaultAsync(ct);
+        if (head == null) return null;
+
+        result.ScannedRequests = 1;
+        if (!string.Equals(head.TypeCode, RequestConstants.Types.Payment, StringComparison.OrdinalIgnoreCase))
+        {
+            result.Refused = 1;
+            result.Rows.Add(new PaymentGroupItemLinkageRowDto
+            {
+                RequestNumber = head.RequestNumber ?? "", RequestId = requestId.ToString(), Decision = "REFUSED",
+                Reason = $"Pedido do tipo {head.TypeCode} — fora da classe de defeito suportada (apenas PAGAMENTO). Nada alterado."
+            });
+            result.Message = BuildMessage(result, apply);
+            return result;
+        }
+
+        var statusCodeById = await _context.RequestStatuses.AsNoTracking()
+            .ToDictionaryAsync(s => s.Id, s => s.Code, ct);
+
+        await ProcessOneAsync(requestId, apply, actorId, reason, expected, statusCodeById, result, ct, countScanned: false);
+        result.Message = BuildMessage(result, apply);
+        return result;
+    }
+
+    /// <summary>
+    /// The per-request pipeline shared by the global and the scoped runs. PREVIEW: untracked load +
+    /// classify, no write. APPLY: one atomic transaction, fresh tracked load, the same classifier, and —
+    /// only when repairable — linkage, conditional demotion, technical audit and canonical aggregation.
+    /// </summary>
+    private async Task ProcessOneAsync(
+        Guid id, bool apply, Guid actorId, string? reason, ScopedExpectation? expected,
+        IReadOnlyDictionary<int, string> statusCodeById, PaymentGroupItemLinkageRepairResultDto result,
+        CancellationToken ct, bool countScanned = true)
+    {
+            if (countScanned) result.ScannedRequests++;
 
             if (!apply)
             {
                 var previewRequest = await LoadAsync(id, track: false, ct);
-                if (previewRequest == null) continue;
+                if (previewRequest == null) return;
                 var d = Classify(previewRequest, statusCodeById);
                 Tally(result, d, apply: false);
                 result.Rows.Add(d.Row);
-                continue;
+                return;
             }
 
             // APPLY — one atomic transaction per request. The same classifier runs on a fresh, tracked load.
@@ -111,16 +180,30 @@ public sealed class PaymentGroupItemLinkageRepairService
             try
             {
                 var request = await LoadAsync(id, track: true, ct);
-                if (request == null) { await tx.RollbackAsync(ct); continue; }
+                if (request == null) { await tx.RollbackAsync(ct); return; }
 
                 var d = Classify(request, statusCodeById);
+
+                // Scoped APPLY: the live facts must be the PREVIEW facts the operator restated. Any
+                // divergence (other group, other decision) fails closed — nothing is staged or written.
+                if (expected != null && d.IsRepairable &&
+                    (d.Group!.Id != expected.PoGroupId ||
+                     !string.Equals(d.Row.Decision, expected.Decision, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var liveDecision = d.Row.Decision;
+                    d.Row.Decision = "REFUSED";
+                    d.Row.Reason = $"Factos divergem da pré-visualização (esperado grupo {expected.PoGroupId:D} / decisão {expected.Decision}; " +
+                                   $"atual grupo {d.Group.Id:D} / decisão {liveDecision}) — nada alterado.";
+                    d = d with { Kind = Kind.Refused };
+                }
+
                 row = d.Row;
                 Tally(result, d, apply: true);
                 if (!d.IsRepairable)
                 {
                     await tx.RollbackAsync(ct); // nothing staged; make it explicit
                     result.Rows.Add(row);
-                    continue;
+                    return;
                 }
 
                 var group = d.Group!;
@@ -194,14 +277,16 @@ public sealed class PaymentGroupItemLinkageRepairService
                 // before persistence leaves no trace).
                 _context.ChangeTracker.Clear();
             }
-        }
+    }
 
-        result.Message = apply
-            ? $"Reparo aplicado: {result.Repaired} grupo(s) reparado(s) de {result.ScannedRequests} pedido(s) PAGAMENTO examinado(s) " +
-              $"({result.Ambiguous} ambíguo(s), {result.Conflicting} conflitante(s), {result.Refused} recusado(s), {result.Errors} erro(s))."
-            : $"Pré-visualização: {result.WouldRepair} grupo(s) reparável(is) de {result.ScannedRequests} pedido(s) PAGAMENTO examinado(s) " +
+    private static string BuildMessage(PaymentGroupItemLinkageRepairResultDto result, bool apply)
+    {
+        var scope = result.Scope == ScopeRequest ? $"pedido {result.RequestId}" : $"{result.ScannedRequests} pedido(s) PAGAMENTO examinado(s)";
+        return apply
+            ? $"Reparo aplicado: {result.Repaired} grupo(s) reparado(s) — {scope} " +
+              $"({result.Ambiguous} ambíguo(s), {result.Conflicting} conflitante(s), {result.Refused} recusado(s), {result.AlreadyHealthy} já saudável(is), {result.Errors} erro(s))."
+            : $"Pré-visualização: {result.WouldRepair} grupo(s) reparável(is) — {scope} " +
               $"({result.Ambiguous} ambíguo(s), {result.Conflicting} conflitante(s), {result.Refused} recusado(s), {result.AlreadyHealthy} já saudável(is)).";
-        return result;
     }
 
     private Task<Request?> LoadAsync(Guid id, bool track, CancellationToken ct)

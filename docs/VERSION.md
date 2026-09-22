@@ -2,9 +2,29 @@
 
 ## Current Version
 
-v2.245.9
+v2.245.10
 
-## [v2.245.9] - 2026-09-22
+## [v2.245.10] - 2026-09-22
+
+### Single-request scope for the payment-group-item-linkage repair
+
+The v2.245.4 controlled repair (`POST api/v1/admin/repairs/payment-group-item-linkage`) was population-wide:
+a TEST PREVIEW after the PROD→TEST sync scanned 117 PAYMENT requests and reported 68 repairable cases, so
+`confirm=true` would have mutated up to 68 requests while the operator authorizes exactly one
+(REQ-04/08/2026-209). Backend-only, no migration, no data repair executed:
+
+- New route `POST api/v1/admin/repairs/payment-group-item-linkage/{requestId:guid}` (SysAdmin): PREVIEW inspects
+  only that request through the same classifier (404 when it does not exist; a non-PAYMENT request is REFUSED);
+  APPLY requires `confirm=true`, a non-empty `reason` and the PREVIEW facts (`expectedPoGroupId`,
+  `expectedDecision`), re-classifies on a fresh tracked load inside the same per-request transaction, fails closed
+  (409, nothing written) when the live facts differ or the case is refused/ambiguous/conflicting, mutates only
+  that request with the same aggregation, idempotency key and audit, and answers ALREADY_HEALTHY on repetition.
+- The global route keeps its read-only PREVIEW; a global APPLY now requires the explicit `scope=all` query
+  parameter (400 otherwise, nothing executed), and a `requestId` given to the global route is refused (400)
+  rather than widened to the population. The route constraint makes a malformed id unroutable.
+- Result DTO gains `scope` ("ALL" | "REQUEST") and `requestId`.
+
+- **NO MIGRATION**, **no data repair executed**, frontend untouched (version marker only).
 
 ### Group-completion audit target and request-level vs group document classification
 

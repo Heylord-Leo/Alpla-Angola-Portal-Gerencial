@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace AlplaPortal.Application.DTOs.Admin;
@@ -9,6 +10,23 @@ namespace AlplaPortal.Application.DTOs.Admin;
 public sealed class PaymentGroupItemLinkageRepairRequest
 {
     public string? Reason { get; set; }
+}
+
+/// <summary>
+/// v2.245.10 — request body for the SINGLE-REQUEST APPLY
+/// (<c>POST …/payment-group-item-linkage/{requestId}?confirm=true</c>). Besides the mandatory reason, the
+/// operator restates the two facts the PREVIEW reported — the group that will be touched and the decision
+/// that will be executed. APPLY re-classifies the request on a fresh tracked load and fails closed (writes
+/// nothing) when the live facts differ from these, so a request that changed between PREVIEW and APPLY is
+/// never repaired on stale assumptions.
+/// </summary>
+public sealed class PaymentGroupItemLinkageScopedRepairRequest
+{
+    public string? Reason { get; set; }
+    /// <summary>The <c>PoGroupId</c> the PREVIEW reported for this request.</summary>
+    public Guid? ExpectedPoGroupId { get; set; }
+    /// <summary>The <c>Decision</c> the PREVIEW reported: REPAIR_LINK or REPAIR_LINK_AND_DEMOTE.</summary>
+    public string? ExpectedDecision { get; set; }
 }
 
 /// <summary>Per-request/group decision in the payment-group-item-linkage repair scan.</summary>
@@ -43,6 +61,10 @@ public sealed class PaymentGroupItemLinkageRepairResultDto
 {
     /// <summary>"PREVIEW" or "APPLIED".</summary>
     public string Status { get; set; } = "PREVIEW";
+    /// <summary>v2.245.10 — "ALL" (global population) or "REQUEST" (exactly one request).</summary>
+    public string Scope { get; set; } = "ALL";
+    /// <summary>v2.245.10 — the scoped request id; null for a global run.</summary>
+    public string? RequestId { get; set; }
     public string Message { get; set; } = "";
     public int ScannedRequests { get; set; }
     public int ScannedGroups { get; set; }
