@@ -114,7 +114,9 @@ describe('RequestEdit wiring', () => {
     expect(edit).not.toMatch(/window\.print\(\)/); // goes through the service
   });
   it('renders the print document fed by the loaded detail + projection + current user name', () => {
-    expect(edit).toMatch(/<RequestPrintDocument detail=\{detail\} projection=\{workflowProjection\} printedByName=\{user\?\.fullName \?\? null\} \/>/);
+    // v2.245.7: the projection is passed in exactly the cases the header uses it (QUOTATION, or a
+    // projection-owned single unit); the loaded detail and the user name are unchanged inputs.
+    expect(edit).toMatch(/<RequestPrintDocument detail=\{detail\}\s*\n?\s*projection=\{\(requestTypeCode === 'QUOTATION' \|\| singleUnitGuidance\) \? workflowProjection : null\}\s*\n?\s*printedByName=\{user\?\.fullName \?\? null\} \/>/);
   });
   it('B/C: builds a dynamic document title from the request number and passes it to printService', () => {
     expect(edit).toMatch(/toPrintFileTitle\(detail\.requestNumber\)/);

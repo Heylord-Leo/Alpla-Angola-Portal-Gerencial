@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.245.6
+v2.245.7
+
+## [v2.245.7] - 2026-09-21
+
+### Request Details / Quick View — receiving guidance consumes the authoritative workflow projection
+
+Frontend-only guidance-consumption correction (TEST finding on v2.245.6): the Request Details / Quick View
+header ("Responsável / Próxima ação") fetched `GET /requests/{id}/workflow-projection` only for QUOTATION
+requests, so every other request type kept the generic status-only text — a fully received, unconfirmed
+IN_FOLLOWUP group read "Resolver itens pendentes e confirmar recebimento" while the Receiving Operation
+correctly said "Recebimento completo — confirme o recebimento". The details view now loads the projection
+for the receiving phase of every request type (one fetch per rendered view, Quick View and full page share
+the component), applies one precedence rule (Release-4 completion guidance → loading placeholder →
+projection single-unit truth → legacy scalar fallback), never flashes generic text while loading, and
+falls back conservatively to the legacy map if the fetch fails. Multi-group, batch, terminal and
+QUOTATION-only presentation rules are unchanged; `completion-readiness` is not used as a receiving signal.
+
+- **NO MIGRATION**, **no data repair**, no backend change.
 
 ## [v2.245.6] - 2026-09-21
 

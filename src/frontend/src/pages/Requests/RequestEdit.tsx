@@ -31,7 +31,7 @@ import { CatalogItemReconciliationModal } from '../../components/CatalogItemReco
 import { ReconciliationWarningDialog } from '../../components/ReconciliationWarningDialog';
 import { RequestActionHeader, BreadcrumbItem, OperationalGuidance, MultiUnitGuidance } from './components/RequestActionHeader';
 import { RequestGroupProgress } from './components/RequestGroupProgress';
-import { buildActiveFlows, resolveDrawerBadgeOverride, resolveSingleUnitGuidance, effectivePanelStatus } from '../../lib/workflowProjection';
+import { buildActiveFlows, resolveDrawerBadgeOverride, effectivePanelStatus, loadWorkflowProjection, resolveProjectionGuidance, resolveHeaderGuidance, PROJECTION_IDLE } from '../../lib/workflowProjection';
 import { canonicalStatusLabel } from '../../lib/statusLabels';
 import { RequestQuotations } from './components/RequestQuotations';
 import { scrollToFirstError } from '../../lib/validation';
@@ -198,20 +198,31 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     });
 
     // ── v2.230.0: Multi-Group Request Workflow projection (read-only, server-computed) ──
-    // Fetched for QUOTATION requests; drives the multi-unit header (FLUXOS ATIVOS / PRÓXIMAS
-    // AÇÕES), the "Progresso por Grupo" panel and the superseded-batch diagnostics. Fetch
-    // failure falls back to the legacy single-status guidance — never blocks the page.
-    const [workflowProjection, setWorkflowProjection] = useState(null);
+    // Drives the multi-unit header (FLUXOS ATIVOS / PRÓXIMAS AÇÕES), the "Progresso por Grupo"
+    // panel and the superseded-batch diagnostics for QUOTATION requests, and — v2.245.7 — the
+    // header's Responsável / Próxima ação for EVERY request type while it is in the receiving phase
+    // (the projection is the only source that knows a group is fully received but unconfirmed).
+    // One fetch per details view (Quick View drawer and full page share this component); the loader
+    // decides whether the projection is needed at all. Fetch failure falls back to the legacy
+    // single-status guidance — never blocks the page.
+    const [projectionLoad, setProjectionLoad] = useState(PROJECTION_IDLE);
     useEffect(() => {
         let cancelled = false;
-        if (!id || requestTypeCode !== 'QUOTATION') { setWorkflowProjection(null); return; }
-        api.requests.getWorkflowProjection(id)
-            .then(p => { if (!cancelled) setWorkflowProjection(p); })
-            .catch(() => { if (!cancelled) setWorkflowProjection(null); });
+        loadWorkflowProjection(api.requests.getWorkflowProjection, id, requestTypeCode, status,
+            load => { if (!cancelled) setProjectionLoad(load); }, () => cancelled);
         return () => { cancelled = true; };
     }, [id, requestTypeCode, status]);
+    // The QUOTATION-only panels keep the last loaded projection while a reload (status change) is in
+    // flight — same as before v2.245.7 — while the guidance pair below follows the live load state.
+    const lastLoadedProjectionRef = useRef(null);
+    if (projectionLoad.state === 'loaded') lastLoadedProjectionRef.current = projectionLoad.projection;
+    else if (projectionLoad.state !== 'loading') lastLoadedProjectionRef.current = null;
+    const workflowProjection = projectionLoad.state === 'loaded' ? projectionLoad.projection
+        : projectionLoad.state === 'loading' ? lastLoadedProjectionRef.current : null;
 
     const multiUnitGuidance: MultiUnitGuidance | null = useMemo(() => {
+        // Multi-unit header presentation stays a QUOTATION feature (v2.230.0); other types keep their header.
+        if (requestTypeCode !== 'QUOTATION') return null;
         if (!workflowProjection || workflowProjection.units.length <= 1) return null;
         const primary = workflowProjection.nextActions[0] ?? null;
         return {
@@ -221,18 +232,22 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 : null,
             extraActionCount: Math.max(0, workflowProjection.nextActions.length - 1),
         };
-    }, [workflowProjection]);
+    }, [workflowProjection, requestTypeCode]);
 
     // v2.230.0 historical compatibility — projection drives the drawer for >= 1 unit:
     // single-unit QUOTATION requests derive badge/guidance/panel status from the operational
     // unit (identical strings for healthy requests; the unit's truth for stale scalars).
-    // Class-A unit-less requests, PAYMENT and terminal states keep the legacy scalar path.
-    const singleUnitGuidance = useMemo(
-        () => resolveSingleUnitGuidance(workflowProjection, status),
-        [workflowProjection, status]);
+    // v2.245.7: the guidance pair is projection-owned for every type in the receiving phase (policy in
+    // lib/workflowProjection resolveProjectionGuidance); `singleUnitGuidanceLoading` is true only while
+    // an owning fetch is in flight, so consumers render a placeholder instead of generic text.
+    // Badge override and panel status remain QUOTATION-only; class-A unit-less and terminal states
+    // keep the legacy scalar path.
+    const { guidance: singleUnitGuidance, loading: singleUnitGuidanceLoading } = useMemo(
+        () => resolveProjectionGuidance(projectionLoad, requestTypeCode, status),
+        [projectionLoad, requestTypeCode, status]);
     const drawerBadgeOverride = useMemo(
-        () => resolveDrawerBadgeOverride(workflowProjection, status),
-        [workflowProjection, status]);
+        () => requestTypeCode === 'QUOTATION' ? resolveDrawerBadgeOverride(workflowProjection, status) : null,
+        [workflowProjection, status, requestTypeCode]);
     const panelStatus = useMemo(
         () => (requestTypeCode === 'QUOTATION' && workflowProjection)
             ? effectivePanelStatus(workflowProjection, status || '')
@@ -531,11 +546,11 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 )}
             </>
         ),
-        operationalGuidance: (status
-            ? (status === 'WAITING_RECEIPT' && release4Guidance)   // Release-4 completion lifecycle stays most specific
-              || singleUnitGuidance                                 // projection truth for one reliable unit
-              || getRequestGuidance(status, requestTypeCode || '')  // legacy scalar fallback (class-A, PAYMENT)
-            : null) as OperationalGuidance | null,
+        // v2.245.7: ONE precedence rule (lib/workflowProjection resolveHeaderGuidance): Release-4 completion
+        // guidance → loading placeholder → projection single-unit truth → legacy scalar fallback.
+        operationalGuidance: resolveHeaderGuidance({
+            status, requestTypeCode, load: projectionLoad, release4Guidance, scalarGuidance: getRequestGuidance,
+        }) as OperationalGuidance | null,
         multiUnitGuidance,
         feedback,
         onCloseFeedback: () => setFeedback(prev => ({ ...prev, message: null })),
@@ -552,7 +567,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         >
 
             {/* v2.245.0 — hidden on screen, printed under @media print (portals to <body>). */}
-            <RequestPrintDocument detail={detail} projection={workflowProjection} printedByName={user?.fullName ?? null} />
+            {/* v2.245.7: the print view receives the projection in the same cases the header uses it. */}
+            <RequestPrintDocument detail={detail}
+                projection={(requestTypeCode === 'QUOTATION' || singleUnitGuidance) ? workflowProjection : null}
+                printedByName={user?.fullName ?? null} />
 
             {/* Sticky Header Unit - Feedback, Banners, and Main Action Header */}
             <RequestActionHeader {...headerProps}>
@@ -577,6 +595,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     onDrawerClose={onDrawerClose}
                     getRequestGuidance={getRequestGuidance}
                     singleUnitGuidance={singleUnitGuidance}
+                    guidanceLoading={singleUnitGuidanceLoading}
                     hasSupplierReceipt={(attachments || []).some((a: any) => a.attachmentTypeCode === 'RECEIPT' && !a.isDeleted && !a.voidedAtUtc)}
                     suppressLegacyFinalize={release4LegacyFinalizeSuppressed}
                     completionGuidance={release4Guidance}

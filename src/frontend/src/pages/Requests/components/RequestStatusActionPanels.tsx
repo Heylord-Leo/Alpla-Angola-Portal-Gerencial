@@ -23,6 +23,7 @@ import {
     CheckCircle,
     Clock
 } from 'lucide-react';
+import { GUIDANCE_LOADING } from '../../../lib/workflowProjection';
 
 export interface RequestStatusActionPanelsProps {
     // Identity
@@ -65,6 +66,10 @@ export interface RequestStatusActionPanelsProps {
      *  or unloaded projection → the scalar fallback is used. */
     singleUnitGuidance?: { responsible: string; nextAction: string } | null;
 
+    /** v2.245.7 — true while the projection that OWNS this request's guidance is still loading: the
+     *  panel renders a placeholder instead of the generic scalar text (no wrong-guidance flash). */
+    guidanceLoading?: boolean;
+
     /** v2.245.3 — true when the request has an active (non-deleted, non-voided) supplier RECEIPT attachment.
      *  Gates the Finance Finalize action: no RECEIPT → no Finalize button, only guidance to attach it. */
     hasSupplierReceipt?: boolean;
@@ -95,6 +100,7 @@ export function RequestStatusActionPanels({
     navigate, onDrawerClose,
     getRequestGuidance,
     singleUnitGuidance = null,
+    guidanceLoading = false,
     hasSupplierReceipt = false,
     suppressLegacyFinalize = false,
     completionGuidance = null,
@@ -105,9 +111,12 @@ export function RequestStatusActionPanels({
     // v2.245.3: prefer the projection's group/unit truth (singleUnitGuidance) over the raw scalar map, so a
     // fully-received-but-unconfirmed group reads "Recebimento completo — confirmar recebimento" rather than
     // the stale scalar IN_FOLLOWUP "Resolver itens pendentes…". The scalar remains the fallback.
+    // v2.245.7: while the owning projection loads, show the placeholder (same rule as the header strip).
     const guidance = (status === 'WAITING_RECEIPT' && suppressLegacyFinalize && completionGuidance)
         ? completionGuidance
-        : (singleUnitGuidance ?? getRequestGuidance(status || '', requestTypeCode));
+        : guidanceLoading
+            ? GUIDANCE_LOADING
+            : (singleUnitGuidance ?? getRequestGuidance(status || '', requestTypeCode));
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {/* Unified Approval Presentation (replaces legacy direct action buttons) */}

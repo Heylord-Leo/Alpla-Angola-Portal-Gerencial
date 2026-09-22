@@ -11,6 +11,9 @@ export interface BreadcrumbItem {
 export interface OperationalGuidance {
     responsible: string;
     nextAction: string;
+    /** v2.245.7 — true while the authoritative workflow projection is loading: the strip renders a
+     *  placeholder instead of a generic status-only text that would be replaced (no wrong-guidance flash). */
+    loading?: boolean;
 }
 
 /** v2.230.0 — multi-unit workflow context rendered instead of the single
@@ -191,7 +194,7 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
 
             {/* Row 3: Operational Context (Compact Strip) */}
             {!multiUnitGuidance && operationalGuidance && (
-                <div style={{
+                <div aria-busy={operationalGuidance.loading ? true : undefined} style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '24px',
@@ -203,15 +206,23 @@ export const RequestActionHeader: React.FC<RequestActionHeaderProps> = ({
                     marginBottom: '12px',
                     boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem' }}>Responsável:</span>
-                        <span style={{ fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase' }}>{operationalGuidance.responsible}</span>
-                    </div>
-                    <div style={{ width: '1px', height: '12px', backgroundColor: 'var(--color-border)' }}></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem' }}>Próxima Ação:</span>
-                        <span style={{ fontWeight: 700, fontStyle: 'italic', color: 'var(--color-text-main)' }}>"{operationalGuidance.nextAction}"</span>
-                    </div>
+                    {operationalGuidance.loading ? (
+                        // v2.245.7: placeholder while the authoritative projection loads (same muted pattern as
+                        // "Carregando detalhes do pedido..."); never a generic text that is corrected afterwards.
+                        <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{operationalGuidance.nextAction}</span>
+                    ) : (
+                        <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem' }}>Responsável:</span>
+                                <span style={{ fontWeight: 900, color: 'var(--color-primary)', textTransform: 'uppercase' }}>{operationalGuidance.responsible}</span>
+                            </div>
+                            <div style={{ width: '1px', height: '12px', backgroundColor: 'var(--color-border)' }}></div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.65rem' }}>Próxima Ação:</span>
+                                <span style={{ fontWeight: 700, fontStyle: 'italic', color: 'var(--color-text-main)' }}>"{operationalGuidance.nextAction}"</span>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 

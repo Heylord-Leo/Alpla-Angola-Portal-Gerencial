@@ -4,7 +4,52 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.6
+v2.245.7
+
+## [v2.245.7] - 2026-09-21 — Request Details / Quick View: receiving guidance consumes the authoritative projection
+
+Frontend-only guidance-consumption correction found in TEST on v2.245.6 (`2.245.6+26359ac`). No backend,
+migration or data change; the v2.245.5/v2.245.6 receiving workflow, authorization, audit and toast behavior
+is untouched.
+
+### Fixed
+- **Quick View / full-page header guidance for non-QUOTATION requests.** `RequestEdit` fetched
+  `GET /api/v1/requests/{id}/workflow-projection` only when `requestTypeCode === 'QUOTATION'`; for every
+  other type the projection-derived `singleUnitGuidance` was always `null`, so both consumers
+  (`RequestActionHeader` strip and `RequestStatusActionPanels` "Responsável atual / Próxima ação") fell
+  through to the generic status map (`getRequestGuidance('IN_FOLLOWUP')` → "Resolver itens pendentes e
+  confirmar recebimento") even with every item received. This is why the v2.245.6 backend endpoint tests
+  passed while the PAYMENT Quick View stayed wrong: the view never called that endpoint.
+  The details view now loads the projection for the **receiving phase of every request type**
+  (`PAYMENT_COMPLETED`, `IN_FOLLOWUP`, `WAITING_RECEIPT`, `WAITING_FISCAL_RECEIPT`; QUOTATION keeps its
+  always-on v2.230.0 behavior) through a framework-free loader (`loadWorkflowProjection`) and applies one
+  precedence rule (`resolveHeaderGuidance`): Release-4 completion guidance (WAITING_RECEIPT under the
+  active lifecycle) → loading placeholder → projection single-unit truth → legacy scalar fallback.
+- **No wrong-guidance flash:** while the owning projection is in flight the header strip and the panel
+  render a muted "Carregando próxima ação..." placeholder (`aria-busy`), never a generic text that is
+  replaced later.
+- **Conservative failure fallback:** a failed projection fetch resolves to the legacy scalar guidance;
+  the details view keeps working (tested, no unhandled rejection).
+
+### Preserved
+- Quick View (`RequestDrawerPresentation`) and the full page render the same `RequestEdit`: one projection
+  fetch per rendered view, no duplicate call sites.
+- Multi-unit header, drawer badge override and panel status mapping remain QUOTATION-only; multi-group,
+  batch (approval-phase) and terminal requests keep the legacy scalar path; non-receiving PAYMENT statuses
+  keep their type-specific wording. `completion-readiness.complete` is never interpreted as receiving
+  completeness (it only gates the Release-4 WAITING_RECEIPT guidance, as before).
+- Print view receives the projection in exactly the cases the header uses it.
+
+### Tests
+- `src/lib/workflowProjectionGuidance.test.ts` (consumer boundary): one fetch for PAYMENT+IN_FOLLOWUP,
+  fetch policy per status/type, no fetch when irrelevant, error → fallback without rejection, cancellation;
+  rendered guidance for IN_FOLLOWUP 2/2, partial, PAYMENT_COMPLETED, WAITING_RECEIPT (+Release-4
+  precedence), scalar-vs-projection precedence, loading placeholder, failure fallback, multi-group,
+  batch/other-phase scope, terminal scalars, v2.230.0 mappings.
+- `v2457QuickViewGuidance.test.ts` (structural): drawer renders `RequestEdit`; single loader call site;
+  precedence wiring in header + panel; QUOTATION-only gates preserved; completion-readiness not misused;
+  v2.245.5/6 toast and RECEIVING_REOPENED label regressions.
+- `workflowProjection.test.mjs` (node:test): fetch/ownership policy and precedence.
 
 ## [v2.245.6] - 2026-09-21 — Receiving corrections: guidance, audit-status and toast fixes from TEST validation
 
