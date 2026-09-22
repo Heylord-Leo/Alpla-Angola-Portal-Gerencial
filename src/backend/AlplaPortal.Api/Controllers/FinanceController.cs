@@ -1132,7 +1132,9 @@ public class FinanceController : BaseController
                 CreatedAtUtc = row.CreatedAtUtc,
                 ActorName = row.ActorName,
                 NewStatusCode = row.NewStatusCode ?? string.Empty,
-                NewStatusName = row.NewStatusName ?? string.Empty,
+                // v2.245.9: same display rule as the request details — a group-scoped lifecycle row
+                // shows the group's resulting state, never the request scalar it carried.
+                NewStatusName = GroupLifecycleHistoryTarget.ResolveDisplayName(row.ActionTaken, row.NewStatusName ?? string.Empty),
                 PaymentCondition = row.PaymentCondition,
                 AdvancePaymentPercent = row.AdvancePaymentPercent,
                 IsVoided = isVoided,
@@ -1454,6 +1456,30 @@ public class FinanceController : BaseController
             {
                 Title = "Comprovativo Obrigatório",
                 Detail = "Comprovativo de pagamento é obrigatório. Por favor, anexe o comprovante antes de confirmar.",
+                Status = 400
+            });
+        }
+
+        // ── v2.245.2: enforce the attachment TYPE (parity with the advance-payment path). The proof must
+        // exist, belong to THIS request, be active, and be a PAYMENT_PROOF — never a RECEIPT / FISCAL_RECEIPT /
+        // RECEIVING_EVIDENCE or an attachment from another request. Runs before any mutation (no writes on reject).
+        var paymentProof = await _context.RequestAttachments
+            .FirstOrDefaultAsync(a => a.Id == requestDto.PaymentProofAttachmentId && a.RequestId == id && !a.IsDeleted);
+        if (paymentProof == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Anexo Inválido",
+                Detail = "O comprovativo de pagamento não foi encontrado ou não pertence a este pedido.",
+                Status = 400
+            });
+        }
+        if (paymentProof.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Anexo Inválido",
+                Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.",
                 Status = 400
             });
         }

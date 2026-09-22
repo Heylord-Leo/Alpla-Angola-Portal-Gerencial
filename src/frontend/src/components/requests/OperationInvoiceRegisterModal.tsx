@@ -1,13 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Upload, FileCheck2 } from 'lucide-react';
 import { ModalWrapper } from '../common/ModalWrapper';
 import { MoneyInput } from '../ui/MoneyInput';
 import { api, ApiError } from '../../lib/api';
 import { operationInvoiceApi } from '../../lib/operationInvoiceApi';
-import { mapOperationInvoiceError, formatMoney } from '../../lib/operationInvoiceView';
+import { mapOperationInvoiceError, formatMoney, formatUtcTimestampDate } from '../../lib/operationInvoiceView';
+import { createInvoiceSubmitter, releasePreviousUpload, pickResumableAttachment, sortRecoverableCandidates } from '../../lib/operationInvoiceSubmit';
 import type {
     OperationInvoiceDto,
     OperationInvoiceDuplicateResultDto,
+    OperationInvoiceUnclaimedAttachmentDto,
     SaveOperationInvoiceDto
 } from '../../types/operationInvoice';
 
@@ -79,6 +81,113 @@ export function OperationInvoiceRegisterModal({
     const [duplicateInfo, setDuplicateInfo] = useState<OperationInvoiceDuplicateResultDto | null>(null);
     const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
 
+    // v2.245.8: upload-order safety. The submitter serializes attempts (double-clicks are refused, not
+    // queued). The uploaded file is a SERVER fact: an attempt whose create failed leaves an unclaimed
+    // OPERATION_INVOICE attachment the backend lists (`unclaimed-attachments`), and the create is
+    // idempotent per attachment, so a retry never uploads a second file nor creates a second invoice.
+    //   • the upload of THIS uninterrupted session is restored automatically — only while the server
+    //     still lists it as unclaimed;
+    //   • uploads merely DISCOVERED on the server (closed modal, reload, another session) are listed as
+    //     candidates (file, date/time, uploader) and NEVER selected automatically: the user chooses
+    //     "Reutilizar" or "Descartar" per file; until then no candidate satisfies the file requirement;
+    //   • choosing a new local file while an upload is selected EXPLICITLY releases it on the server
+    //     (refused when an invoice claims it); every release/claim answer refreshes the server list.
+    const submitRef = useRef(createInvoiceSubmitter());
+    const retainedAttachmentRef = useRef<string | null>(null);
+    const [retainedNotice, setRetainedNotice] = useState<string | null>(null);
+    /** The upload the submission will claim (restored own upload, or an explicitly reused candidate). */
+    const [selectedUpload, setSelectedUpload] = useState<OperationInvoiceUnclaimedAttachmentDto | null>(null);
+    /** Server-discovered unclaimed uploads awaiting an explicit decision (deterministic order). */
+    const [candidates, setCandidates] = useState<OperationInvoiceUnclaimedAttachmentDto[]>([]);
+    const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
+
+    /** Re-reads server truth; restores ONLY this session's own upload, never a discovered one. */
+    const refreshCandidates = async (): Promise<void> => {
+        if (mode !== 'create') return;
+        try {
+            const list = sortRecoverableCandidates(await operationInvoiceApi.listUnclaimedAttachments(requestId));
+            const own = pickResumableAttachment(list, retainedAttachmentRef.current);
+            retainedAttachmentRef.current = own?.attachmentId ?? null;
+            setSelectedUpload(own);
+            setCandidates(list.filter(c => c.attachmentId !== own?.attachmentId));
+            setRetainedNotice(own
+                ? `Ficheiro já carregado nesta sessão: ${own.fileName} (${formatUtcTimestampDate(own.uploadedAtUtc)}). Será reutilizado — não é carregado novamente.`
+                : null);
+        } catch {
+            /* recovery is best-effort; a fresh upload path remains available */
+        }
+    };
+
+    useEffect(() => {
+        if (mode !== 'create') return;
+        let cancelled = false;
+        (async () => { if (!cancelled) await refreshCandidates(); })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestId, mode]);
+
+    const isClaimedError = (err: unknown) => mapOperationInvoiceError(err).code === 'OPERATION_INVOICE_ATTACHMENT_CLAIMED';
+
+    /** Explicit "Reutilizar": the discovered upload becomes the selected one for this submission. */
+    const reuseCandidate = (candidate: OperationInvoiceUnclaimedAttachmentDto) => {
+        retainedAttachmentRef.current = candidate.attachmentId;
+        setSelectedUpload(candidate);
+        setCandidates(prev => prev.filter(c => c.attachmentId !== candidate.attachmentId));
+        setFile(null);
+        setRecoveryNotice(null);
+        setRetainedNotice(`Ficheiro reutilizado: ${candidate.fileName} (${formatUtcTimestampDate(candidate.uploadedAtUtc)}). Não é carregado novamente.`);
+    };
+
+    /**
+     * Explicit server-side release of ONE unclaimed upload (the selected one, or a discovered candidate).
+     * Every outcome refreshes server truth; a claimed answer names the existing invoice; a failure never
+     * makes the client forget the upload — it stays listed until it is resolved.
+     */
+    const releaseUpload = async (attachmentId: string): Promise<'released' | 'claimed' | 'failed'> => {
+        const wasSelected = retainedAttachmentRef.current === attachmentId;
+        const previousSelection = wasSelected ? selectedUpload : null;
+        if (wasSelected) {
+            // Supersede locally FIRST (synchronously): a submit clicked while the round-trip is in flight
+            // must never claim an upload the user just chose to discard.
+            retainedAttachmentRef.current = null;
+            setSelectedUpload(null);
+            setRetainedNotice(null);
+        }
+        const outcome = await releasePreviousUpload(
+            (id) => operationInvoiceApi.releaseUnclaimedAttachment(requestId, id), attachmentId, isClaimedError);
+        if (outcome === 'released') {
+            setRecoveryNotice(null);
+        } else if (outcome === 'claimed') {
+            setRecoveryNotice('Esse ficheiro já está registado como fatura final — a lista de faturas foi atualizada.');
+        } else {
+            // Unresolved: the upload is NOT forgotten — it stays selected (server truth re-read below
+            // decides whether it still exists) and the user must resolve it explicitly.
+            setRecoveryNotice('Não foi possível descartar o ficheiro; continua listado até ser resolvido.');
+            if (wasSelected && previousSelection) {
+                retainedAttachmentRef.current = attachmentId;
+                setSelectedUpload(previousSelection);
+            }
+        }
+        await refreshCandidates();
+        return outcome;
+    };
+
+    /** A new local file supersedes the selected upload only through an explicit, successful release. */
+    const handleLocalFileChosen = async (chosen: File | null) => {
+        const selected = retainedAttachmentRef.current;
+        if (selected) {
+            const outcome = await releaseUpload(selected);
+            if (outcome === 'failed') {
+                // Unresolved upload: it stays selected/listed and the new local file is refused.
+                setFile(null);
+                setError('Resolva primeiro o ficheiro já carregado (Descartar ou Reutilizar) antes de escolher outro.');
+                return;
+            }
+        }
+        setError(null);
+        setFile(chosen);
+    };
+
     const title = mode === 'create' ? 'Registrar Fatura Final'
         : mode === 'edit' ? 'Editar Fatura Final'
         : 'Substituir Fatura Validada';
@@ -107,7 +216,7 @@ export function OperationInvoiceRegisterModal({
         setError(null);
         setFieldErrors({});
 
-        if (needsNewFile && !file && mode === 'create') {
+        if (needsNewFile && !file && mode === 'create' && !retainedAttachmentRef.current) {
             setError('Anexe o ficheiro da fatura final antes de registar.');
             return;
         }
@@ -134,19 +243,7 @@ export function OperationInvoiceRegisterModal({
                 }
             }
 
-            // ── Attachment upload (distinct Final Invoice context) ──
-            let attachmentId = invoice?.attachmentId ?? null;
-            if (file) {
-                const uploaded = await api.attachments.upload(requestId, [file], 'OPERATION_INVOICE');
-                attachmentId = Array.isArray(uploaded) && uploaded[0]?.id ? uploaded[0].id : attachmentId;
-                if (!attachmentId) {
-                    setError('O carregamento do anexo não devolveu um identificador válido.');
-                    setSaving(false);
-                    return;
-                }
-            }
-
-            const payload: SaveOperationInvoiceDto = {
+            const buildPayload = (attachmentId: string | null): SaveOperationInvoiceDto => ({
                 attachmentId,
                 supplierId: form.supplierId,
                 documentNumber: form.documentNumber.trim() || null,
@@ -160,19 +257,55 @@ export function OperationInvoiceRegisterModal({
                 notes: form.notes.trim() || null,
                 amountsEnteredManually: true,
                 rowVersion: mode === 'edit' || mode === 'replace' ? invoice?.rowVersion ?? null : null
+            });
+
+            // The Portal's one upload mechanism (distinct Final Invoice context) — called ONLY after the
+            // backend preflight accepted the registration, and only when no retained upload exists.
+            const uploadEvidence = async (): Promise<string> => {
+                const uploaded = await api.attachments.upload(requestId, [file!], 'OPERATION_INVOICE');
+                const id = Array.isArray(uploaded) && uploaded[0]?.id ? uploaded[0].id : null;
+                if (!id) throw new Error('O carregamento do anexo não devolveu um identificador válido.');
+                return id;
             };
 
-            if (mode === 'create') {
-                await operationInvoiceApi.create(requestId, payload);
-            } else if (mode === 'edit' && invoice) {
-                await operationInvoiceApi.update(requestId, invoice.id, payload);
-            } else if (mode === 'replace' && invoice) {
-                await operationInvoiceApi.replace(requestId, invoice.id, {
-                    ...payload,
-                    replacementReason: replacementReason.trim()
-                });
+            if (mode === 'edit' && invoice) {
+                // Header edit: no admissibility preflight exists for updates; a new file is optional.
+                let attachmentId = invoice.attachmentId ?? null;
+                if (file) attachmentId = await uploadEvidence();
+                await operationInvoiceApi.update(requestId, invoice.id, buildPayload(attachmentId));
+                onSaved();
+                return;
             }
-            onSaved();
+
+            const outcome = await submitRef.current({
+                preflight: mode === 'create'
+                    ? () => operationInvoiceApi.preflightCreate(requestId)
+                    : async () => undefined,   // replace has no create preflight; retention still protects it
+                upload: uploadEvidence,
+                create: (attachmentId) => mode === 'create'
+                    ? operationInvoiceApi.create(requestId, buildPayload(attachmentId))
+                    : operationInvoiceApi.replace(requestId, invoice!.id, {
+                        ...buildPayload(attachmentId),
+                        replacementReason: replacementReason.trim()
+                    })
+            }, { retainedAttachmentId: retainedAttachmentRef.current });
+
+            if (outcome.ok) {
+                retainedAttachmentRef.current = null;
+                setSelectedUpload(null);
+                onSaved();
+                return;
+            }
+            if (outcome.stage === 'busy') return;   // a submission is already in flight
+            if (outcome.stage === 'create') {
+                // The file is in the Portal (server-listed as unclaimed): this session restores it
+                // automatically (server-confirmed); a lost successful response resolves to the same
+                // invoice on retry (create is idempotent per attachment). After a close/reload it is
+                // offered as a candidate for an explicit decision instead.
+                retainedAttachmentRef.current = outcome.attachmentId;
+                await refreshCandidates();
+            }
+            throw outcome.error;
         } catch (err) {
             if (err instanceof ApiError && err.fieldErrors) setFieldErrors(err.fieldErrors);
             const mapped = mapOperationInvoiceError(err);
@@ -325,14 +458,66 @@ export function OperationInvoiceRegisterModal({
                         fontSize: '0.85rem', fontWeight: 600,
                         color: file ? '#15803d' : 'var(--color-text-muted)'
                     }}>
-                        {file ? <FileCheck2 size={16} /> : <Upload size={16} />}
-                        {file ? file.name : mode === 'edit' && invoice?.attachmentFileName
-                            ? `Atual: ${invoice.attachmentFileName}`
-                            : 'Selecionar o PDF/imagem da fatura final'}
+                        {file || selectedUpload ? <FileCheck2 size={16} /> : <Upload size={16} />}
+                        {file ? file.name
+                            : selectedUpload ? `Reutilizar: ${selectedUpload.fileName}`
+                            : mode === 'edit' && invoice?.attachmentFileName
+                                ? `Atual: ${invoice.attachmentFileName}`
+                                : 'Selecionar o PDF/imagem da fatura final'}
                         <input type="file" accept=".pdf,.png,.jpg,.jpeg" style={{ display: 'none' }}
-                               onChange={e => setFile(e.target.files?.[0] ?? null)} />
+                               onChange={e => {
+                                   // A different file is a different registration: the selected upload is
+                                   // released on the server first (never merely forgotten).
+                                   void handleLocalFileChosen(e.target.files?.[0] ?? null);
+                               }} />
                     </label>
                     {fieldError('AttachmentId')}
+                    {retainedNotice && selectedUpload && (
+                        <div data-testid="selected-upload" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '4px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>{retainedNotice}</span>
+                            <button type="button" onClick={() => void releaseUpload(selectedUpload.attachmentId)} disabled={saving} style={{
+                                border: '1px solid var(--color-border)', backgroundColor: '#fff', borderRadius: '6px',
+                                padding: '2px 8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.72rem'
+                            }}>
+                                Descartar ficheiro carregado
+                            </button>
+                        </div>
+                    )}
+                    {candidates.length > 0 && (
+                        <div data-testid="recoverable-uploads" style={{
+                            marginTop: '8px', padding: '10px 12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a',
+                            borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', color: '#92400e'
+                        }}>
+                            <span style={{ fontWeight: 800 }}>
+                                Ficheiro{candidates.length > 1 ? 's' : ''} de fatura final já carregado{candidates.length > 1 ? 's' : ''} sem fatura registada
+                            </span>
+                            <span style={{ fontWeight: 600 }}>
+                                Nenhum é usado automaticamente. Escolha <b>Reutilizar</b> para registar a fatura com esse ficheiro
+                                ou <b>Descartar</b> para o remover; um ficheiro não decidido nunca é submetido.
+                            </span>
+                            {candidates.map(c => (
+                                <div key={c.attachmentId} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--color-text-main)' }}>{c.fileName}</span>
+                                    <span>{formatUtcTimestampDate(c.uploadedAtUtc)}{c.uploadedByName ? ` · ${c.uploadedByName}` : ''}</span>
+                                    <button type="button" onClick={() => reuseCandidate(c)} disabled={saving} style={{
+                                        border: 'none', backgroundColor: 'var(--color-primary)', color: '#fff', borderRadius: '6px',
+                                        padding: '2px 8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.72rem'
+                                    }}>
+                                        Reutilizar
+                                    </button>
+                                    <button type="button" onClick={() => void releaseUpload(c.attachmentId)} disabled={saving} style={{
+                                        border: '1px solid var(--color-border)', backgroundColor: '#fff', borderRadius: '6px',
+                                        padding: '2px 8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.72rem'
+                                    }}>
+                                        Descartar
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {recoveryNotice && (
+                        <div style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 600, marginTop: '4px' }}>{recoveryNotice}</div>
+                    )}
                 </div>
 
                 {duplicateInfo?.hasDuplicate && (

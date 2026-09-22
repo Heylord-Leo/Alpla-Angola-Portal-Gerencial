@@ -54,6 +54,11 @@ export const FinalizeReceivingModal: React.FC<FinalizeReceivingModalProps> = ({
             setFeedback({ type: 'error', message: 'Confirme a declaração de recebimento/execução para prosseguir.' });
             return;
         }
+        // v2.245.0 defense-in-depth: never call confirm-receiving without a real group id.
+        if (!groupId) {
+            setFeedback({ type: 'error', message: 'Não foi possível identificar o grupo de recebimento. Atualize a página e tente novamente.' });
+            return;
+        }
 
         try {
             setProcessing(true);

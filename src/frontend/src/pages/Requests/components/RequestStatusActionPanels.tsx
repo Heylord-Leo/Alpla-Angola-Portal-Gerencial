@@ -23,6 +23,7 @@ import {
     CheckCircle,
     Clock
 } from 'lucide-react';
+import { GUIDANCE_LOADING } from '../../../lib/workflowProjection';
 
 export interface RequestStatusActionPanelsProps {
     // Identity
@@ -59,6 +60,20 @@ export interface RequestStatusActionPanelsProps {
     // Utility
     getRequestGuidance: (status: string, requestTypeCode: string) => { responsible: string; nextAction: string };
 
+    /** v2.245.3 — the projection's group/unit-truth guidance for a single-unit request. Preferred over the
+     *  raw scalar getRequestGuidance so a fully-received-but-unconfirmed group reads "Recebimento completo —
+     *  confirmar recebimento" instead of the stale scalar "Resolver itens pendentes…". Null for multi-unit
+     *  or unloaded projection → the scalar fallback is used. */
+    singleUnitGuidance?: { responsible: string; nextAction: string } | null;
+
+    /** v2.245.7 — true while the projection that OWNS this request's guidance is still loading: the
+     *  panel renders a placeholder instead of the generic scalar text (no wrong-guidance flash). */
+    guidanceLoading?: boolean;
+
+    /** v2.245.3 — true when the request has an active (non-deleted, non-voided) supplier RECEIPT attachment.
+     *  Gates the Finance Finalize action: no RECEIPT → no Finalize button, only guidance to attach it. */
+    hasSupplierReceipt?: boolean;
+
     // Release 4 (v2.229.7): a grouped+classified request under the ACTIVE completion lifecycle
     // never finalizes through the legacy manual action — the backend refuses it ("Fluxo
     // Atualizado") and the button/text must not be offered.
@@ -84,15 +99,27 @@ export function RequestStatusActionPanels({
     setPoGroupIdForUpload, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
     getRequestGuidance,
+    singleUnitGuidance = null,
+    guidanceLoading = false,
+    hasSupplierReceipt = false,
     suppressLegacyFinalize = false,
     completionGuidance = null,
     hideLegacyGuidance = false
 }: RequestStatusActionPanelsProps) {
     // The legacy WAITING_RECEIPT wording ("Anexar recibo do fornecedor e finalizar pedido")
     // only applies to requests the legacy FinalizeRequest path still governs.
-    const guidance = (status === 'WAITING_RECEIPT' && suppressLegacyFinalize && completionGuidance)
+    // v2.245.3: prefer the projection's group/unit truth (singleUnitGuidance) over the raw scalar map, so a
+    // fully-received-but-unconfirmed group reads "Recebimento completo — confirmar recebimento" rather than
+    // the stale scalar IN_FOLLOWUP "Resolver itens pendentes…". The scalar remains the fallback.
+    // v2.245.7: while the owning projection loads, show the placeholder (same rule as the header strip).
+    // v2.245.8: at WAITING_RECEIPT any completion-readiness guidance the host resolved (Release-4 lifecycle
+    // OR the legacy classification / final-invoice blocker) wins over the status-only wording — the same
+    // precedence as the header strip (resolveHeaderGuidance).
+    const guidance = (status === 'WAITING_RECEIPT' && completionGuidance)
         ? completionGuidance
-        : getRequestGuidance(status || '', requestTypeCode);
+        : guidanceLoading
+            ? GUIDANCE_LOADING
+            : (singleUnitGuidance ?? getRequestGuidance(status || '', requestTypeCode));
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {/* Unified Approval Presentation (replaces legacy direct action buttons) */}
@@ -234,17 +261,20 @@ export function RequestStatusActionPanels({
                             </div>
                         )}
 
-                        {/* Receiving actions */}
+                        {/* Receiving actions — v2.245.1: entering the receiving operation is a NON-MUTATING
+                            navigation. It must NOT transition the group to WAITING_RECEIPT (that is the
+                            post-confirmation state, reached only via the dedicated Confirmar Recebimento).
+                            The operator conducts item conference in the receiving operation and confirms there. */}
                         {isReceiving && (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {poGroups && poGroups.filter(g => g.status === 'PAYMENT_COMPLETED' || g.status === 'PAG_REALIZADO').map(group => (
-                                    <button 
-                                        key={`move-to-receipt-${group.id}`}
-                                        onClick={() => setShowApprovalModal({ show: true, type: 'MOVE_TO_RECEIPT', groupId: group.id })}
+                                    <button
+                                        key={`open-receiving-${group.id}`}
+                                        onClick={() => { if (onDrawerClose) onDrawerClose(); navigate(`/receiving/operation/${requestId}`); }}
                                         className="btn-primary"
                                         style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        <ArrowRight size={14} /> MOVER PARA RECEBIMENTO ({group.supplierNameSnapshot})
+                                        <ArrowRight size={14} /> INICIAR RECEBIMENTO ({group.supplierNameSnapshot})
                                     </button>
                                 ))}
                             </div>
@@ -296,16 +326,35 @@ export function RequestStatusActionPanels({
                                     // lifecycle completes automatically (backend refuses this
                                     // action with "Fluxo Atualizado"); its real actions live in
                                     // "Fatura Final — Cobertura" and "Conclusão do Pedido".
-                                    isFinance && status === 'WAITING_RECEIPT' && !suppressLegacyFinalize && (
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button
-                                                onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
-                                                className="btn-success"
-                                                style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                            >
-                                                <CheckCircle size={14} /> FINALIZAR PEDIDO (Recibo Fiscal)
-                                            </button>
-                                        </div>
+                                    // v2.245.2: Finalize is offered only when there is at least one active
+                                    // operational group AND EVERY active group has been confirmed
+                                    // (WAITING_RECEIPT/COMPLETED). Groupless legacy requests are intentionally NOT
+                                    // finalizable from the UI — they have no groupless confirmation path and require
+                                    // controlled administrative remediation (backend fails closed with 409). Backend
+                                    // is authoritative; this hides an action the backend would reject.
+                                    isFinance && status === 'WAITING_RECEIPT' && !suppressLegacyFinalize
+                                      && !!poGroups?.length && poGroups.every(g => g.status === 'WAITING_RECEIPT' || g.status === 'COMPLETED') && (
+                                        // v2.245.3: Finance finalizes with the supplier receipt. Offer FINALIZE only
+                                        // when an active RECEIPT attachment exists; otherwise guide to attach the
+                                        // "Recibo do Fornecedor" rather than open a finalization modal the backend
+                                        // would reject (RECEIVING_EVIDENCE / FISCAL_RECEIPT / PAYMENT_PROOF never
+                                        // satisfy this). Clicking FINALIZE opens the standard ApprovalModal (type
+                                        // FINALIZE → api.requests.finalize), NOT the receiving-confirmation modal.
+                                        hasSupplierReceipt ? (
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => setShowApprovalModal({ show: true, type: 'FINALIZE' })}
+                                                    className="btn-success"
+                                                    style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                >
+                                                    <CheckCircle size={14} /> FINALIZAR PEDIDO (Recibo do Fornecedor)
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 700, display: 'flex', alignItems: 'center', height: '32px', gap: '6px' }}>
+                                                <ShieldAlert size={14} /> Anexe o "Recibo do Fornecedor" nos Anexos para finalizar o pedido.
+                                            </span>
+                                        )
                                     )
                                 )
                             )

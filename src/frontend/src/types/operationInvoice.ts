@@ -262,6 +262,45 @@ export interface OperationInvoiceObligationsDto {
     rollup: OperationInvoiceObligationRollupDto;
 }
 
+// ── v2.245.8 — group classification ("Classificar Documento de Origem") ─────────────────────
+
+export interface ClassifyOperationInvoiceDto {
+    sourceDocumentType: string;
+    justification: string;
+}
+
+export interface OperationInvoiceClassificationResultDto {
+    requestId: string;
+    groupId: string;
+    previousSourceDocumentType?: string | null;
+    sourceDocumentType: string;
+    operationInvoiceStatus: string;
+    requiresOperationInvoice: boolean;
+    requiresSeparateFiscalReceipt: boolean;
+    requiresAdvanceRegularization: boolean;
+    requiresFinanceClassificationReview: boolean;
+    expectedAmount?: number | null;
+    expectedCurrency?: string | null;
+    classifiedAtUtc: string;
+}
+
+/** v2.245.8 — answer of the create preflight (the create gates, evaluated before any upload). */
+export interface OperationInvoiceCreatePreflightDto {
+    admissible: boolean;
+}
+
+/**
+ * v2.245.8 — an OPERATION_INVOICE attachment of the request no invoice has claimed: the server-side,
+ * durable record of a registration interrupted after its upload. Reused or released explicitly.
+ */
+export interface OperationInvoiceUnclaimedAttachmentDto {
+    attachmentId: string;
+    fileName: string;
+    fileSizeMBytes: number;
+    uploadedAtUtc: string;
+    uploadedByName?: string | null;
+}
+
 // ── Short-close (Phase 3A) ──────────────────────────────────────────────────────────────────
 
 export type OperationInvoiceShortCloseStatus = 'PROPOSED' | 'APPROVED' | 'REJECTED';

@@ -13,7 +13,11 @@ import type {
     ProposeOperationInvoiceShortCloseDto,
     DecideOperationInvoiceShortCloseDto,
     CompletionReadinessDto,
-    FiscalReceiptBindResultDto
+    FiscalReceiptBindResultDto,
+    ClassifyOperationInvoiceDto,
+    OperationInvoiceClassificationResultDto,
+    OperationInvoiceCreatePreflightDto,
+    OperationInvoiceUnclaimedAttachmentDto
 } from '../types/operationInvoice';
 
 /**
@@ -84,6 +88,38 @@ export const operationInvoiceApi = {
         });
         if (!response.ok) return fail(response, 'Falha ao verificar duplicidade da fatura.');
         return response.json();
+    },
+
+    /**
+     * v2.245.8 — the create gates (scope, role, obligation, lifecycle status) evaluated by the backend
+     * BEFORE the evidence file is uploaded. Rejections carry the create endpoint's own ProblemDetails
+     * (e.g. OPERATION_INVOICE_NO_OBLIGATION), so nothing is uploaded for a registration that cannot
+     * succeed.
+     */
+    preflightCreate: async (requestId: string): Promise<OperationInvoiceCreatePreflightDto> => {
+        const response = await apiFetch(`${base(requestId)}/preflight`, { method: 'POST' });
+        if (!response.ok) return fail(response, 'Não é possível registar a fatura final neste pedido.');
+        return response.json();
+    },
+
+    /**
+     * v2.245.8 — uploads no invoice claims yet (create refused / lost response / closed modal / reload /
+     * another session). Server-computed from the same facts the create enforces; the drawer resumes with
+     * the file already in the Portal instead of uploading it again.
+     */
+    listUnclaimedAttachments: async (requestId: string): Promise<OperationInvoiceUnclaimedAttachmentDto[]> => {
+        const response = await apiFetch(`${base(requestId)}/unclaimed-attachments`);
+        if (!response.ok) return fail(response, 'Falha ao consultar ficheiros de fatura final pendentes.');
+        return response.json();
+    },
+
+    /**
+     * v2.245.8 — explicitly discards an uploaded-but-unclaimed invoice file. The backend refuses (409)
+     * when an invoice claims it — a real invoice never loses its evidence.
+     */
+    releaseUnclaimedAttachment: async (requestId: string, attachmentId: string): Promise<void> => {
+        const response = await apiFetch(`${base(requestId)}/attachments/${attachmentId}/release`, { method: 'POST' });
+        if (!response.ok) return fail(response, 'Falha ao descartar o ficheiro carregado.');
     },
 
     create: async (requestId: string, dto: SaveOperationInvoiceDto): Promise<OperationInvoiceDto> => {
@@ -190,6 +226,24 @@ export const operationInvoiceApi = {
                 method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ attachmentId })
             });
         if (!response.ok) return fail(response, 'Falha ao registar o Recibo Fiscal.');
+        return response.json();
+    },
+
+    // ── Group classification (v2.245.8) ─────────────────────────────────────────────────────
+
+    /**
+     * Finance / SysAdmin decision that gives an UNCLASSIFIED (legacy) group its document identity;
+     * the backend derives the obligations, captures the expected total, re-derives coverage and
+     * writes the GRUPO_CLASSIFICADO audit in one transaction.
+     */
+    classifyGroup: async (
+        requestId: string, groupId: string, dto: ClassifyOperationInvoiceDto
+    ): Promise<OperationInvoiceClassificationResultDto> => {
+        const response = await apiFetch(
+            `${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/operation-invoice-classification`, {
+                method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(dto)
+            });
+        if (!response.ok) return fail(response, 'Falha ao classificar o documento de origem do grupo.');
         return response.json();
     },
 

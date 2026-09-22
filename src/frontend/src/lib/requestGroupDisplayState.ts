@@ -135,7 +135,7 @@ export const GROUP_STATUS_LABELS: Record<string, string> = {
     ADVANCE_PAYMENT_COMPLETED: 'Adiantamento realizado',
     WAITING_SUPPLIER_DELIVERY: 'Aguardando Entrega',
     PAYMENT_COMPLETED: 'Pago',
-    WAITING_RECEIPT: 'Aguardando Recibo',
+    WAITING_RECEIPT: 'Aguardando Recibo do Fornecedor',
     WAITING_RECONCILIATION: 'Em Reconciliação',
     IN_FOLLOWUP: 'Em Acompanhamento',
     COMPLETED: 'Concluído',

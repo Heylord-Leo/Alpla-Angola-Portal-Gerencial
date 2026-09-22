@@ -39,7 +39,7 @@ import {
     propagateEquivalentResolutions,
     unresolvedItems
 } from '../../../lib/multiDocumentCatalogReconciliation';
-import { CurrencyDto, ItemResolution, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../../types';
+import { CurrencyDto, ItemResolution, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto, RequestDetailsDto } from '../../../types';
 
 export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClose?: () => void } = {}) {
     const navigate = useNavigate();
@@ -115,6 +115,10 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
     const [quotations, setQuotations] = useState<SavedQuotationDto[]>([]);
     const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
     const [poGroups, setPoGroups] = useState<any[]>([]);
+    // v2.245.0 — the raw, fully-loaded request payload, kept intact for the read-only Print View so the
+    // print document reads one authoritative DTO (complete history, all groups) rather than reconstructing
+    // header fields from scattered form state. Null in copy mode and before the first successful load.
+    const [detail, setDetail] = useState<RequestDetailsDto | null>(null);
 
     // Master Data
     const [units, setUnits] = useState<LookupDto[]>([]);
@@ -524,6 +528,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setAttachments([]);
                 setQuotations([]);
                 setSelectedQuotationId(null);
+                setDetail(null);
             } else {
                 data = await api.requests.get(id!);
                 setStatus(data.statusCode);
@@ -541,6 +546,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setQuotations(data.quotations || []);
                 setSelectedQuotationId(data.selectedQuotationId || null);
                 setPoGroups(data.poGroups || []);
+                setDetail(data as RequestDetailsDto);
             }
 
 
@@ -928,9 +934,6 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 result = await api.requests.confirmAdvancePayment(id, { requestPoGroupId: groupId, actualPaidAmount: Number(formData.estimatedTotalAmount) || 0, paidDate: new Date().toISOString(), comment: approvalComment });
             } else if (action === 'CONFIRM_DELIVERY') {
                 result = await api.requests.confirmDelivery(id, approvalComment);
-            } else if (action === 'MOVE_TO_RECEIPT') {
-                if (!showApprovalModal.groupId) throw new Error("Grupo P.O. não especificado.");
-                result = await api.requests.moveToReceipt(id, showApprovalModal.groupId, approvalComment);
             } else if (action === 'FINALIZE') {
                 result = await api.requests.finalize(id, approvalComment);
             } else if (action === 'CANCEL_REQUEST') {
@@ -1262,6 +1265,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         setQuotations,
         selectedQuotationId,
         setSelectedQuotationId,
+        detail,
         units,
         currencies,
         needLevels,

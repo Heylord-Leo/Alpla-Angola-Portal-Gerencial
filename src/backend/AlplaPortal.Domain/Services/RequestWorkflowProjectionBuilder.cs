@@ -85,7 +85,7 @@ public static class RequestWorkflowProjectionBuilder
         ["PAYMENT_REQUEST_SENT"] = "Solicitação Pagamento Enviada",
         ["PAYMENT_SCHEDULED"] = "Pagamento Agendado",
         ["PAYMENT_COMPLETED"] = "Pagamento Realizado",
-        ["WAITING_RECEIPT"] = "Aguardando Recibo",
+        ["WAITING_RECEIPT"] = "Aguardando Recibo do Fornecedor",
         ["WAITING_RECONCILIATION"] = "Ag. Reconciliação",
         ["WAITING_FISCAL_RECEIPT"] = "Ag. Recibo Fiscal",
         ["IN_FOLLOWUP"] = "Em Acompanhamento",
@@ -131,8 +131,20 @@ public static class RequestWorkflowProjectionBuilder
     // Per-unit guidance. Labels reuse the SAME strings the legacy single-status header
     // (frontend lib/utils.ts getRequestGuidance) shows today so single-unit requests remain
     // string-identical — the compatibility rule of this release.
-    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status) => status switch
+    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status, bool allItemsReceived = false)
     {
+        // v2.245.0 / v2.245.3: a PRE-confirmation receiving group (PAYMENT_COMPLETED or IN_FOLLOWUP) whose
+        // items are ALL physically received is not "pending items" and is no longer "move to receiving" — it
+        // only awaits the operator's explicit confirmation. Speak to the real fact.
+        if (allItemsReceived && (status == RequestConstants.PoGroupStatuses.InFollowup
+                                 || status == RequestConstants.PoGroupStatuses.PaymentCompleted))
+            return ("Recebimento", "CONFIRM_RECEIVING", "Recebimento completo — confirmar recebimento", 67);
+
+        if (status == RequestConstants.PoGroupStatuses.InFollowup)
+            return ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67);
+
+        return status switch
+        {
         RequestConstants.PoGroupStatuses.Pending
             => ("Aprovador Final", "FINAL_APPROVE", "Aguardar decisão da aprovação final", 20),
         RequestConstants.PoGroupStatuses.WaitingPo
@@ -161,10 +173,9 @@ public static class RequestWorkflowProjectionBuilder
             => ("Recebimento", "RECONCILE", "Concluir a reconciliação do recebimento", 66),
         RequestConstants.PoGroupStatuses.WaitingFiscalReceipt
             => ("Financeiro", "ATTACH_FISCAL_RECEIPT", "Registrar o Recibo Fiscal para concluir o grupo", 70),
-        RequestConstants.PoGroupStatuses.InFollowup
-            => ("Recebimento", "RESOLVE_FOLLOWUP", "Resolver itens pendentes e confirmar recebimento", 67),
         _ => ("Sem ação", "NONE", "Sem ação pendente", 999),
-    };
+        };
+    }
 
     private static (string Role, string ActionType, string Label, int Priority) BatchGuidance(string status) => status switch
     {
@@ -184,6 +195,13 @@ public static class RequestWorkflowProjectionBuilder
         string displayWorkflowStateCode)
     {
         var lineItems = request.LineItems.Where(li => !li.IsDeleted).ToList();
+        // v2.245.0: winning quotation items (when loaded) let group guidance recognize a receipt that
+        // lives on the winning QuotationItem. Null-safe: absent data → no fallback, prior wording stands.
+        var winningQuotationItems = request.RequestType != null
+            && request.RequestType.Code == RequestConstants.Types.Quotation
+            && request.SelectedQuotationId.HasValue
+                ? request.Quotations?.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value)?.Items?.ToList()
+                : null;
         var allGroups = request.PoGroups.ToList();
         var allBatches = request.ApprovalBatches.ToList();
         var requestStatusCode = request.Status?.Code ?? "";
@@ -225,7 +243,7 @@ public static class RequestWorkflowProjectionBuilder
                 {
                     continue;
                 }
-                units.Add(BuildGroupUnit(group, lineItems));
+                units.Add(BuildGroupUnit(group, lineItems, winningQuotationItems));
             }
         }
 
@@ -287,10 +305,18 @@ public static class RequestWorkflowProjectionBuilder
             NextAction: new WorkflowNextAction("BATCH", batch.Id, label, guidance.ActionType, guidance.Label, guidance.Role, guidance.Priority));
     }
 
-    private static WorkflowUnit BuildGroupUnit(RequestPoGroup group, IReadOnlyList<RequestLineItem> lineItems)
+    private static WorkflowUnit BuildGroupUnit(RequestPoGroup group, IReadOnlyList<RequestLineItem> lineItems, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
     {
         var coveredItems = lineItems.Where(li => li.RequestPoGroupId == group.Id).ToList();
-        var guidance = GroupGuidance(group.Status);
+        // Best-effort receipt fact for guidance wording; safe when statuses/quotations aren't loaded
+        // (returns false → the pre-confirmation "conferir itens" / "resolver pendentes" wording).
+        // v2.245.3: a PAYMENT_COMPLETED group whose items are ALL received (registration complete, not yet
+        // confirmed) must guide to "confirmar recebimento", not "mover para recebimento" — the item
+        // registration no longer advances the group, so 100%-received groups sit at PAYMENT_COMPLETED.
+        var allItemsReceived = (group.Status == RequestConstants.PoGroupStatuses.InFollowup
+                                || group.Status == RequestConstants.PoGroupStatuses.PaymentCompleted)
+            && OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
+        var guidance = GroupGuidance(group.Status, allItemsReceived);
         var label = string.IsNullOrWhiteSpace(group.SupplierNameSnapshot)
             ? "Grupo sem fornecedor definido"
             : $"Grupo {group.SupplierNameSnapshot}";

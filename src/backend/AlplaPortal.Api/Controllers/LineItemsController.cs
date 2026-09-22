@@ -752,15 +752,17 @@ public class LineItemsController : BaseController
 
         if (item == null) return NotFound();
 
-        // Validation: Group must be in a valid receiving status
-        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
-        if (item.RequestPoGroup != null && !allowedRequestStatuses.Contains(item.RequestPoGroup.Status))
+        // v2.245.5: registration/correction is a PRE-confirmation action (canonical evaluator). A confirmed
+        // group (WAITING_RECEIPT+) freezes quantities — corrections require the audited REABRIR RECEBIMENTO.
+        if (dto.ReceivedQuantity < 0)
+            return BadRequest(new ProblemDetails { Title = "Quantidade Inválida", Detail = "A quantidade recebida acumulada não pode ser negativa.", Status = 400 });
+        if (item.RequestPoGroup != null && !AlplaPortal.Domain.Services.ReceivingActionEvaluator.CanRegisterItemReceipt(item.RequestPoGroup.Status))
         {
-            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = $"O grupo P.O. não está em fase de recebimento. Status atual: {item.RequestPoGroup.Status}", Status = 409 });
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = RegistrationBlockedDetail(item.RequestPoGroup.Status), Status = 409 });
         }
-        else if (item.RequestPoGroup == null && !allowedRequestStatuses.Contains(item.Request.Status!.Code))
+        else if (item.RequestPoGroup == null && !AlplaPortal.Domain.Services.ReceivingActionEvaluator.CanRegisterItemReceipt(item.Request.Status!.Code))
         {
-            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = RegistrationBlockedDetail(item.Request.Status!.Code), Status = 409 });
         }
 
         return await ProcessItemReceivingAsync(item, dto.ReceivedQuantity, dto.DivergenceNotes);
@@ -787,18 +789,26 @@ public class LineItemsController : BaseController
             .Include(li => li.RequestPoGroup)
             .FirstOrDefaultAsync(li => li.SelectedQuotationItemId == qi.Id);
 
-        var allowedRequestStatuses = new[] { "PAYMENT_COMPLETED", "WAITING_RECEIPT", "IN_FOLLOWUP", RequestConstants.Statuses.WaitingSupplierDelivery };
-        if (rli != null && rli.RequestPoGroup != null && !allowedRequestStatuses.Contains(rli.RequestPoGroup.Status))
+        // v2.245.5: same pre-confirmation rule as the line-item path.
+        if (dto.ReceivedQuantity < 0)
+            return BadRequest(new ProblemDetails { Title = "Quantidade Inválida", Detail = "A quantidade recebida acumulada não pode ser negativa.", Status = 400 });
+        if (rli != null && rli.RequestPoGroup != null && !AlplaPortal.Domain.Services.ReceivingActionEvaluator.CanRegisterItemReceipt(rli.RequestPoGroup.Status))
         {
-            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = $"O grupo P.O. não está em fase de recebimento. Status atual: {rli.RequestPoGroup.Status}", Status = 409 });
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = RegistrationBlockedDetail(rli.RequestPoGroup.Status), Status = 409 });
         }
-        else if ((rli == null || rli.RequestPoGroup == null) && !allowedRequestStatuses.Contains(qi.Quotation.Request.Status!.Code))
+        else if ((rli == null || rli.RequestPoGroup == null) && !AlplaPortal.Domain.Services.ReceivingActionEvaluator.CanRegisterItemReceipt(qi.Quotation.Request.Status!.Code))
         {
-            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = "O pedido não está em fase de recebimento.", Status = 409 });
+            return Conflict(new ProblemDetails { Title = "Ação Bloqueada", Detail = RegistrationBlockedDetail(qi.Quotation.Request.Status!.Code), Status = 409 });
         }
 
         return await ProcessQuotationItemReceivingAsync(qi, dto.ReceivedQuantity, dto.DivergenceNotes);
     }
+
+    /// <summary>v2.245.5 — explains WHY registration is blocked: a confirmed group needs an explicit reopen.</summary>
+    private static string RegistrationBlockedDetail(string? status) =>
+        AlplaPortal.Domain.Services.ReceivingActionEvaluator.IsReceivingConfirmed(status)
+            ? $"O recebimento já foi confirmado (status {status}). Para corrigir itens ou quantidades, utilize REABRIR RECEBIMENTO — o grupo volta ao acompanhamento e exige nova confirmação."
+            : $"O grupo P.O. não está em fase de recebimento. Status atual: {status}";
 
     private async Task<IActionResult> ProcessItemReceivingAsync(AlplaPortal.Domain.Entities.RequestLineItem item, decimal receivedQty, string? notes)
     {
@@ -813,10 +823,12 @@ public class LineItemsController : BaseController
         else if (receivedQty > 0) statusCode = "PARTIALLY_RECEIVED";
 
         var status = await _context.LineItemStatuses.FirstOrDefaultAsync(s => s.Code == statusCode);
-        if (status != null) item.LineItemStatusId = status.Id;
+        // v2.245.0: set BOTH the FK and the navigation so the subsequent receiving sync (which re-reads
+        // LineItemStatus.Code) never evaluates a stale navigation and mis-stamps IN_FOLLOWUP.
+        if (status != null) { item.LineItemStatusId = status.Id; item.LineItemStatus = status; }
 
         var actorId = CurrentUserId;
-        
+
         // Granular History Registration
         var actionQty = receivedQty - oldReceivedQty;
         var unit = await _context.Units.FindAsync(item.UnitId);
@@ -830,15 +842,21 @@ public class LineItemsController : BaseController
         var request = await _context.Requests.Include(r => r.Status).FirstOrDefaultAsync(r => r.Id == item.RequestId);
         if (request != null)
         {
+            // v2.245.5: a DECREASE of the accumulated quantity is a correction/reversal — audited as its own
+            // append-only fact (ITEM_RECEIVING_ADJUSTMENT) so history never hides a reduced receipt. Increases keep
+            // the registration event. The stored quantity remains the absolute accumulated total.
+            var isAdjustment = actionQty < 0;
             _context.RequestStatusHistories.Add(new AlplaPortal.Domain.Entities.RequestStatusHistory
             {
                 Id = Guid.NewGuid(),
                 RequestId = item.RequestId,
                 ActorUserId = actorId,
-                ActionTaken = "ITEM_RECEIVING_REGISTRATION",
+                ActionTaken = isAdjustment ? "ITEM_RECEIVING_ADJUSTMENT" : "ITEM_RECEIVING_REGISTRATION",
                 PreviousStatusId = request.StatusId,
                 NewStatusId = request.StatusId,
-                Comment = $"[Recebimento Item #{item.LineNumber}] {item.Description}: {formattedActionQty} {unitCode} recebidos (Acumulado: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}). [{isTotalStr}]. Obs: {notes ?? "N/A"}",
+                Comment = isAdjustment
+                    ? $"[Ajuste de Recebimento Item #{item.LineNumber}] {item.Description}: {formattedActionQty} {unitCode} (estorno/correção). Acumulado corrigido: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}. [{isTotalStr}]. Obs: {notes ?? "N/A"}"
+                    : $"[Recebimento Item #{item.LineNumber}] {item.Description}: {formattedActionQty} {unitCode} recebidos (Acumulado: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}). [{isTotalStr}]. Obs: {notes ?? "N/A"}",
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
@@ -860,7 +878,9 @@ public class LineItemsController : BaseController
         else if (receivedQty > 0) statusCode = "PARTIALLY_RECEIVED";
 
         var status = await _context.LineItemStatuses.FirstOrDefaultAsync(s => s.Code == statusCode);
-        if (status != null) qi.LineItemStatusId = status.Id;
+        // v2.245.0: set BOTH the FK and the navigation (see ProcessItemReceivingAsync) so the receiving
+        // sync's winning-quotation completion check reads a fresh RECEIVED status, not a stale nav.
+        if (status != null) { qi.LineItemStatusId = status.Id; qi.LineItemStatus = status; }
 
         var actorId = CurrentUserId;
         // Granular History Registration
@@ -882,15 +902,19 @@ public class LineItemsController : BaseController
         var request = await _context.Requests.Include(r => r.Status).FirstOrDefaultAsync(r => r.Id == qi.Quotation.RequestId);
         if (request != null)
         {
+            // v2.245.5: see ProcessItemReceivingAsync — a decrease is an audited adjustment/reversal fact.
+            var isAdjustment = actionQty < 0;
             _context.RequestStatusHistories.Add(new AlplaPortal.Domain.Entities.RequestStatusHistory
             {
                 Id = Guid.NewGuid(),
                 RequestId = request.Id,
                 ActorUserId = actorId,
-                ActionTaken = "ITEM_RECEIVING_REGISTRATION",
+                ActionTaken = isAdjustment ? "ITEM_RECEIVING_ADJUSTMENT" : "ITEM_RECEIVING_REGISTRATION",
                 PreviousStatusId = request.StatusId,
                 NewStatusId = request.StatusId,
-                Comment = $"[Recebimento Item #{qi.LineNumber}] {qi.Description}: {formattedActionQty} {unitCode} recebidos (Acumulado: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}). [{isTotalStr}]. Obs: {notes ?? "N/A"}",
+                Comment = isAdjustment
+                    ? $"[Ajuste de Recebimento Item #{qi.LineNumber}] {qi.Description}: {formattedActionQty} {unitCode} (estorno/correção). Acumulado corrigido: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}. [{isTotalStr}]. Obs: {notes ?? "N/A"}"
+                    : $"[Recebimento Item #{qi.LineNumber}] {qi.Description}: {formattedActionQty} {unitCode} recebidos (Acumulado: {formattedReceivedQty} de {formattedAuthorizedQty} {unitCode}). [{isTotalStr}]. Obs: {notes ?? "N/A"}",
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
@@ -918,8 +942,10 @@ public class LineItemsController : BaseController
 
             if (request == null) return;
 
-            // 1. Authoritative Status Determination
-            string nextStatusCode = RequestWorkflowHelper.DeterminePostReceivingStatus(request);
+            // 1. Authoritative Status Determination — v2.245.2: item registration NEVER enters WAITING_RECEIPT
+            // (grouped or groupless). WAITING_RECEIPT is reached exclusively via the explicit CONFIRM_RECEIVING
+            // action.
+            string nextStatusCode = RequestWorkflowHelper.DetermineItemRegistrationSyncStatus(request);
 
             if (nextStatusCode != request.Status!.Code)
             {

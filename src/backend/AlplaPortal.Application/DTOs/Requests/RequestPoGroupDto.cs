@@ -22,7 +22,16 @@ public class RequestPoGroupDto
     
     public string Status { get; set; } = string.Empty;
     public string? PurchaseOrderNumber { get; set; }
-    
+
+    /// <summary>
+    /// v2.245.9 — the group's OPERATIONAL document classification
+    /// (<c>RequestPoGroup.SourceDocumentType</c>): the authoritative identity from which the Final
+    /// Invoice / Fiscal Receipt obligations are derived. Null = never classified. Distinct from the
+    /// request-level <c>Request.SourceDocumentType</c> (the document declared at creation); groups of
+    /// one request may legitimately differ.
+    /// </summary>
+    public string? SourceDocumentType { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
     public Guid CreatedByUserId { get; set; }
     

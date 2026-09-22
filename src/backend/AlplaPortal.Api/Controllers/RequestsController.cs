@@ -944,14 +944,25 @@ public class RequestsController : BaseController
     [HttpGet("{id:guid}/workflow-projection")]
     public async Task<IActionResult> GetWorkflowProjection(Guid id)
     {
+        // v2.245.6: the projection's receiving guidance (v2.245.3 "Recebimento completo — confirmar
+        // recebimento") is derived from the receipt FACTS — each group item's LineItemStatus (and, for
+        // QUOTATION requests, the winning quotation items). Those facts were never loaded here, so the
+        // builder always saw "not received" and Request Details kept the stale "pendentes" wording even
+        // for a 2/2 group. Load exactly what OperationalReceiptFacts consumes.
         var request = await _context.Requests
             .AsNoTracking()
             .Include(r => r.RequestType)
             .Include(r => r.Status)
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
+                .ThenInclude(li => li.LineItemStatus)
             .Include(r => r.ApprovalBatches)
                 .ThenInclude(b => b.Items)
             .Include(r => r.PoGroups)
+                .ThenInclude(g => g.LineItems.Where(li => !li.IsDeleted))
+                    .ThenInclude(li => li.LineItemStatus)
+            .Include(r => r.Quotations)
+                .ThenInclude(q => q.Items)
+                    .ThenInclude(qi => qi.LineItemStatus)
             .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
@@ -1113,6 +1124,10 @@ public class RequestsController : BaseController
                     AdvancePaymentPercent = g.AdvancePaymentPercent,
                     Status = g.Status,
                     PurchaseOrderNumber = g.PurchaseOrderNumber,
+                    // v2.245.9: the group's OPERATIONAL document classification (authoritative for the
+                    // Final Invoice / Fiscal Receipt obligations) — distinct from the request-level
+                    // Request.SourceDocumentType declared at creation.
+                    SourceDocumentType = g.SourceDocumentType,
                     CreatedAtUtc = g.CreatedAtUtc,
                     CreatedByUserId = g.CreatedByUserId,
                     LineItemCount = g.LineItems.Count,
@@ -1266,6 +1281,14 @@ public class RequestsController : BaseController
         _logger.LogInformation("[PERF] GetRequest(id) database query and projection took {Elapsed}ms for RequestId: {Id}", _sw.ElapsedMilliseconds, id);
 
         if (request == null) return NotFound();
+
+        // v2.245.9: group-scoped lifecycle rows (GROUP_COMPLETED, FISCAL_RECEIPT_UNLOCKED) persist the
+        // request scalar in their status FKs (a different status domain; see
+        // GroupLifecycleHistoryTarget). Their DISPLAYED target is the group's resulting state —
+        // "→ Concluído", never the scalar that happened to exist before aggregation. Every other row
+        // keeps its persisted status name.
+        foreach (var historyDto in request.StatusHistory)
+            historyDto.NewStatusName = GroupLifecycleHistoryTarget.ResolveDisplayName(historyDto.ActionTaken, historyDto.NewStatusName);
 
         // Phase B: pending area approval with nobody decided yet → expose the eligible
         // managers (DepartmentManager routing) for the "Pendente — N responsáveis
@@ -7779,62 +7802,30 @@ public class RequestsController : BaseController
             new[] { RequestConstants.Statuses.WaitingSupplierDelivery }, dto.Comment, "Entrega/serviço confirmado. Pedido em reconciliação.");
     }
 
+    /// <summary>
+    /// [DEPRECATED — v2.245.1] Legacy "move to receipt" step. Under v2.245.x semantics WAITING_RECEIPT is
+    /// the POST-confirmation state, reached ONLY via the dedicated confirm-receiving after item conference.
+    /// This endpoint used to transition a PAYMENT_COMPLETED group straight to WAITING_RECEIPT, which
+    /// prematurely landed the group in the post-confirmation state and permanently hid the Confirmar
+    /// Recebimento action (TEST incident on a PAYMENT request). Entering the receiving operation is now a
+    /// non-mutating navigation. The endpoint is retained only to fail safely: it performs NO writes and
+    /// returns a controlled 409, so no client (or stale cache) can reintroduce the premature transition.
+    /// </summary>
     [HttpPost("{id}/operational/move-to-receipt")]
-    public async Task<IActionResult> MoveToReceipt(Guid id, [FromBody] ConfirmReceivingDto dto)
+    public IActionResult MoveToReceipt(Guid id, [FromBody] ConfirmReceivingDto dto)
     {
         var roles = CurrentUserRoles;
         if (!roles.Contains(RoleConstants.Receiving))
             return StatusCode(403, "Apenas o Almoxarifado/Recebimento pode acessar esta função.");
 
-        var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
-
-        var request = await _context.Requests
-            .Include(r => r.RequestType)
-            .Include(r => r.Status)
-            .Include(r => r.PoGroups)
-            .FirstOrDefaultAsync(r => r.Id == id);
-
-        if (request == null) return NotFound();
-
-        var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
-        if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
-
-        // Unified post-PO operational flow: strictly from PAYMENT_COMPLETED for all types.
-        // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
-        if (!ReceivingActionEvaluator.CanMoveToReceipt(poGroup.Status))
+        return Conflict(new ProblemDetails
         {
-            return BadRequest(new ProblemDetails
-            {
-                Title = "Ação Inválida",
-                Detail = $"O grupo não está em um status válido para mover para recebimento. Status atual: {poGroup.Status}.",
-                Status = 400
-            });
-        }
-
-        var oldStatusId = request.StatusId;
-        poGroup.Status = "WAITING_RECEIPT";
-        poGroup.UpdatedAtUtc = DateTime.UtcNow;
-
-        var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == "WAITING_RECEIPT");
-        if (targetStatus == null) return StatusCode(500, "Status 'WAITING_RECEIPT' não configurado.");
-
-        var history = new RequestStatusHistory
-        {
-            Id = Guid.NewGuid(),
-            RequestId = request.Id,
-            ActorUserId = CurrentUserId,
-            ActionTaken = "MOVE_TO_RECEIPT",
-            PreviousStatusId = oldStatusId, // Keep parent status id for tracking
-            NewStatusId = targetStatus.Id,
-            Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " + (dto.Comment ?? "Pedido movido para aguardando recibo."),
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestStatusHistories.Add(history);
-
-        await _context.SaveChangesAsync();
-        await _statusAggregationService.AggregateRequestStatusAsync(request.Id, CurrentUserId);
-
-        return Ok(new { Message = "Grupo movido para aguardando recibo.", StatusCode = "WAITING_RECEIPT" });
+            Title = "Ação Descontinuada",
+            Detail = "A ação 'Mover para Recebimento' foi descontinuada. O recebimento é iniciado diretamente " +
+                     "na operação de recebimento (conferência de itens); a fase 'Aguardando Recibo' ocorre " +
+                     "apenas após a confirmação do recebimento.",
+            Status = 409
+        });
     }
 
     [HttpPost("{id}/operational/confirm-receiving")]
@@ -7873,9 +7864,23 @@ public class RequestsController : BaseController
             var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
             if (poGroup == null) return BadRequest(new { message = "Grupo P.O. não encontrado." });
 
-            // Status Rule: WAITING_RECEIPT, IN_FOLLOWUP, PAYMENT_COMPLETED, or WAITING_SUPPLIER_DELIVERY.
-            // Guard delegated to the canonical ReceivingActionEvaluator (same rule the Dashboard/queue use).
-            if (!ReceivingActionEvaluator.CanConfirmReceiving(poGroup.Status))
+            // v2.245.0 duplicate-confirm guard (REQ-06/07/2026-023): a group whose receiving was ALREADY
+            // confirmed (post-confirmation state — WAITING_RECEIPT / WAITING_FISCAL_RECEIPT / COMPLETED) must
+            // not be confirmed again. Controlled 409, no duplicate CONFIRM_RECEIVING/history written.
+            if (ReceivingActionEvaluator.IsReceivingConfirmed(poGroup.Status))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Recebimento já confirmado",
+                    Detail = $"O recebimento deste grupo já foi confirmado. Status atual: {poGroup.Status}. Prossiga para o recibo do fornecedor / finalização.",
+                    Status = 409
+                });
+            }
+
+            // Confirm action is available only from a PRE-confirmation receiving status
+            // (PAYMENT_COMPLETED, IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY) — the dedicated action guard, NOT
+            // the broad queue-membership set.
+            if (!ReceivingActionEvaluator.CanConfirmReceivingAction(poGroup.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -7887,7 +7892,12 @@ public class RequestsController : BaseController
 
             // Determine next status: WAITING_RECEIPT (all received) or IN_FOLLOWUP (partial)
             // Business rule: Receiving NEVER moves to COMPLETED
-            string nextStatusCode = RequestWorkflowHelper.DetermineGroupPostConfirmReceivingStatus(poGroup);
+            // v2.245.0: pass the winning quotation's items so completion recognizes a receipt that lives
+            // on the winning QuotationItem even when RequestLineItem.SelectedQuotationItemId is null.
+            var winningQuotationItems = request.SelectedQuotationId.HasValue
+                ? request.Quotations.FirstOrDefault(q => q.Id == request.SelectedQuotationId.Value)?.Items?.ToList()
+                : null;
+            string nextStatusCode = RequestWorkflowHelper.DetermineGroupPostConfirmReceivingStatus(poGroup, winningQuotationItems);
             var targetStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == nextStatusCode);
             if (targetStatus == null) return StatusCode(500, $"Status '{nextStatusCode}' não configurado.");
 
@@ -7925,7 +7935,7 @@ public class RequestsController : BaseController
             if (!PostPaymentCompletionPolicy.IsFeatureDisabled(_postPaymentOptions))
             {
                 if (poGroup.OperationalReceiptCompletedAtUtc == null &&
-                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup))
+                    OperationalReceiptFacts.AreAllGroupItemsReceived(poGroup, winningQuotationItems))
                 {
                     var receiptStampedAt = DateTime.UtcNow;
                     poGroup.OperationalReceiptCompletedAtUtc = receiptStampedAt;
@@ -8028,6 +8038,117 @@ public class RequestsController : BaseController
                 Detail = ex.Message,
                 Status = 500
             });
+        }
+    }
+
+    /// <summary>
+    /// v2.245.5 — REABRIR RECEBIMENTO: returns ONE confirmed group (WAITING_RECEIPT) to the pre-confirmation
+    /// correction state (IN_FOLLOWUP) so the Receiving user can fix an incorrect receipt (wrong item, wrong
+    /// quantity, confirmed too early) and confirm again. Receiving or SysAdmin only; mandatory reason;
+    /// group-scoped (sibling groups untouched); refused when the request is terminal, the group is not
+    /// WAITING_RECEIPT, or an active supplier RECEIPT already exists (Finance must remove/invalidate it
+    /// first). Never touches received quantities or historical events: it only clears the group's
+    /// operational-completion stamp (that assertion no longer holds) and writes a RECEIVING_REOPENED audit.
+    /// The request scalar is recomputed exclusively by the canonical aggregator. A second call finds the
+    /// group at IN_FOLLOWUP and is refused (409) — never a duplicate reopen.
+    /// </summary>
+    [HttpPost("{id}/operational/groups/{groupId:guid}/reopen-receiving")]
+    public async Task<IActionResult> ReopenReceiving(Guid id, Guid groupId, [FromBody] ReopenReceivingDto? dto)
+    {
+        var actorId = CurrentUserId;
+        var roles = CurrentUserRoles;
+        if (!roles.Contains(RoleConstants.Receiving) && !roles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, "Apenas o Almoxarifado/Recebimento (ou o Administrador do Sistema) pode reabrir um recebimento.");
+
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Reason))
+            return BadRequest(new ProblemDetails { Title = "Motivo Obrigatório", Detail = "Informe o motivo da reabertura do recebimento.", Status = 400 });
+
+        var statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var request = await _context.Requests
+                .Include(r => r.Status)
+                .Include(r => r.PoGroups)
+                .FirstOrDefaultAsync(r => r.Id == id);
+            if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado.", Status = 404 });
+
+            var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == groupId);
+            if (poGroup == null)
+                return NotFound(new ProblemDetails { Title = "Grupo P.O. não encontrado neste pedido.", Status = 404 });
+
+            if (request.Status!.Code is RequestConstants.Statuses.Completed or RequestConstants.Statuses.Cancelled or RequestConstants.Statuses.Rejected)
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Reabertura Não Permitida",
+                    Detail = $"O pedido está em estado terminal ({request.Status.Code}) — o recebimento não pode ser reaberto.",
+                    Status = 409
+                });
+
+            if (poGroup.Status != RequestConstants.PoGroupStatuses.WaitingReceipt)
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Reabertura Não Permitida",
+                    Detail = $"Apenas um grupo com recebimento confirmado (WAITING_RECEIPT) pode ser reaberto. Status atual: {poGroup.Status}.",
+                    Status = 409
+                });
+
+            // An ACTIVE supplier receipt (RECEIPT only — not FISCAL_RECEIPT / RECEIVING_EVIDENCE / PAYMENT_PROOF;
+            // deleted or voided receipts do not count) means Finance has already taken over.
+            if (await HasAttachmentAsync(id, RequestAttachment.TYPE_RECEIPT))
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Recibo do Fornecedor já anexado",
+                    Detail = "Existe um Recibo do Fornecedor ativo neste pedido. O Financeiro deve remover ou invalidar o recibo antes de o recebimento poder ser reaberto.",
+                    Status = 409
+                });
+
+            // v2.245.6: the event records the GROUP's resulting status (IN_FOLLOWUP) — the same semantics as
+            // CONFIRM_RECEIVING, which records its target status and lets the aggregator's STATUS_SYNC state
+            // the scalar. Copying the pre-reopen scalar here displayed "→ Aguardando Recibo" on a reopen.
+            var inFollowupStatus = await _context.RequestStatuses
+                .FirstOrDefaultAsync(s => s.Code == RequestConstants.PoGroupStatuses.InFollowup);
+            if (inFollowupStatus == null)
+                return StatusCode(500, $"Status '{RequestConstants.PoGroupStatuses.InFollowup}' não configurado.");
+
+            var previousGroupStatus = poGroup.Status;
+            poGroup.Status = RequestConstants.PoGroupStatuses.InFollowup;
+            poGroup.UpdatedAtUtc = DateTime.UtcNow;
+            poGroup.UpdatedByUserId = actorId;
+            // The "operationally complete" assertion no longer holds until a NEW confirmation. Received
+            // quantities, item statuses and every historical event are preserved untouched.
+            poGroup.OperationalReceiptCompletedAtUtc = null;
+            poGroup.OperationalReceiptCompletedByUserId = null;
+
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "RECEIVING_REOPENED",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = inFollowupStatus.Id, // the request scalar itself is still recomputed by the aggregator (STATUS_SYNC)
+                Comment = $"[Grupo P.O.: {poGroup.SupplierNameSnapshot ?? "N/A"} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] " +
+                          $"Recebimento reaberto para correção ({previousGroupStatus} → {RequestConstants.PoGroupStatuses.InFollowup}). " +
+                          $"Quantidades recebidas preservadas; nova confirmação obrigatória. Motivo: {dto.Reason.Trim()}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+            await statusAggregationService.AggregateRequestStatusAsync(request.Id, actorId);
+            await transaction.CommitAsync();
+
+            return Ok(new
+            {
+                Message = "Recebimento reaberto. Corrija os itens necessários e confirme novamente o recebimento.",
+                StatusCode = RequestConstants.PoGroupStatuses.InFollowup
+            });
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            return StatusCode(500, new ProblemDetails { Title = "Erro ao Reabrir Recebimento", Detail = ex.Message, Status = 500 });
         }
     }
 
@@ -8525,6 +8646,57 @@ public class RequestsController : BaseController
                     Detail = $"O pedido deve estar em 'Aguardando Recibo do Fornecedor' para ser finalizado. Status atual: {request.Status.Code}.",
                     Status = 400
                 });
+            }
+
+            // ── v2.245.2 always-on operational-confirmation guard (feature-flag independent) ──
+            // Finance finalization requires PROVEN operational confirmation — regardless of
+            // PostPaymentCompletion. This closes the integrity gap where a prematurely-advanced request scalar
+            // could allow finalizing before CONFIRM_RECEIVING. Direct query (the request navigation is not
+            // eagerly loaded here).
+            var activeGroupsForFinalize = await _context.RequestPoGroups
+                .Where(g => g.RequestId == id && g.Status != RequestConstants.PoGroupStatuses.Cancelled)
+                .Select(g => new { g.Status, g.SupplierNameSnapshot })
+                .ToListAsync();
+
+            if (activeGroupsForFinalize.Count > 0)
+            {
+                // Grouped request: EVERY active group must be explicitly confirmed (WAITING_RECEIPT) or
+                // terminally complete. A group still in a pre-confirmation state blocks finalization.
+                var notReadyGroups = activeGroupsForFinalize
+                    .Where(g => !RequestConstants.PoGroupStatuses.ReadyToFinalize.Contains(g.Status))
+                    .ToList();
+                if (notReadyGroups.Any())
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = $"Existem {notReadyGroups.Count} grupo(s) operacional(is) que ainda não tiveram o recebimento " +
+                                 $"confirmado: {string.Join(", ", notReadyGroups.Select(g => $"{g.SupplierNameSnapshot} ({g.Status})"))}. " +
+                                 "Confirme o recebimento de todos os grupos antes de finalizar.",
+                        Status = 409
+                    });
+                }
+            }
+            else
+            {
+                // Groupless legacy request: there is NO group to confirm and no groupless confirmation path
+                // (ConfirmReceiving requires a group). Fail closed — require auditable evidence that operational
+                // receiving was explicitly confirmed at some point (a real CONFIRM_RECEIVING history event).
+                // Absent that proof, finalization is refused (409, no writes) and requires controlled
+                // administrative remediation; we NEVER auto-confirm or fabricate confirmation history.
+                var hasConfirmEvidence = await _context.RequestStatusHistories
+                    .AnyAsync(h => h.RequestId == id && h.ActionTaken == "CONFIRM_RECEIVING");
+                if (!hasConfirmEvidence)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Finalização Bloqueada",
+                        Detail = "Este pedido legado não possui grupos operacionais nem confirmação de recebimento " +
+                                 "auditável (CONFIRM_RECEIVING). A finalização requer remediação administrativa controlada — " +
+                                 "não é possível finalizar apenas com o registo de quantidades.",
+                        Status = 409
+                    });
+                }
             }
 
             // ── Phase 8: QUOTATION-specific finalization guards ──
@@ -9962,6 +10134,20 @@ public class RequestsController : BaseController
 
         if (plan.Count == 0) return;
 
+        // v2.245.4: the header (legacy) plan attributes EVERY active line item to its single header group
+        // (see BuildLegacyPaymentPlanAsync). That attribution is only unambiguous when the request has at
+        // most ONE non-cancelled group. With several groups (an inconsistent legacy topology) we never
+        // mass-assign items to one of them — linkage is left to the controlled repair, which refuses it as
+        // AMBIGUOUS. Document-based plans are per-document and are not affected.
+        if (documents.Count == 0
+            && existingGroups.Count(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled) > 1)
+        {
+            _logger.LogWarning(
+                "BuildPaymentPoGroups — Request {RequestId} ({RequestNumber}): header plan with more than one active group; item linkage skipped (ambiguous).",
+                request.Id, request.RequestNumber);
+            plan = plan.Select(p => p with { LineItemIds = Array.Empty<Guid>() }).ToList();
+        }
+
         var currencies = await _context.Currencies.AsNoTracking().ToListAsync();
         var created = 0;
 
@@ -10109,6 +10295,11 @@ public class RequestsController : BaseController
                 .Where(c => c.Id == request.CurrencyId.Value).Select(c => c.Code).FirstOrDefaultAsync())
             : null;
 
+        // v2.245.4: the single header group owns EVERY active line item of the request. Leaving this empty
+        // (as before) created groups whose RequestLineItems carried RequestPoGroupId = NULL — the receiving
+        // operation then found no items for the group ("0/N, no conference table"). The caller
+        // (BuildPaymentPoGroupsAsync) guarantees request.LineItems is loaded and refuses the attribution when
+        // more than one active group exists.
         return new[]
         {
             new PlannedPaymentGroup
@@ -10119,7 +10310,7 @@ public class RequestsController : BaseController
                 SupplierNameSnapshot = supplier?.Name,
                 SupplierTaxIdSnapshot = supplier?.TaxId,
                 TotalAmount = request.EstimatedTotalAmount,
-                LineItemIds = Array.Empty<Guid>(),
+                LineItemIds = request.LineItems.Where(li => !li.IsDeleted).Select(li => li.Id).ToList(),
                 SourceDocumentIds = Array.Empty<Guid>()
             }
         };

@@ -18,6 +18,9 @@ import { RequestActionHeader } from '../Requests/components/RequestActionHeader'
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { FinalizeReceivingModal } from '../../components/modals/FinalizeReceivingModal';
 import { StandardTable } from '../../components/ui/StandardTable';
+import { isReceivingActionableGroupStatus, RECEIVING_PHASE_BLOCKER, canConfirmReceiving, isReceivingConfirmed, canRegisterItemReceipt, canShowReopenReceiving, receivingItemActionLabel, receiptSubmitSuccessMessage } from '../../lib/receivingEligibility';
+import ReopenReceivingModal from '../../components/modals/ReopenReceivingModal';
+import { useAuth } from '../../features/auth/AuthContext';
 import { motion } from 'framer-motion';
 
 const highlightStyles = `
@@ -49,6 +52,13 @@ const ReceivingOperation: React.FC = () => {
   } | null>(null);
 
   const [finalizeModalState, setFinalizeModalState] = useState<{ show: boolean, groupId: string | null, groupName?: string }>({ show: false, groupId: null });
+
+  // v2.245.5: REABRIR RECEBIMENTO — Receiving or SysAdmin only (the backend enforces the same rule).
+  const { user: currentUser } = useAuth();
+  const currentUserRoles: string[] = currentUser?.roles ?? [];
+  const [reopenState, setReopenState] = useState<{ show: boolean; groupId: string | null; groupName?: string }>({ show: false, groupId: null });
+  const [reopenProcessing, setReopenProcessing] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
 
   const fetchRequest = async () => {
     if (!id) return;
@@ -89,7 +99,12 @@ const ReceivingOperation: React.FC = () => {
     
     return winningQuotation 
       ? winningQuotation.items.map((qi: any) => {
-          const correspondingLineItem = request.lineItems?.find((li: any) => li.selectedQuotationItemId === qi.id);
+          // v2.245.0: resolve the item's PO group. Priority: explicit selectedQuotationItemId link;
+          // then the canonical, unambiguous LineNumber match (LineNumber is unique within a request's
+          // line items and within a quotation). Never guess when the line number is ambiguous.
+          const byLink = request.lineItems?.find((li: any) => li.selectedQuotationItemId === qi.id);
+          const byNumber = (request.lineItems ?? []).filter((li: any) => li.lineNumber === qi.lineNumber);
+          const correspondingLineItem = byLink ?? (byNumber.length === 1 ? byNumber[0] : undefined);
           const requestPoGroupId = correspondingLineItem?.requestPoGroupId;
           return {
             id: qi.id,
@@ -125,6 +140,14 @@ const ReceivingOperation: React.FC = () => {
   const allReceived = operationalItems.every((item: any) => item.statusCode === 'RECEIVED');
   const isReadOnly = request?.statusCode === 'COMPLETED' || request?.statusCode === 'CANCELLED';
 
+  // v2.245.4: items that belong to NO active group of this request (RequestPoGroupId null or pointing at an
+  // unknown/cancelled group). Such items can never be received against a group, so the page must fail
+  // closed with a visible remediation blocker instead of silently rendering nothing.
+  const unlinkedItems = useMemo(() => {
+    const groupIds = new Set((request?.poGroups ?? []).map((g: any) => g.id));
+    return operationalItems.filter((i: any) => !i.requestPoGroupId || !groupIds.has(i.requestPoGroupId));
+  }, [request, operationalItems]);
+
   const handleOpenModal = (item: any) => {
     setSelectedItem(item);
     setModalOpen(true);
@@ -132,14 +155,17 @@ const ReceivingOperation: React.FC = () => {
 
   const handleConfirmReceiving = async (receivedQty: number, notes: string) => {
     if (!selectedItem) return;
-    
+    // v2.245.6: the accumulated quantity shown BEFORE this submit decides the wording (decrease/reset =
+    // adjustment, first registration/increase = registration) — the same rule as the backend audit fact.
+    const previousReceivedQty: number = selectedItem.receivedQty ?? 0;
+
     try {
       if (selectedItem.type === 'QUOTATION_ITEM') {
         await api.requests.updateItemReceiving(selectedItem.id, receivedQty, notes);
       } else {
         await api.lineItems.updateReceiving(selectedItem.id, receivedQty, notes);
       }
-      setFeedback({ type: 'success', message: 'Recebimento registrado com sucesso.' });
+      setFeedback({ type: 'success', message: receiptSubmitSuccessMessage(previousReceivedQty, receivedQty) });
       fetchRequest();
     } catch (err: any) {
       console.error('Error updating receiving:', err);
@@ -150,8 +176,50 @@ const ReceivingOperation: React.FC = () => {
     }
   };
 
+  // v2.245.5: reopen a confirmed group for correction. The backend is authoritative (403/400/404/409);
+  // a 409 (e.g. an active supplier RECEIPT already attached) is surfaced verbatim inside the modal.
+  const handleReopenReceiving = async (reason: string) => {
+    if (!id || !reopenState.groupId) return;
+    try {
+      setReopenProcessing(true);
+      setReopenError(null);
+      const result = await api.requests.reopenReceiving(id, reopenState.groupId, reason);
+      setReopenState({ show: false, groupId: null });
+      setFeedback({ type: 'success', message: result?.message || 'Recebimento reaberto. Corrija os itens e confirme novamente.' });
+      await fetchRequest();
+    } catch (err: any) {
+      const errorMessage = err instanceof Error ? err.message : (err?.response?.data?.message || 'Falha ao reabrir o recebimento.');
+      logger.error(`Erro ao reabrir recebimento do pedido ${request?.requestNumber}: ${errorMessage}`, err, 'Global');
+      setReopenError(errorMessage);
+    } finally {
+      setReopenProcessing(false);
+    }
+  };
+
+  // v2.245.0: never open confirm-receiving without a real RequestPoGroupId. Group-based receiving
+  // always needs a concrete group id — an empty id would POST { requestPoGroupId: '' } and the backend
+  // (correctly) returns "Grupo P.O. não encontrado."
   const handleFinalizeClick = (groupId: string, groupName: string) => {
+    if (!groupId) {
+      setFeedback({ type: 'error', message: 'Não foi possível identificar o grupo de recebimento. Atualize a página e tente novamente.' });
+      return;
+    }
     setFinalizeModalState({ show: true, groupId, groupName });
+  };
+
+  // v2.245.0: the top-level action must resolve a real group — never guess with an empty id.
+  // Exactly one resolvable receiving group → use it; zero → blocker; multiple → require the
+  // group-specific confirm buttons (no first-group guess).
+  const handleTopLevelFinalize = () => {
+    const resolvable = (request?.poGroups ?? []).filter((g: any) =>
+      operationalItems.some((i: any) => i.requestPoGroupId === g.id));
+    if (resolvable.length === 1) {
+      handleFinalizeClick(resolvable[0].id, resolvable[0].supplierNameSnapshot ?? '');
+    } else if (resolvable.length === 0) {
+      setFeedback({ type: 'error', message: 'Não foi possível identificar o grupo de recebimento. Atualize a página e tente novamente.' });
+    } else {
+      setFeedback({ type: 'error', message: 'Este pedido possui múltiplos grupos. Confirme o recebimento em cada grupo individualmente.' });
+    }
   };
 
 
@@ -206,9 +274,10 @@ const ReceivingOperation: React.FC = () => {
             </div>
         }
         primaryActions={
-            !isReadOnly && (!request.poGroups || request.poGroups.length === 0) && (
+            !isReadOnly && (!request.poGroups || request.poGroups.length === 0)
+              && canConfirmReceiving(request.statusCode, allReceived) && (
                 <button
-                    onClick={() => handleFinalizeClick('', '')}
+                    onClick={handleTopLevelFinalize}
                     className="btn-primary"
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
@@ -258,10 +327,65 @@ const ReceivingOperation: React.FC = () => {
           {(request.poGroups && request.poGroups.length > 0) ? (
             request.poGroups.map((group: any) => {
               const groupItems = operationalItems.filter((i: any) => i.requestPoGroupId === group.id);
-              if (groupItems.length === 0) return null;
+              if (groupItems.length === 0) {
+                // A group with no items is only silent when every item of the request belongs to some
+                // other active group. If the request holds UNLINKED items, this group is the victim of a
+                // linkage defect: render a read-only blocker — no REGISTRAR, no CONFIRMAR, nothing that
+                // could bypass the missing linkage. Progress stays 0/N, consistent with the blocked state.
+                if (unlinkedItems.length === 0) return null;
+                return (
+                  <div key={group.id} style={cardStyle} data-testid="linkage-blocker">
+                    <div style={sectionHeaderStyle}>
+                      <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <FileText size={18} color="var(--color-primary)" />
+                        Conferência: {group.supplierNameSnapshot}
+                      </h3>
+                      <div style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(var(--color-primary-rgb), 0.1)', padding: '4px 8px', border: '1px solid var(--color-primary)' }}>
+                        <Info size={12} /> Status: {group.statusName || group.status}
+                      </div>
+                    </div>
+                    <div style={{ margin: '16px 24px 24px', padding: '12px 16px', backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E' }}>
+                        Este pedido contém {unlinkedItems.length} item(ns) não vinculado(s) ao grupo de recebimento.
+                        <span style={{ display: 'block', fontWeight: 600, marginTop: '2px' }}>
+                          O recebimento não pode ser registado nem confirmado até que a vinculação seja corrigida por remediação administrativa controlada.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               
-              const isGroupReadOnly = isReadOnly || !['WAITING_RECEIPT', 'IN_FOLLOWUP', 'PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'PAG_REALIZADO', 'RECEBIMENTO_ANDAMENTO'].includes(group.status);
-              
+              // v2.245.0 §16: single canonical eligibility rule (mirror of the backend evaluator). A group
+              // whose GROUP status is not a valid receiving phase (e.g. the PAYMENT PENDING drift) is
+              // read-only — the backend would reject any receiving action on it.
+              const groupActionable = isReceivingActionableGroupStatus(group.status);
+              const isGroupReadOnly = isReadOnly || !groupActionable;
+              // v2.245.0 §15: a group that is not yet in a valid receiving phase (and whose request is not
+              // terminal) gets an explicit read-only blocker instead of a silently dead card.
+              const showPhaseBlocker = !isReadOnly && !groupActionable;
+              // v2.245.0 duplicate-confirm fix (REQ-06/07/2026-023): the CONFIRM action is a one-time
+              // attestation — offered only from a PRE-confirmation status AND once every item is received,
+              // and NEVER once the group is already confirmed (WAITING_RECEIPT). Distinct from item-receipt
+              // access (isGroupReadOnly).
+              const groupAllReceived = groupItems.length > 0 && groupItems.every((i: any) => i.statusCode === 'RECEIVED');
+              const receivedCount = groupItems.filter((i: any) => i.statusCode === 'RECEIVED').length;
+              const groupConfirmed = isReceivingConfirmed(group.status);
+              const showConfirmButton = !isReadOnly && canConfirmReceiving(group.status, groupAllReceived);
+              // v2.245.5: item quantities are editable (REGISTRAR / AJUSTAR) ONLY before confirmation. After
+              // CONFIRMAR RECEBIMENTO (WAITING_RECEIPT) they are frozen read-only; the authorized user may
+              // REABRIR RECEBIMENTO, which returns the group to acompanhamento and requires a new confirmation.
+              const groupRegistrable = !isReadOnly && canRegisterItemReceipt(group.status);
+              const showReopenButton = canShowReopenReceiving(group.status, currentUserRoles, isReadOnly);
+              // Three canonical states: (1) confirmed → next guidance is the fiscal receipt/finalization;
+              // (2) all received but not yet confirmed → prompt to confirm; (3) still receiving → progress.
+              const groupHint = groupConfirmed
+                ? 'Recebimento confirmado. Anexar recibo do fornecedor e finalizar pedido.'
+                : groupAllReceived
+                ? 'Recebimento completo — confirme o recebimento.'
+                : `${receivedCount} de ${groupItems.length} itens recebidos. Existem quantidades pendentes.`;
+
               return (
                 <div key={group.id} className={isHighlighted ? 'section-attention-highlight' : ''} style={cardStyle}>
                   <div style={sectionHeaderStyle}>
@@ -279,17 +403,46 @@ const ReceivingOperation: React.FC = () => {
                          <Info size={12} /> Status: {group.statusName || group.status}
                       </div>
                       {!isGroupReadOnly && (
-                        <button
-                            onClick={() => handleFinalizeClick(group.id, group.supplierNameSnapshot)}
-                            className="btn-primary"
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
-                        >
-                            <CheckCircle size={14} />
-                            CONFIRMAR RECEBIMENTO
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: groupConfirmed ? 'var(--color-primary)' : groupAllReceived ? 'var(--color-status-green, #16a34a)' : 'var(--color-text-muted)' }}>
+                            {groupHint}
+                          </span>
+                          {showConfirmButton && (
+                            <button
+                                onClick={() => handleFinalizeClick(group.id, group.supplierNameSnapshot)}
+                                className="btn-primary"
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
+                            >
+                                <CheckCircle size={14} />
+                                CONFIRMAR RECEBIMENTO
+                            </button>
+                          )}
+                          {showReopenButton && (
+                            <button
+                                onClick={() => { setReopenError(null); setReopenState({ show: true, groupId: group.id, groupName: group.supplierNameSnapshot }); }}
+                                className="btn-secondary"
+                                title="Devolve este grupo ao Recebimento para correção. Será necessária nova confirmação."
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 12px', fontSize: '0.7rem' }}
+                            >
+                                <History size={14} />
+                                REABRIR RECEBIMENTO
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
+                  {showPhaseBlocker && (
+                    <div style={{ margin: '16px 24px 0', padding: '12px 16px', backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400E' }}>
+                        {RECEIVING_PHASE_BLOCKER}
+                        <span style={{ display: 'block', fontWeight: 600, marginTop: '2px' }}>
+                          Status atual do grupo: {group.statusName || group.status}. Não é possível registar recebimento nesta fase.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div style={{ overflowX: 'auto' }}>
                     <StandardTable>
                       <thead>
@@ -335,9 +488,11 @@ const ReceivingOperation: React.FC = () => {
                               <button
                                 onClick={() => handleOpenModal(item)}
                                 className="btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isGroupReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                                style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: groupRegistrable ? 1 : 0.7, borderRadius: '6px' }}
                               >
-                                {isGroupReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                                {/* v2.245.5: pending → REGISTRAR; already (partially) received → AJUSTAR (absolute
+                                    accumulated correction, audited); confirmed/frozen → read-only view. */}
+                                {receivingItemActionLabel(group.status, item.receivedQty, isReadOnly)}
                               </button>
                             </td>
                           </tr>
@@ -407,9 +562,10 @@ const ReceivingOperation: React.FC = () => {
                           <button
                             onClick={() => handleOpenModal(item)}
                             className="btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: isReadOnly ? 0.7 : 1, borderRadius: '6px' }}
+                            style={{ padding: '6px 12px', fontSize: '0.7rem', width: '100%', opacity: (isReadOnly || !canRegisterItemReceipt(request.statusCode)) ? 0.7 : 1, borderRadius: '6px' }}
                           >
-                            {isReadOnly ? 'VER DETALHES' : 'REGISTRAR'}
+                            {/* v2.245.5: groupless legacy requests follow the same rule on the request scalar. */}
+                            {receivingItemActionLabel(request.statusCode, item.receivedQty, isReadOnly)}
                           </button>
                         </td>
                       </tr>
@@ -511,18 +667,38 @@ const ReceivingOperation: React.FC = () => {
         </div>
       </div>
 
-      {selectedItem && (
-        <ReceivingModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
-          onConfirm={handleConfirmReceiving}
-          itemDescription={selectedItem.description}
-          authorizedQty={selectedItem.quantity}
-          currentReceivedQty={selectedItem.receivedQty}
-          unit={selectedItem.unit}
-          readOnly={isReadOnly}
-        />
-      )}
+      {selectedItem && (() => {
+        // v2.245.0 §15: never allow the item-receipt action for a group whose status is not a valid
+        // receiving phase — the backend rejects it. Groups exist ⇒ gate on the item's own group status;
+        // the legacy no-group branch keeps request-level read-only only.
+        const selectedGroupId = operationalItems.find((i: any) => i.id === selectedItem.id)?.requestPoGroupId;
+        const selectedGroup = selectedGroupId ? request.poGroups?.find((g: any) => g.id === selectedGroupId) : undefined;
+        // v2.245.5: the quantity modal is editable ONLY while the item's group is in a pre-confirmation
+        // status (canRegisterItemReceipt); a confirmed group (WAITING_RECEIPT) opens it read-only.
+        const selectedItemReadOnly = isReadOnly || (!!selectedGroup && !canRegisterItemReceipt(selectedGroup.status))
+          || (!selectedGroup && !canRegisterItemReceipt(request.statusCode));
+        return (
+          <ReceivingModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            onConfirm={handleConfirmReceiving}
+            itemDescription={selectedItem.description}
+            authorizedQty={selectedItem.quantity}
+            currentReceivedQty={selectedItem.receivedQty}
+            unit={selectedItem.unit}
+            readOnly={selectedItemReadOnly}
+          />
+        );
+      })()}
+
+      <ReopenReceivingModal
+        open={reopenState.show}
+        groupName={reopenState.groupName}
+        processing={reopenProcessing}
+        error={reopenError}
+        onClose={() => { if (!reopenProcessing) { setReopenState({ show: false, groupId: null }); setReopenError(null); } }}
+        onConfirm={handleReopenReceiving}
+      />
 
       <FinalizeReceivingModal
         requestId={request.id}

@@ -10,7 +10,49 @@ import {
     resolveSingleUnitGuidance,
     effectivePanelStatus,
     isOperationalPanelStatus,
+    shouldFetchWorkflowProjection,
+    projectionOwnsGuidance,
+    resolveHeaderGuidance,
+    GUIDANCE_LOADING,
+    PROJECTION_IDLE,
 } from './workflowProjection.ts';
+
+// v2.245.7 — the details view fetches/consumes the projection for the receiving phase of EVERY type.
+describe('v2.245.7 details-view projection policy', () => {
+    const unit = (statusCode, label, role = 'Recebimento') => ({
+        unitType: 'GROUP', unitId: 'u1', label: 'Grupo X', totalAmount: 0, itemCount: 2, itemLineNumbers: [1, 2],
+        statusCode, statusLabel: statusCode, approvalState: 'COMPLETE', poState: 'ISSUED', paymentState: 'COMPLETE',
+        receivingState: 'IN_PROGRESS', completionState: 'NOT_STARTED', responsibleRole: role,
+        nextAction: { unitType: 'GROUP', unitId: 'u1', unitLabel: 'Grupo X', actionType: 'A', label, responsibleRole: role, priority: 67 },
+    });
+    const projection = (units) => ({ aggregateDisplay: { statusCode: 'X', label: 'X' }, units, responsibilities: [], nextActions: [], warnings: [] });
+    const scalar = (s) => ({ responsible: 'Recebimento', nextAction: s === 'IN_FOLLOWUP' ? 'Resolver itens pendentes e confirmar recebimento' : 'x' });
+
+    test('PAYMENT requests fetch the projection in the receiving phase only; QUOTATION always', () => {
+        assert.equal(shouldFetchWorkflowProjection('r', 'PAYMENT', 'IN_FOLLOWUP'), true);
+        assert.equal(shouldFetchWorkflowProjection('r', 'PAYMENT', 'PAYMENT_COMPLETED'), true);
+        assert.equal(shouldFetchWorkflowProjection('r', 'PAYMENT', 'APPROVED'), false);
+        assert.equal(shouldFetchWorkflowProjection('r', 'QUOTATION', 'APPROVED'), true);
+        assert.equal(projectionOwnsGuidance('PAYMENT', 'IN_FOLLOWUP'), true);
+        assert.equal(projectionOwnsGuidance('PAYMENT', 'PO_ISSUED'), false);
+    });
+
+    test('IN_FOLLOWUP 2/2 (PAYMENT): loaded projection beats the generic "pendentes" map; loading shows the placeholder; error falls back', () => {
+        const p = projection([unit('IN_FOLLOWUP', 'Recebimento completo — confirmar recebimento')]);
+        assert.deepEqual(
+            resolveHeaderGuidance({ status: 'IN_FOLLOWUP', requestTypeCode: 'PAYMENT', load: { state: 'loaded', projection: p }, scalarGuidance: scalar }),
+            { responsible: 'Recebimento', nextAction: 'Recebimento completo — confirmar recebimento' });
+        assert.equal(
+            resolveHeaderGuidance({ status: 'IN_FOLLOWUP', requestTypeCode: 'PAYMENT', load: { state: 'loading', projection: null }, scalarGuidance: scalar }),
+            GUIDANCE_LOADING);
+        assert.deepEqual(
+            resolveHeaderGuidance({ status: 'IN_FOLLOWUP', requestTypeCode: 'PAYMENT', load: { state: 'error', projection: null }, scalarGuidance: scalar }),
+            scalar('IN_FOLLOWUP'));
+        assert.deepEqual(
+            resolveHeaderGuidance({ status: 'PO_ISSUED', requestTypeCode: 'PAYMENT', load: PROJECTION_IDLE, scalarGuidance: scalar }),
+            scalar('PO_ISSUED'));
+    });
+});
 
 // v2.230.0 — pure display helpers for the Multi-Group Request Workflow projection.
 // The backend RequestWorkflowProjectionBuilder is authoritative for labels; these tests pin the
@@ -143,6 +185,26 @@ describe('drawer projection helpers (single-unit historical compatibility)', () 
         assert.equal(resolveDrawerBadgeOverride(p, 'WAITING_QUOTATION'), null);
         assert.equal(resolveSingleUnitGuidance(p, 'WAITING_QUOTATION'), null);
         assert.equal(effectivePanelStatus(p, 'WAITING_QUOTATION'), 'WAITING_QUOTATION');
+    });
+
+    // v2.245.6 — Request Details after REABRIR RECEBIMENTO at 2/2: the scalar is IN_FOLLOWUP and the
+    // projection unit (authoritative, computed by the backend from the receipt facts) says "complete".
+    test('reopened IN_FOLLOWUP unit with every item received → complete-receiving guidance (no local recalculation)', () => {
+        const p = projection([unit('IN_FOLLOWUP', 'Em Acompanhamento', 'Recebimento', 'Recebimento completo — confirmar recebimento')]);
+        assert.deepEqual(resolveSingleUnitGuidance(p, 'IN_FOLLOWUP'),
+            { responsible: 'Recebimento', nextAction: 'Recebimento completo — confirmar recebimento' });
+        assert.equal(resolveDrawerBadgeOverride(p, 'IN_FOLLOWUP'), null); // unit agrees with the scalar
+    });
+
+    test('reopened IN_FOLLOWUP unit with a pending item → pending guidance', () => {
+        const p = projection([unit('IN_FOLLOWUP', 'Em Acompanhamento', 'Recebimento', 'Resolver itens pendentes e confirmar recebimento')]);
+        assert.deepEqual(resolveSingleUnitGuidance(p, 'IN_FOLLOWUP'),
+            { responsible: 'Recebimento', nextAction: 'Resolver itens pendentes e confirmar recebimento' });
+    });
+
+    test('PAYMENT_COMPLETED unit fully received → complete-receiving guidance', () => {
+        const p = projection([unit('PAYMENT_COMPLETED', 'Pagamento Concluído', 'Recebimento', 'Recebimento completo — confirmar recebimento')]);
+        assert.equal(resolveSingleUnitGuidance(p, 'PAYMENT_COMPLETED').nextAction, 'Recebimento completo — confirmar recebimento');
     });
 
     test('terminal scalars stay authoritative', () => {

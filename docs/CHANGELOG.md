@@ -4,7 +4,548 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.244.0
+v2.245.10
+
+## [v2.245.10] - 2026-09-22 — Single-request scope for the payment-group-item-linkage repair
+
+Backend-only. No migration, no data repair executed, frontend untouched except the version marker.
+
+### Root cause
+
+`POST api/v1/admin/repairs/payment-group-item-linkage` (v2.245.4) selected its population inside the service —
+every PAYMENT request with an active unlinked item or a prior repair audit — and offered no request selector.
+After the PROD→TEST sync the TEST PREVIEW scanned 117 requests and reported 68 repairable / 49 refused; a
+`confirm=true` call would therefore have applied the repair to up to 68 requests while the operator authorizes
+exactly one (REQ-04/08/2026-209, correctly classified REPAIR_LINK: PAYMENT_COMPLETED group preserved, 2 active /
+2 unlinked items, no receiving, payment evidence). The global APPLY was reachable with `confirm=true` alone.
+
+### Changed
+
+- **Scoped route** `POST api/v1/admin/repairs/payment-group-item-linkage/{requestId:guid}` (SysAdmin only), mirroring
+  the `legacy-monetary-scale/{requestId}` precedent. The service exposes `RunForRequestAsync`, which runs the very
+  same per-request pipeline as the global scan (same loader, `Classify`, per-request transaction, canonical
+  `IStatusAggregationService` reconciliation, `PAY_GROUP_LINK:{groupId}` idempotency key, technical audit).
+  - PREVIEW (`confirm=false`): inspects only the supplied request, returns the same row DTO and safety evidence,
+    writes nothing; 404 when the request does not exist; a request outside the defect class (not PAYMENT) is
+    reported REFUSED; refused / ambiguous / conflicting / terminal cases are reported as such.
+  - APPLY (`confirm=true`): requires a non-empty `reason` AND the PREVIEW facts restated in the body
+    (`expectedPoGroupId`, `expectedDecision` = REPAIR_LINK | REPAIR_LINK_AND_DEMOTE) — 400 otherwise, nothing
+    executed. The classifier re-runs on a fresh tracked load inside the transaction; when the live facts differ
+    (other group, other decision) the case is REFUSED and nothing is written (409). Only the supplied request is
+    ever loaded for mutation. A repeated APPLY answers 200 with ALREADY_HEALTHY, no second audit or STATUS_SYNC.
+- **Global route hardened.** PREVIEW stays read-only and unchanged. APPLY now requires the explicit query
+  parameter `scope=all` (`confirm=true&scope=all`); without it the call is refused (400) and nothing runs. A
+  `requestId` query on the global route is refused (400) instead of being ignored — the population can never be
+  reached by a mis-addressed scoping attempt, and the `{requestId:guid}` route constraint makes a malformed id
+  unroutable rather than a fallback.
+- Result DTO: `scope` ("ALL" | "REQUEST") and `requestId`; new body DTO `PaymentGroupItemLinkageScopedRepairRequest`.
+
+### Tests
+
+- `PaymentGroupItemLinkageScopedRepairTests` (service, InMemory, multi-request population): scoped PREVIEW returns
+  only the supplied request with the REQ-04/08/2026-209-shaped facts and writes nothing; scoped APPLY changes only
+  the supplied request while five other eligible requests stay state-for-state identical (JSON snapshots) and
+  remain eligible; unknown → null; NON_PAYMENT / CANCELLED / REJECTED / COMPLETED / AMBIGUOUS / CONFLICTING /
+  terminal group / no group fail closed on PREVIEW and APPLY with the eligible sibling untouched; facts mismatch
+  (group or decision) → REFUSED, nothing written; repeated APPLY idempotent; the same classifier demotes a
+  premature WAITING_RECEIPT exactly as the global run.
+- `AdminRepairsPaymentGroupItemLinkageEndpointTests` (controller): global APPLY without `scope=all` (null, empty,
+  "request", "ALL ") → 400 and nothing written; `requestId` on the global route → 400 for PREVIEW and APPLY;
+  global PREVIEW unchanged; route templates/constraint pinned by reflection; scoped route: non-SysAdmin → 403
+  for PREVIEW and APPLY; PREVIEW returns exactly that request, unknown → 404; APPLY without reason/facts → 400;
+  facts mismatch → 409; APPLY with PREVIEW facts repairs, repeats as ALREADY_HEALTHY, unknown → 404; the
+  existing global end-to-end apply now passes `scope=all`.
+
+### Operator path for REQ-04/08/2026-209 (not executed here)
+
+1. `POST …/payment-group-item-linkage/6179648b-e1c4-43f7-a56c-98a7d9e59795` (PREVIEW) → expect one row,
+   `decision = REPAIR_LINK`, `poGroupId = e0a8cc5e-c0f3-480e-8db5-15e7e4d65a4c`.
+2. `POST …/payment-group-item-linkage/6179648b-e1c4-43f7-a56c-98a7d9e59795?confirm=true` with body
+   `{ "reason": "...", "expectedPoGroupId": "e0a8cc5e-c0f3-480e-8db5-15e7e4d65a4c", "expectedDecision": "REPAIR_LINK" }`.
+3. Never call the global route with `confirm=true&scope=all` for this authorization.
+
+## [v2.245.9] - 2026-09-22 — GROUP_COMPLETED audit target and request-level vs group document classification
+
+Two presentation/audit inconsistencies found during the successful v2.245.8 end-to-end TEST validation of a
+legacy PAYMENT request (group classification → final-invoice registration/validation → fiscal receipt →
+group completion → request completion). The functional workflow and its business rules are unchanged; the
+v2.245.5–v2.245.8 receiving, guidance, classification, coverage, preflight/recovery, UPDLOCK arbitration,
+fiscal-receipt unlocking, multi-group isolation and automatic completion behavior is untouched.
+
+### Issue 1 — GROUP_COMPLETED rendered "→ Aguardando Recibo"
+
+- **Root cause.** `RequestStatusHistory.PreviousStatusId/NewStatusId` are FKs to `RequestStatuses` — the
+  REQUEST status domain (`NewStatusId` non-nullable). Group statuses (`PoGroupStatuses`) are a different
+  domain with no table. `RequestCompletionService.AddHistoryOnceAsync` therefore writes every group-scoped
+  row (OPERATIONAL_RECEIPT_COMPLETED, FISCAL_RECEIPT_UNLOCKED, GROUP_COMPLETED) with
+  `Previous = New = request.StatusId` — the scalar of the moment (WAITING_RECEIPT here) — and the details
+  DTO projected `NewStatus.Name`, which the drawer renders as "➡ …" and the print as "newStatus".
+- **Why the target is NOT persisted as the request's COMPLETED status.** Request-level readers reconstruct
+  request transitions from `StatusHistories.NewStatus.Code`: the completion timeline
+  (`CompletedStatusHistory`), the request stage detection, the Finance monthly "paid/completed" counts.
+  Persisting COMPLETED ("Finalizado") on a GROUP_COMPLETED row would (a) declare a multi-group request
+  completed the moment its FIRST group completed, and (b) label the group event with the request-level
+  "Finalizado" instead of the group's "Concluído".
+- **Fix (read-side, smallest explicit representation).** New domain helper `GroupLifecycleHistoryTarget`
+  maps the event code to the GROUP status it produced — GROUP_COMPLETED → COMPLETED ("Concluído"),
+  FISCAL_RECEIPT_UNLOCKED → WAITING_FISCAL_RECEIPT ("Aguardando Recibo Fiscal") — and every other event
+  passes its persisted request status name through unchanged. Applied by `GET /requests/{id}`
+  (`StatusHistory[].NewStatusName`) and by the Finance history projection (same rows, same rule). The status
+  FKs stay truthful to the request (unchanged), REQUEST_COMPLETED remains the request-level transition to
+  "Finalizado", no STATUS_SYNC is fabricated, no legitimate event is suppressed, and rows already persisted
+  in TEST/PROD render correctly — no repair, no migration.
+- **Same writer, same anti-pattern.** FISCAL_RECEIPT_UNLOCKED is written by the same helper and changes the
+  group status the same way, so it is covered. OPERATIONAL_RECEIPT_COMPLETED (same helper) is a stamp with
+  no status change and keeps the scalar. Other group-scoped writers were inspected and are not affected:
+  CONFIRM_RECEIVING / RECEIVING_REOPENED persist the aggregated request status (request domain);
+  GRUPOS_PAGAMENTO_CRIADOS, GRUPO_CLASSIFICADO, FISCAL_RECEIPT_UPLOADED and the invoice events change no
+  status.
+
+### Issue 2 — "Tipo de Documento Anexado: NÃO CLASSIFICADO" after the group was classified
+
+- **Ownership (proven).** `Request.SourceDocumentType` (+ `…Source/OcrSuggestion/OcrConfidence/EvidenceJson`)
+  is the Release-2 request-level IDENTITY of the document the requester attached at creation: editable in
+  DRAFT only (`RequestGeneralDataSection` → `SourceDocumentTypeField readOnly={status !== 'DRAFT'}`),
+  validated at Final Approval, copied ONCE into the single header group by `BuildLegacyPaymentPlanAsync`
+  (`PaymentGroupingKey.SourceDocumentType` → `group.SourceDocumentType`). Under the multi-document model
+  it is a compatibility echo maintained by `SyncHeaderCompatibilityAsync` — "populated when every active
+  document agrees, null when they do not, never the thing that decides an obligation". The obligations
+  (`RequiresOperationInvoice`, `RequiresSeparateFiscalReceipt`, expected total, coverage) derive from
+  `RequestPoGroup.SourceDocumentType`, and the v2.245.8 classification writes the group only.
+- **Answers.** Separate concept: yes (declaration at creation vs operational classification per group).
+  Still operationally relevant after groups exist: no — historical metadata. Different groups may carry
+  different classifications: yes (multi-document PAYMENT, QUOTATION multi-supplier). The displayed value
+  was semantically correct but poorly labelled AND non-authoritative: the legacy request had no declaration
+  (null → "Não classificado") while the group was classified. Authoritative for the Final Invoice / Fiscal
+  Receipt obligations: the group field. Consequently the request-level column is NOT synchronized from a
+  group (multi-group would be wrong and a second source of truth would appear).
+- **UI.** `lib/requestDocumentTypeDisplay.ts` decides the request-level field: DRAFT → editable
+  (creation/edit flow unchanged, still required where configured); read-only without operational groups →
+  the declaration (unchanged, it still seeds Final Approval); read-only with operational groups → shown
+  only when a declaration exists, relabelled **"Tipo de documento declarado no pedido"** with the hint that
+  the operational classification is per group; suppressed otherwise. `OperationInvoiceSection` renders, per
+  group card, "Documento de origem (classificação operacional): {label} · Fatura Final exigida/não
+  exigida" from `obligation.sourceDocumentType`; a pending classification keeps the v2.245.8 blocker
+  instead. The details DTO and print now carry `poGroups[].sourceDocumentType` (each printed lote shows its
+  own "Documento de origem"; omitted when never classified — never a fabricated "Não classificado").
+
+### Tests
+
+- Backend: `GroupLifecycleHistoryTargetTests` (pure resolver: targets, pass-through, labels),
+  `GroupCompletedHistoryTargetTests` (single group → one GROUP_COMPLETED "Concluído" then one
+  REQUEST_COMPLETED "Finalizado"; one of two groups completes → one GROUP_COMPLETED + FISCAL_RECEIPT_UNLOCKED
+  "Aguardando Recibo Fiscal", no REQUEST_COMPLETED; PAYMENT_COMPLETED scalar does not alter the target;
+  re-evaluation never duplicates; no STATUS_SYNC; legacy rows unchanged),
+  `RequestDetailsHistoryTargetSqlTests` (LocalDB, real split projection: DTO labels + group
+  `SourceDocumentType`).
+- Frontend: `requestDocumentTypeDisplay.test.ts` (display rule matrix), `requestPrintModel.test.ts`
+  (GROUP_COMPLETED "Concluído" / REQUEST_COMPLETED "Finalizado", PT action labels, per-group classification
+  distinct across groups, no "Não classificado"), `v2459HistoryTargetAndClassificationDisplay.test.ts`
+  (structural: drawer/print pass-through, header rule wiring, editable path untouched, group card source).
+
+### Versioning
+
+- `APP_VERSION` → `v2.245.9`; `docs/VERSION.md`, `docs/CHANGELOG.md`. **NO MIGRATION**, **no data
+  repair**, no history rewrite.
+
+## [v2.245.8] - 2026-09-22 — Legacy P.O. group classification from the drawer, safe final-invoice registration, readiness-owned completion guidance
+
+TEST finding on v2.245.7 (`2.245.7+7b61344`). No migration, no data repair, no change to the v2.245.5–v2.245.7
+receiving corrections. The completion guards (R15, receipt, confirmation) are not weakened.
+
+### Root cause
+- A PAYMENT group created while `PostPaymentCompletion` was disabled persisted the schema defaults —
+  `SourceDocumentType = null`, `OperationInvoiceStatus = UNCLASSIFIED`, `RequiresOperationInvoice = false`,
+  `RequiresSeparateFiscalReceipt = false`, no expected total. The obligations read model derives the
+  requirement fail-closed (UNCLASSIFIED ⇒ owed), so the coverage card rendered, while every write path
+  reads the persisted columns (`POST operation-invoices` → `OPERATION_INVOICE_NO_OBLIGATION`, short-close
+  → not eligible, `FinalizeRequest` → R15 "Classificação Obrigatória"). The only classification writers
+  were group creation, the multi-document source-document edit and the DRAFT-only header field — the
+  "Release 5 Finance classification" the design deferred to did not exist.
+
+### Added
+- **`POST /api/v1/requests/{requestId}/po-groups/{groupId}/operation-invoice-classification`**
+  `{ sourceDocumentType, justification }` — Finance or System Administrator (the `CLASSIFICATION_PENDING`
+  owner). Gates: feature enabled (else 404), request scope (404), role (403), justification via the
+  existing `ReconciliationJustificationValidator` (400), type via `SourceDocumentTypes.Normalize/IsValid`
+  and `DocumentObligationResolver` in the request's own context (PAYMENT → PaymentRequest, else
+  QuotationManagement; a type that blocks progression such as INVOICE_RECEIPT/OTHER is 400), request
+  mutation window (`OperationInvoiceLifecyclePolicy.CanMutateInRequestStatus`, else 409
+  `OI_CLASSIFICATION_NOT_ELIGIBLE`), group belongs to the request (404), group not CANCELLED/COMPLETED,
+  classification still pending (else 409 `OI_CLASSIFICATION_ALREADY_SET` — duplicate/stale calls),
+  no operation-invoice activity (allocations, PROPOSED/APPROVED short-close, reconciliation snapshot,
+  bound fiscal receipt → 409 `OI_CLASSIFICATION_ACTIVITY_EXISTS`). The operational-receipt stamp,
+  CONFIRM_RECEIVING and the supplier RECEIPT never block. One transaction: identity + the five
+  resolver-derived obligation fields (exactly the group-creation convention), expected total = the
+  group's `TotalAmount`/`CurrencyCode` captured once when an invoice is owed (manual-set audit trio
+  stamped `[CLASSIFICAÇÃO] …`), `IOperationInvoiceCoverageService.RederiveAsync`, Phase-1 completion
+  evaluation (no-op while the lifecycle is off), one `GRUPO_CLASSIFICADO` history row (previous → new
+  display names, obligation transition, expected total, justification); RowVersion conflict → 409
+  `OI_CLASSIFICATION_CONCURRENCY`. Quantities, confirmations, receipts and the request scalar untouched.
+- **`POST /api/v1/requests/{requestId}/operation-invoices/preflight`** — the create endpoint's own
+  admissibility gates (scope 404 → role 403 → obligation 409 → lifecycle 409), shared code path with
+  `Create` so the answers cannot drift, evaluated before any file upload.
+- **Drawer**: the group card shows "Classificar Documento de Origem" (Finance/SysAdmin) with a modal that
+  reuses `SourceDocumentTypeField` + the shared type explanations, states the expected-total consequence,
+  requires a justification (min. 20 chars), submits to the new endpoint and, on success, refreshes coverage,
+  completion readiness and the request (one fetch each). Non-deciders see who classifies.
+
+### Changed
+- "Registrar Fatura Final" renders only when some obligation is classified and allocatable
+  (`hasRegistrableObligation`); otherwise an explanatory blocker points to the classification action.
+- Final-invoice registration order: backend preflight → upload → create, through a serialized submitter
+  (double-clicks/races refused, never queued). The uploaded file is a **server fact**: a create refused
+  or interrupted after the upload leaves an unclaimed `OPERATION_INVOICE` attachment that the new
+  `GET …/operation-invoices/unclaimed-attachments` lists (belongs to the request, active, claimed by no
+  invoice); the create is idempotent per attachment (the same attachment returns the existing
+  invoice; a concurrent second create is refused by the attachment claim / unique index), so a lost
+  successful response is recovered by retrying, never by uploading again. On open the modal re-reads
+  that list: the upload of the **same uninterrupted session** is restored automatically (only while the
+  server still lists it as unclaimed); uploads merely **discovered** (closed modal, reload, another
+  session) are listed as candidates — file, date/time, uploader, newest first, id as tie-break — and
+  are **never selected automatically**: the user chooses "Reutilizar" or "Descartar" per file, and an
+  undecided candidate never satisfies the file requirement nor is submitted. Choosing another local
+  file explicitly releases the selected upload first through
+  `POST …/operation-invoices/attachments/{id}/release` (soft delete + "DOCUMENTO REMOVIDO" history;
+  409 `OPERATION_INVOICE_ATTACHMENT_CLAIMED` when an invoice claims it; never for
+  deleted/voided/non-invoice/foreign attachments); a failed release refuses the new file and keeps the
+  upload listed; every release/claim answer refreshes server truth. No broad cleanup exists; historical
+  orphan attachments are left as they are (they appear as candidates for an explicit decision).
+- **Claim/release arbitration (SQL Server row lock, no migration).** `Create`, `Update` with a new file,
+  `Replace` and the release all execute `SELECT … FROM RequestAttachments WITH (UPDLOCK, ROWLOCK) WHERE
+  Id = @id` as the FIRST statement of a `ReadCommitted` transaction (the `SystemCounters` convention of
+  `SupplierCreationService`) and evaluate eligibility only under that lock, so two writers over one
+  attachment are serialized: create wins → the release reads the committed claim and answers 409 with
+  no write; release wins → the create reads the deleted row (400 "removido ou anulado") and creates
+  nothing. A deadlock victim (SQL 1205) maps to the established 409 concurrency answer, never an
+  ambiguous success. Invariant after every commit: an attachment is either active and claimed by
+  exactly one invoice, or unclaimed/released — never both, never an invoice pointing at an attachment
+  released before its claim committed. Pinned on the real provider by
+  `OperationInvoiceAttachmentClaimReleaseSqlTests` (LocalDB): the competing endpoint is proven BLOCKED
+  while the lock is held, then reads the holder's committed outcome (both orders), plus lost-success
+  retry idempotency.
+- WAITING_RECEIPT guidance under the legacy path is derived from the completion-readiness facts
+  (`legacyCompletionGuidance`): an open group with `CLASSIFICATION_PENDING` → "Classificar o documento de
+  origem … antes de finalizar" (Financeiro / Administração) and "Finalizar Pedido" is suppressed (the
+  backend would refuse); once classified, an unsatisfied invoice obligation → "Registrar / validar a
+  Fatura Final e finalizar o pedido" (finalization stays available in the Phase-3B window); otherwise
+  the projection's wording stands. Header and status panel share the same precedence slot.
+
+### Tests
+- Backend `OperationInvoiceClassificationEndpointTests` (32): Finance/SysAdmin success with every derived
+  field, expected total, audit contents and preserved receiving facts; stamp + receipt never block; INVOICE
+  → NOT_REQUIRED, no expected total, completion reads fiscal-receipt-only; PROFORMA → invoice pending;
+  QUOTATION context; alias normalization; multi-group isolation; 403 no writes; 400 justification/type/null
+  body; 404 unknown/cross-request; duplicate → 409 with one audit; terminal request / P.O. correction /
+  terminal group → 409; allocation / short-close / fiscal receipt → 409; feature off → 404; preflight
+  mirrors create (409 no obligation, admissible after classification, 403/404/409); full legacy path:
+  finalize refused → create refused → classify → create OK → legacy finalization COMPLETED.
+- Backend `OperationInvoiceAttachmentRecoveryTests`: business rejection after upload leaves the file
+  listed and reusable; list excludes claimed/deleted/voided/other-type/foreign; lost response + retry →
+  same invoice; release soft-deletes only the unclaimed file with history and refuses claimed / deleted /
+  voided / non-invoice / foreign / unknown / unauthorized; concurrent retry never creates a second invoice
+  and never deletes the claimed evidence; preflight rejection leaves nothing uploaded.
+- Frontend `operationInvoiceView.test.ts` (classification pending, registrable obligation, legacy guidance
+  matrix, error mapping), `operationInvoiceSubmit.test.ts` (zero uploads on preflight failure, exactly one
+  upload/create, retained reuse, own-upload-only restore, no automatic selection of discovered uploads,
+  deterministic candidate order, explicit release outcomes, busy guard), `v2458ClassificationFlow.test.ts`
+  (structural wiring incl. candidate list, explicit reuse/discard, release-before-new-file, refresh).
+  No jsdom/RTL exists in this repository; behavior is proven at the consumer-boundary units and wiring.
+
+## [v2.245.7] - 2026-09-21 — Request Details / Quick View: receiving guidance consumes the authoritative projection
+
+Frontend-only guidance-consumption correction found in TEST on v2.245.6 (`2.245.6+26359ac`). No backend,
+migration or data change; the v2.245.5/v2.245.6 receiving workflow, authorization, audit and toast behavior
+is untouched.
+
+### Fixed
+- **Quick View / full-page header guidance for non-QUOTATION requests.** `RequestEdit` fetched
+  `GET /api/v1/requests/{id}/workflow-projection` only when `requestTypeCode === 'QUOTATION'`; for every
+  other type the projection-derived `singleUnitGuidance` was always `null`, so both consumers
+  (`RequestActionHeader` strip and `RequestStatusActionPanels` "Responsável atual / Próxima ação") fell
+  through to the generic status map (`getRequestGuidance('IN_FOLLOWUP')` → "Resolver itens pendentes e
+  confirmar recebimento") even with every item received. This is why the v2.245.6 backend endpoint tests
+  passed while the PAYMENT Quick View stayed wrong: the view never called that endpoint.
+  The details view now loads the projection for the **receiving phase of every request type**
+  (`PAYMENT_COMPLETED`, `IN_FOLLOWUP`, `WAITING_RECEIPT`, `WAITING_FISCAL_RECEIPT`; QUOTATION keeps its
+  always-on v2.230.0 behavior) through a framework-free loader (`loadWorkflowProjection`) and applies one
+  precedence rule (`resolveHeaderGuidance`): Release-4 completion guidance (WAITING_RECEIPT under the
+  active lifecycle) → loading placeholder → projection single-unit truth → legacy scalar fallback.
+- **No wrong-guidance flash:** while the owning projection is in flight the header strip and the panel
+  render a muted "Carregando próxima ação..." placeholder (`aria-busy`), never a generic text that is
+  replaced later.
+- **Conservative failure fallback:** a failed projection fetch resolves to the legacy scalar guidance;
+  the details view keeps working (tested, no unhandled rejection).
+
+### Preserved
+- Quick View (`RequestDrawerPresentation`) and the full page render the same `RequestEdit`: one projection
+  fetch per rendered view, no duplicate call sites.
+- Multi-unit header, drawer badge override and panel status mapping remain QUOTATION-only; multi-group,
+  batch (approval-phase) and terminal requests keep the legacy scalar path; non-receiving PAYMENT statuses
+  keep their type-specific wording. `completion-readiness.complete` is never interpreted as receiving
+  completeness (it only gates the Release-4 WAITING_RECEIPT guidance, as before).
+- Print view receives the projection in exactly the cases the header uses it.
+
+### Tests
+- `src/lib/workflowProjectionGuidance.test.ts` (consumer boundary): one fetch for PAYMENT+IN_FOLLOWUP,
+  fetch policy per status/type, no fetch when irrelevant, error → fallback without rejection, cancellation;
+  rendered guidance for IN_FOLLOWUP 2/2, partial, PAYMENT_COMPLETED, WAITING_RECEIPT (+Release-4
+  precedence), scalar-vs-projection precedence, loading placeholder, failure fallback, multi-group,
+  batch/other-phase scope, terminal scalars, v2.230.0 mappings.
+- `v2457QuickViewGuidance.test.ts` (structural): drawer renders `RequestEdit`; single loader call site;
+  precedence wiring in header + panel; QUOTATION-only gates preserved; completion-readiness not misused;
+  v2.245.5/6 toast and RECEIVING_REOPENED label regressions.
+- `workflowProjection.test.mjs` (node:test): fetch/ownership policy and precedence.
+
+## [v2.245.6] - 2026-09-21 — Receiving corrections: guidance, audit-status and toast fixes from TEST validation
+
+Presentation/guidance/audit corrections discovered during the TEST validation of v2.245.5. The validated
+reopen → adjust → register → confirm workflow, its authorization and its data-integrity rules are unchanged.
+No migration, no data repair.
+
+### Fixed
+- **Request Details guidance after reopen (and any pre-confirmation state)**: for a single operational
+  group in PAYMENT_COMPLETED / IN_FOLLOWUP with every active item fully received, the drawer now shows
+  "Recebimento completo — confirmar recebimento"; partial receiving keeps "Resolver itens pendentes e
+  confirmar recebimento". Root cause: `GET /api/v1/requests/{id}/workflow-projection` loaded line items
+  without `LineItemStatus` and groups without their items, so the v2.245.3 projection rule
+  (`RequestWorkflowProjectionBuilder`) never saw a received item at runtime. The endpoint now loads the
+  same receipt facts `OperationalReceiptFacts` consumes (item statuses and, for QUOTATION requests, the
+  winning quotation items). The frontend keeps using the projection (no competing calculation).
+- **`RECEIVING_REOPENED` history status**: the event now records IN_FOLLOWUP ("→ Em Acompanhamento") as
+  its resulting status — matching CONFIRM_RECEIVING, which records the group's target status — instead
+  of copying the pre-reopen request scalar ("→ Aguardando Recibo"). The row is still written inside the
+  reopen transaction before the aggregator; the authoritative STATUS_SYNC event is preserved. Applies to
+  newly generated events only; existing records are untouched.
+- **Receipt toast**: decreasing or resetting an accumulated quantity shows "Recebimento ajustado com
+  sucesso."; a first registration or an increase keeps "Recebimento registrado com sucesso." — decided
+  by the pre-submit vs submitted quantity (`receiptSubmitSuccessMessage`), the same rule that produces
+  the `ITEM_RECEIVING_ADJUSTMENT` audit fact.
+
+### Tests
+- Backend: endpoint-level projection guidance (IN_FOLLOWUP 2/2 → CONFIRM_RECEIVING, partial →
+  RESOLVE_FOLLOWUP, PAYMENT_COMPLETED 2/2, reopen → projection chain); reopen audit status assertions.
+- Frontend: toast wording rule; single-unit guidance from the projection at IN_FOLLOWUP; print/history
+  rendering of RECEIVING_REOPENED; all v2.245.5 reopen/authorization/freeze/correction tests kept.
+
+## [v2.245.5] - 2026-09-21 — Receiving corrections: frozen quantities after confirmation, audited adjustments, REABRIR RECEBIMENTO
+
+Fixes a v2.245.4 TEST finding. No migration, no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- After CONFIRMAR RECEBIMENTO (group WAITING_RECEIPT) every item still rendered an active "REGISTRAR"
+  action and the receipt-registration endpoint still accepted direct changes. Registration/correction is
+  now a PRE-confirmation action (canonical `ReceivingActionEvaluator.CanRegisterItemReceipt`): confirmed
+  groups are read-only in the UI and the backend rejects direct item changes with **409**, explaining that
+  REABRIR RECEBIMENTO is required.
+
+### Added
+- **AJUSTAR** on already-received items (pre-confirmation only): the existing entry modal records the
+  absolute accumulated quantity, so an incorrect receipt can be reduced or reset before confirmation. A
+  decrease is audited as an append-only **`ITEM_RECEIVING_ADJUSTMENT`** fact (delta + corrected
+  accumulated); increases keep `ITEM_RECEIVING_REGISTRATION`. Quantities can never go negative (400).
+  If a correction leaves any item incomplete, CONFIRMAR RECEBIMENTO is no longer offered.
+- **REABRIR RECEBIMENTO** — `POST /api/v1/requests/{id}/operational/groups/{groupId}/reopen-receiving`
+  (`{ "reason": "…" }`): Receiving or System Administrator only; mandatory reason (400); returns ONLY the
+  selected group from WAITING_RECEIPT to IN_FOLLOWUP; preserves received quantities, item statuses and all
+  history; clears only the group's operational-completion stamp; writes a **`RECEIVING_REOPENED`** audit
+  (actor, timestamp, group tag, reason); recomputes the request scalar exclusively through
+  `StatusAggregationService`; transactional; a repeated call is refused (409) because the group is no
+  longer WAITING_RECEIPT. Refused (409) for COMPLETED/CANCELLED/REJECTED requests, non-WAITING_RECEIPT
+  groups, and when an active supplier **RECEIPT** exists (FISCAL_RECEIPT, RECEIVING_EVIDENCE and
+  PAYMENT_PROOF never count; deleted/voided receipts do not block) — Finance must remove or invalidate
+  the receipt first. A new confirmation is required before the group can return to WAITING_RECEIPT.
+- Receiving operation UX: pending → REGISTRAR; received → AJUSTAR; all complete → CONFIRMAR RECEBIMENTO;
+  WAITING_RECEIPT → read-only quantities + REABRIR RECEBIMENTO (authorized users) with a dedicated
+  reason modal explaining the consequences; COMPLETED → entirely read-only.
+- Print/history labels for `ITEM_RECEIVING_ADJUSTMENT` and `RECEIVING_REOPENED`.
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no deleted history; existing over-receipt warning, authorization,
+  group-linkage and active-item validations preserved; multi-group requests isolated (reopen touches one
+  group only); finalization guard and Finance workflow unchanged (a reopened group is no longer
+  finalization-ready until re-confirmed). All v2.245.x invariants hold.
+
+## [v2.245.4] - 2026-09-21 — PAYMENT group item linkage (producer fix, atomic repair, fail-closed receiving)
+
+Fixes a v2.245.3 TEST finding. No migration, no automatic data repair; internal status/attachment codes
+unchanged.
+
+### Fixed
+- PAYMENT groups built from the header (single-group) plan were created with their line items unlinked
+  (`RequestPoGroupId = NULL`): the receiving operation rendered "0/N" with no conference table and the
+  group could never be confirmed. The legacy plan now attributes every active line item to the group.
+- Groups created by `admin/payment-po-repair` (same builder) are now linked as well.
+- Some unlinked groups had been pushed to WAITING_RECEIPT by the deprecated move-to-receipt action
+  without any operational confirmation, making them appear finalization-ready; the new repair restores
+  the provable prior state.
+
+### Added
+- **Controlled repair** `POST api/v1/admin/repairs/payment-group-item-linkage` (SysAdmin-only,
+  `confirm=false` preview / `confirm=true` + reason apply, idempotent). Per request, in ONE transaction:
+  links active unlinked items to the single non-cancelled group; demotes a WAITING_RECEIPT group that has
+  NO group-correlated confirmation but provable move-from-PAYMENT_COMPLETED + payment evidence back to
+  PAYMENT_COMPLETED; reconciles the request scalar only through `StatusAggregationService` (STATUS_SYNC);
+  writes one technical audit (`PAYMENT_GROUP_ITEM_LINK_REPAIR`). PREVIEW and APPLY share one classifier.
+  Fails closed: AMBIGUOUS (>1 active group), CONFLICTING (foreign/mixed linkage, or a CONFIRM_RECEIVING
+  that cannot be correlated with the current group), REFUSED (terminal states, insufficient evidence,
+  advance-payment flows).
+- Confirmation correlation is strict: an `OPERATIONAL_RECEIPT_COMPLETED` row with this group's
+  idempotency key, or a `CONFIRM_RECEIVING` written after the group's creation carrying this group's
+  `GroupId:` tag, or — only for a request that never had another group — an untagged `CONFIRM_RECEIVING`
+  written after the group's creation.
+- Receiving operation: a group whose request items are not linked to it now shows a read-only remediation
+  blocker instead of rendering nothing; no item registration or confirmation is offered for it.
+
+### Safety / Compatibility
+- **No migration**, **no automatic repair**; never fabricates `CONFIRM_RECEIVING` /
+  `OPERATIONAL_RECEIPT_COMPLETED` / `PAYMENT_COMPLETED`, received quantities, item statuses, completion
+  timestamps or attachments; never deletes receipts. Document-based multi-group payment plans unchanged;
+  items are never mass-assigned when more than one active group exists. All v2.245.x invariants preserved
+  (registration never enters WAITING_RECEIPT; only explicit confirmation does; finalization requires
+  confirmed groups + supplier RECEIPT; duplicate confirm 409).
+
+## [v2.245.3] - 2026-09-21 — Finance finalization modal routing & pre-confirmation guidance
+
+Fixes a v2.245.2 TEST finding. No migration, no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- The Finance "Finalizar Pedido (Recibo do Fornecedor)" action opened the operational
+  receiving-confirmation modal (attestation of goods received + optional RECEIVING_EVIDENCE, calling
+  confirm-receiving) instead of the finalization flow. It now routes through the standard `ApprovalModal`
+  (type FINALIZE → `api.requests.finalize` → `POST /operational/finalize`).
+- Request Details showed "Resolver itens pendentes e confirmar recebimento" at 6/6 (all items received)
+  because it used the raw scalar `IN_FOLLOWUP` guidance.
+
+### Changed
+- The receiving-confirmation modal is used exclusively by the receiving operation page; RequestEdit no
+  longer imports or renders it.
+- Finalize is offered only when an active supplier **RECEIPT** attachment exists; otherwise Request
+  Details guides the user to attach the "Recibo do Fornecedor" (the supplier-receipt upload card is now
+  labeled "Recibo do Fornecedor"). RECEIVING_EVIDENCE, FISCAL_RECEIPT and PAYMENT_PROOF never satisfy it.
+- Request Details guidance uses group/unit projection truth: a fully-received-but-unconfirmed group
+  (PAYMENT_COMPLETED or IN_FOLLOWUP) reads "Recebimento completo — confirmar recebimento"; partial keeps
+  the pending wording; after confirmation it reads "Anexar recibo do fornecedor e finalizar pedido".
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no fabricated events. Backend finalization remains authoritative:
+  a valid active RECEIPT belonging to the request is required, foreign/deleted/other-type attachments are
+  rejected with no writes, duplicate confirm returns 409, groupless fail-closed is unchanged. Internal
+  status codes and the four attachment type codes (RECEIPT, FISCAL_RECEIPT, RECEIVING_EVIDENCE,
+  PAYMENT_PROOF) are unchanged and never merged.
+
+## [v2.245.2] - 2026-09-17 — Receiving/receipt domain correction
+
+Corrects the premature request-level WAITING_RECEIPT transition and hardens finalization. No migration,
+no data repair; internal status/attachment codes unchanged.
+
+### Fixed
+- Item-quantity registration (including reaching 100% received) no longer advances a grouped request to
+  WAITING_RECEIPT, and no longer writes a RECEIVING_PROGRESS transition to WAITING_RECEIPT. WAITING_RECEIPT
+  is entered exclusively by the explicit CONFIRM_RECEIVING action.
+- Finance finalization is now blocked (409, no writes) whenever any active operational group is still
+  unconfirmed (PAYMENT_COMPLETED / IN_FOLLOWUP / WAITING_SUPPLIER_DELIVERY / …) — **independent of the
+  PostPaymentCompletion feature flag**, closing the finalize-before-confirmation integrity gap.
+- The main Finance payment endpoint now validates the payment-proof attachment TYPE (must be
+  PAYMENT_PROOF, belong to the request, and be active), rejecting RECEIPT / FISCAL_RECEIPT /
+  RECEIVING_EVIDENCE / foreign / missing attachments — parity with the advance-payment path.
+
+### Changed
+- Item registration uses a dedicated `DetermineItemRegistrationSyncStatus` (pre-confirmation IN_FOLLOWUP)
+  instead of reusing the post-confirmation rule; legacy groupless requests preserve prior behavior.
+- Canonical, display-only terminology (no DB/migration change): WAITING_RECEIPT →
+  "Aguardando Recibo do Fornecedor" (status labels + Request Details header override); print history labels
+  for RECEIVING_PROGRESS, OPERATIONAL_RECEIPT_COMPLETED, CONFIRM_RECEIVING ("Recebimento confirmado"),
+  the two receiving repairs and PAYMENT_DIVERGENCE_DETECTED; print document-type labels for RECEIPT
+  ("Recibo do Fornecedor"), FISCAL_RECEIPT ("Recibo Fiscal") and RECEIVING_EVIDENCE
+  ("Comprovativo de Recebimento/Execução"); Finalize button labeled "Recibo do Fornecedor".
+- The Request Details Finalize action is hidden unless every active group is confirmed (backend is
+  authoritative; frontend is supplementary).
+
+### Safety / Compatibility
+- **No migration**, **no data repair**, no fabricated events; internal status codes and the four
+  attachment type codes are unchanged and never merged/reclassified. All v2.245.x behavior preserved
+  (non-mutating INICIAR RECEBIMENTO, deprecated move-to-receipt 409, duplicate-confirm 409, receiving
+  repairs, print coverage, single/multi guidance, authorization).
+
+## [v2.245.1] - 2026-09-16 — Receiving entry fix (no premature WAITING_RECEIPT)
+
+A workflow regression found during v2.245.0 TEST validation. No migration, no data repair.
+
+### Fixed
+- Premature transition to WAITING_RECEIPT: the Request Details "Mover para Recebimento" action moved a
+  PAYMENT_COMPLETED group straight to WAITING_RECEIPT before item conference, permanently hiding
+  Confirmar Recebimento (WAITING_RECEIPT is the post-confirmation state).
+
+### Changed
+- Entering the receiving operation from Request Details is now a **non-mutating navigation** — the
+  operator registers quantities and confirms in the receiving operation; WAITING_RECEIPT is reached
+  only via the dedicated Confirmar Recebimento.
+- Removed the misleading "Mover para Recibo / aguardando recibo" confirmation modal for this action;
+  the action label now describes entering receiving ("Iniciar Recebimento").
+- The legacy `move-to-receipt` endpoint is **deprecated**: it performs no writes and returns a
+  controlled 409.
+
+### Safety / Compatibility
+- **No migration** and **no data repair** in this patch.
+- v2.245.0 semantics preserved unchanged: general receiving-actionable statuses (PAYMENT_COMPLETED,
+  WAITING_RECEIPT, IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY); confirm-action statuses (PAYMENT_COMPLETED,
+  IN_FOLLOWUP, WAITING_SUPPLIER_DELIVERY); WAITING_RECEIPT non-re-confirmable; duplicate confirm → 409;
+  post-confirmation guidance "Recebimento confirmado. Anexar recibo do fornecedor e finalizar pedido.";
+  single/multi-unit guidance unchanged.
+- No fabricated receiving/payment/PO/approval/history events; no request-ID-specific runtime logic.
+
+## [v2.245.0] - 2026-09-16 — Request Print View & Receiving Reliability
+
+A browser-native **Request Print View** plus a cluster of **Receiving reliability** fixes and two
+**controlled, SysAdmin-only legacy-data repairs**. No schema migration, no backfill of business data,
+no fabricated receiving/payment events; existing payment-divergence semantics unchanged.
+
+### Added
+- **Request Details print workflow** — a print button in the Request Details view.
+- **Full printable request document** — every group, line item, attachment metadata, quotation,
+  approval and history event (no truncation), with humanized history/document labels and compact
+  corporate print styling; browser-native print only (no PDF library).
+- **Generated-by metadata** — the printed document is stamped with the current user.
+- **Dynamic PDF/browser title** — `Portal Gerencial - Pedido <número seguro> - <YYYY-MM-DD>`, with a
+  sanitized request number, restored to the original `document.title` after printing.
+- **Controlled receiving-finalization-drift repair** — `POST api/v1/admin/repairs/receiving-finalization-drift`
+  (SysAdmin, preview/apply, idempotent) restoring the missing winning-quotation-item link.
+- **Controlled PAYMENT receiving-status-drift repair** — `POST api/v1/admin/repairs/payment-receiving-status-drift`
+  (SysAdmin, preview/apply, idempotent) promoting legacy backfilled PENDING PAYMENT groups to
+  PAYMENT_COMPLETED.
+
+### Changed
+- Receiving item/group resolution — winning-quotation-item receipts resolve to their line item by an
+  unambiguous LineNumber match when the explicit link is missing; item→group frontend fallback.
+- Receiving workflow guidance — post-confirmation groups guide to attaching the supplier receipt and
+  finalizing; partial vs complete states are distinct.
+- Single vs multi operational-unit guidance — a single-unit request shows the normal responsible /
+  next-action panel and no longer emits the false "múltiplos grupos operacionais" message.
+- Canonical receiving-eligibility helpers — a single frontend rule mirroring the backend evaluator for
+  general receiving access and a dedicated one-time confirm-action rule.
+- Post-confirmation guidance surfaced consistently for confirmed groups.
+
+### Fixed
+- Legacy quotation item/group linkage drift leaving groups stuck IN_FOLLOWUP after receipt.
+- Stuck receiving groups after full receipt (auto-sync stale-navigation fix).
+- Legacy PAYMENT groups stuck in PENDING (never inheriting payment completion from the backfill).
+- Empty `RequestPoGroupId` confirm-receiving calls (frontend resolver + defensive modal guard).
+- False multi-group message on single-unit requests.
+- Duplicate `CONFIRM_RECEIVING` — a second confirm on an already-confirmed (WAITING_RECEIPT) group now
+  returns 409 and writes no duplicate history.
+- Confirm button remaining clickable after the group reached WAITING_RECEIPT.
+- Frontend/backend receiving-eligibility mismatch (workspace request-scalar admission vs group-status
+  actions).
+
+### Safety / Compatibility
+- **No migration** — no schema change, no EF migration.
+- Repairs are **SysAdmin-only**, preview/apply, with a mandatory reason on apply, transaction-safe and
+  idempotent; preview writes nothing.
+- No fabricated receiving/payment events; technical repair audits only (never `CONFIRM_RECEIVING` /
+  `PAYMENT_COMPLETED` transitions).
+- Existing payment-divergence semantics unchanged (informational, non-blocking).
+- Print uses browser-native printing only — no PDF library, no external calls, no auth data embedded.
 
 ## [v2.244.0] - 2026-09-12 — Approval Center V2
 

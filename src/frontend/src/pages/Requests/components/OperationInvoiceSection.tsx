@@ -17,7 +17,11 @@ import {
     shortCloseBlockedByPending,
     isOperationInvoiceLifecycleOpen,
     acceptedDivergence,
-    mapOperationInvoiceError
+    mapOperationInvoiceError,
+    isClassificationPending,
+    hasRegistrableObligation,
+    REGISTER_BLOCKED_BY_CLASSIFICATION,
+    CLASSIFICATION_PENDING_CARD_TEXT
 } from '../../../lib/operationInvoiceView';
 import type {
     OperationInvoiceDto,
@@ -30,6 +34,8 @@ import { OperationInvoiceAllocationWizard } from '../../../components/requests/O
 import { OperationInvoiceValidateModal } from '../../../components/requests/OperationInvoiceValidateModal';
 import { OperationInvoiceLifecycleModal, LifecycleAction } from '../../../components/requests/OperationInvoiceLifecycleModal';
 import { OperationInvoiceShortCloseModal } from '../../../components/requests/OperationInvoiceShortCloseModal';
+import { OperationInvoiceClassificationModal } from '../../../components/requests/OperationInvoiceClassificationModal';
+import { documentTypeLabel } from '../../../lib/sourceDocumentType';
 
 interface OperationInvoiceSectionProps {
     requestId: string;
@@ -37,10 +43,17 @@ interface OperationInvoiceSectionProps {
     coverageEnabled: boolean;
     /** Request status code — actions mirror OperationInvoiceLifecyclePolicy (v2.228.4). */
     statusCode: string | null;
+    /** v2.245.8 — PAYMENT vs QUOTATION decides the document-type options offered by the classification modal. */
+    requestTypeCode?: string | null;
     isFinance: boolean;
     isBuyer: boolean;
     isAdmin: boolean;
     currentUserId: string | null;
+    /**
+     * v2.245.8 — fired after a mutation that changes a group's obligation (classification): the host
+     * refreshes the request, the completion readiness and the workflow guidance from their own sources.
+     */
+    onObligationsChanged?: () => void;
 }
 
 /**
@@ -54,7 +67,8 @@ interface OperationInvoiceSectionProps {
  * intended Phase 3B state, not a warning.
  */
 export function OperationInvoiceSection({
-    requestId, coverageEnabled, statusCode, isFinance, isBuyer, isAdmin, currentUserId
+    requestId, coverageEnabled, statusCode, requestTypeCode = null, isFinance, isBuyer, isAdmin, currentUserId,
+    onObligationsChanged
 }: OperationInvoiceSectionProps) {
     // Role AND lifecycle: pre-Final the section is a read-only preview — no action the backend
     // would reject is offered (v2.228.4). The backend remains authoritative either way.
@@ -75,6 +89,7 @@ export function OperationInvoiceSection({
     const [validateInvoice, setValidateInvoice] = useState<OperationInvoiceDto | null>(null);
     const [lifecycleModal, setLifecycleModal] = useState<{ action: LifecycleAction; invoice: OperationInvoiceDto } | null>(null);
     const [shortCloseGroup, setShortCloseGroup] = useState<OperationInvoiceObligationDto | null>(null);
+    const [classifyGroup, setClassifyGroup] = useState<OperationInvoiceObligationDto | null>(null);
 
     const refresh = useCallback(async () => {
         if (!coverageEnabled) return;
@@ -111,6 +126,13 @@ export function OperationInvoiceSection({
     const relevantObligations = useMemo(
         () => (obligations?.obligations ?? []).filter(o => o.requiresOperationInvoice),
         [obligations]);
+
+    // v2.245.8: the register action exists only when some obligation could actually receive the
+    // invoice (the backend create gate: OPERATION_INVOICE_NO_OBLIGATION otherwise). An unclassified
+    // legacy group is "owed" fail-closed by the read model but can take nothing until classified.
+    const canRegisterInvoice = useMemo(() => hasRegistrableObligation(relevantObligations), [relevantObligations]);
+    const classificationPendingCount = useMemo(
+        () => relevantObligations.filter(isClassificationPending).length, [relevantObligations]);
 
     // v2.228.4: the invoice supplier comes from the request's OWN obligation-bearing groups —
     // never the global supplier catalogue (multi-group requests offer every group supplier).
@@ -190,15 +212,16 @@ export function OperationInvoiceSection({
                             currentUserId={currentUserId}
                             onProposeShortClose={() => setShortCloseGroup(obligation)}
                             onOpenShortClose={() => setShortCloseGroup(obligation)}
+                            onClassify={() => setClassifyGroup(obligation)}
                         />
                     ))}
 
                     {/* ── Invoice list ── */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
                             Faturas Finais Registadas
                         </span>
-                        {canWrite && (
+                        {canWrite && canRegisterInvoice && (
                             <button
                                 onClick={() => setRegisterModal({ mode: 'create', invoice: null })}
                                 style={{
@@ -209,6 +232,14 @@ export function OperationInvoiceSection({
                             >
                                 <Plus size={15} /> Registrar Fatura Final
                             </button>
+                        )}
+                        {canWrite && !canRegisterInvoice && classificationPendingCount > 0 && (
+                            <span data-testid="register-blocked-by-classification" style={{
+                                fontSize: '0.78rem', fontWeight: 600, color: '#92400e', backgroundColor: '#fffbeb',
+                                border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px'
+                            }}>
+                                {REGISTER_BLOCKED_BY_CLASSIFICATION}
+                            </span>
                         )}
                     </div>
 
@@ -273,6 +304,19 @@ export function OperationInvoiceSection({
                     onDone={() => { setLifecycleModal(null); void refresh(); }}
                 />
             )}
+            {classifyGroup && (
+                <OperationInvoiceClassificationModal
+                    requestId={requestId}
+                    obligation={classifyGroup}
+                    requestTypeCode={requestTypeCode}
+                    onClose={() => setClassifyGroup(null)}
+                    onClassified={() => {
+                        setClassifyGroup(null);
+                        void refresh();
+                        onObligationsChanged?.();
+                    }}
+                />
+            )}
             {shortCloseGroup && (
                 <OperationInvoiceShortCloseModal
                     requestId={requestId}
@@ -313,7 +357,7 @@ function StatusChip({ label, severity }: { label: string; severity: string }) {
 }
 
 function GroupCoverageCard({
-    obligation, shortCloses, canWrite, canDecide, currentUserId, onProposeShortClose, onOpenShortClose
+    obligation, shortCloses, canWrite, canDecide, currentUserId, onProposeShortClose, onOpenShortClose, onClassify
 }: {
     obligation: OperationInvoiceObligationDto;
     shortCloses: OperationInvoiceShortCloseDto[];
@@ -322,12 +366,16 @@ function GroupCoverageCard({
     currentUserId: string | null;
     onProposeShortClose: () => void;
     onOpenShortClose: () => void;
+    onClassify: () => void;
 }) {
     const view = coverageView(obligation);
     const status = aggregateStatusPresentation(obligation.derivedStatus, obligation.closedShort);
     const pendingProposal = shortCloses.find(c => c.status === 'PROPOSED');
     const approvedShortClose = shortCloses.find(c => c.status === 'APPROVED');
     const divergence = acceptedDivergence(obligation);
+    // v2.245.8: a legacy group without document identity — the ONLY action that unblocks it is the
+    // Finance/SysAdmin classification (canDecide mirrors the backend role gate).
+    const classificationPending = isClassificationPending(obligation);
 
     return (
         <div style={{
@@ -356,6 +404,17 @@ function GroupCoverageCard({
                 </div>
             </div>
 
+            {/* v2.245.9: the group's OPERATIONAL classification — the authoritative source of this group's
+                obligations (RequestPoGroup.SourceDocumentType), rendered per group so sibling groups with
+                different documents stay distinct. A pending classification is announced below instead. */}
+            {!classificationPending && (
+                <div data-testid="group-source-document" style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                    Documento de origem (classificação operacional):{' '}
+                    <span style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>{documentTypeLabel(obligation.sourceDocumentType)}</span>
+                    {' · '}{obligation.requiresOperationInvoice ? 'Fatura Final exigida' : 'Fatura Final não exigida'}
+                </div>
+            )}
+
             {/* The five coverage numbers — VALIDADO and EM VALIDAÇÃO are never conflated. */}
             <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px',
@@ -377,7 +436,26 @@ function GroupCoverageCard({
                 </div>
             )}
 
-            {!view.hasExpected && (
+            {classificationPending ? (
+                <div data-testid="classification-pending" style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.78rem', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 10px', fontWeight: 600 }}>
+                    <span>{CLASSIFICATION_PENDING_CARD_TEXT}</span>
+                    {canDecide ? (
+                        <div>
+                            <button
+                                onClick={onClassify}
+                                style={{
+                                    padding: '6px 12px', border: 'none', backgroundColor: 'var(--color-primary)',
+                                    color: '#fff', borderRadius: '6px', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer'
+                                }}
+                            >
+                                Classificar Documento de Origem
+                            </button>
+                        </div>
+                    ) : (
+                        <span>A classificação é efetuada pelo Financeiro ou pela Administração do Sistema.</span>
+                    )}
+                </div>
+            ) : !view.hasExpected && (
                 <div style={{ fontSize: '0.78rem', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', fontWeight: 600 }}>
                     O valor esperado da fatura final ainda não foi definido para este grupo.
                     {canDecide && ' A ativação controlada (Administração) permite preparar os valores esperados.'}

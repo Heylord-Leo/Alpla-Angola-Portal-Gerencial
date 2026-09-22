@@ -44,6 +44,10 @@ public static class RequestWorkflowHelper
     public static bool AreAllGroupItemsReceived(RequestPoGroup group)
         => AlplaPortal.Domain.Services.OperationalReceiptFacts.AreAllGroupItemsReceived(group);
 
+    /// <summary>v2.245.0: group completion aware of the winning quotation items (line-number fallback).</summary>
+    public static bool AreAllGroupItemsReceived(RequestPoGroup group, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
+        => AlplaPortal.Domain.Services.OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
+
     /// <summary>
     /// Determines the next status for a PO Group after a Receiving "confirm receiving" action.
     /// </summary>
@@ -52,10 +56,32 @@ public static class RequestWorkflowHelper
         return AreAllGroupItemsReceived(group) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
     }
 
+    /// <summary>v2.245.0 overload: honors the winning-quotation-item receipt via the canonical resolver.</summary>
+    public static string DetermineGroupPostConfirmReceivingStatus(RequestPoGroup group, IReadOnlyCollection<QuotationItem>? winningQuotationItems)
+    {
+        return AreAllGroupItemsReceived(group, winningQuotationItems) ? "WAITING_RECEIPT" : "IN_FOLLOWUP";
+    }
+
     /// <summary>
-    /// [DEPRECATED] Preserved for backward compatibility. Use DeterminePostConfirmReceivingStatus instead.
-    /// This method previously returned "COMPLETED" which bypassed the financial receipt step.
-    /// Now delegates to DeterminePostConfirmReceivingStatus (never returns COMPLETED).
+    /// v2.245.2 — the status a request scalar takes as a side-effect of ITEM-QUANTITY REGISTRATION
+    /// (NOT confirmation). This is deliberately distinct from <see cref="DeterminePostConfirmReceivingStatus"/>:
+    /// registering quantities — even reaching 100% — is a PRE-confirmation signal and must NEVER enter
+    /// WAITING_RECEIPT. WAITING_RECEIPT is reached ONLY by the explicit CONFIRM_RECEIVING action (which sets
+    /// the group status and lets the aggregator derive the scalar).
+    ///
+    /// <para>This holds for EVERY request — grouped OR groupless. There is no groupless confirmation
+    /// mechanism (ConfirmReceiving requires a group), so a groupless request must NOT be silently advanced to
+    /// WAITING_RECEIPT by registration; it stays IN_FOLLOWUP and, absent auditable operational confirmation,
+    /// finalization fails closed (see FinalizeRequest). No CONFIRM_RECEIVING / OPERATIONAL_RECEIPT_COMPLETED is
+    /// ever fabricated.</para>
+    /// </summary>
+    public static string DetermineItemRegistrationSyncStatus(Request request) => "IN_FOLLOWUP";
+
+    /// <summary>
+    /// [DEPRECATED — do NOT use for item registration.] Historical alias of the POST-CONFIRMATION rule.
+    /// Item-quantity registration must use <see cref="DetermineItemRegistrationSyncStatus"/> instead; reusing
+    /// this post-confirmation rule during registration was the v2.245.2 premature-WAITING_RECEIPT defect.
+    /// Retained only so any external caller keeps compiling; no in-repo caller uses it.
     /// </summary>
     public static string DeterminePostReceivingStatus(Request request)
     {
