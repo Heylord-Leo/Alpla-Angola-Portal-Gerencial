@@ -500,7 +500,11 @@ public class RequestCompletionService : IRequestCompletionService
     /// Adds one history row per business fact: the idempotency key is checked against both the
     /// change tracker (same-transaction retry) and the database (cross-transaction retry); the
     /// filtered unique index remains the concurrency backstop. Group-scoped events keep the
-    /// parent status ids — the request status itself does not change in Phase 1.
+    /// parent status ids — the request status itself does not change in Phase 1, and the status
+    /// FKs belong to the REQUEST status domain (request-level readers reconstruct transitions from
+    /// them). The group's resulting state is presented read-side by
+    /// <see cref="GroupLifecycleHistoryTarget"/> (v2.245.9): GROUP_COMPLETED → "Concluído",
+    /// FISCAL_RECEIPT_UNLOCKED → "Aguardando Recibo Fiscal".
     /// </summary>
     private async Task AddHistoryOnceAsync(
         Request request, Guid actorUserId, string actionTaken, string idempotencyKey,

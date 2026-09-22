@@ -4,7 +4,91 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.8
+v2.245.9
+
+## [v2.245.9] - 2026-09-22 — GROUP_COMPLETED audit target and request-level vs group document classification
+
+Two presentation/audit inconsistencies found during the successful v2.245.8 end-to-end TEST validation of a
+legacy PAYMENT request (group classification → final-invoice registration/validation → fiscal receipt →
+group completion → request completion). The functional workflow and its business rules are unchanged; the
+v2.245.5–v2.245.8 receiving, guidance, classification, coverage, preflight/recovery, UPDLOCK arbitration,
+fiscal-receipt unlocking, multi-group isolation and automatic completion behavior is untouched.
+
+### Issue 1 — GROUP_COMPLETED rendered "→ Aguardando Recibo"
+
+- **Root cause.** `RequestStatusHistory.PreviousStatusId/NewStatusId` are FKs to `RequestStatuses` — the
+  REQUEST status domain (`NewStatusId` non-nullable). Group statuses (`PoGroupStatuses`) are a different
+  domain with no table. `RequestCompletionService.AddHistoryOnceAsync` therefore writes every group-scoped
+  row (OPERATIONAL_RECEIPT_COMPLETED, FISCAL_RECEIPT_UNLOCKED, GROUP_COMPLETED) with
+  `Previous = New = request.StatusId` — the scalar of the moment (WAITING_RECEIPT here) — and the details
+  DTO projected `NewStatus.Name`, which the drawer renders as "➡ …" and the print as "newStatus".
+- **Why the target is NOT persisted as the request's COMPLETED status.** Request-level readers reconstruct
+  request transitions from `StatusHistories.NewStatus.Code`: the completion timeline
+  (`CompletedStatusHistory`), the request stage detection, the Finance monthly "paid/completed" counts.
+  Persisting COMPLETED ("Finalizado") on a GROUP_COMPLETED row would (a) declare a multi-group request
+  completed the moment its FIRST group completed, and (b) label the group event with the request-level
+  "Finalizado" instead of the group's "Concluído".
+- **Fix (read-side, smallest explicit representation).** New domain helper `GroupLifecycleHistoryTarget`
+  maps the event code to the GROUP status it produced — GROUP_COMPLETED → COMPLETED ("Concluído"),
+  FISCAL_RECEIPT_UNLOCKED → WAITING_FISCAL_RECEIPT ("Aguardando Recibo Fiscal") — and every other event
+  passes its persisted request status name through unchanged. Applied by `GET /requests/{id}`
+  (`StatusHistory[].NewStatusName`) and by the Finance history projection (same rows, same rule). The status
+  FKs stay truthful to the request (unchanged), REQUEST_COMPLETED remains the request-level transition to
+  "Finalizado", no STATUS_SYNC is fabricated, no legitimate event is suppressed, and rows already persisted
+  in TEST/PROD render correctly — no repair, no migration.
+- **Same writer, same anti-pattern.** FISCAL_RECEIPT_UNLOCKED is written by the same helper and changes the
+  group status the same way, so it is covered. OPERATIONAL_RECEIPT_COMPLETED (same helper) is a stamp with
+  no status change and keeps the scalar. Other group-scoped writers were inspected and are not affected:
+  CONFIRM_RECEIVING / RECEIVING_REOPENED persist the aggregated request status (request domain);
+  GRUPOS_PAGAMENTO_CRIADOS, GRUPO_CLASSIFICADO, FISCAL_RECEIPT_UPLOADED and the invoice events change no
+  status.
+
+### Issue 2 — "Tipo de Documento Anexado: NÃO CLASSIFICADO" after the group was classified
+
+- **Ownership (proven).** `Request.SourceDocumentType` (+ `…Source/OcrSuggestion/OcrConfidence/EvidenceJson`)
+  is the Release-2 request-level IDENTITY of the document the requester attached at creation: editable in
+  DRAFT only (`RequestGeneralDataSection` → `SourceDocumentTypeField readOnly={status !== 'DRAFT'}`),
+  validated at Final Approval, copied ONCE into the single header group by `BuildLegacyPaymentPlanAsync`
+  (`PaymentGroupingKey.SourceDocumentType` → `group.SourceDocumentType`). Under the multi-document model
+  it is a compatibility echo maintained by `SyncHeaderCompatibilityAsync` — "populated when every active
+  document agrees, null when they do not, never the thing that decides an obligation". The obligations
+  (`RequiresOperationInvoice`, `RequiresSeparateFiscalReceipt`, expected total, coverage) derive from
+  `RequestPoGroup.SourceDocumentType`, and the v2.245.8 classification writes the group only.
+- **Answers.** Separate concept: yes (declaration at creation vs operational classification per group).
+  Still operationally relevant after groups exist: no — historical metadata. Different groups may carry
+  different classifications: yes (multi-document PAYMENT, QUOTATION multi-supplier). The displayed value
+  was semantically correct but poorly labelled AND non-authoritative: the legacy request had no declaration
+  (null → "Não classificado") while the group was classified. Authoritative for the Final Invoice / Fiscal
+  Receipt obligations: the group field. Consequently the request-level column is NOT synchronized from a
+  group (multi-group would be wrong and a second source of truth would appear).
+- **UI.** `lib/requestDocumentTypeDisplay.ts` decides the request-level field: DRAFT → editable
+  (creation/edit flow unchanged, still required where configured); read-only without operational groups →
+  the declaration (unchanged, it still seeds Final Approval); read-only with operational groups → shown
+  only when a declaration exists, relabelled **"Tipo de documento declarado no pedido"** with the hint that
+  the operational classification is per group; suppressed otherwise. `OperationInvoiceSection` renders, per
+  group card, "Documento de origem (classificação operacional): {label} · Fatura Final exigida/não
+  exigida" from `obligation.sourceDocumentType`; a pending classification keeps the v2.245.8 blocker
+  instead. The details DTO and print now carry `poGroups[].sourceDocumentType` (each printed lote shows its
+  own "Documento de origem"; omitted when never classified — never a fabricated "Não classificado").
+
+### Tests
+
+- Backend: `GroupLifecycleHistoryTargetTests` (pure resolver: targets, pass-through, labels),
+  `GroupCompletedHistoryTargetTests` (single group → one GROUP_COMPLETED "Concluído" then one
+  REQUEST_COMPLETED "Finalizado"; one of two groups completes → one GROUP_COMPLETED + FISCAL_RECEIPT_UNLOCKED
+  "Aguardando Recibo Fiscal", no REQUEST_COMPLETED; PAYMENT_COMPLETED scalar does not alter the target;
+  re-evaluation never duplicates; no STATUS_SYNC; legacy rows unchanged),
+  `RequestDetailsHistoryTargetSqlTests` (LocalDB, real split projection: DTO labels + group
+  `SourceDocumentType`).
+- Frontend: `requestDocumentTypeDisplay.test.ts` (display rule matrix), `requestPrintModel.test.ts`
+  (GROUP_COMPLETED "Concluído" / REQUEST_COMPLETED "Finalizado", PT action labels, per-group classification
+  distinct across groups, no "Não classificado"), `v2459HistoryTargetAndClassificationDisplay.test.ts`
+  (structural: drawer/print pass-through, header rule wiring, editable path untouched, group card source).
+
+### Versioning
+
+- `APP_VERSION` → `v2.245.9`; `docs/VERSION.md`, `docs/CHANGELOG.md`. **NO MIGRATION**, **no data
+  repair**, no history rewrite.
 
 ## [v2.245.8] - 2026-09-22 — Legacy P.O. group classification from the drawer, safe final-invoice registration, readiness-owned completion guidance
 

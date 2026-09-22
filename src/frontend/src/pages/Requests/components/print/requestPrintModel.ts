@@ -3,6 +3,7 @@ import type {
   RequestAttachmentDto, SavedQuotationDto, RequestLineItemDto, ApprovalBatchSummary,
 } from '../../../../types';
 import { formatCurrencyAO, formatDate, formatDateTime } from '../../../../lib/utils';
+import { documentTypeLabel, isSelectableDocumentType } from '../../../../lib/sourceDocumentType';
 
 // v2.245.0 Request Print View — Phase 1. PURE mapping from the already-loaded RequestDetailsDto
 // (+ optional workflow projection) into a flat, formatted, print-ready view-model. No React, no
@@ -85,6 +86,13 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   RECEIVING_PAYMENT_GROUP_SYNC_REPAIR: 'Sincronização de status de recebimento (pagamento)',
   NOTA_FINANCEIRA: 'Nota financeira',
   STATUS_SYNC: 'Sincronização de estado',
+  // v2.245.9 — post-payment completion lifecycle (group-scoped events target the GROUP's state,
+  // resolved by the backend; REQUEST_COMPLETED is the request-level transition).
+  GRUPO_CLASSIFICADO: 'Documento de origem classificado',
+  FISCAL_RECEIPT_UNLOCKED: 'Recibo Fiscal desbloqueado',
+  FISCAL_RECEIPT_UPLOADED: 'Recibo Fiscal anexado',
+  GROUP_COMPLETED: 'Grupo concluído',
+  REQUEST_COMPLETED: 'Pedido finalizado',
 };
 
 // A safe normalization for unknown codes: never hide the raw meaning — turn CODE_LIKE_THIS into
@@ -173,6 +181,9 @@ function mapGroup(g: RequestPoGroupDto, index: number): PrintGroup {
     field('Nº P.O.', g.purchaseOrderNumber),
     field('Condição de pagamento', g.paymentConditionCode),
     field('Adiantamento (%)', g.advancePaymentPercent != null ? `${g.advancePaymentPercent}%` : null),
+    // v2.245.9: the group's OPERATIONAL classification (authoritative), per group; omitted when the
+    // group was never classified — never a fabricated "Não classificado".
+    field('Documento de origem', isSelectableDocumentType(g.sourceDocumentType) ? documentTypeLabel(g.sourceDocumentType) : null),
     field('Estado', g.status),
     field('Itens', g.lineItemCount),
     field('Documentos', g.attachmentCount),

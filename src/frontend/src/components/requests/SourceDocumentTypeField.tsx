@@ -34,6 +34,12 @@ interface Props {
     conflict?: ClassificationConflictState;
     onConflictChange?: (next: ClassificationConflictState) => void;
     readOnly?: boolean;
+    /**
+     * v2.245.9 — read-only label/hint override, used when the field presents the REQUEST-LEVEL
+     * creation-time declaration next to operational groups whose own classification is authoritative.
+     */
+    readOnlyLabel?: string;
+    readOnlyHint?: string;
     required?: boolean;
     error?: string | null;
     labelStyle?: React.CSSProperties;
@@ -66,6 +72,8 @@ export function SourceDocumentTypeField({
     conflict,
     onConflictChange,
     readOnly = false,
+    readOnlyLabel,
+    readOnlyHint,
     required = false,
     error,
     labelStyle,
@@ -211,9 +219,14 @@ export function SourceDocumentTypeField({
         return (
             <div data-guide={dataGuide} style={labelStyle} className={labelClassName}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    Tipo de documento anexado
+                    {readOnlyLabel ?? 'Tipo de documento anexado'}
                     {icons}
                 </span>
+                {readOnlyHint && (
+                    <span data-testid="source-document-type-hint" style={{ display: 'block', marginTop: '4px', fontSize: '0.72rem', fontWeight: 500, textTransform: 'none', color: 'var(--color-text-muted)' }}>
+                        {readOnlyHint}
+                    </span>
+                )}
                 <div style={{
                     marginTop: '8px', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-page)',

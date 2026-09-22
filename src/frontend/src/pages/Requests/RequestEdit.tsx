@@ -648,6 +648,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             }}>
                 <RequestGeneralDataSection
                     isMultiDocumentPayment={isMultiDocumentPayment}
+                    hasOperationalGroups={(poGroups?.length ?? 0) > 0}
                     plantMismatches={isMultiDocumentPayment
                         ? plantMismatches(
                             formData.plantId ? Number(formData.plantId) : null,

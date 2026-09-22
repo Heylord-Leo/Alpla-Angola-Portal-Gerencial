@@ -35,6 +35,7 @@ import { OperationInvoiceValidateModal } from '../../../components/requests/Oper
 import { OperationInvoiceLifecycleModal, LifecycleAction } from '../../../components/requests/OperationInvoiceLifecycleModal';
 import { OperationInvoiceShortCloseModal } from '../../../components/requests/OperationInvoiceShortCloseModal';
 import { OperationInvoiceClassificationModal } from '../../../components/requests/OperationInvoiceClassificationModal';
+import { documentTypeLabel } from '../../../lib/sourceDocumentType';
 
 interface OperationInvoiceSectionProps {
     requestId: string;
@@ -402,6 +403,17 @@ function GroupCoverageCard({
                     <StatusChip label={status.label} severity={status.severity} />
                 </div>
             </div>
+
+            {/* v2.245.9: the group's OPERATIONAL classification — the authoritative source of this group's
+                obligations (RequestPoGroup.SourceDocumentType), rendered per group so sibling groups with
+                different documents stay distinct. A pending classification is announced below instead. */}
+            {!classificationPending && (
+                <div data-testid="group-source-document" style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                    Documento de origem (classificação operacional):{' '}
+                    <span style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>{documentTypeLabel(obligation.sourceDocumentType)}</span>
+                    {' · '}{obligation.requiresOperationInvoice ? 'Fatura Final exigida' : 'Fatura Final não exigida'}
+                </div>
+            )}
 
             {/* The five coverage numbers — VALIDADO and EM VALIDAÇÃO are never conflated. */}
             <div style={{

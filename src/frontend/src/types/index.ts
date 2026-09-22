@@ -315,6 +315,13 @@ export interface RequestPoGroupDto {
     advancePaymentPercent?: number | null;
     status: string;
     purchaseOrderNumber?: string | null;
+    /**
+     * v2.245.9 — the group's OPERATIONAL document classification (RequestPoGroup.SourceDocumentType):
+     * the authoritative identity behind the Final Invoice / Fiscal Receipt obligations. Null = never
+     * classified. Distinct from the request-level `sourceDocumentType` declared at creation; groups of
+     * one request may legitimately differ.
+     */
+    sourceDocumentType?: string | null;
     createdAtUtc: string;
     createdByUserId: string;
     lineItemCount: number;

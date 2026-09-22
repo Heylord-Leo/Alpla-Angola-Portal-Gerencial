@@ -1124,6 +1124,10 @@ public class RequestsController : BaseController
                     AdvancePaymentPercent = g.AdvancePaymentPercent,
                     Status = g.Status,
                     PurchaseOrderNumber = g.PurchaseOrderNumber,
+                    // v2.245.9: the group's OPERATIONAL document classification (authoritative for the
+                    // Final Invoice / Fiscal Receipt obligations) — distinct from the request-level
+                    // Request.SourceDocumentType declared at creation.
+                    SourceDocumentType = g.SourceDocumentType,
                     CreatedAtUtc = g.CreatedAtUtc,
                     CreatedByUserId = g.CreatedByUserId,
                     LineItemCount = g.LineItems.Count,
@@ -1277,6 +1281,14 @@ public class RequestsController : BaseController
         _logger.LogInformation("[PERF] GetRequest(id) database query and projection took {Elapsed}ms for RequestId: {Id}", _sw.ElapsedMilliseconds, id);
 
         if (request == null) return NotFound();
+
+        // v2.245.9: group-scoped lifecycle rows (GROUP_COMPLETED, FISCAL_RECEIPT_UNLOCKED) persist the
+        // request scalar in their status FKs (a different status domain; see
+        // GroupLifecycleHistoryTarget). Their DISPLAYED target is the group's resulting state —
+        // "→ Concluído", never the scalar that happened to exist before aggregation. Every other row
+        // keeps its persisted status name.
+        foreach (var historyDto in request.StatusHistory)
+            historyDto.NewStatusName = GroupLifecycleHistoryTarget.ResolveDisplayName(historyDto.ActionTaken, historyDto.NewStatusName);
 
         // Phase B: pending area approval with nobody decided yet → expose the eligible
         // managers (DepartmentManager routing) for the "Pendente — N responsáveis

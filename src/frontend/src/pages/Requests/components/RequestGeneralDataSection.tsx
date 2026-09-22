@@ -23,6 +23,7 @@ import {
 } from '../../../lib/documentClassificationDecision';
 import { LookupDto } from '../../../types';
 import { PlantMismatch } from '../../../lib/paymentSourceDocuments';
+import { resolveRequestLevelDocumentTypeDisplay } from '../../../lib/requestDocumentTypeDisplay';
 
 export interface RequestGeneralDataSectionProps {
     // Form state & handlers
@@ -69,6 +70,12 @@ export interface RequestGeneralDataSectionProps {
      */
     isMultiDocumentPayment?: boolean;
     /**
+     * v2.245.9 — the request owns operational P.O. groups (post Final Approval). From then on the
+     * group's own `SourceDocumentType` is the authoritative classification; the request-level value is
+     * shown only as the creation-time declaration (relabelled), and suppressed when none was declared.
+     */
+    hasOperationalGroups?: boolean;
+    /**
      * Active documents whose plant differs from the request's routing plant.
      *
      * <p>Disclosure only. The two plants answer different questions and are allowed to differ; this
@@ -94,6 +101,7 @@ export function RequestGeneralDataSection({
     formData, setFormData, handleChange, clearFieldError,
     supplierName, setSupplierName, supplierPortalCode, setSupplierPortalCode, setQuickSupplierModal,
     isMultiDocumentPayment = false,
+    hasOperationalGroups = false,
     plantMismatches = [],
     needLevels, departments, companies, plants,
     documentClassification, classificationConflict, setClassificationConflict,
@@ -101,6 +109,11 @@ export function RequestGeneralDataSection({
     requestTypeCode, requestNumber, status, lineItemsCount, featureFlags,
     sectionTitleClassName, labelClassName, getInputClassName, renderFieldError, getFieldErrors
 }: RequestGeneralDataSectionProps) {
+    // v2.245.9: request-level document type = creation-time declaration; the group classification
+    // (OperationInvoiceSection) is the operational truth once groups exist.
+    const requestLevelDocumentType = resolveRequestLevelDocumentTypeDisplay({
+        status, hasOperationalGroups, value: formData.sourceDocumentType
+    });
     return (
         <>
             {/* Partial Edit Mode Banner */}
@@ -290,7 +303,8 @@ export function RequestGeneralDataSection({
                             Editable while the request is a DRAFT; locked afterwards, because the
                             Final Invoice obligation is derived from this choice at Final Approval. */}
                         {featureFlags?.postPaymentCompletionEnabled && !isMultiDocumentPayment &&
-                         (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) && (
+                         (requestTypeCode === 'PAYMENT' || Number(formData.requestTypeId) === 2) &&
+                         requestLevelDocumentType.mode !== 'hidden' && (
                             <SourceDocumentTypeField
                                 data-guide="request-source-document-type"
                                 context="PAYMENT_REQUEST"
@@ -303,6 +317,8 @@ export function RequestGeneralDataSection({
                                 conflict={classificationConflict}
                                 onConflictChange={setClassificationConflict}
                                 readOnly={status !== 'DRAFT'}
+                                readOnlyLabel={requestLevelDocumentType.mode === 'declared' ? requestLevelDocumentType.label : undefined}
+                                readOnlyHint={requestLevelDocumentType.mode === 'declared' ? requestLevelDocumentType.hint : undefined}
                                 required={featureFlags?.sourceDocumentTypeRequired}
                                 error={getFieldErrors('sourceDocumentType')?.[0] ?? null}
                                 labelClassName={labelClassName}

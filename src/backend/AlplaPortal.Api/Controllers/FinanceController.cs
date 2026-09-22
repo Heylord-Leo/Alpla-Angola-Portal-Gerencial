@@ -1132,7 +1132,9 @@ public class FinanceController : BaseController
                 CreatedAtUtc = row.CreatedAtUtc,
                 ActorName = row.ActorName,
                 NewStatusCode = row.NewStatusCode ?? string.Empty,
-                NewStatusName = row.NewStatusName ?? string.Empty,
+                // v2.245.9: same display rule as the request details — a group-scoped lifecycle row
+                // shows the group's resulting state, never the request scalar it carried.
+                NewStatusName = GroupLifecycleHistoryTarget.ResolveDisplayName(row.ActionTaken, row.NewStatusName ?? string.Empty),
                 PaymentCondition = row.PaymentCondition,
                 AdvancePaymentPercent = row.AdvancePaymentPercent,
                 IsVoided = isVoided,

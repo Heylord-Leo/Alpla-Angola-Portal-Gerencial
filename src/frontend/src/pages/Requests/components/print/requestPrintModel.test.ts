@@ -147,6 +147,41 @@ describe('buildRequestPrintModel (§27)', () => {
     expect(m.history[1].actionLabel).toBe('Sincronização de estado');
     expect(m.history[1].newStatus).toBe('Em Acompanhamento');
   });
+  it('v2.245.9: GROUP_COMPLETED renders the backend-resolved group target "Concluído"; REQUEST_COMPLETED renders "Finalizado"', () => {
+    const statusHistory = [
+      { id: 'h1', actionTaken: 'GROUP_COMPLETED', newStatusName: 'Concluído', actorName: 'X', createdAtUtc: '2026-09-22T10:00:00Z',
+        comment: 'Grupo F CONCLUÍDO: todas as obrigações pós-pagamento satisfeitas', fieldChanges: [] },
+      { id: 'h2', actionTaken: 'REQUEST_COMPLETED', newStatusName: 'Finalizado', actorName: 'X', createdAtUtc: '2026-09-22T10:00:01Z',
+        comment: 'Pedido CONCLUÍDO pelo fluxo de conclusão pós-pagamento', fieldChanges: [] },
+      { id: 'h3', actionTaken: 'FISCAL_RECEIPT_UNLOCKED', newStatusName: 'Aguardando Recibo Fiscal', actorName: 'X', createdAtUtc: '2026-09-22T09:00:00Z', fieldChanges: [] },
+    ];
+    const m = buildRequestPrintModel(baseDetail({ statusHistory: statusHistory as any }));
+    // oldest → newest
+    expect(m.history.map(h => h.actionLabel)).toEqual(['Recibo Fiscal desbloqueado', 'Grupo concluído', 'Pedido finalizado']);
+    expect(m.history[1].newStatus).toBe('Concluído');
+    expect(m.history[1].newStatus).not.toBe('Aguardando Recibo');
+    expect(m.history[2].newStatus).toBe('Finalizado');
+    expect(m.history[0].newStatus).toBe('Aguardando Recibo Fiscal');
+    // the print never re-maps the status locally: what the backend resolved is what is printed
+    expect(humanizeActionLabel('GROUP_COMPLETED')).toBe('Grupo concluído');
+    expect(humanizeActionLabel('GRUPO_CLASSIFICADO')).toBe('Documento de origem classificado');
+  });
+
+  it('v2.245.9: each group prints its OWN operational classification from the authoritative group field; distinct across groups; omitted when never classified', () => {
+    const poGroups = [
+      { id: 'g0', requestId: 'r1', supplierNameSnapshot: 'A', totalAmount: 100, currencyCode: 'AOA', status: 'COMPLETED', sourceDocumentType: 'PROFORMA', lineItemCount: 1, attachmentCount: 0, payments: [] },
+      { id: 'g1', requestId: 'r1', supplierNameSnapshot: 'B', totalAmount: 200, currencyCode: 'AOA', status: 'WAITING_RECEIPT', sourceDocumentType: 'INVOICE', lineItemCount: 1, attachmentCount: 0, payments: [] },
+      { id: 'g2', requestId: 'r1', supplierNameSnapshot: 'C', totalAmount: 300, currencyCode: 'AOA', status: 'WAITING_RECEIPT', sourceDocumentType: null, lineItemCount: 1, attachmentCount: 0, payments: [] },
+    ];
+    // request-level declaration absent (legacy request) — must not leak into any group nor the general section
+    const m = buildRequestPrintModel(baseDetail({ poGroups: poGroups as any, sourceDocumentType: null } as any));
+    const doc = (i: number) => m.groups[i].fields.find(f => f.label === 'Documento de origem')?.value;
+    expect(doc(0)).toBe('Factura Pró-forma');
+    expect(doc(1)).toBe('Factura');
+    expect(doc(2)).toBeUndefined();
+    expect(JSON.stringify(m)).not.toMatch(/Não classificado/);
+  });
+
   it('D: known document type gets a human label', () => {
     expect(humanizeDocumentType('PAYMENT_SOURCE_DOCUMENT')).toBe('Documento de origem do pagamento');
     expect(humanizeDocumentType('QUOTATION')).toBe('Cotação');

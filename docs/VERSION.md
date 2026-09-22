@@ -2,9 +2,38 @@
 
 ## Current Version
 
-v2.245.8
+v2.245.9
 
-## [v2.245.8] - 2026-09-22
+## [v2.245.9] - 2026-09-22
+
+### Group-completion audit target and request-level vs group document classification
+
+Two presentation/audit inconsistencies observed during the successful v2.245.8 end-to-end TEST validation
+(legacy PAYMENT request: classification → final invoice → fiscal receipt → group completion → request
+completion). Business rules unchanged.
+
+1. **GROUP_COMPLETED rendered "→ Aguardando Recibo".** `RequestStatusHistory.NewStatusId` is a
+   non-nullable FK to `RequestStatuses` (the REQUEST status domain); group statuses have no table, so the
+   Phase-1 writer carries the request scalar unchanged on group-scoped rows — and request-level readers
+   (completion timeline, Finance monthly counts, stage detection) reconstruct request transitions from
+   that FK, so persisting COMPLETED on a group row would declare a multi-group request completed at its
+   first group. Fix (read-side, no schema/data change): `GroupLifecycleHistoryTarget` resolves the
+   DISPLAYED target of a group-scoped lifecycle row from the event code — GROUP_COMPLETED → "Concluído",
+   FISCAL_RECEIPT_UNLOCKED → "Aguardando Recibo Fiscal" — applied by the request details and Finance
+   history projections; REQUEST_COMPLETED keeps "Finalizado"; every other row keeps its persisted name.
+   Already-persisted rows render correctly without repair.
+2. **"Tipo de Documento Anexado: NÃO CLASSIFICADO" after the group was classified.** Two concepts:
+   `Request.SourceDocumentType` is the document the requester DECLARED at creation (editable only in
+   DRAFT; seeds the group once at Final Approval; under the multi-document model a compatibility echo
+   that is null when documents disagree). `RequestPoGroup.SourceDocumentType` is the OPERATIONAL
+   classification — the authoritative source of the Final Invoice / Fiscal Receipt obligations — and
+   groups of one request may legitimately differ, so the request-level column is never synchronized
+   from a group. The legacy request had no declaration at all. UI: once operational groups exist the
+   request-level field is shown only when a declaration exists, relabelled "Tipo de documento declarado
+   no pedido" with an explanatory hint, and suppressed otherwise; each group's coverage card (and each
+   printed lote) shows its own classification from the group field.
+
+- **NO MIGRATION**, **no data repair**, no history rewrite.
 
 ### Legacy P.O. group classification from the Request Details drawer ("Classificar Documento de Origem")
 
