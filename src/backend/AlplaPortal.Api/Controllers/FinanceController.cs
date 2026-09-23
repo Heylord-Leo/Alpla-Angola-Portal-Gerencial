@@ -53,6 +53,9 @@ public class FinanceController : BaseController
     /// </summary>
     private readonly AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? _completionService;
 
+    /// <summary>v2.245.11 — ProblemDetails `code` returned (409) when MarkAsPaid is called for an ADVANCE obligation.</summary>
+    public const string AdvanceRequiresConfirmAdvanceCode = "ADVANCE_REQUIRES_CONFIRM_ADVANCE";
+
     private IQueryable<Request> GetFinanceQuery()
     {
         // Scope restrictions can be applied here based on company/plant
@@ -73,11 +76,17 @@ public class FinanceController : BaseController
         }
         
         // ── Finance-eligible statuses ──
-        var financeStatuses = new[] 
-        { 
-            RequestConstants.Statuses.PoIssued, 
-            RequestConstants.Statuses.PaymentRequestSent, 
-            RequestConstants.Statuses.PaymentScheduled, 
+        // v2.245.11: the advance statuses were missing from the PAYMENT stream, so a PAYMENT request whose
+        // advance is required/scheduled counted nowhere while the list (GetPayments/obligations) showed it.
+        // Aligned with GetPayments' parent set (minus the QUOTATION-only PO_PARTIALLY_UPLOADED).
+        var financeStatuses = new[]
+        {
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
+            RequestConstants.Statuses.AdvancePaymentRequired,
+            RequestConstants.Statuses.AdvancePaymentScheduled,
+            RequestConstants.Statuses.AdvancePaymentCompleted,
+            RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
             RequestConstants.Statuses.PaymentCompleted,
             RequestConstants.Statuses.InFollowup,
@@ -207,10 +216,12 @@ public class FinanceController : BaseController
         var processedStats = paymentProcessed.Concat(quotProcessed).ToList();
 
         var waitingActions = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, RequestConstants.Statuses.AdvancePaymentRequired };
-        
+        // v2.245.11: a scheduled advance is a scheduled payment awaiting execution (same bucket as GetPayments filter=scheduled).
+        var scheduledStatuses = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.AdvancePaymentScheduled };
+
         // Metrics excluding paid ones
         int waitingFinance = processedStats.Count(s => !s.IsPaid && waitingActions.Contains(s.StatusCode));
-        var scheduledCount = processedStats.Count(s => !s.IsPaid && s.StatusCode == RequestConstants.Statuses.PaymentScheduled);
+        var scheduledCount = processedStats.Count(s => !s.IsPaid && scheduledStatuses.Contains(s.StatusCode));
         var overdueCount = processedStats.Count(s => !s.IsPaid && s.NeedByDateUtc.HasValue && s.NeedByDateUtc.Value < today);
         var completedCountThisMonth = processedStats.Count(s => s.IsPaid && s.PaidAtUtc >= firstDayOfMonth);
 
@@ -222,7 +233,7 @@ public class FinanceController : BaseController
             .ToList();
 
         var scheduledValues = processedStats
-            .Where(s => !s.IsPaid && s.StatusCode == RequestConstants.Statuses.PaymentScheduled)
+            .Where(s => !s.IsPaid && scheduledStatuses.Contains(s.StatusCode))
             .GroupBy(s => s.CurrencyCode)
             .Select(g => new FinanceCurrencyValueDto { CurrencyCode = g.Key, TotalAmount = g.Sum(x => x.Amount) })
             .ToList();
@@ -442,13 +453,16 @@ public class FinanceController : BaseController
         var today = DateTime.UtcNow.Date;
         var in4Days = today.AddDays(4);
 
-        var financeStatuses = new[] 
-        { 
-            RequestConstants.Statuses.PoIssued, 
-            RequestConstants.Statuses.PaymentRequestSent, 
+        // v2.245.11: ADVANCE_PAYMENT_SCHEDULED added (PAYMENT-type scheduled advances were invisible here
+        // and in the obligations projection). Kept in sync with FinanceObligationSummaryProjection.FinanceStatuses.
+        var financeStatuses = new[]
+        {
+            RequestConstants.Statuses.PoIssued,
+            RequestConstants.Statuses.PaymentRequestSent,
             RequestConstants.Statuses.AdvancePaymentRequired,
+            RequestConstants.Statuses.AdvancePaymentScheduled,
             RequestConstants.Statuses.AdvancePaymentCompleted,
-            RequestConstants.Statuses.PaymentScheduled, 
+            RequestConstants.Statuses.PaymentScheduled,
             RequestConstants.Statuses.Paid,
             RequestConstants.Statuses.PaymentCompleted,
             RequestConstants.Statuses.InFollowup,
@@ -526,7 +540,9 @@ public class FinanceController : BaseController
                 query = query.Where(r => waitingActions.Contains(r.Status!.Code));
                 break;
             case "scheduled":
-                query = query.Where(r => r.Status!.Code == RequestConstants.Statuses.PaymentScheduled);
+                // v2.245.11: a scheduled advance is a scheduled payment awaiting execution (same KPI as GetSummary).
+                query = query.Where(r => r.Status!.Code == RequestConstants.Statuses.PaymentScheduled
+                    || r.Status!.Code == RequestConstants.Statuses.AdvancePaymentScheduled);
                 break;
             case "completedThisMonth":
                 var firstDayOfMonth = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -1394,45 +1410,78 @@ public class FinanceController : BaseController
             });
         }
 
+        // ── v2.245.11: ADVANCE obligations are NEVER settled here (any request type). ──────────
+        // The Finance UI routes an advance group's SCHEDULE/PAY to requests/{id}/b2p/schedule-advance and
+        // b2p/confirm-advance; this guard makes that routing a server invariant so a direct API call cannot
+        // run the FINAL_BALANCE path (PAYMENT_COMPLETED + fabricated final-balance row) over an advance.
+        // Same rule as the obligation DTO's paymentFlow (FinancePaymentFlows.IsAdvance). Runs before any
+        // mutation and before the proof lookup — nothing is written or linked on refusal.
+        var groupPaymentRows = await _context.RequestPayments.AsNoTracking()
+            .Where(p => p.RequestPoGroupId == group.Id)
+            .Select(p => new { p.PaymentType, p.PaymentStatus })
+            .ToListAsync();
+        if (FinancePaymentFlows.IsAdvance(group.Status, groupPaymentRows.Select(p => (p.PaymentType, p.PaymentStatus))))
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Adiantamento Não Liquidável Por Esta Ação",
+                Detail = $"O grupo {group.SupplierNameSnapshot ?? group.Id.ToString()} tem uma obrigação de ADIANTAMENTO em aberto " +
+                         $"(status do grupo: {group.Status}). Adiantamentos são confirmados exclusivamente pela ação dedicada " +
+                         $"de adiantamento (POST api/v1/requests/{id}/b2p/confirm-advance), nunca pela liquidação de pagamento normal. " +
+                         "Nenhuma alteração foi efetuada.",
+                Status = 409
+            };
+            pd.Extensions["code"] = AdvanceRequiresConfirmAdvanceCode;
+            pd.Extensions["paymentFlow"] = FinancePaymentFlows.Advance;
+            pd.Extensions["requestPoGroupId"] = group.Id;
+            pd.Extensions["confirmAdvanceEndpoint"] = $"api/v1/requests/{id}/b2p/confirm-advance";
+            return Conflict(pd);
+        }
+
         // ── Status Guard: group-first for QUOTATION, request-level for PAYMENT ──
         // Both branches now delegate to IFinancePaymentEligibilityService.CanPay — the same
-        // predicate GetPayments uses to compute AvailableFinanceActions.
+        // predicate GetPayments uses to compute AvailableFinanceActions. The messages list the statuses
+        // in which a NORMAL payment is actually settled here (the advance guard above already excluded
+        // every advance obligation, so the advance statuses CanPay accepts are deliberately not listed).
+        const string AdvanceNote = " Adiantamentos são confirmados exclusivamente pela ação dedicada de adiantamento.";
         if (r.RequestType?.Code == RequestConstants.Types.Quotation)
         {
-            // QUOTATION: guard on group status, including advance payment statuses
+            // QUOTATION: guard on the group's own status.
             var allowedGroupPayStatuses = new[] {
                 RequestConstants.Statuses.PoIssued,
                 RequestConstants.Statuses.PaymentRequestSent,
-                RequestConstants.Statuses.PaymentScheduled,
-                RequestConstants.Statuses.AdvancePaymentRequired,
-                RequestConstants.Statuses.AdvancePaymentScheduled
+                RequestConstants.Statuses.PaymentScheduled
             };
             if (!_eligibility.CanPay(r.RequestType.Code, r.Status?.Code ?? string.Empty, group.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Status Atual Não Permite Liquidação",
-                    Detail = $"A confirmação de pagamento só é permitida para grupos nos status: " +
-                             $"{string.Join(", ", allowedGroupPayStatuses)}. Status atual do grupo: {group.Status}.",
+                    Detail = $"A liquidação de pagamento normal só é permitida para grupos nos status: " +
+                             $"{string.Join(", ", allowedGroupPayStatuses)}. Status atual do grupo: {group.Status}." + AdvanceNote,
                     Status = 400
                 });
             }
         }
         else
         {
-            // PAYMENT: preserve existing request-level guard
+            // PAYMENT: request-level guard (FinancePaymentEligibilityService.PayableParentStatusesForPayment).
+            // v2.245.11: the parent may sit at ADVANCE_PAYMENT_SCHEDULED (furthest-behind group) while a
+            // NON-advance sibling group is settled here; the advance group itself was refused above.
             var allowedPayStatuses = new[] {
                 RequestConstants.Statuses.PoIssued,
                 RequestConstants.Statuses.PaymentRequestSent,
-                RequestConstants.Statuses.PaymentScheduled
+                RequestConstants.Statuses.PaymentScheduled,
+                RequestConstants.Statuses.AdvancePaymentScheduled
             };
             if (r.Status == null || !_eligibility.CanPay(r.RequestType?.Code ?? string.Empty, r.Status.Code, group.Status))
             {
                 return BadRequest(new ProblemDetails
                 {
                     Title = "Status Atual Não Permite Liquidação",
-                    Detail = $"A confirmação de pagamento só é permitida nos status: " +
-                             $"{string.Join(", ", allowedPayStatuses)}. Status atual: {r.Status?.Code ?? "desconhecido"}.",
+                    Detail = $"A liquidação de pagamento normal só é permitida quando o pedido está nos status: " +
+                             $"{string.Join(", ", allowedPayStatuses)} (neste último apenas para grupos que não sejam de adiantamento). " +
+                             $"Status atual: {r.Status?.Code ?? "desconhecido"}." + AdvanceNote,
                     Status = 400
                 });
             }

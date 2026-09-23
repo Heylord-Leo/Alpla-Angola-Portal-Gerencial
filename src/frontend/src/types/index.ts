@@ -360,6 +360,9 @@ export interface FinanceObligationDto {
     paidDateUtc?: string | null;
     hasPaymentProof: boolean;
     financeActions: string[];
+    /** v2.245.11 — server-authoritative execution route: 'ADVANCE' (b2p/schedule-advance + b2p/confirm-advance)
+     *  or 'STANDARD' (finance schedule + pay). Optional only for older payloads. */
+    paymentFlow?: 'ADVANCE' | 'STANDARD' | string | null;
     actionClass: string;
     actionClassLabel: string;
     nextActionLabel?: string | null;

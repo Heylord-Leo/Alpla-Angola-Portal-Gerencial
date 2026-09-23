@@ -164,7 +164,7 @@ export function RequestStatusActionPanels({
 
 
             {/* Procurement/Buyer Status Panel (Former Action Bar) */}
-            {canExecuteOperationalAction && ['APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
+            {canExecuteOperationalAction && ['APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED', 'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT', 'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION'].includes(status || '') && (
                 <div style={{
                     backgroundColor: 'white',
                     padding: '12px 24px',

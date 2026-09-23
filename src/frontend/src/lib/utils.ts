@@ -130,6 +130,14 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 responsible: 'Financeiro',
                 nextAction: 'Agendar e processar adiantamento ao fornecedor'
             };
+        // v2.245.11: explicit, truthful fallback for a scheduled advance (same strings as the backend
+        // RequestWorkflowProjectionBuilder GroupGuidance) — the status previously fell through to the
+        // generic "Não definido / Aguardar atualização do sistema" default.
+        case 'ADVANCE_PAYMENT_SCHEDULED':
+            return {
+                responsible: 'Financeiro',
+                nextAction: 'Confirmar o pagamento do adiantamento'
+            };
         case 'ADVANCE_PAYMENT_COMPLETED':
             return {
                 responsible: 'Recebimento / Comprador',

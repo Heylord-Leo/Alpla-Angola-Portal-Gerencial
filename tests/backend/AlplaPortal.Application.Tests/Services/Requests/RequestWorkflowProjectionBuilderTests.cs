@@ -114,6 +114,93 @@ public class RequestWorkflowProjectionBuilderTests
         Assert.Equal("Lote #1 obsoleto — os itens deste lote já foram processados por outro fluxo.", warning);
     }
 
+    // ── v2.245.11: PAYMENT-type advance lifecycle guidance (authoritative for the details header) ──
+
+    [Fact]
+    public void V224511_PaymentType_AdvanceScheduled_SingleGroup_FinanceConfirmAdvance_NoDueDateWording()
+    {
+        var request = MakeRequest("ADVANCE_PAYMENT_SCHEDULED", RequestConstants.Types.Payment);
+        request.PoGroups.Add(Group(RequestConstants.PoGroupStatuses.AdvancePaymentScheduled, po: "ECF11 2026/520"));
+
+        var projection = RequestWorkflowProjectionBuilder.Build(request, "ADVANCE_PAYMENT_SCHEDULED");
+
+        var unit = Assert.Single(projection.Units);
+        Assert.Equal("GROUP", unit.UnitType);
+        Assert.Equal("ADVANCE_PAYMENT_SCHEDULED", unit.StatusCode);
+        Assert.Equal("Financeiro", unit.ResponsibleRole);
+        Assert.NotNull(unit.NextAction);
+        Assert.Equal("CONFIRM_ADVANCE", unit.NextAction!.ActionType);
+        Assert.Equal("Confirmar o pagamento do adiantamento", unit.NextAction.Label);
+        var action = Assert.Single(projection.NextActions);
+        Assert.Equal("Financeiro", action.ResponsibleRole);
+        Assert.Equal("Confirmar o pagamento do adiantamento", action.Label);
+        // No due-date / deadline wording anywhere in the guidance strings.
+        Assert.DoesNotMatch("(?i)venc|prazo|data", action.Label);
+        Assert.DoesNotMatch("(?i)venc|prazo|data", action.ResponsibleRole);
+        // Never the generic placeholders the frontend used to fall back to.
+        Assert.NotEqual("Não definido", unit.ResponsibleRole);
+        Assert.NotEqual("Aguardar atualização do sistema", action.Label);
+    }
+
+    [Theory]
+    [InlineData("ADVANCE_PAYMENT_REQUIRED", "Financeiro", "SCHEDULE_ADVANCE", "Agendar o adiantamento")]
+    [InlineData("ADVANCE_PAYMENT_SCHEDULED", "Financeiro", "CONFIRM_ADVANCE", "Confirmar o pagamento do adiantamento")]
+    [InlineData("PAYMENT_SCHEDULED", "Financeiro", "COMPLETE_PAYMENT", "Realizar o pagamento")]
+    public void V224511_PaymentType_ActionablePaymentStates_FinanceOwnsTheNextAction(string status, string role, string actionType, string label)
+    {
+        var request = MakeRequest(status, RequestConstants.Types.Payment);
+        request.PoGroups.Add(Group(status));
+
+        var projection = RequestWorkflowProjectionBuilder.Build(request, status);
+
+        var unit = Assert.Single(projection.Units);
+        Assert.Equal(role, unit.ResponsibleRole);
+        Assert.Equal(actionType, unit.NextAction!.ActionType);
+        Assert.Equal(label, unit.NextAction.Label);
+    }
+
+    [Fact]
+    public void V224511_PaymentType_TwoAdvanceScheduledGroups_TwoGroupSpecificActions_NoDuplicates()
+    {
+        // REQ-27/08/2026-333 shape: one PAYMENT request, two supplier groups each with a scheduled advance.
+        var request = MakeRequest("ADVANCE_PAYMENT_SCHEDULED", RequestConstants.Types.Payment);
+        var a = Group(RequestConstants.PoGroupStatuses.AdvancePaymentScheduled, supplier: "FORNECEDOR A");
+        var b = Group(RequestConstants.PoGroupStatuses.AdvancePaymentScheduled, supplier: "FORNECEDOR B");
+        request.PoGroups.Add(a);
+        request.PoGroups.Add(b);
+
+        var projection = RequestWorkflowProjectionBuilder.Build(request, "ADVANCE_PAYMENT_SCHEDULED");
+
+        Assert.Equal(2, projection.Units.Count);
+        Assert.Equal(2, projection.NextActions.Count);
+        Assert.Equal(2, projection.NextActions.Select(x => x.UnitId).Distinct().Count());
+        Assert.All(projection.NextActions, x =>
+        {
+            Assert.Equal("Financeiro", x.ResponsibleRole);
+            Assert.Equal("CONFIRM_ADVANCE", x.ActionType);
+            Assert.Equal("Confirmar o pagamento do adiantamento", x.Label);
+        });
+        Assert.Contains(projection.NextActions, x => x.UnitId == a.Id && x.UnitLabel == "Grupo FORNECEDOR A");
+        Assert.Contains(projection.NextActions, x => x.UnitId == b.Id && x.UnitLabel == "Grupo FORNECEDOR B");
+        var finance = Assert.Single(projection.Responsibilities, r => r.Role == "Financeiro");
+        Assert.Equal(2, finance.UnitCount);
+    }
+
+    [Fact]
+    public void V224511_PaymentType_ConfirmedAdvance_NoLongerAsksFinance()
+    {
+        // b2p/confirm-advance hands the group to WAITING_SUPPLIER_DELIVERY — the Buyer follows the delivery.
+        var request = MakeRequest("WAITING_SUPPLIER_DELIVERY", RequestConstants.Types.Payment);
+        request.PoGroups.Add(Group(RequestConstants.PoGroupStatuses.WaitingSupplierDelivery));
+
+        var projection = RequestWorkflowProjectionBuilder.Build(request, "WAITING_SUPPLIER_DELIVERY");
+
+        var unit = Assert.Single(projection.Units);
+        Assert.NotEqual("Financeiro", unit.ResponsibleRole);
+        Assert.NotEqual("CONFIRM_ADVANCE", unit.NextAction!.ActionType);
+        Assert.DoesNotContain(projection.Responsibilities, r => r.Role == "Financeiro");
+    }
+
     /// <summary>Acceptance case I — REQ-140 after repair: PO issued, Finance next, never Buyer/register-PO.</summary>
     [Fact]
     public void CaseI_Req140RepairedShape_FinanceNext_NeverBuyerRegisterPo()

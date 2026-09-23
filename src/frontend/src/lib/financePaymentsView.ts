@@ -122,6 +122,19 @@ export function isAdvanceGroupStatus(status: string | null | undefined): boolean
 }
 
 /**
+ * v2.245.11 — the execution route of ONE Finance obligation, taken from the server-authoritative
+ * `paymentFlow` (FinancePaymentFlows on the backend: 'ADVANCE' → b2p/schedule-advance + b2p/confirm-advance,
+ * 'STANDARD' → finance/{id}/schedule + finance/{id}/pay). The group-status mirror is only the fallback for
+ * payloads that predate the field — never a translated label. MarkAsPaid enforces the same rule (409).
+ */
+export function isAdvanceObligation(o: { paymentFlow?: string | null; groupStatusCode?: string | null } | null | undefined): boolean {
+    if (!o) return false;
+    if (o.paymentFlow === 'ADVANCE') return true;
+    if (o.paymentFlow === 'STANDARD') return false;
+    return isAdvanceGroupStatus(o.groupStatusCode);
+}
+
+/**
  * Whether THIS group's own status makes it eligible for "Cancelar agendamento" — mirrors
  * FinancePaymentEligibilityService.CanCancelSchedule exactly (group-status-only, no type
  * branching: PAYMENT_SCHEDULED/ADVANCE_PAYMENT_SCHEDULED are always genuinely-written values).
@@ -186,9 +199,9 @@ export interface ObligationActionPlan {
  * other authorized action in the kebab. Derived solely from the backend-authorized financeActions
  * (never invents an action) plus the group's advance/normal flavor for labels.
  */
-export function resolveObligationActionPlan(o: { groupStatusCode?: string | null; financeActions?: string[] | null }): ObligationActionPlan {
+export function resolveObligationActionPlan(o: { groupStatusCode?: string | null; financeActions?: string[] | null; paymentFlow?: string | null }): ObligationActionPlan {
     const acts = o.financeActions ?? [];
-    const advance = isAdvanceGroupStatus(o.groupStatusCode);
+    const advance = isAdvanceObligation(o);
 
     let primary: ObligationActionPlan['primary'] = null;
     if (acts.includes('SCHEDULE')) primary = { action: 'SCHEDULE', label: advance ? 'Agendar adiantamento' : 'Agendar pagamento' };

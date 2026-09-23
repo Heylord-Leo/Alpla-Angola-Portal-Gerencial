@@ -4,7 +4,125 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.10
+v2.245.11
+
+## [v2.245.11] - 2026-09-23 — Finance visibility and workflow guidance for scheduled advances (PAYMENT type)
+
+No migration, no data repair. Code, tests and documentation only.
+
+### Symptom
+
+A PAYMENT-type request whose advance had been scheduled (request and group at `ADVANCE_PAYMENT_SCHEDULED`) disappeared
+from Finance (Pagamentos / obligations, legacy payments list, Overview KPIs) until the advance was confirmed, and its
+details header / Quick View drawer read "Não definido / Aguardar atualização do sistema". In PROD, 76 requests carry
+that scalar: the 38 QUOTATION ones were visible, the 38 PAYMENT ones (e.g. REQ-16/09/2026-424, and the two-advance
+REQ-27/08/2026-333) were not.
+
+### Root causes
+
+1. **Finance population.** `FinanceObligationSummaryProjection.FinanceStatuses`, `FinanceController.GetPayments`'
+   `financeStatuses` and `GetSummary`'s PAYMENT stream never listed `ADVANCE_PAYMENT_SCHEDULED` (the summary listed no
+   advance status at all), while the QUOTATION branch is group-status-driven and always included it. The status became
+   reachable for the parent scalar when `RequestStatusCalculator` gained its priority (25) and was copied into the
+   projection on 2026-09-02. `FinancePaymentEligibilityService.PayableParentStatusesForPayment` omitted it too, so
+   even a listed obligation would have had no PAY (SCHEDULE is correctly gone once scheduled).
+2. **Guidance.** The details view fetched the workflow projection for non-QUOTATION requests only in receiving-phase
+   statuses, and the scalar map (`getRequestGuidance`) had no `ADVANCE_PAYMENT_SCHEDULED` case, so the generic default
+   was rendered. The backend `RequestWorkflowProjectionBuilder` already answered "Financeiro / Confirmar o pagamento do
+   adiantamento" for the group.
+
+### Changed
+
+- Backend population: `ADVANCE_PAYMENT_SCHEDULED` added to the obligations projection's parent set and to
+  `GetPayments`; `GetSummary`'s PAYMENT stream now includes `ADVANCE_PAYMENT_REQUIRED` / `_SCHEDULED` / `_COMPLETED`
+  (aligned with `GetPayments`). The "scheduled" KPI and `filter=scheduled` count a scheduled advance as a scheduled
+  payment. QUOTATION group-status behaviour unchanged; one obligation per non-cancelled group, a request matched by
+  both predicates is listed once; company/plant/department scope and pagination untouched.
+- Eligibility: `PayableParentStatusesForPayment` gains `ADVANCE_PAYMENT_SCHEDULED` (PAY, routed by the Finance UI to
+  the existing `b2p/confirm-advance` flow). `ADVANCE_PAYMENT_REQUIRED` still exposes SCHEDULE only.
+- **Execution-route invariant (server-enforced).** ADVANCE obligations are settled only through
+  `POST api/v1/requests/{id}/b2p/confirm-advance`; normal payments only through `POST api/v1/finance/{id}/pay`
+  (MarkAsPaid). New `FinancePaymentFlows` (Domain) holds the single rule: a group's open obligation is ADVANCE when the
+  group is at `ADVANCE_PAYMENT_REQUIRED` / `ADVANCE_PAYMENT_SCHEDULED` or carries a SCHEDULED advance payment row.
+  `MarkAsPaid` evaluates it right after resolving the group and before any lookup or write, for every request type,
+  and refuses an advance with **409 Conflict** (ProblemDetails title "Adiantamento Não Liquidável Por Esta Ação",
+  `code` = `ADVANCE_REQUIRES_CONFIRM_ADVANCE`, `paymentFlow`, `requestPoGroupId`, `confirmAdvanceEndpoint`); nothing
+  is written, no proof is linked, no history/paid timestamp is created. The obligation DTO exposes the same rule as
+  `paymentFlow` ("ADVANCE" | "STANDARD") and the Finance list dispatches SCHEDULE/PAY on that field
+  (`isAdvanceObligation`), with the group-status mirror only as a fallback for older payloads. `b2p/confirm-advance`
+  is unchanged (Finance role, group must belong to the request and be in an advance status, an ADVANCE payment row in
+  SCHEDULED/PLANNED, minimum amount, PAYMENT_PROOF attachment of the same request); a repeated confirmation or a
+  normal payment sent to it fails with 400 "Ação Inválida" and writes nothing. The MarkAsPaid allowed-status
+  messages now list only the statuses in which a normal payment is settled there and state that advances are
+  confirmed exclusively through the dedicated advance action.
+- **Request scope on the advance-payment mutation endpoints.** `POST api/v1/requests/{id}/b2p/confirm-advance` and
+  `POST api/v1/requests/{id}/b2p/schedule-advance` only checked the Finance role: any Finance user who knew a
+  requestId/groupId could schedule or settle an advance outside their organizational scope, while the Finance
+  queue that exposes the action (obligations, payments) and every Finance mutation (`MarkAsPaid`, `SchedulePayment`,
+  `CancelSchedule`, `ReturnForAdjustment`) apply the canonical `RequestAccessScope` (BaseController
+  `GetScopedRequestsQuery`: System Administrator unfiltered; everyone else filtered by `UserPlantScopes` and
+  `UserDepartmentScopes`; a user with no scopes is unfiltered). Both endpoints now apply that exact predicate right
+  after loading the request and before any group/payment/attachment/amount is inspected: an out-of-scope request
+  answers the same bare **404** as a non-existent one and nothing is written. The role check (403) and every
+  business guard are unchanged (additive). A foreign group id through an in-scope request keeps answering the
+  fixed 400 "Grupo P.O não encontrado no request." without disclosing the foreign group. Inspected and already
+  scoped: `finance/{id}/cancel-schedule`, `finance/{id}/return`, `finance/{id}/pay`, `finance/{id}/schedule`.
+  Inspected, not advance-payment mutations, left unchanged: `b2p/reconcile`, `b2p/confirm-delivery` and the
+  legacy `operational/*` transitions (`ProcessTransition`) — they do not apply the scope predicate either (noted
+  for a separate release).
+- Frontend guidance: the projection now owns "Responsável / Próxima ação" for every request type in
+  `ADVANCE_PAYMENT_REQUIRED`, `ADVANCE_PAYMENT_SCHEDULED` and `PAYMENT_SCHEDULED` (fetched once per details view, as
+  for the receiving phase); `getRequestGuidance` has an explicit `ADVANCE_PAYMENT_SCHEDULED` case with the same wording
+  ("Financeiro" / "Confirmar o pagamento do adiantamento", no due-date wording) as the truthful fallback; the status
+  action panel allow-list (and its exported mirror) renders for `ADVANCE_PAYMENT_SCHEDULED`. Header, drawer, panel and
+  print consume the same resolution; the completion card keeps "Aguardando pagamento — Financeiro".
+
+### Tests
+
+- `AdvancePaymentScheduledFinanceVisibilityTests` (new, InMemory controllers): single group appears exactly once with
+  PAY/not SCHEDULE and the scheduled due date; SCHEDULE before scheduling; future / due-today / overdue all actionable
+  and reachable by the card filters; two advance groups → two obligations, group-specific amounts and dates, no
+  duplicates; mixed advance + PO_ISSUED groups; QUOTATION unchanged; confirmed advance not pending; CANCELLED /
+  REJECTED excluded, COMPLETED not actionable; legacy `/payments` (incl. `filter=scheduled`) and obligations aligned;
+  summary KPIs count PAYMENT advances; pagination boundary; plant-scoped Finance user and `plantId` filter; full
+  lifecycle ADVANCE_PAYMENT_REQUIRED → `b2p/schedule-advance` → visible & payable → `b2p/confirm-advance` →
+  WAITING_SUPPLIER_DELIVERY with exactly one payment row, one COMPLETED transition, SCHEDULE_ADVANCE +
+  ADVANCE_PAYMENT_COMPLETED history rows, and no outstanding obligation anywhere. Execution-route invariant:
+  `paymentFlow` is ADVANCE for advance groups and STANDARD for PO_ISSUED / PAYMENT_SCHEDULED; a direct MarkAsPaid for
+  a PAYMENT-type scheduled advance (and for a QUOTATION advance group) → 409 with the code and a state-for-state
+  identical snapshot (group, request, payment row, proof attachment, history, paid timestamp), then confirm-advance
+  completes the same advance; a normal PAYMENT_SCHEDULED still succeeds through MarkAsPaid and is refused by
+  confirm-advance without writes; a repeated confirm-advance fails with 400 and no second payment/history row, and a
+  late MarkAsPaid on the delivered group is refused with nothing written.
+- `AdvancePaymentScopeAuthorizationTests` (new): plant-scoped Finance user confirms an in-scope advance (with
+  aggregation) and receives a bare 404 for the other plant's request with a state-for-state identical snapshot
+  (request status/updated-by/paid timestamp, group, payment row, proof linkage, history, STATUS_SYNC); department
+  scope dimension; in-scope request + foreign group id → fixed 400, no disclosure, no writes; in-scope group through
+  an out-of-scope request id → 404; the out-of-scope request is absent from the caller's obligations; System
+  Administrator and a scope-less Finance user unfiltered (existing contract); missing Finance role → 403 in or out
+  of scope; MarkAsPaid and confirm-advance answer the same 404 for the same caller/request, then 409 vs success in
+  scope; `schedule-advance` in-scope / out-of-scope / foreign-group / 403 / SysAdmin with the same no-write proof.
+- `FinancePaymentEligibilityServiceTests`: PAYMENT parent sweep pinned (ADVANCE_PAYMENT_SCHEDULED true; REQUIRED /
+  COMPLETED / WAITING_SUPPLIER_DELIVERY / CANCELLED / REJECTED / COMPLETED false); group-action sets before/after
+  scheduling; QUOTATION advance statuses unchanged.
+- `RequestWorkflowProjectionBuilderTests`: PAYMENT + ADVANCE_PAYMENT_SCHEDULED → "Financeiro / CONFIRM_ADVANCE /
+  Confirmar o pagamento do adiantamento" without due-date wording; REQUIRED / PAYMENT_SCHEDULED pinned; two advance
+  groups → two group-specific actions; confirmed advance no longer asks Finance.
+- Frontend `advancePaymentScheduledGuidance.test.ts` (vitest) + `workflowProjection.test.mjs` (node:test): the pinned
+  statuses fetch and are projection-owned; loaded projection owns the header; fetch failure/idle render the same
+  truthful fallback; neither path renders the defaults (loading shows the placeholder); Finance row exposes PAY
+  ("Pagar adiantamento") without SCHEDULE; the list dispatches on `paymentFlow` (ADVANCE → `confirmAdvancePayment` /
+  `scheduleAdvancePayment`, STANDARD → `markAsPaid` / `schedulePayment`; `financePaymentsView.test.mjs` pins
+  `isAdvanceObligation` incl. the older-payload fallback); multi-group actions stay group-specific; completion card and header agree;
+  panel allow-list and its mirror agree and include the status; print receives the projection in the same cases;
+  completed advance no longer asks Finance; QUOTATION unchanged.
+
+### Expected effect after deployment (PROD, from the 2026-09-22 read-only survey)
+
+All 38 PAYMENT-type requests at ADVANCE_PAYMENT_SCHEDULED become Finance-eligible (the 38 QUOTATION ones stay as they
+are); REQ-16/09/2026-424 lists one payable advance obligation; REQ-27/08/2026-333 lists its two advance groups without
+duplication; Overview counters include the PAYMENT population; the drawer reads "Financeiro / Confirmar o pagamento do
+adiantamento". No stored data changes.
 
 ## [v2.245.10] - 2026-09-22 — Single-request scope for the payment-group-item-linkage repair
 

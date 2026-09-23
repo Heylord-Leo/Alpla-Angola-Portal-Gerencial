@@ -12,7 +12,7 @@ import { KPICard } from '../../components/ui/KPICard';
 import { KebabMenu, KebabOption } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
-import { isAdvanceGroupStatus, resolveAttachmentUploadParams, resolveObligationRowFlags, resolveObligationActionPlan, obligationActionLabel, ObligationActionCode, FINANCE_DEFAULT_SORT, FINANCE_SORT_OPTIONS, FINANCE_CLEAR_KEYS, resolveNoteTooltip, countAdvancedFilters } from '../../lib/financePaymentsView';
+import { isAdvanceObligation, resolveAttachmentUploadParams, resolveObligationRowFlags, resolveObligationActionPlan, obligationActionLabel, ObligationActionCode, FINANCE_DEFAULT_SORT, FINANCE_SORT_OPTIONS, FINANCE_CLEAR_KEYS, resolveNoteTooltip, countAdvancedFilters } from '../../lib/financePaymentsView';
 
 // ── Card → filter mapping (work queues) ──
 type CardKey = 'needsScheduling' | 'needsPayment' | 'dueToday' | 'overdue' | 'paidWaitingReceiving';
@@ -142,7 +142,10 @@ export default function FinancePaymentsList() {
         setProcessing(true);
         setFeedback({ type: 'success', message: null });
         try {
-            const isAdvance = isAdvanceGroupStatus(actionModal.obligation?.groupStatusCode);
+            // v2.245.11: execution route from the server-authoritative obligation.paymentFlow (ADVANCE →
+            // b2p/schedule-advance + b2p/confirm-advance; STANDARD → finance schedule + pay). MarkAsPaid refuses
+            // an ADVANCE obligation server-side (409 ADVANCE_REQUIRES_CONFIRM_ADVANCE), so this is never a UI-only rule.
+            const isAdvance = isAdvanceObligation(actionModal.obligation);
 
             if (action === 'SCHEDULE' && payload.date) {
                 const up = resolveAttachmentUploadParams(action, !!payload.file, actionModal.groupId);
@@ -319,7 +322,7 @@ export default function FinancePaymentsList() {
             <FinanceActionModal
                 show={actionModal.show}
                 action={actionModal.action}
-                isAdvance={isAdvanceGroupStatus(actionModal.obligation?.groupStatusCode)}
+                isAdvance={isAdvanceObligation(actionModal.obligation)}
                 processing={processing}
                 feedback={feedback}
                 expectedAmount={actionModal.expectedAmount}
@@ -399,8 +402,8 @@ function NoteIndicator({ container }: { container: FinanceObligationContainerDto
 }
 
 function ObligationRow({ o, onAction }: { o: FinanceObligationDto; onAction: (o: FinanceObligationDto, code: ObligationActionCode) => void }) {
-    const plan = resolveObligationActionPlan({ groupStatusCode: o.groupStatusCode, financeActions: o.financeActions });
-    const advance = isAdvanceGroupStatus(o.groupStatusCode);
+    const plan = resolveObligationActionPlan({ groupStatusCode: o.groupStatusCode, financeActions: o.financeActions, paymentFlow: o.paymentFlow });
+    const advance = isAdvanceObligation(o);
     const { isPaid: paid, isNoFinance: noFinance, isOverdue: overdue } = resolveObligationRowFlags(o);
 
     const menuIcon = (code: ObligationActionCode): ReactNode => {

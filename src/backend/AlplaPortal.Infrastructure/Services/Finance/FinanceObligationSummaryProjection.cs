@@ -34,10 +34,16 @@ public sealed class FinanceObligationSummaryProjection
 
     // Parent statuses in the finance pipeline (with a PO attachment) OR any quotation with a group in
     // the finance-pipeline set. Identical to the previous FinanceController.GetObligations population.
+    // v2.245.11: ADVANCE_PAYMENT_SCHEDULED added — the parent scalar reaches it (RequestStatusCalculator
+    // priority 25) once a PAYMENT-type advance is scheduled, but this list never carried it, so every
+    // PAYMENT request with a scheduled advance vanished from Finance until the advance was confirmed
+    // (the QUOTATION branch below was unaffected: it is group-status-driven). Kept in sync with
+    // FinanceController.GetPayments' financeStatuses.
     private static readonly string[] FinanceStatuses =
     {
         RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent,
-        RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted,
+        RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled,
+        RequestConstants.Statuses.AdvancePaymentCompleted,
         RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid,
         RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup,
         RequestConstants.Statuses.Completed, RequestConstants.Statuses.PoPartiallyUploaded
@@ -133,7 +139,7 @@ public sealed class FinanceObligationSummaryProjection
                     PaymentId = o.PaymentId, PaymentType = o.PaymentType, ScheduledDateUtc = o.ScheduledDateUtc,
                     PlannedAmount = o.PlannedAmount, ActualPaidAmount = o.ActualPaidAmount, PaidDateUtc = o.PaidDateUtc,
                     HasPaymentProof = o.HasPaymentProof, FinanceActions = o.FinanceActions.ToList(),
-                    ActionClass = o.ActionClass, ActionClassLabel = o.ActionClassLabel, NextActionLabel = o.NextActionLabel,
+                    PaymentFlow = o.PaymentFlow, ActionClass = o.ActionClass, ActionClassLabel = o.ActionClassLabel, NextActionLabel = o.NextActionLabel,
                     ResponsibleRole = o.ResponsibleRole, DueDate = o.DueDate, IsOverdue = o.IsOverdue,
                     OverdueDays = o.OverdueDays, IsDueToday = o.IsDueToday, ObligationAmount = o.ObligationAmount
                 };
