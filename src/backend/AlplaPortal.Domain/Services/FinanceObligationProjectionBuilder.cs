@@ -77,6 +77,8 @@ public static class FinanceObligationProjectionBuilder
         bool HasPaymentProof,
         // Action
         System.Collections.Generic.IReadOnlyList<string> FinanceActions,
+        /// <summary>v2.245.11 — FinancePaymentFlows.Advance | Standard: which endpoints settle this obligation.</summary>
+        string PaymentFlow,
         string ActionClass,
         string ActionClassLabel,
         string? NextActionLabel,
@@ -168,6 +170,9 @@ public static class FinanceObligationProjectionBuilder
 
         var advance = group.GroupStatus is RequestConstants.Statuses.AdvancePaymentRequired
             or RequestConstants.Statuses.AdvancePaymentScheduled;
+        // Server-authoritative execution flow (same rule MarkAsPaid enforces) — never inferred by the client.
+        var paymentFlow = FinancePaymentFlows.Resolve(group.GroupStatus,
+            group.Payments.Select(p => (p.PaymentType, p.PaymentStatus)));
         var nextAction = NextActionLabel(actionClass, group.GroupStatus, advance);
         var operationalState = OperationalStateLabel(actionClass, group.GroupStatus, advance, isOverdue);
 
@@ -197,6 +202,7 @@ public static class FinanceObligationProjectionBuilder
             PaidDateUtc: payment?.PaidDateUtc,
             HasPaymentProof: payment?.HasProof ?? false,
             FinanceActions: group.FinanceActions,
+            PaymentFlow: paymentFlow,
             ActionClass: actionClass,
             ActionClassLabel: FinanceActionClasses.Label(actionClass),
             NextActionLabel: nextAction,

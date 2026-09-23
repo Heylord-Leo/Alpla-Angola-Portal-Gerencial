@@ -57,11 +57,17 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
     };
 
     // Mirrors FinanceController.MarkAsPaid's PAYMENT branch (allowedPayStatuses) - parent status, not group status.
+    // v2.245.11: ADVANCE_PAYMENT_SCHEDULED added. The parent scalar reaches it once a PAYMENT-type advance is
+    // scheduled (RequestStatusCalculator priority 25); without it the scheduled advance had no PAY (and SCHEDULE
+    // is correctly gone by then, so the obligation was dead). The Finance UI routes an advance group's PAY to the
+    // existing b2p/confirm-advance flow. ADVANCE_PAYMENT_REQUIRED is deliberately NOT here: a PAYMENT-type advance
+    // is scheduled first (SCHEDULE via SchedulableGroupStatuses), then paid.
     private static readonly string[] PayableParentStatusesForPayment =
     {
         RequestConstants.Statuses.PoIssued,
         RequestConstants.Statuses.PaymentRequestSent,
-        RequestConstants.Statuses.PaymentScheduled
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.AdvancePaymentScheduled
     };
 
     // Mirrors FinanceController.ReturnForAdjustment's allowedReturnStatuses.

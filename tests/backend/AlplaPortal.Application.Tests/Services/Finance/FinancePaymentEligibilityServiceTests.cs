@@ -323,12 +323,90 @@ public class FinancePaymentEligibilityServiceTests
     [InlineData(RequestConstants.Types.Payment, "PO_ISSUED", true)]
     [InlineData(RequestConstants.Types.Payment, "PAYMENT_REQUEST_SENT", true)]
     [InlineData(RequestConstants.Types.Payment, "PAYMENT_SCHEDULED", true)]
+    [InlineData(RequestConstants.Types.Payment, "ADVANCE_PAYMENT_SCHEDULED", true)]   // v2.245.11
+    [InlineData(RequestConstants.Types.Payment, "ADVANCE_PAYMENT_REQUIRED", false)]   // schedule first, then pay
+    [InlineData(RequestConstants.Types.Payment, "ADVANCE_PAYMENT_COMPLETED", false)]
+    [InlineData(RequestConstants.Types.Payment, "WAITING_SUPPLIER_DELIVERY", false)]
     [InlineData(RequestConstants.Types.Payment, "APPROVED", false)]
     [InlineData(RequestConstants.Types.Payment, "PAYMENT_COMPLETED", false)]
+    [InlineData(RequestConstants.Types.Payment, "CANCELLED", false)]
+    [InlineData(RequestConstants.Types.Payment, "REJECTED", false)]
+    [InlineData(RequestConstants.Types.Payment, "COMPLETED", false)]
     public void CanPay_MatchesMarkAsPaidGuard_ForPaymentType_UsingParentStatus(string requestType, string parentStatus, bool expected)
     {
         // PAYMENT type: CanPay ignores groupStatus entirely — pass null to prove that.
         Assert.Equal(expected, _sut.CanPay(requestType, parentStatus, null));
+    }
+
+    // ── v2.245.11: PAYMENT-type advance lifecycle — SCHEDULE before scheduling, PAY (not SCHEDULE) after ──
+
+    [Fact]
+    public void V224511_PaymentType_AdvanceRequired_ExposesSchedule_NotPay()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Payment,
+            RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentRequired);
+
+        Assert.Contains(FinancePaymentActionCodes.Schedule, actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.Pay, actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.CancelSchedule, actions);
+        Assert.Contains(FinancePaymentActionCodes.Return, actions);
+    }
+
+    [Fact]
+    public void V224511_PaymentType_AdvanceScheduled_ExposesPay_NotSchedule_KeepsCancelAndReturn()
+    {
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Payment,
+            RequestConstants.Statuses.AdvancePaymentScheduled, RequestConstants.Statuses.AdvancePaymentScheduled);
+
+        Assert.Contains(FinancePaymentActionCodes.Pay, actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.Schedule, actions);
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, actions);
+        Assert.Contains(FinancePaymentActionCodes.Return, actions);
+        Assert.Equal(actions.Count, actions.Distinct().Count()); // never duplicated
+    }
+
+    [Fact]
+    public void V224511_PaymentType_AdvanceScheduled_RequestLevelEvaluate_ExposesPay()
+    {
+        var input = new FinanceEligibilityInput
+        {
+            RequestTypeCode = RequestConstants.Types.Payment,
+            RequestStatusCode = RequestConstants.Statuses.AdvancePaymentScheduled,
+            IsPaid = false,
+            HasProof = false,
+            PoGroups = new List<FinancePoGroupEligibilityInput> { Group(RequestConstants.Statuses.AdvancePaymentScheduled) }
+        };
+
+        var result = _sut.Evaluate(input);
+
+        Assert.Contains(FinancePaymentActionCodes.Pay, result.Actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.Schedule, result.Actions);
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, result.Actions);
+        Assert.DoesNotContain(FinancePaymentActionCodes.Pay, result.UnavailableReasons.Keys);
+    }
+
+    [Fact]
+    public void V224511_PaymentType_ConfirmedAdvance_WaitingSupplierDelivery_NoFinanceMutation()
+    {
+        // After b2p/confirm-advance the group is WAITING_SUPPLIER_DELIVERY and the parent follows it —
+        // nothing for Finance to schedule/pay/cancel/return.
+        var actions = _sut.EvaluateGroupActions(RequestConstants.Types.Payment,
+            RequestConstants.Statuses.WaitingSupplierDelivery, RequestConstants.Statuses.WaitingSupplierDelivery);
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void V224511_QuotationType_AdvanceStatuses_Unchanged()
+    {
+        // QUOTATION keeps its group-driven direct-pay behaviour: PAY at REQUIRED and at SCHEDULED.
+        var required = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, "irrelevant", RequestConstants.Statuses.AdvancePaymentRequired);
+        Assert.Contains(FinancePaymentActionCodes.Schedule, required);
+        Assert.Contains(FinancePaymentActionCodes.Pay, required);
+
+        var scheduled = _sut.EvaluateGroupActions(RequestConstants.Types.Quotation, "irrelevant", RequestConstants.Statuses.AdvancePaymentScheduled);
+        Assert.Contains(FinancePaymentActionCodes.Pay, scheduled);
+        Assert.DoesNotContain(FinancePaymentActionCodes.Schedule, scheduled);
+        Assert.Contains(FinancePaymentActionCodes.CancelSchedule, scheduled);
     }
 
     [Theory]

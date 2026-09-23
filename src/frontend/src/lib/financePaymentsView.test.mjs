@@ -20,6 +20,7 @@ import {
     FINANCE_SORT_OPTIONS,
     countAdvancedFilters,
     isAdvanceGroupStatus,
+    isAdvanceObligation,
     resolveAttachmentUploadParams,
     resolveParentDisplayStatus,
     resolveScheduledPaymentDetails,
@@ -265,6 +266,35 @@ describe('canCancelScheduleGroupStatus (per-group, mirrors backend CanCancelSche
         for (const status of [null, undefined, '']) {
             assert.equal(canCancelScheduleGroupStatus(status), false);
         }
+    });
+});
+
+// v2.245.11 — execution routing is decided by the server-authoritative obligation.paymentFlow
+// (ADVANCE → b2p/schedule-advance + b2p/confirm-advance; STANDARD → finance schedule + pay), never by a label.
+describe('isAdvanceObligation (v2.245.11 execution route)', () => {
+    test('paymentFlow ADVANCE → advance route, whatever the group status says', () => {
+        assert.equal(isAdvanceObligation({ paymentFlow: 'ADVANCE', groupStatusCode: 'ADVANCE_PAYMENT_SCHEDULED' }), true);
+        assert.equal(isAdvanceObligation({ paymentFlow: 'ADVANCE', groupStatusCode: 'PO_ISSUED' }), true);
+    });
+
+    test('paymentFlow STANDARD → normal route (MarkAsPaid), even for an advance-looking status', () => {
+        assert.equal(isAdvanceObligation({ paymentFlow: 'STANDARD', groupStatusCode: 'PAYMENT_SCHEDULED' }), false);
+        assert.equal(isAdvanceObligation({ paymentFlow: 'STANDARD', groupStatusCode: 'ADVANCE_PAYMENT_SCHEDULED' }), false);
+    });
+
+    test('missing paymentFlow (older payload) → group-status mirror fallback; null obligation → false', () => {
+        assert.equal(isAdvanceObligation({ groupStatusCode: 'ADVANCE_PAYMENT_SCHEDULED' }), true);
+        assert.equal(isAdvanceObligation({ groupStatusCode: 'PAYMENT_SCHEDULED' }), false);
+        assert.equal(isAdvanceObligation({ paymentFlow: null, groupStatusCode: 'ADVANCE_PAYMENT_REQUIRED' }), true);
+        assert.equal(isAdvanceObligation(null), false);
+        assert.equal(isAdvanceObligation(undefined), false);
+    });
+
+    test('the action plan labels follow the same route (PAY → "Pagar adiantamento" only for the ADVANCE flow)', () => {
+        const adv = resolveObligationActionPlan({ paymentFlow: 'ADVANCE', groupStatusCode: 'ADVANCE_PAYMENT_SCHEDULED', financeActions: ['PAY', 'CANCEL_SCHEDULE', 'RETURN'] });
+        assert.deepEqual(adv.primary, { action: 'PAY', label: 'Pagar adiantamento' });
+        const std = resolveObligationActionPlan({ paymentFlow: 'STANDARD', groupStatusCode: 'PAYMENT_SCHEDULED', financeActions: ['PAY', 'CANCEL_SCHEDULE', 'RETURN'] });
+        assert.deepEqual(std.primary, { action: 'PAY', label: 'Pagar' });
     });
 });
 

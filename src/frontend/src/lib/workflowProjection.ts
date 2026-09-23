@@ -141,8 +141,10 @@ export function resolveSingleUnitGuidance(
 // Policy (single source of truth, no second receiving rulebook in the frontend):
 //  • QUOTATION requests: unchanged — the projection drives guidance for every non-terminal status.
 //  • Every other request type: the projection drives guidance while the request/unit is in a
-//    RECEIVING-PHASE status, where the projection carries receipt-fact-specific wording. Outside that
-//    phase the legacy scalar map stands (strings there are type-specific and intentionally kept).
+//    RECEIVING-PHASE status, where the projection carries receipt-fact-specific wording, and — v2.245.11 —
+//    while it is in an ACTIONABLE PAYMENT status (advance required/scheduled, payment scheduled), where
+//    the projection's group guidance is the authoritative "Financeiro / next payment action". Outside
+//    those phases the legacy scalar map stands (strings there are type-specific and intentionally kept).
 //  • While the projection is loading, a placeholder is shown — never a known-generic text that is
 //    replaced later (no flash of wrong guidance).
 //  • If the fetch fails, the conservative legacy scalar map is used and the view keeps working.
@@ -166,6 +168,21 @@ export const RECEIVING_GUIDANCE_STATUSES: readonly string[] = [
     'PAYMENT_COMPLETED', 'IN_FOLLOWUP', 'WAITING_RECEIPT', 'WAITING_FISCAL_RECEIPT',
 ];
 
+/**
+ * v2.245.11 — actionable PAYMENT statuses (request scalar AND group unit) for which the backend
+ * projection is the authority on "Responsável / Próxima ação" for every request type. The scalar map
+ * (lib/utils getRequestGuidance) keeps a truthful, string-identical fallback for each of them so a
+ * failed fetch never renders the generic "Não definido / Aguardar atualização do sistema" default.
+ */
+export const PAYMENT_ACTION_GUIDANCE_STATUSES: readonly string[] = [
+    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'PAYMENT_SCHEDULED',
+];
+
+/** Statuses (scalar and unit) for which the projection owns the guidance of a non-QUOTATION request. */
+export const PROJECTION_OWNED_GUIDANCE_STATUSES: readonly string[] = [
+    ...RECEIVING_GUIDANCE_STATUSES, ...PAYMENT_ACTION_GUIDANCE_STATUSES,
+];
+
 const PROJECTION_IRRELEVANT_SCALARS = ['DRAFT', ...TERMINAL_SCALARS];
 
 /** Whether the details view needs the projection for its guidance (one fetch per view; none when irrelevant). */
@@ -176,7 +193,7 @@ export function shouldFetchWorkflowProjection(
 ): boolean {
     if (!requestId) return false;
     if (requestTypeCode === 'QUOTATION') return true;
-    return !!scalarStatusCode && RECEIVING_GUIDANCE_STATUSES.includes(scalarStatusCode);
+    return !!scalarStatusCode && PROJECTION_OWNED_GUIDANCE_STATUSES.includes(scalarStatusCode);
 }
 
 /**
@@ -225,7 +242,7 @@ export function projectionOwnsGuidance(
 ): boolean {
     if (!scalarStatusCode || PROJECTION_IRRELEVANT_SCALARS.includes(scalarStatusCode)) return false;
     if (requestTypeCode === 'QUOTATION') return true;
-    return RECEIVING_GUIDANCE_STATUSES.includes(scalarStatusCode);
+    return PROJECTION_OWNED_GUIDANCE_STATUSES.includes(scalarStatusCode);
 }
 
 /**
@@ -245,9 +262,10 @@ export function resolveProjectionGuidance(
     const single = resolveSingleUnitGuidance(load.projection, scalarStatusCode);
     if (!single) return { guidance: null, loading: false };
     if (requestTypeCode !== 'QUOTATION') {
-        // Non-QUOTATION: only an operational GROUP unit in the receiving phase is projection-owned.
+        // Non-QUOTATION: only an operational GROUP unit in the receiving phase or in an actionable
+        // payment state (v2.245.11) is projection-owned.
         const unit = load.projection.units[0];
-        if (unit.unitType !== 'GROUP' || !RECEIVING_GUIDANCE_STATUSES.includes(unit.statusCode)) {
+        if (unit.unitType !== 'GROUP' || !PROJECTION_OWNED_GUIDANCE_STATUSES.includes(unit.statusCode)) {
             return { guidance: null, loading: false };
         }
     }
@@ -286,8 +304,8 @@ export function resolveHeaderGuidance(input: {
 export const OPERATIONAL_PANEL_STATUSES = new Set<string>([
     'APPROVED', 'QUOTATION_COMPLETED', 'PO_REQUESTED', 'PO_PARTIALLY_UPLOADED', 'PO_ISSUED',
     'WAITING_PO_CORRECTION', 'PAYMENT_SCHEDULED', 'PAYMENT_COMPLETED', 'WAITING_RECEIPT',
-    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_COMPLETED', 'WAITING_SUPPLIER_DELIVERY',
-    'WAITING_RECONCILIATION',
+    'ADVANCE_PAYMENT_REQUIRED', 'ADVANCE_PAYMENT_SCHEDULED', 'ADVANCE_PAYMENT_COMPLETED',
+    'WAITING_SUPPLIER_DELIVERY', 'WAITING_RECONCILIATION',
 ]);
 
 /** True when the panel's operational allow-list would render for this request-level status. */

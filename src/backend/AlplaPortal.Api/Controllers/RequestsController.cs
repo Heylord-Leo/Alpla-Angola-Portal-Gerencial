@@ -7458,7 +7458,11 @@ public class RequestsController : BaseController
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (request == null) return NotFound();
+        // v2.245.11: canonical request scope (RequestAccessScope via BaseController.GetScopedRequestsQuery — the
+        // same predicate Finance obligations/payments, MarkAsPaid, SchedulePayment, CancelSchedule and
+        // ReturnForAdjustment apply). Out-of-scope = the same 404 as "does not exist": no group, payment,
+        // attachment or amount is disclosed and nothing is written. Additive to the role check above.
+        if (request == null || !await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id)) return NotFound();
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
@@ -7524,7 +7528,13 @@ public class RequestsController : BaseController
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (request == null) return NotFound();
+        // v2.245.11: canonical request scope (RequestAccessScope via BaseController.GetScopedRequestsQuery — the
+        // same predicate Finance obligations/payments, MarkAsPaid, SchedulePayment, CancelSchedule and
+        // ReturnForAdjustment apply). confirm-advance is the sole advance-settlement endpoint, so it must hold the
+        // same organizational boundary as the Finance queue that exposes the PAY action. Out-of-scope = the same
+        // 404 as "does not exist": no group, payment, attachment or amount is disclosed and nothing is written.
+        // Additive to the role check above and to every business guard below.
+        if (request == null || !await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id)) return NotFound();
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");

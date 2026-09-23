@@ -2,7 +2,65 @@
 
 ## Current Version
 
-v2.245.10
+v2.245.12
+
+## [v2.245.12] - 2026-09-23
+
+### PAYMENT_PROOF upload for PAYMENT-type scheduled advances
+
+The controlled TEST lifecycle test of v2.245.11 (REQ-12/08/2026-241) stopped at its first step: the Finance PAY
+action for a PAYMENT request at `ADVANCE_PAYMENT_SCHEDULED` uploads the mandatory proof through
+`POST api/v1/attachments/upload/{requestId}` before calling `b2p/confirm-advance`, and that upload answered 400
+"Upload Bloqueado". The PAYMENT_PROOF lifecycle list in `AttachmentsController` (judged on the request scalar)
+never contained `ADVANCE_PAYMENT_SCHEDULED`; the group-status fallback that does is QUOTATION-only. So PAYMENT
+scheduled advances were visible and actionable after v2.245.11 but could not receive the proof confirm-advance
+requires. Backend-only, no migration, no data repair:
+
+- The list is now the single named `PaymentProofEligibleRequestStatuses` (the seven existing statuses plus
+  `ADVANCE_PAYMENT_SCHEDULED`); every other attachment type and the QUOTATION group rules are unchanged.
+- A supplied `poGroupId` must belong to the request for every request type (400 "Grupo P.O. Inválido", nothing
+  written); the check runs after the caller's request scope has been applied and before any file or row is
+  written. Out-of-scope or unknown requests keep the existing non-disclosing 404.
+- Normal `finance/{id}/pay` still refuses an advance (409 `ADVANCE_REQUIRES_CONFIRM_ADVANCE`); confirm-advance
+  keeps every guard (Finance role, scope, group ownership, advance status, ADVANCE row, minimum amount,
+  PAYMENT_PROOF of the same request, aggregation, fail-closed repeat).
+- Tests: `PaymentProofUploadAdvanceLifecycleTests` (upload → confirm-advance lifecycle, accepted statuses,
+  invalid status, QUOTATION group rule, foreign group, out-of-scope 404, roles, foreign proof, repeat, MarkAsPaid
+  409), each rejection proven write-free by snapshot.
+
+- **NO MIGRATION**, **no data repair**, frontend untouched except the version marker.
+
+## [v2.245.11] - 2026-09-23
+
+### Finance visibility and workflow guidance for scheduled advances (PAYMENT type)
+
+A PAYMENT-type request whose advance had been scheduled (`ADVANCE_PAYMENT_SCHEDULED`) vanished from Finance until the
+advance was confirmed and its details header read "Não definido / Aguardar atualização do sistema" (PROD: 38 PAYMENT
+requests invisible, e.g. REQ-16/09/2026-424; the 38 QUOTATION ones were visible). Two root causes, both original
+omissions: the parent-scalar Finance population (obligations projection, legacy `/payments`, `/summary`) and the
+PAYMENT-type PAY eligibility never listed the status; the frontend never fetched the workflow projection for PAYMENT
+requests outside the receiving phase and the scalar map had no case for the status.
+
+- Backend: `ADVANCE_PAYMENT_SCHEDULED` added to the obligations projection / `GetPayments` parent sets and (with the
+  other advance statuses) to `GetSummary`'s PAYMENT stream; the scheduled KPI / `filter=scheduled` count a scheduled
+  advance; `PayableParentStatusesForPayment` gains the status (PAY via the existing `b2p/confirm-advance` flow).
+  QUOTATION behaviour, one obligation per group, scope and pagination unchanged.
+- Execution-route invariant: `FinancePaymentFlows` (ADVANCE when the group is at ADVANCE_PAYMENT_REQUIRED /
+  ADVANCE_PAYMENT_SCHEDULED or carries a SCHEDULED advance row, else STANDARD) is exposed on the obligation DTO as
+  `paymentFlow` and enforced by `MarkAsPaid`, which refuses an advance with 409 `ADVANCE_REQUIRES_CONFIRM_ADVANCE`
+  before any write; advances are confirmed only through `b2p/confirm-advance` (unchanged). The Finance list dispatches
+  SCHEDULE/PAY on `paymentFlow`. MarkAsPaid's allowed-status messages no longer imply an advance can be settled there.
+- Request scope: `b2p/confirm-advance` and `b2p/schedule-advance` now apply the canonical `RequestAccessScope`
+  (`GetScopedRequestsQuery`, the same predicate as the Finance queue and every Finance mutation) after the role
+  check and before any group/payment/attachment is inspected; out-of-scope → bare 404, zero writes. Cancel-schedule
+  and return were already scoped.
+- Frontend: the projection owns "Responsável / Próxima ação" for every type in `ADVANCE_PAYMENT_REQUIRED`,
+  `ADVANCE_PAYMENT_SCHEDULED`, `PAYMENT_SCHEDULED`; explicit scalar fallback "Financeiro / Confirmar o pagamento do
+  adiantamento"; status panel renders for the status.
+- Tests: new `AdvancePaymentScheduledFinanceVisibilityTests` (population, alignment, scope, pagination and the full
+  schedule-to-confirm lifecycle), eligibility and projection-builder pins, vitest + node:test guidance suites.
+
+- **NO MIGRATION**, **no data repair**.
 
 ## [v2.245.10] - 2026-09-22
 

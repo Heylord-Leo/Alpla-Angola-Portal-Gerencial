@@ -37,6 +37,12 @@ public class FinanceObligationDto
     public bool HasPaymentProof { get; set; }
     // Action
     public List<string> FinanceActions { get; set; } = new();
+    /// <summary>
+    /// v2.245.11 — "ADVANCE" | "STANDARD" (FinancePaymentFlows). Server-authoritative execution route for
+    /// SCHEDULE/PAY: ADVANCE → requests/{id}/b2p/schedule-advance + b2p/confirm-advance; STANDARD →
+    /// finance/{id}/schedule + finance/{id}/pay. MarkAsPaid refuses an ADVANCE obligation (409).
+    /// </summary>
+    public string PaymentFlow { get; set; } = string.Empty;
     public string ActionClass { get; set; } = string.Empty;
     public string ActionClassLabel { get; set; } = string.Empty;
     public string? NextActionLabel { get; set; }
