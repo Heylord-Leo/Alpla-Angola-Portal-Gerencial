@@ -4,7 +4,69 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.11
+v2.245.12
+
+## [v2.245.12] - 2026-09-23 — PAYMENT_PROOF upload for PAYMENT-type scheduled advances
+
+Backend-only. No migration, no data repair. Frontend untouched except the version marker.
+
+### Symptom
+
+v2.245.11 restored PAYMENT-type requests at `ADVANCE_PAYMENT_SCHEDULED` to Finance and routes their PAY action to
+the dedicated confirm-advance flow. That flow first uploads the mandatory payment proof through
+`POST api/v1/attachments/upload/{requestId}` (form: `files`, `typeCode=PAYMENT_PROOF`, `poGroupId`) and only then
+calls `POST api/v1/requests/{id}/b2p/confirm-advance` with the returned attachment id. The controlled TEST lifecycle
+test of REQ-12/08/2026-241 (PAYMENT, single group, ADVANCE payment 107 SCHEDULED, 10,830.00 AOA) stopped at that
+first step: the upload answered 400 "Upload Bloqueado" and nothing was written, so confirm-advance could never
+receive its proof. QUOTATION advances were unaffected.
+
+### Root cause
+
+`AttachmentsController.Upload` judges a PAYMENT_PROOF on the request scalar against a fixed list (PO_ISSUED,
+PAYMENT_SCHEDULED, PAYMENT_COMPLETED, IN_FOLLOWUP, ADVANCE_PAYMENT_REQUIRED, ADVANCE_PAYMENT_COMPLETED,
+WAITING_SUPPLIER_DELIVERY) that never contained `ADVANCE_PAYMENT_SCHEDULED` — the same parent-scalar omission class
+as the Finance population lists fixed in v2.245.11. The group-status fallback that does accept the status applies to
+QUOTATION requests only.
+
+### Changed
+
+- The PAYMENT_PROOF request-scalar rule is now the single named `PaymentProofEligibleRequestStatuses` in
+  `AttachmentsController`: the seven existing statuses plus `ADVANCE_PAYMENT_SCHEDULED`. No other attachment type,
+  no QUOTATION group rule, no file-type/size/extension/security, voiding or duplicate-handling rule changed. A
+  canonical-rule search found no second copy of this lifecycle list in any other mutation path (confirm-advance and
+  MarkAsPaid validate proof ownership and type, not lifecycle; the request-details attachment panel and the Finance
+  modal are UI affordances), so the minimal change is pinned by tests rather than extracted to a new shared type.
+- Group ownership for every request type: a supplied `poGroupId` must belong to the request (400 "Grupo P.O.
+  Inválido", nothing written). Previously only QUOTATION requests with groups enforced this; a PAYMENT upload could
+  persist a foreign group id on the attachment. The check runs after the request was resolved through the caller's
+  access scope and before any file is stored or row written.
+- Authorization and scope order (unchanged, now pinned): `[Authorize]` (401), request resolved through the canonical
+  `RequestAccessScope` (unknown or out-of-scope → the existing non-disclosing 404), file presence and security
+  checks, lifecycle rule (400), group ownership (400), QUOTATION linkage rules, then the write. The Finance-only
+  restriction for proofs after the advance is completed is unchanged; in the pre-payment states the upload endpoint
+  has never had a role gate (any authenticated in-scope user), and the settlement endpoints keep theirs (Finance
+  role → 403 otherwise).
+- Normal `finance/{id}/pay` keeps refusing an advance with 409 `ADVANCE_REQUIRES_CONFIRM_ADVANCE`; confirm-advance
+  keeps every guard (Finance role, scope, group ownership, advance status, SCHEDULED/PLANNED ADVANCE row, minimum
+  amount, active PAYMENT_PROOF of the same request, canonical aggregation, fail-closed repeat).
+
+### Tests
+
+- `PaymentProofUploadAdvanceLifecycleTests` (new, InMemory controllers): full PAYMENT lifecycle — proof upload
+  accepted at ADVANCE_PAYMENT_SCHEDULED, attachment belongs to the request with type PAYMENT_PROOF and the supplied
+  group, upload alone adds exactly one "DOCUMENTO ADICIONADO" history row and changes no status or payment; then
+  confirm-advance with that attachment completes payment row with amount, paid date, proof and actor, hands group
+  and request to WAITING_SUPPLIER_DELIVERY through the canonical aggregator, creates exactly one
+  ADVANCE_PAYMENT_COMPLETED row plus one STATUS_SYNC, no PAYMENT_COMPLETED / receiving event; PAYMENT +
+  ADVANCE_PAYMENT_REQUIRED / PAYMENT_SCHEDULED / PO_ISSUED still accepted; DRAFT rejected 400 with nothing
+  written; QUOTATION scheduled advance accepted through the group rule while its scalar is outside the list; foreign
+  group id → 400 with nothing written on either request; out-of-scope Finance user → non-disclosing 404, nothing
+  written; unscoped Finance user and System Administrator accepted; non-Finance user refused by confirm-advance
+  (403) with nothing written; a proof uploaded to another request refused by confirm-advance ("Anexo Inválido")
+  with nothing written; repeated confirm-advance → 400 with an identical snapshot; MarkAsPaid with the uploaded
+  proof still 409 `ADVANCE_REQUIRES_CONFIRM_ADVANCE` with nothing written. Every rejection compares request and
+  group statuses, payment rows, attachment inventory and linkage, request paid timestamp, history and STATUS_SYNC
+  counts before and after.
 
 ## [v2.245.11] - 2026-09-23 — Finance visibility and workflow guidance for scheduled advances (PAYMENT type)
 

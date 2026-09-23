@@ -2,7 +2,33 @@
 
 ## Current Version
 
-v2.245.11
+v2.245.12
+
+## [v2.245.12] - 2026-09-23
+
+### PAYMENT_PROOF upload for PAYMENT-type scheduled advances
+
+The controlled TEST lifecycle test of v2.245.11 (REQ-12/08/2026-241) stopped at its first step: the Finance PAY
+action for a PAYMENT request at `ADVANCE_PAYMENT_SCHEDULED` uploads the mandatory proof through
+`POST api/v1/attachments/upload/{requestId}` before calling `b2p/confirm-advance`, and that upload answered 400
+"Upload Bloqueado". The PAYMENT_PROOF lifecycle list in `AttachmentsController` (judged on the request scalar)
+never contained `ADVANCE_PAYMENT_SCHEDULED`; the group-status fallback that does is QUOTATION-only. So PAYMENT
+scheduled advances were visible and actionable after v2.245.11 but could not receive the proof confirm-advance
+requires. Backend-only, no migration, no data repair:
+
+- The list is now the single named `PaymentProofEligibleRequestStatuses` (the seven existing statuses plus
+  `ADVANCE_PAYMENT_SCHEDULED`); every other attachment type and the QUOTATION group rules are unchanged.
+- A supplied `poGroupId` must belong to the request for every request type (400 "Grupo P.O. Inválido", nothing
+  written); the check runs after the caller's request scope has been applied and before any file or row is
+  written. Out-of-scope or unknown requests keep the existing non-disclosing 404.
+- Normal `finance/{id}/pay` still refuses an advance (409 `ADVANCE_REQUIRES_CONFIRM_ADVANCE`); confirm-advance
+  keeps every guard (Finance role, scope, group ownership, advance status, ADVANCE row, minimum amount,
+  PAYMENT_PROOF of the same request, aggregation, fail-closed repeat).
+- Tests: `PaymentProofUploadAdvanceLifecycleTests` (upload → confirm-advance lifecycle, accepted statuses,
+  invalid status, QUOTATION group rule, foreign group, out-of-scope 404, roles, foreign proof, repeat, MarkAsPaid
+  409), each rejection proven write-free by snapshot.
+
+- **NO MIGRATION**, **no data repair**, frontend untouched except the version marker.
 
 ## [v2.245.11] - 2026-09-23
 

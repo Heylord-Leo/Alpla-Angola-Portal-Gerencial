@@ -40,6 +40,30 @@ public class AttachmentsController : BaseController
         RequestConstants.Statuses.PaymentScheduled
     };
 
+    /// <summary>
+    /// Request statuses in which a PAYMENT_PROOF may be uploaded, judged on the request scalar (every
+    /// request type; QUOTATION additionally has the group-status fallback below). This is the only
+    /// place that owns the proof-upload lifecycle rule — the Finance PAY flow uploads the proof here
+    /// first and then settles through finance/{id}/pay (STANDARD) or requests/{id}/b2p/confirm-advance
+    /// (ADVANCE), both of which require an existing PAYMENT_PROOF of the same request.
+    /// v2.245.12: ADVANCE_PAYMENT_SCHEDULED added. A PAYMENT-type request whose advance has been
+    /// scheduled carries that scalar (RequestStatusCalculator priority 25); v2.245.11 made such
+    /// requests visible and payable in Finance, but this list still refused the mandatory proof, so
+    /// the dedicated confirm-advance flow could never receive its attachment (TEST lifecycle finding,
+    /// REQ-12/08/2026-241). The QUOTATION fallback already accepted the status at group level.
+    /// </summary>
+    private static readonly string[] PaymentProofEligibleRequestStatuses =
+    {
+        RequestConstants.Statuses.PoIssued,
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.PaymentCompleted,
+        RequestConstants.Statuses.InFollowup,
+        RequestConstants.Statuses.AdvancePaymentRequired,
+        RequestConstants.Statuses.AdvancePaymentScheduled,
+        RequestConstants.Statuses.AdvancePaymentCompleted,
+        RequestConstants.Statuses.WaitingSupplierDelivery
+    };
+
     public AttachmentsController(ApplicationDbContext context, IWebHostEnvironment env, IOptions<SecurityOptions> securityOptions, Microsoft.Extensions.Configuration.IConfiguration configuration) : base(context)
     {
         _securityOptions = securityOptions.Value;
@@ -164,7 +188,7 @@ public class AttachmentsController : BaseController
                 // preservation ONLY — a confirmed advance now lands there instead of parking in
                 // ADVANCE_PAYMENT_COMPLETED, and the proof re-upload Finance already had after
                 // confirmation must survive the handoff. Nothing broader was enabled.
-                isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentCompleted, RequestConstants.Statuses.WaitingSupplierDelivery }.Contains(statusCode);
+                isUploadable = PaymentProofEligibleRequestStatuses.Contains(statusCode);
                 // QUOTATION group-first: allow payment proof when the target group is in a finance-eligible status
                 if (!isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
                 {
@@ -284,6 +308,22 @@ public class AttachmentsController : BaseController
             {
                 Title = "Upload Bloqueado",
                 Detail = detail,
+                Status = 400
+            });
+        }
+
+        // ── v2.245.12: a supplied group must belong to THIS request, for every request type. ──
+        // The request itself was resolved through the caller's access scope above, so this only ever
+        // compares against the caller's own request; a foreign group id (another request's group, or a
+        // random id) fails closed here, before any file is stored or any row written, and the persisted
+        // RequestPoGroupId below can never point outside the request. The QUOTATION-specific blocks
+        // further down keep their own (now redundant) checks and messages unchanged.
+        if (poGroupId.HasValue && (request.PoGroups == null || !request.PoGroups.Any(g => g.Id == poGroupId.Value)))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Grupo P.O. Inválido",
+                Detail = "O RequestPoGroupId informado não pertence a este pedido.",
                 Status = 400
             });
         }
