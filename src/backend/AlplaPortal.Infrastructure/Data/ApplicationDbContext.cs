@@ -725,6 +725,12 @@ public class ApplicationDbContext : DbContext
 
             entity.HasIndex(a => a.RequestId);
 
+            // Delivery evidence: latest outbox row queued for this alert level (null for legacy direct sends)
+            entity.HasOne(a => a.OutboxEntry)
+                .WithMany()
+                .HasForeignKey(a => a.OutboxEntryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasOne(a => a.Request)
                 .WithMany()
                 .HasForeignKey(a => a.RequestId)

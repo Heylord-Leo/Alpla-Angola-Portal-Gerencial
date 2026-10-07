@@ -38,4 +38,16 @@ public interface IApprovalRoutingService
     /// every plant of that department. Used by the Phase B queue query.
     /// </summary>
     Task<List<ManagedScopeDto>> GetManagedScopesAsync(Guid userId);
+
+    /// <summary>
+    /// Final-stage NOTIFICATION recipients under the current single-final-approver model: the
+    /// request's nominee (<c>Request.FinalApproverId</c>) when active with an e-mail; otherwise the
+    /// company's current nominee (<c>Company.FinalApproverUserId</c>) when active with an e-mail;
+    /// otherwise none (callers report NO_RECIPIENT). This is NOT an authorization rule: who may
+    /// approve the final stage is unchanged ("Final Approver" role + access scope), and a user
+    /// without an e-mail can still approve — e-mail availability only gates sending. Used by
+    /// proforma alerts and reminder digests; the one-shot AREA_APPROVED e-mail keeps targeting
+    /// <c>Request.FinalApproverId</c> directly.
+    /// </summary>
+    Task<FinalNotificationRecipientsDto> ResolveFinalNotificationRecipientsAsync(Guid? requestNomineeId, int companyId);
 }

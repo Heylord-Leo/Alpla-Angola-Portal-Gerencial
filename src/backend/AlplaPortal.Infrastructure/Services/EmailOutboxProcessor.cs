@@ -155,7 +155,12 @@ public class EmailOutboxProcessor : BackgroundService
         }
     }
 
-    private async Task ProcessEntryAsync(
+    /// <summary>True when the entry carries an ExpiresAtUtc that is already in the past (strictly before now).</summary>
+    public static bool IsExpired(EmailOutboxEntry entry, DateTime nowUtc) =>
+        entry.ExpiresAtUtc.HasValue && entry.ExpiresAtUtc.Value < nowUtc;
+
+    /// <summary>Processes one claimed (PROCESSING) entry: dedup → expiry → send → SENT | FAILED(retry) | DEAD_LETTER. Public for unit tests.</summary>
+    public async Task ProcessEntryAsync(
         ApplicationDbContext context,
         IEmailService emailService,
         AdminLogWriter adminLog,
@@ -189,6 +194,23 @@ public class EmailOutboxProcessor : BackgroundService
                         payload: $"OutboxId: {entry.Id}. CorrelationId: {entry.CorrelationId}. RequestId: {entry.RequestId}.");
                     return;
                 }
+            }
+
+            // ── Freshness: a time-sensitive message past its ExpiresAtUtc is marked EXPIRED (terminal) ──
+            // EXPIRED never matches the claim filter (PENDING / retryable FAILED) and is not PROCESSING,
+            // so it can neither be retried nor be picked up by stuck-row recovery: nothing stays blocked.
+            if (IsExpired(entry, DateTime.UtcNow))
+            {
+                entry.Status = "EXPIRED";
+                entry.ProcessedAtUtc = DateTime.UtcNow;
+                entry.LastError = $"Expired before dispatch (ExpiresAtUtc={entry.ExpiresAtUtc:O})";
+                await context.SaveChangesAsync(ct);
+
+                _logger.LogWarning("EmailOutboxProcessor: EXPIRED (not sent). {Context}", logContext);
+                await adminLog.WriteAsync("Warning", "EmailOutboxProcessor", "EMAIL_OUTBOX_EXPIRED",
+                    $"E-mail para {entry.RecipientEmail} expirou antes do envio e NÃO foi enviado. Pedido: {entry.RequestNumber ?? "N/A"}. Evento: {entry.EventCode}.",
+                    payload: $"OutboxId: {entry.Id}. ExpiresAtUtc: {entry.ExpiresAtUtc:O}. RetryCount: {entry.RetryCount}. CorrelationId: {entry.CorrelationId}.");
+                return;
             }
 
             // ── Entry is already in PROCESSING (claimed atomically). Send now. ──

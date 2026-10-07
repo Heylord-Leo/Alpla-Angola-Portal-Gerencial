@@ -89,4 +89,11 @@ public class EmailOutboxEntry
 
     /// <summary>When the email was successfully sent or moved to DEAD_LETTER.</summary>
     public DateTime? ProcessedAtUtc { get; set; }
+
+    /// <summary>
+    /// Optional freshness limit. When set and already past at dispatch time, the processor marks the
+    /// row EXPIRED (terminal, never retried) instead of sending stale content — used by time-sensitive
+    /// messages (proforma deadline alerts, approval reminder digests). Null = never expires.
+    /// </summary>
+    public DateTime? ExpiresAtUtc { get; set; }
 }

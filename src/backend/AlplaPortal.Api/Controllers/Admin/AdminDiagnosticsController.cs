@@ -101,6 +101,52 @@ public class AdminDiagnosticsController : ControllerBase
     /// Reads the same single source of truth (<see cref="IBuildInfoProvider"/>); the previous
     /// hard-coded literal is retired.
     /// </summary>
+    /// <summary>
+    /// Proforma deadline alerts with their delivery status derived from EVIDENCE: the linked outbox
+    /// row (QUEUED / SENT / FAILED) or, for legacy direct-send rows, the historical flag
+    /// (SENT_LEGACY / FAILED_LEGACY). "Queued" never means "delivered".
+    /// </summary>
+    [HttpGet("proforma-alerts")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "System Administrator")]
+    public async Task<IActionResult> GetProformaAlerts([FromQuery] int days = 30, CancellationToken ct = default)
+    {
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 365));
+        var rows = await _db.ProformaDeadlineAlerts.AsNoTracking()
+            .Include(a => a.OutboxEntry)
+            .Include(a => a.Request)
+            .Include(a => a.RecipientUser)
+            .Where(a => a.SentAtUtc >= since || (a.LastQueuedAtUtc != null && a.LastQueuedAtUtc >= since))
+            .OrderByDescending(a => a.LastQueuedAtUtc ?? a.SentAtUtc)
+            .Take(500)
+            .ToListAsync(ct);
+
+        var items = rows.Select(a => new
+        {
+            a.Id,
+            a.RequestId,
+            RequestNumber = a.Request?.RequestNumber,
+            a.AlertLevel,
+            Recipient = a.RecipientUser?.FullName,
+            FirstRecordedAtUtc = a.SentAtUtc,
+            a.LastQueuedAtUtc,
+            a.QueuedCount,
+            a.InAppSent,
+            DeliveryStatus = Infrastructure.Services.ProformaDeadlineAlertCycle.DescribeDelivery(a),
+            OutboxStatus = a.OutboxEntry?.Status,
+            OutboxProcessedAtUtc = a.OutboxEntry?.ProcessedAtUtc,
+            OutboxExpiresAtUtc = a.OutboxEntry?.ExpiresAtUtc,
+            OutboxLastError = a.OutboxEntry?.LastError
+        }).ToList();
+
+        return Ok(new
+        {
+            sinceUtc = since,
+            total = items.Count,
+            byStatus = items.GroupBy(i => i.DeliveryStatus).ToDictionary(g => g.Key, g => g.Count()),
+            items
+        });
+    }
+
     [HttpGet("version")]
     public ActionResult<object> GetVersion()
     {
