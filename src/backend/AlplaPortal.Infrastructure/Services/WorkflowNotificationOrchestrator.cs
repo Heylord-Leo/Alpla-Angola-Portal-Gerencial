@@ -125,7 +125,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var recipients = new List<NotificationRecipient>();
         
         // Context variables for specialized override logic
-        var reqRef = $"{evt.RequestNumber}";
+        var reqRef = FormatRequestRef(evt);
         var commentHtml = !string.IsNullOrWhiteSpace(evt.Comment)
             ? $"<br/><br/><b>Justificativa:</b><blockquote style='border-left: 4px solid #dc3545; margin: 10px 0; padding-left: 10px; color: #555;'>{System.Net.WebUtility.HtmlEncode(evt.Comment)}</blockquote>"
             : "";
@@ -870,7 +870,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
     private async Task<EventConfig?> ResolveEventConfigAsync(WorkflowEvent evt)
     {
-        var reqRef = $"{evt.RequestNumber}";
+        var reqRef = FormatRequestRef(evt);
         var reqContext = !string.IsNullOrWhiteSpace(evt.RequestTitle) ? $" (\"{evt.RequestTitle}\")" : "";
         var actorLabel = evt.ActorName;
 
@@ -1599,6 +1599,15 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     // =====================================================================
     // INTERNAL TYPES
     // =====================================================================
+
+    /// <summary>
+    /// Human-readable reference used in subjects/bodies. Batch-scoped events (the approval-batch
+    /// workflow sets <see cref="WorkflowEvent.BatchNumber"/>) carry the batch so an approver with
+    /// several lots on the same request can tell which one the message is about. Request-level
+    /// events are unchanged.
+    /// </summary>
+    public static string FormatRequestRef(WorkflowEvent evt) =>
+        evt.BatchNumber.HasValue ? $"{evt.RequestNumber} (Lote #{evt.BatchNumber.Value})" : $"{evt.RequestNumber}";
 
     private record NotificationRecipient(Guid UserId, string Email, string FullName)
     {

@@ -613,9 +613,10 @@ public class ApprovalBatchController : BaseController
         await _statusSyncService.SyncStatusAsync(requestId, actorId);
 
         // ── 9. Create RequestStatusHistory entry (BATCH_CREATED) ──
+        var batchCreatedHistoryId = Guid.NewGuid(); // doubles as the notification correlation for this submission
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = batchCreatedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_CREATED",
@@ -644,6 +645,16 @@ public class ApprovalBatchController : BaseController
         _logger.LogInformation(
             "Approval batch {BatchId} (#{BatchNumber}) created for request {RequestId} with {ItemCount} items by user {ActorId}",
             batch.Id, batch.BatchNumber, requestId, dto.Items.Count, actorId);
+
+        // ── Notification AFTER commit: the batch is now at Area approval. QUOTATION_COMPLETED is the
+        // quotation-workflow submit event (requester "Cotação Concluída" + area managers via the
+        // DepartmentManager cascade); RequestSubmitted is the non-quotation equivalent. ──
+        await EmitBatchStageNotificationAsync(
+            request, batch,
+            request.RequestType?.Code == RequestConstants.Types.Quotation
+                ? WorkflowEventCodes.QuotationCompleted
+                : WorkflowEventCodes.RequestSubmitted,
+            batchCreatedHistoryId, actorId, comment: null);
 
         // ── 10. Return batch detail ──
         return Ok(await BuildBatchDto(batch.Id));
@@ -989,9 +1000,10 @@ public class ApprovalBatchController : BaseController
         {
             historyComment += $"\nJustificativa orçamental: {dto.BudgetJustification.Trim()}";
         }
+        var areaApprovedHistoryId = Guid.NewGuid(); // notification correlation for this area decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = areaApprovedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_AREA_APPROVED",
@@ -1034,6 +1046,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-approved by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit: the batch is at Final approval (Final Approver + requester/area approver/buyer). ──
+        await EmitBatchStageNotificationAsync(request, batch, WorkflowEventCodes.AreaApproved, areaApprovedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} aprovado pela área com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -1094,9 +1109,10 @@ public class ApprovalBatchController : BaseController
         request!.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
         // ── History entry ──
+        var areaRejectedHistoryId = Guid.NewGuid(); // notification correlation for this area decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = areaRejectedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_AREA_REJECTED",
@@ -1112,6 +1128,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-rejected by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit (requester / area approver / buyer, per AREA_REJECTED routing). ──
+        await EmitBatchStageNotificationAsync(request!, batch, WorkflowEventCodes.AreaRejected, areaRejectedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} rejeitado com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -1767,9 +1786,10 @@ public class ApprovalBatchController : BaseController
         }
 
         // ── History entries ──
+        var finalApprovedHistoryId = Guid.NewGuid(); // notification correlation for this final decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = finalApprovedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_FINAL_APPROVED",
@@ -1800,6 +1820,9 @@ public class ApprovalBatchController : BaseController
         // ── Sync request status ──
         await _statusSyncService.SyncStatusAsync(requestId, actorId);
         await _context.SaveChangesAsync();
+
+        // ── Notification AFTER commit (final approver / requester / buyer, per FINAL_APPROVED routing). ──
+        await EmitBatchStageNotificationAsync(request, batch, WorkflowEventCodes.FinalApproved, finalApprovedHistoryId, actorId, dto.Comment);
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-approved by {ActorId}. Amount: {Amount}", batchId, requestId, actorId, batchApprovedAmount);
 
@@ -1875,9 +1898,10 @@ public class ApprovalBatchController : BaseController
         batch.UpdatedByUserId = actorId;
 
         // ── History entry ──
+        var finalRejectedHistoryId = Guid.NewGuid(); // notification correlation for this final decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = finalRejectedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_FINAL_REJECTED",
@@ -1893,6 +1917,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-rejected by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit (requester, per FINAL_REJECTED routing). ──
+        await EmitBatchStageNotificationAsync(request!, batch, WorkflowEventCodes.FinalRejected, finalRejectedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} rejeitado na Aprovação Final.", BatchId = batchId, Status = batch.Status });
     }
@@ -2149,6 +2176,67 @@ public class ApprovalBatchController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Batch resubmit notification failed for cycle {CycleId} on Request {RequestId}", cycle.Id, request.Id);
+        }
+    }
+
+    /// <summary>
+    /// Stage notifications for the batch workflow (submit / area decision / final decision).
+    /// Reuses the legacy request-level events so recipients, templates and dedup come from the
+    /// orchestrator unchanged: QUOTATION_COMPLETED fans to the area managers resolved by the
+    /// DepartmentManager cascade (plus the requester), AREA_APPROVED to the Final Approver (plus
+    /// requester/area approver/buyer), FINAL_APPROVED / *_REJECTED to the stakeholders already
+    /// defined for those codes.
+    ///
+    /// <para><b>Correlation:</b> the stage's own RequestStatusHistory row Id (same convention as
+    /// RequestsController). Every committed transition therefore gets its own correlation — a second
+    /// batch, or the same batch approved again after an adjustment cycle, is never suppressed as a
+    /// duplicate of an earlier one — while the outbox/in-app dedup still collapses re-processing of
+    /// the same event. Retrying an action after it committed is stopped by the stage guards (400),
+    /// so it never reaches this method.</para>
+    ///
+    /// <para><b>Ordering:</b> called only AFTER the action's final SaveChanges. Any failure here is
+    /// logged and swallowed — the committed approval action must never be reported as failed because
+    /// a notification could not be queued.</para>
+    /// </summary>
+    private async Task EmitBatchStageNotificationAsync(
+        Request request, ApprovalBatch batch, string eventCode, Guid correlationId, Guid actorId, string? comment)
+    {
+        try
+        {
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == actorId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "Sistema";
+
+            var evt = new WorkflowEvent
+            {
+                EventCode = eventCode,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = request.Status?.Code ?? "",
+                ActionTaken = eventCode,
+                ActorUserId = actorId,
+                ActorName = actorName,
+                Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                CorrelationId = correlationId,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                BatchNumber = batch.BatchNumber,
+            };
+
+            await _orchestrator.EmitAsync(evt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Batch stage notification {EventCode} failed for batch {BatchId} (#{BatchNumber}) on Request {RequestId}. The committed action is unaffected.",
+                eventCode, batch.Id, batch.BatchNumber, request.Id);
         }
     }
 
