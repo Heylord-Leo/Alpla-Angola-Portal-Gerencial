@@ -22,6 +22,7 @@ using Microsoft.EntityFrameworkCore;
 [Authorize]
 [ApiController]
 [Route("api/v1/requests/{requestId:guid}/batches")]
+[TypeFilter(typeof(AlplaPortal.Api.Filters.ApprovalConcurrencyExceptionFilter))] // RowVersion race between alternative approvers → 409, never 500
 public class ApprovalBatchController : BaseController
 {
     private readonly ILogger<ApprovalBatchController> _logger;

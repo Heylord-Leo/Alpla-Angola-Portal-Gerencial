@@ -214,6 +214,11 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(r => r.FinalApproverId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // Optimistic concurrency for alternative approvers deciding the same batch
+        modelBuilder.Entity<ApprovalBatch>()
+            .Property(b => b.RowVersion)
+            .IsRowVersion();
+
         // Security & Scoping Keys
         modelBuilder.Entity<UserRoleAssignment>().HasKey(ura => new { ura.UserId, ura.RoleId });
         modelBuilder.Entity<UserPlantScope>().HasKey(ups => new { ups.UserId, ups.PlantId });

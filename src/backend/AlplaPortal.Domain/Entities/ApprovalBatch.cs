@@ -44,6 +44,14 @@ public class ApprovalBatch
     public DateTime? UpdatedAtUtc { get; set; }
     public Guid? UpdatedByUserId { get; set; }
 
+    /// <summary>
+    /// Optimistic concurrency token. Two alternative approvers deciding the same batch at the same
+    /// time can both pass the status guard; the second UPDATE then fails with
+    /// DbUpdateConcurrencyException (mapped to 409 APPROVAL_CONCURRENCY_CONFLICT) instead of
+    /// committing a second transition, a second PO-group activation or a second notification.
+    /// </summary>
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
     // Navigation properties
     public ICollection<ApprovalBatchItem> Items { get; set; } = new List<ApprovalBatchItem>();
     public ICollection<ApprovalBatchExtraItemDecision> ExtraItemDecisions { get; set; } = new List<ApprovalBatchExtraItemDecision>();
