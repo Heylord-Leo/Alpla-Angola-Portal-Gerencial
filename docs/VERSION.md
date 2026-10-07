@@ -2,7 +2,24 @@
 
 ## Current Version
 
-v2.245.12
+v2.246.0
+
+## [v2.246.0] - 2026-10-07
+
+### Approval notifications, batch concurrency guard, proforma alerts via outbox, reminder digests (disabled)
+
+MINOR release. The approval-batch workflow now sends the stage e-mails it never sent (create, area approve/reject,
+final approve/reject, subject "(Lote #N)"); the proforma deadline scheduler honours `CheckTimeUtcHour` (operators
+must confirm the effective PROD `ProformaDeadlineAlerts` configuration before deploying, since the fix activates the
+feature where it is enabled); approval batches carry an optimistic-concurrency token so simultaneous decisions commit
+once (409 `APPROVAL_CONCURRENCY_CONFLICT`); proforma alerts are queued through the e-mail outbox with real retry and
+expiry semantics (`EXPIRED` outbox status); daily pending-approval reminder digests ship disabled
+(`AppConfig:ApprovalReminders` `Enabled=false`, `DryRun=true`). Approval permissions and scope rules are unchanged;
+the final-stage recipient is the single nominee (request nominee, else company nominee, if active with e-mail).
+
+Migrations: `20261007152909_AddApprovalBatchConcurrencyToken`, `20261007152958_AddProformaAlertOutboxLinkAndOutboxExpiry`,
+`20261007153058_AddApprovalReminderDigestsAndBatchStageEntry` (all additive; the previous build runs on the new schema).
+Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md`.
 
 ## [v2.245.12] - 2026-09-23
 

@@ -4,7 +4,38 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.12
+v2.246.0
+
+## [v2.246.0] - 2026-10-07 — Approval notifications: batch events, batch concurrency guard, proforma alerts via outbox, daily digests (disabled)
+
+Branch `Portal-Gerencial-rev1`, five code commits (`ee4b937`, `24eae46`, `4349338`, `c0706fd`, `d21a50d`) plus this
+release commit. Not deployed. Three additive migrations (`20261007152909`, `20261007152958`, `20261007153058`), applied
+to the DEV clone only; TEST and PROD pending. **Approval permissions and scope rules are unchanged**: who may approve
+the final stage is still "Final Approver" role + access scope; e-mail availability only decides whether a notification
+can be sent. Full record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.
+
+1. **Batch workflow notifications + proforma scheduler** (no migration). `ApprovalBatchController` CreateBatch / area
+   approve / area reject / final approve / final reject now emit the matching workflow e-mails (correlated to the stage
+   history row, subject "(Lote #N)"); `ProformaDeadlineAlertService` honours `CheckTimeUtcHour` with one catch-up after
+   restart. Operators must confirm PROD's effective `ProformaDeadlineAlerts` configuration first — the fixed scheduler
+   will start queueing real alerts if it resolves to Enabled (`scripts/server/check-proforma-alerts-config-readonly.ps1`).
+2. **Batch concurrency protection.** `ApprovalBatch.RowVersion` + 409 `APPROVAL_CONCURRENCY_CONFLICT`: two simultaneous
+   decisions on the same batch commit once (one transition, one PO-group activation, one notification).
+3. **Proforma alerts through the outbox.** Alert records are written atomically with their outbox rows (queued ≠
+   delivered); DEAD_LETTER/EXPIRED levels are re-queued; `EmailOutbox.ExpiresAtUtc` + terminal `EXPIRED` status;
+   `GET api/admin/diagnostics/proforma-alerts`. Final-stage recipient = request nominee, else company nominee, if
+   active with e-mail (`IApprovalRoutingService.ResolveFinalNotificationRecipientsAsync`, a notification rule only).
+4. **Daily approval reminder digests** (`AppConfig:ApprovalReminders`, **Enabled=false, DryRun=true**): 08:00 Luanda
+   Mon–Fri, units waiting > 3 days in their stage (`ApprovalBatches.StageEnteredAtUtc`, deterministically backfilled;
+   unestablished rows reported), one digest per approver per day, digest + items + outbox row in one transaction with a
+   unique dedup key; admin read-only endpoints and in-memory preview under `api/admin/approval-reminders`.
+
+Reported, not changed: a role-holder who is not the nominee can approve but is never notified or reminded; a nominee
+without the role is notified but cannot approve (`scripts/db/final-approval-recipients-vs-approvers-readonly.sql`).
+Deferred (preserved under `deferred/company-final-approvers/`): `CompanyFinalApprovers`, its Master Data UI and the
+company-membership authorization restriction.
+
+Tests: backend 2728/2728, frontend `tsc` clean. TEST plan pending (§G.8).
 
 ## [v2.245.12] - 2026-09-23 — PAYMENT_PROOF upload for PAYMENT-type scheduled advances
 
