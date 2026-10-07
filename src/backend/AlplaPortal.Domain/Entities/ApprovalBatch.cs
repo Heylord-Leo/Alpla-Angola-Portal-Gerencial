@@ -45,6 +45,14 @@ public class ApprovalBatch
     public Guid? UpdatedByUserId { get; set; }
 
     /// <summary>
+    /// UTC moment the batch entered its CURRENT approval stage (set on creation, on resubmission to
+    /// area, and on area approval). Basis for "time waiting" in the approval reminder digest. Null
+    /// only for pre-existing batches whose stage entry could not be established from reliable
+    /// transition evidence during the backfill (those are reported, never guessed).
+    /// </summary>
+    public DateTime? StageEnteredAtUtc { get; set; }
+
+    /// <summary>
     /// Optimistic concurrency token. Two alternative approvers deciding the same batch at the same
     /// time can both pass the status guard; the second UPDATE then fails with
     /// DbUpdateConcurrencyException (mapped to 409 APPROVAL_CONCURRENCY_CONFLICT) instead of

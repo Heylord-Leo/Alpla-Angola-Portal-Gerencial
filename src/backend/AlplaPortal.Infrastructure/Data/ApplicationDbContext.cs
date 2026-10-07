@@ -23,6 +23,10 @@ public class ApplicationDbContext : DbContext
 
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<DepartmentManager> DepartmentManagers => Set<DepartmentManager>();
+    // Daily approval reminder digests (run / per-recipient digest / listed units)
+    public DbSet<ApprovalReminderRun> ApprovalReminderRuns => Set<ApprovalReminderRun>();
+    public DbSet<ApprovalReminderDigest> ApprovalReminderDigests => Set<ApprovalReminderDigest>();
+    public DbSet<ApprovalReminderDigestItem> ApprovalReminderDigestItems => Set<ApprovalReminderDigestItem>();
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
@@ -218,6 +222,49 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<ApprovalBatch>()
             .Property(b => b.RowVersion)
             .IsRowVersion();
+
+        // ─── Approval Reminder Digests ───
+        modelBuilder.Entity<ApprovalReminderRun>(entity =>
+        {
+            entity.Property(r => r.Trigger).HasMaxLength(32);
+            entity.Property(r => r.Error).HasMaxLength(2000);
+            entity.HasIndex(r => new { r.LocalDate, r.StartedAtUtc });
+        });
+
+        modelBuilder.Entity<ApprovalReminderDigest>(entity =>
+        {
+            // Persistent dedup: one digest per recipient per Luanda day per mode. Overlapping
+            // instances/restarts race on this key; the loser's INSERT fails and queues nothing.
+            entity.HasIndex(d => new { d.RecipientUserId, d.DigestDateLocal, d.DryRun })
+                .IsUnique()
+                .HasDatabaseName("IX_ApprovalReminderDigests_Dedup");
+            entity.HasIndex(d => d.RunId);
+            entity.Property(d => d.Subject).HasMaxLength(500);
+            entity.HasOne(d => d.Run)
+                .WithMany()
+                .HasForeignKey(d => d.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(d => d.RecipientUser)
+                .WithMany()
+                .HasForeignKey(d => d.RecipientUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(d => d.OutboxEntry)
+                .WithMany()
+                .HasForeignKey(d => d.OutboxEntryId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ApprovalReminderDigestItem>(entity =>
+        {
+            entity.HasIndex(i => i.DigestId);
+            entity.HasIndex(i => i.RequestId);
+            entity.Property(i => i.RequestNumber).HasMaxLength(64);
+            entity.Property(i => i.Stage).HasMaxLength(16);
+            entity.HasOne(i => i.Digest)
+                .WithMany(d => d.Items)
+                .HasForeignKey(i => i.DigestId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         // Security & Scoping Keys
         modelBuilder.Entity<UserRoleAssignment>().HasKey(ura => new { ura.UserId, ura.RoleId });

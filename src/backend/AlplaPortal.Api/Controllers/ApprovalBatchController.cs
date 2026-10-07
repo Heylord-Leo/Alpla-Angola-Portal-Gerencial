@@ -505,6 +505,7 @@ public class ApprovalBatchController : BaseController
             Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
             Comment = dto.Comment,
             CreatedAtUtc = DateTime.UtcNow,
+            StageEnteredAtUtc = DateTime.UtcNow, // entry into WAITING_AREA_APPROVAL (reminder age basis)
             CreatedByUserId = actorId
         };
 
@@ -988,6 +989,7 @@ public class ApprovalBatchController : BaseController
 
         // ── 12. Update batch state ──
         batch.Status = RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval;
+        batch.StageEnteredAtUtc = DateTime.UtcNow; // entry into WAITING_FINAL_APPROVAL (reminder age basis)
         batch.BudgetJustification = dto.BudgetJustification?.Trim();
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
@@ -1626,6 +1628,7 @@ public class ApprovalBatchController : BaseController
 
         // ── Update batch state ──
         batch.Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval;
+        batch.StageEnteredAtUtc = DateTime.UtcNow; // re-entry into WAITING_AREA_APPROVAL restarts the reminder clock
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
 
