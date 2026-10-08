@@ -63,11 +63,18 @@ public class ApprovalReminderDigestRendererTests
     }
 
     [Fact]
-    public void Recipient_name_and_request_numbers_are_html_encoded()
+    public void Request_numbers_are_html_encoded_and_the_body_carries_no_greeting()
     {
+        // The greeting ("Olá <first name>,") is added once by EmailService's template; a second one in the
+        // body produced the duplicated greeting seen in TEST (v2.246.0). The body must not greet.
         var units = new List<PendingApprovalUnit> { new() { RequestId = Guid.NewGuid(), RequestNumber = "REQ<1>&", Stage = PendingApprovalUnitQuery.StageArea, StageEnteredAtUtc = Now.AddDays(-4), DaysPending = 4 } };
         var r = ApprovalReminderDigestRenderer.Render("<b>Ana</b>", units, Now, Zone, new ApprovalReminderOptions(), "https://portal.test");
-        Assert.Contains("&lt;b&gt;Ana&lt;/b&gt;", r.BodyHtml);
+        Assert.DoesNotContain("Olá", r.BodyHtml);
+        Assert.DoesNotContain("Ana", r.BodyHtml);
         Assert.Contains("REQ&lt;1&gt;&amp;", r.BodyHtml);
+
+        var degraded = ApprovalReminderDigestRenderer.Render("Ana", Units(300), Now, Zone, new ApprovalReminderOptions { MaxItemsPerDigest = 500, MaxBodyBytes = 4096 }, "https://portal.test");
+        Assert.True(degraded.Degraded);
+        Assert.DoesNotContain("Olá", degraded.BodyHtml);
     }
 }

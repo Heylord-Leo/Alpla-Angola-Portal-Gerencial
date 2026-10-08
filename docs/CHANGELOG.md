@@ -4,7 +4,24 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.246.0
+v2.246.1
+
+## [v2.246.1] - 2026-10-08 — Single e-mail greeting; clean retry fields on SENT outbox rows
+
+PATCH after the TEST validation of v2.246.0 (evidence: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.9). No migration,
+no configuration change, no change to authorization, recipients, pending counts or reminder-age rules.
+
+1. **Duplicate greeting.** Proforma alert e-mails and reminder digests showed "Olá Nome," twice: the shared template in
+   `EmailService.SendWorkflowNotificationAsync` greets from the recipient name, and both bodies greeted again. The
+   template now owns the greeting; `ProformaDeadlineAlertCycle` and `ApprovalReminderDigestRenderer` no longer emit one.
+   Subjects, environment banners, original-recipient block, routing and links are unchanged.
+2. **Retry residue on SENT rows.** An outbox row that was sent after earlier failures kept `LastError` and
+   `NextRetryAtUtc`. `EmailOutboxProcessor` now clears both when a row becomes SENT, on the real-send path and on the
+   duplicate-suppression path (the suppression reason remains in the `EMAIL_OUTBOX_DEDUP` admin-log event).
+   `RetryCount`, backoff, DEAD_LETTER and EXPIRED behaviour are unchanged.
+
+Tests: new `EmailOutboxProcessorSentCleanupTests` (4) plus greeting assertions in the renderer and proforma cycle
+tests; backend 2732/2732.
 
 ## [v2.246.0] - 2026-10-07 — Approval notifications: batch events, batch concurrency guard, proforma alerts via outbox, daily digests (disabled)
 

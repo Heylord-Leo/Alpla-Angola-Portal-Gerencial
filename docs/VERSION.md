@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.246.0
+v2.246.1
+
+## [v2.246.1] - 2026-10-08
+
+### Single e-mail greeting; clean retry fields on SENT outbox rows
+
+PATCH after the TEST validation of v2.246.0. Proforma alert e-mails and reminder digests no longer carry a second
+"Olá Nome," (the shared e-mail template owns the greeting). Outbox rows that reach SENT, by a real send or by
+duplicate suppression, have `LastError` and `NextRetryAtUtc` cleared; `RetryCount`, backoff, DEAD_LETTER and EXPIRED
+behaviour are unchanged. No migration, no configuration change.
 
 ## [v2.246.0] - 2026-10-07
 

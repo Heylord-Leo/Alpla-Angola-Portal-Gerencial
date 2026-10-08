@@ -633,3 +633,50 @@ TEST order (SMTP redirect to the TEST mailbox on; record IDs):
 9. Rollback rehearsal on TEST: redeploy the previous build on the migrated schema; confirm the processor keeps
    sending fresh rows, ignores `EXPIRED`, and the proforma service skips existing alert rows (G.4).
 10. Only then decide PROD: migrations, then commits 1–3, then 4, then 5 with reminders still `Enabled=false`.
+
+### G.9 TEST validation evidence — v2.246.0 (2026-10-07 / 2026-10-08)
+
+Build under test: `2.246.0+7a73e68` (API and frontend both reported it). Environment confirmed on IIS:
+`ASPNETCORE_ENVIRONMENT = Test`, SMTP redirect enabled (all e-mails delivered to `leonardo.cintra@alpla.com`, sender
+`donotreply@mail.alpla.com`). PROD was untouched throughout.
+
+**Validated**
+
+| Area | Evidence |
+|---|---|
+| Batch stage notifications | Area and final batch notifications were sent (redirected mailbox) |
+| Concurrency guard | Concurrent calls against the same batch, **using the same administrator account**, produced one success and one conflict in each stage (area and final) |
+| Single transition per decision | SQL confirmed one area decision, one final decision, one PO-group activation and one notification set per transition |
+| Reminder digests, live | 4 digests for 22 approval units, all SENT, all redirected to `leonardo.cintra@alpla.com` |
+| Reminder digests, next-day scheduled dry run | 4 digests recorded, zero queued e-mails |
+| Reminder preview | Recipients changed between approval stages; resolved requests disappeared from the preview |
+| Outbox mechanics (synthetic rows) | Failure followed by a successful retry on the **same** row; DEAD_LETTER after three failures; EXPIRED with zero send attempts |
+| Proforma cycle | 12 expired-request alerts created and all SENT; a thirteenth request with two days remaining correctly received no alert |
+
+**Proforma recovery test on REQ-08/10/2026-449** (`RequestId C68ADF17-5344-43AE-AE8C-F6D7B447F769`). The initial failure
+fixture was **created through SQL**: an alert/outbox pair for João Catana with an invalid recipient address, which
+reached DEAD_LETTER after three failures. The recovery itself was performed by the **real service**: at
+2026-10-08 11:00 UTC the cycle reused alert `A6100802-0000-4000-8000-000000000001`, increased `QueuedCount` to 2,
+created outbox row `39607171-E8A0-4393-A69B-21067D4BC628` and that row was sent successfully. Nelson Abreu received a
+newly generated alert. Cycle log: 1 queued, 1 re-queued, 12 skipped by dedup, 0 without recipient, 14 eligible requests.
+
+**Defects found by the validation, fixed in the working tree after 7a73e68 (not yet released)**
+
+1. Duplicate greeting: `EmailService.SendWorkflowNotificationAsync` adds "Olá <first name>," and both the proforma body
+   (`ProformaDeadlineAlertCycle.BuildMessages`) and the digest body (`ApprovalReminderDigestRenderer`) added their own.
+   The template now owns the greeting; the two bodies no longer greet. Subjects, banners, original-recipient block,
+   routing and links are unchanged.
+2. Retry residue on SENT rows: a row that went SENT after earlier failures kept `LastError` and `NextRetryAtUtc`.
+   `EmailOutboxProcessor.ProcessEntryAsync` now clears both on the real-send path and on the duplicate-suppression path
+   (the suppression reason remains in the `EMAIL_OUTBOX_DEDUP` admin-log event). `RetryCount`, backoff, DEAD_LETTER
+   and EXPIRED behaviour are unchanged. Regression tests: `EmailOutboxProcessorSentCleanupTests`, plus greeting
+   assertions in the renderer and proforma cycle tests.
+
+**Final TEST configuration after the validation** (restored; health endpoint Healthy): `ProformaDeadlineAlerts.Enabled=false`,
+`ProformaDeadlineAlerts.CheckTimeUtcHour=7`, `ApprovalReminders.Enabled=true`, `ApprovalReminders.DryRun=true`,
+`ApprovalReminders.MinPendingAgeDays=3`, `ApprovalReminders.SendTimeLocal="08:00"`; SMTP redirect still enabled to
+`leonardo.cintra@alpla.com`; sender `donotreply@mail.alpla.com`.
+
+**Not validated (outstanding)**: concurrency with two **distinct** user accounts (the test used one administrator
+account for both calls); action replay refusal (400 on repeating an already-applied decision); rollback rehearsal
+(previous build on the migrated schema); PROD readiness. These remain open before any PROD decision.

@@ -227,7 +227,6 @@ public sealed class ProformaDeadlineAlertCycle
         Request request, AlertRecipient recipient, string alertLevel, int daysRemaining)
     {
         var reqNum = request.RequestNumber ?? request.Id.ToString()[..8];
-        var firstName = recipient.FullName.Split(' ').FirstOrDefault() ?? recipient.FullName;
 
         var (subject, urgencyColor, urgencyBg, urgencyBorder, headlineText, daysLabel) = alertLevel switch
         {
@@ -243,7 +242,6 @@ public sealed class ProformaDeadlineAlertCycle
         var statusName = request.Status?.Name ?? "—";
 
         var bodyHtml = $@"
-<p>Olá <b>{firstName}</b>,</p>
 <p>O pedido abaixo contém uma Proforma com prazo de pagamento/validade próximo ou expirado e aguarda a sua aprovação.</p>
 
 <div style='background-color:{urgencyBg}; border:1px solid {urgencyBorder}; padding:15px; border-radius:6px; margin:20px 0;'>

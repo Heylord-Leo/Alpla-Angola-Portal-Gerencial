@@ -15,7 +15,7 @@ public sealed record RenderedDigest(string Subject, string Headline, string Body
 public static class ApprovalReminderDigestRenderer
 {
     public static RenderedDigest Render(
-        string recipientName,
+        string recipientName, // not rendered: the greeting ("Olá <first name>,") is owned by the e-mail template in EmailService
         IReadOnlyList<PendingApprovalUnit> units,
         DateTime nowUtc,
         TimeZoneInfo zone,
@@ -41,22 +41,21 @@ public static class ApprovalReminderDigestRenderer
             : $"Lembrete: {total} aprovações pendentes há mais de {options.MinPendingAgeDays} dias";
         var headline = "Aprovações pendentes aguardam a sua decisão";
 
-        var body = BuildBody(recipientName, listed, overflow, total, areaCount, finalCount, asOfText, centerUrl, baseUrl, options);
+        var body = BuildBody(listed, overflow, total, areaCount, finalCount, asOfText, centerUrl, baseUrl, options);
         var degraded = false;
         if (Encoding.UTF8.GetByteCount(body) > Math.Max(4096, options.MaxBodyBytes))
         {
             degraded = true;
-            body = BuildDegradedBody(recipientName, total, areaCount, finalCount, asOfText, centerUrl, options);
+            body = BuildDegradedBody(total, areaCount, finalCount, asOfText, centerUrl, options);
         }
 
         return new RenderedDigest(subject, headline, body, total, overflow, degraded);
     }
 
-    private static string BuildBody(string recipientName, List<PendingApprovalUnit> listed, int overflow, int total,
+    private static string BuildBody(List<PendingApprovalUnit> listed, int overflow, int total,
         int areaCount, int finalCount, string asOfText, string centerUrl, string baseUrl, ApprovalReminderOptions options)
     {
         var sb = new StringBuilder();
-        sb.Append("<p>Olá ").Append(WebUtility.HtmlEncode(recipientName)).Append(",</p>");
         sb.Append("<p>Existem <strong>").Append(total).Append("</strong> ")
           .Append(total == 1 ? "aprovação pendente" : "aprovações pendentes")
           .Append(" há mais de ").Append(options.MinPendingAgeDays).Append(" dias que aguardam a sua decisão")
@@ -101,10 +100,9 @@ public static class ApprovalReminderDigestRenderer
         return sb.ToString();
     }
 
-    private static string BuildDegradedBody(string recipientName, int total, int areaCount, int finalCount, string asOfText, string centerUrl, ApprovalReminderOptions options)
+    private static string BuildDegradedBody(int total, int areaCount, int finalCount, string asOfText, string centerUrl, ApprovalReminderOptions options)
     {
         var sb = new StringBuilder();
-        sb.Append("<p>Olá ").Append(WebUtility.HtmlEncode(recipientName)).Append(",</p>");
         sb.Append("<p>Existem <strong>").Append(total).Append("</strong> aprovações pendentes há mais de ")
           .Append(options.MinPendingAgeDays).Append(" dias que aguardam a sua decisão (Área: ").Append(areaCount)
           .Append(", Final: ").Append(finalCount).Append(").</p>");

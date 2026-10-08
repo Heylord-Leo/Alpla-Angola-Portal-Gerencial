@@ -105,6 +105,8 @@ public class ProformaDeadlineAlertCycleTests
         Assert.Equal(Now.AddHours(24), al.OutboxEntry.ExpiresAtUtc);         // stale alerts never go out a day late
         Assert.Contains("Proforma vence em 3 dias", al.OutboxEntry.Subject);
         Assert.Equal(s.Nominee.Email, al.OutboxEntry.RecipientEmail);
+        Assert.DoesNotContain("Olá", al.OutboxEntry.BodyHtml);            // greeting is owned by the e-mail template (no duplicate "Olá Nome,")
+        Assert.Equal("Final Nominee", al.OutboxEntry.RecipientName);       // the template greets from RecipientName
         Assert.DoesNotContain(await ctx.EmailOutbox.ToListAsync(), o => o.RecipientEmail == s.RoleHolder.Email); // can approve, not alerted (documented gap)
         notifications.Verify(n => n.CreateNotificationAsync(s.Nominee.Id, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Once);
     }

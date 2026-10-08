@@ -184,7 +184,8 @@ public class EmailOutboxProcessor : BackgroundService
                 {
                     entry.Status = "SENT";
                     entry.ProcessedAtUtc = DateTime.UtcNow;
-                    entry.LastError = "Skipped (duplicate — another entry with same CorrelationId already sent)";
+                    entry.LastError = null;      // reason is kept in the EMAIL_OUTBOX_DEDUP admin-log event
+                    entry.NextRetryAtUtc = null; // a SENT row carries no retry state
                     await context.SaveChangesAsync(ct);
 
                     _logger.LogInformation("EmailOutboxProcessor: DEDUP skip. {Context}", logContext);
@@ -233,6 +234,8 @@ public class EmailOutboxProcessor : BackgroundService
             entry.Status = "SENT";
             entry.ProcessedAtUtc = DateTime.UtcNow;
             entry.RetryCount++;
+            entry.LastError = null;      // clear retry residue from earlier failed attempts
+            entry.NextRetryAtUtc = null;
             await context.SaveChangesAsync(ct);
 
             _logger.LogInformation("EmailOutboxProcessor: SENT. {Context}", logContext);
