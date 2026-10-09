@@ -4,7 +4,45 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.246.1
+v2.247.0
+
+## [v2.247.0] - 2026-10-09 — P.O. registration notifications: Finance e-mail context fix, Accounts Payable review notice and per-company e-mail options
+
+MINOR release. One additive migration (`20261009084838_AddAccountsPayablePoRegisteredAndFinanceEmailOptions`), not
+applied to any database by this release. No change to authorization, approval routing, pending counts or
+reminder-age rules; no historical notification is re-sent. Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.10–G.11.
+
+1. **RegisterPo emits the request context.** TEST REQ-08/10/2026-449 showed seven Finance in-app notifications and no
+   e-mail after a P.O. registration: the event carried no plant, request number or history correlation, so the
+   plant-scoped Finance routing fell back to an in-app-only fan-out and the subject would have had no request
+   reference. `RegisterPo` now emits `PO_REGISTERED` with the same context as the other operational transitions
+   (`PlantId`, `CompanyId`, `DepartmentId`, `RequestNumber`, actor, requester/buyer, `CorrelationId` = the
+   `REGISTER_PO`/`REREGISTER_PO` history row). Corrections keep the `PO_REGISTERED` event code.
+2. **Per-company Accounts Payable options** (Master Data › Accounts Payable Email, API `ap-notification-configs`),
+   **both default OFF** in the entity, the DTOs and the migration; existing rows are not enabled:
+   - *Notificar Contas a Pagar quando uma P.O. é registada* (`NotifyOnPoRegistered`): `PO_REGISTERED` sends a
+     **review notice** to the configured To/CC ("P.O. registada — revisão de Contas a Pagar", or "P.O. corrigida e
+     re-registada" for corrections). The body states that a registered P.O. does not mean the payment is authorized or
+     ready and that post-paid receipt/invoice requirements still apply. Scheduling/completion notices are unchanged.
+   - *Também enviar e-mail individual aos utilizadores Finance* (`NotifyFinanceUsersByEmail`): individual Finance
+     e-mails for `PO_REGISTERED`, `PO_CORRECTION_COMPLETED` and `ADVANCE_PAYMENT_REQUIRED` require an active company
+     configuration with this flag on; a missing or inactive configuration never enables them. Finance in-app
+     notifications are unaffected. Approval, requester and buyer e-mails are unaffected.
+3. **Per-action AP deduplication.** `AccountsPayableNotificationLogs.CorrelationId` (nullable) joins the unique dedup
+   index. `PO_REGISTERED` is deduplicated per registration/correction action, so a second P.O. group or a correction on
+   the same request is recorded and notified; a repeated emission of the same action is skipped. Payment scheduling
+   and completion keep their request-level rule (`CorrelationId NULL`). Verified on SQL Server with the real migration.
+4. **AP dispatch independent of per-user recipients.** When no per-user recipient resolves (e.g. a plant without
+   Finance users) the orchestrator no longer skips the Accounts Payable block.
+
+Known limitations, unchanged and documented: the AP group e-mail is a direct SMTP send inside the request (no outbox
+row, no automatic retry; a failure is logged as `Success = 0`, and the dedup is check-then-act, so two simultaneous
+identical transitions could both send). Schema rollback (`Down`) recreates the old three-column unique index and fails
+if more than one successful `PO_REGISTERED` AP row exists for the same request and recipient; delete or mark those rows
+`Skipped` first. Rolling back the application without the schema is safe.
+
+Tests: backend 2756/2756 (+24: AP configuration API, routing combinations, per-action dedup on SQL Server, RegisterPo
+end-to-end), frontend vitest 916/916 (+6), `tsc` and Vite build clean.
 
 ## [v2.246.1] - 2026-10-08 — Single e-mail greeting; clean retry fields on SENT outbox rows
 

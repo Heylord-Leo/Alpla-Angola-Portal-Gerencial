@@ -7390,17 +7390,41 @@ public class RequestsController : BaseController
         await _context.SaveChangesAsync();
 
         // ── Notifications ──
+        // Same request context as ProcessCommonOperationalTransition: the PO_REGISTERED recipients are
+        // Finance users scoped to the request's PLANT — without PlantId the orchestrator falls back to a
+        // global fan-out that suppresses e-mail (in-app only), which is what TEST observed on
+        // REQ-08/10/2026-449. The persisted history row is the correlation (outbox/in-app dedup key).
         try {
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == CurrentUserId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "Sistema";
+
             await _orchestrator.EmitAsync(new WorkflowEvent
             {
-                EventCode = "PO_REGISTERED",
+                EventCode = WorkflowEventCodes.PoRegistered, // unchanged: corrections also emit PO_REGISTERED (ActionTaken carries REREGISTER_PO)
                 RequestId = request.Id,
-                ActionTaken = "REGISTER_PO",
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                ActionTaken = actionCode,
                 TargetStatusCode = request.Status!.Code,
                 ActorUserId = CurrentUserId,
-                CorrelationId = Guid.NewGuid()
+                ActorName = actorName,
+                CorrelationId = history.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId
             });
-        } catch { }
+        }
+        catch (Exception notifyEx)
+        {
+            // Never fails the registration (already committed); the swallowed failure is at least visible.
+            _logger.LogWarning(notifyEx, "PO registration notification failed for Request {RequestId} ({Action}). The registration itself is committed.", request.Id, actionCode);
+        }
 
         // Phase 2 strictly post-save; never fails the registration.
         await EvaluateCompletionPhaseTwoAsync(id);

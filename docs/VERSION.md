@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.246.1
+v2.247.0
+
+## [v2.247.0] - 2026-10-09
+
+### P.O. registration notifications: Finance e-mail context fix, Accounts Payable review notice and per-company options
+
+MINOR release. `RegisterPo` emits `PO_REGISTERED` with the full request context (plant, company, request number,
+history-row correlation), so plant-scoped Finance e-mails can be routed. Two new per-company options in Master Data ›
+Accounts Payable Email, **both default OFF**: notify the AP address (To/CC) with a review notice when a P.O. is
+registered or re-registered, and e-mail Finance-role users individually for P.O./advance events. AP notifications for
+P.O. registration are deduplicated per action (several groups and corrections per request are recorded); payment
+scheduling/completion dedup is unchanged. The AP block now runs even when no per-user recipient resolves.
+
+Migration: `20261009084838_AddAccountsPayablePoRegisteredAndFinanceEmailOptions` (additive: two default-false bit
+columns, nullable log correlation, unique dedup index extended). The previous build runs on the new schema. `Down`
+fails if several successful `PO_REGISTERED` AP rows exist for one request/recipient (see CHANGELOG). AP group e-mail
+remains a direct send without automatic retry. Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.10–G.11.
 
 ## [v2.246.1] - 2026-10-08
 

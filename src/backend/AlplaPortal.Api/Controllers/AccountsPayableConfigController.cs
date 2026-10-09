@@ -46,6 +46,8 @@ public class AccountsPayableConfigController : ControllerBase
                 c.IsActive,
                 c.NotifyOnScheduled,
                 c.NotifyOnCompleted,
+                c.NotifyOnPoRegistered,
+                c.NotifyFinanceUsersByEmail,
                 c.CreatedAtUtc,
                 c.UpdatedAtUtc
             })
@@ -88,6 +90,8 @@ public class AccountsPayableConfigController : ControllerBase
             IsActive = true,
             NotifyOnScheduled = dto.NotifyOnScheduled,
             NotifyOnCompleted = dto.NotifyOnCompleted,
+            NotifyOnPoRegistered = dto.NotifyOnPoRegistered,
+            NotifyFinanceUsersByEmail = dto.NotifyFinanceUsersByEmail,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -106,7 +110,9 @@ public class AccountsPayableConfigController : ControllerBase
             config.Label,
             config.IsActive,
             config.NotifyOnScheduled,
-            config.NotifyOnCompleted
+            config.NotifyOnCompleted,
+            config.NotifyOnPoRegistered,
+            config.NotifyFinanceUsersByEmail
         });
     }
 
@@ -133,6 +139,8 @@ public class AccountsPayableConfigController : ControllerBase
         config.Label = dto.Label?.Trim();
         config.NotifyOnScheduled = dto.NotifyOnScheduled;
         config.NotifyOnCompleted = dto.NotifyOnCompleted;
+        config.NotifyOnPoRegistered = dto.NotifyOnPoRegistered;
+        config.NotifyFinanceUsersByEmail = dto.NotifyFinanceUsersByEmail;
         config.UpdatedAtUtc = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
@@ -211,6 +219,10 @@ public class AccountsPayableConfigController : ControllerBase
         public string? Label { get; set; }
         public bool NotifyOnScheduled { get; set; } = true;
         public bool NotifyOnCompleted { get; set; } = true;
+        /// <summary>Default false: AP is not told about P.O. registrations unless an administrator opts in.</summary>
+        public bool NotifyOnPoRegistered { get; set; } = false;
+        /// <summary>Default false: Finance-role users receive in-app notifications only unless an administrator opts in.</summary>
+        public bool NotifyFinanceUsersByEmail { get; set; } = false;
     }
 
     public class UpdateApConfigDto
@@ -220,5 +232,9 @@ public class AccountsPayableConfigController : ControllerBase
         public string? Label { get; set; }
         public bool NotifyOnScheduled { get; set; } = true;
         public bool NotifyOnCompleted { get; set; } = true;
+        /// <summary>Default false: AP is not told about P.O. registrations unless an administrator opts in.</summary>
+        public bool NotifyOnPoRegistered { get; set; } = false;
+        /// <summary>Default false: Finance-role users receive in-app notifications only unless an administrator opts in.</summary>
+        public bool NotifyFinanceUsersByEmail { get; set; } = false;
     }
 }

@@ -67,20 +67,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             var recipients = await ResolveRecipientsAsync(evt);
             if (!recipients.Any())
             {
+                // No per-user recipient: skip the in-app/outbox dispatch only. The Accounts Payable group notification
+                // below is independent of per-user routing (e.g. a company whose plant has no Finance user must still
+                // reach its configured AP address when NotifyOnPoRegistered is on), so it is NOT short-circuited here.
                 _logger.LogWarning("No recipients resolved for event {EventCode} on Request {RequestId}", evt.EventCode, evt.RequestId);
-                return;
             }
 
             foreach (var recipient in recipients)
             {
                 // Self-notify restriction has been lifted based on business requirements.
                 // Every actor gets notified of their own actions to preserve email history.
-                
+
                 await DispatchToRecipientAsync(evt, eventConfig, recipient);
             }
 
             // ── Accounts Payable external notification (independent from in-app dispatch) ──
-            if (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted)
+            // Payment scheduled/completed (unchanged) plus P.O. registered, the latter only when the company's
+            // configuration opts in (NotifyOnPoRegistered) — see SendAccountsPayableNotificationAsync.
+            if (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted
+                || evt.EventCode == WorkflowEventCodes.PoRegistered)
             {
                 try
                 {
@@ -212,9 +217,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await AddAreaManagerRecipientsAsync(recipients, evt);
                 break;
 
-            // --- PO Registered: notify Finance users (plant-scoped) ---
+            // --- PO Registered: notify Finance users (plant-scoped; e-mail only if the company opted in) ---
             case WorkflowEventCodes.PoRegistered:
-                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId);
                 break;
 
             // --- Payment Progress: notify the requester ---
@@ -230,12 +235,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
             // --- PO Correction Completed: notify Finance (same plant-scoped pattern as initial PO) ---
             case WorkflowEventCodes.PoCorrectionCompleted:
-                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId);
                 break;
 
             // --- Buy-to-Pay Advance Payments ---
             case WorkflowEventCodes.AdvancePaymentRequired:
-                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId);
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId);
                 break;
 
             case WorkflowEventCodes.AdvancePaymentScheduled:
@@ -460,6 +465,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         {
             WorkflowEventCodes.PaymentScheduled => config.NotifyOnScheduled,
             WorkflowEventCodes.PaymentCompleted => config.NotifyOnCompleted,
+            WorkflowEventCodes.PoRegistered => config.NotifyOnPoRegistered,
             _ => false
         };
 
@@ -469,11 +475,18 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             return;
         }
 
-        // Dedup check: prevent duplicate successful notifications
+        // Dedup granularity:
+        //  - payment scheduled/completed: per (Request, Event, Recipient) — unchanged; CorrelationId stays NULL.
+        //  - P.O. registered: per ACTION — a request may hold several P.O. groups and legitimate corrections, each a
+        //    distinct REGISTER_PO/REREGISTER_PO history row (the event's CorrelationId). Request-level dedup would
+        //    silently swallow the 2nd group or a correction; a repeated emission of the SAME action is still skipped.
+        var isPerAction = evt.EventCode == WorkflowEventCodes.PoRegistered;
+        Guid? dedupCorrelation = isPerAction ? evt.CorrelationId : null;
         var alreadySent = await _context.AccountsPayableNotificationLogs
             .AnyAsync(l => l.RequestId == evt.RequestId
                         && l.EventCode == evt.EventCode
                         && l.RecipientEmail == config.Email
+                        && (!isPerAction || l.CorrelationId == dedupCorrelation)
                         && l.Success && !l.Skipped);
 
         if (alreadySent)
@@ -488,7 +501,8 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 Subject = "(duplicate skipped)",
                 SentAtUtc = DateTime.UtcNow,
                 Success = false,
-                Skipped = true
+                Skipped = true,
+                CorrelationId = dedupCorrelation
             });
             await _context.SaveChangesAsync();
             _logger.LogInformation("AP notification skipped (duplicate) for {EventCode} on Request {RequestId} to {ApEmail}", evt.EventCode, evt.RequestId, config.Email);
@@ -514,11 +528,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             : "AOA";
         var amount = req.ActualPaidAmount ?? req.EstimatedTotalAmount;
         var reqRef = evt.RequestNumber;
-        var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Pagamento Agendado" : "Pagamento Realizado";
 
-        var subject = $"[Portal Gerencial] Novo pedido de pagamento para {companyName} \u2014 Pedido {reqRef}";
-        var headline = $"Notifica\u00e7\u00e3o de Contas a Pagar \u2014 {companyName}";
-        var bodyHtml = BuildApNotificationBody(reqRef, req.Title ?? "", supplierName, amount, currency, paymentState, evt.ActorName, companyName);
+        string subject, headline, bodyHtml;
+        if (isPerAction)
+        {
+            // "P.O. registered; review required" \u2014 explicitly NOT "payment authorized / ready": a registered P.O. does not
+            // establish that post-paid receipt/invoice requirements are satisfied.
+            var isCorrection = string.Equals(evt.ActionTaken, "REREGISTER_PO", StringComparison.OrdinalIgnoreCase);
+            var registrationLabel = isCorrection ? "P.O. corrigida e re-registada" : "P.O. registada";
+            subject = $"[Portal Gerencial] {registrationLabel} \u2014 revis\u00e3o de Contas a Pagar \u2014 Pedido {reqRef}";
+            headline = $"{registrationLabel} \u2014 Revis\u00e3o Necess\u00e1ria \u2014 {companyName}";
+            bodyHtml = BuildApPoRegisteredBody(reqRef, req.Title ?? "", supplierName, amount, currency, registrationLabel, evt.ActorName, companyName);
+        }
+        else
+        {
+            var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Pagamento Agendado" : "Pagamento Realizado";
+            subject = $"[Portal Gerencial] Novo pedido de pagamento para {companyName} \u2014 Pedido {reqRef}";
+            headline = $"Notifica\u00e7\u00e3o de Contas a Pagar \u2014 {companyName}";
+            bodyHtml = BuildApNotificationBody(reqRef, req.Title ?? "", supplierName, amount, currency, paymentState, evt.ActorName, companyName);
+        }
 
         var frontendBaseUrl = _config["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
         var actionUrl = $"{frontendBaseUrl}/finance?requestId={evt.RequestId}";
@@ -539,7 +567,8 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 Subject = subject,
                 SentAtUtc = DateTime.UtcNow,
                 Success = sent,
-                ErrorMessage = sent ? null : "SendWorkflowNotificationAsync returned false"
+                ErrorMessage = sent ? null : "SendWorkflowNotificationAsync returned false",
+                CorrelationId = dedupCorrelation
             });
             await _context.SaveChangesAsync();
 
@@ -561,7 +590,8 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 Subject = subject,
                 SentAtUtc = DateTime.UtcNow,
                 Success = false,
-                ErrorMessage = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message
+                ErrorMessage = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message,
+                CorrelationId = dedupCorrelation
             });
             try { await _context.SaveChangesAsync(); }
             catch (Exception logEx) { _logger.LogWarning(logEx, "Failed to persist AP notification failure log for Request {RequestId}", evt.RequestId); }
@@ -595,6 +625,38 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{dateTime}</td></tr>
     </table>
 </div>
+<p style='font-size:13px; color:#666;'>Acesse o Portal Gerencial para consultar os detalhes do pedido.</p>
+<p style='font-size:12px; color:#999;'>Esta &#233; uma mensagem autom&#225;tica do Portal Gerencial.</p>";
+    }
+
+    /// <summary>
+    /// Accounts Payable body for a registered / re-registered P.O.: a REVIEW notice. It states explicitly that the
+    /// registration does not authorize or schedule a payment and that the post-paid receipt/invoice requirements
+    /// still apply — deliberately different from the "pedido de pagamento" wording of scheduling/completion.
+    /// </summary>
+    private static string BuildApPoRegisteredBody(
+        string reqRef, string requestTitle, string supplierName,
+        decimal amount, string currency, string registrationLabel,
+        string actorName, string companyName)
+    {
+        Func<string?, string> enc = System.Net.WebUtility.HtmlEncode;
+        var dateTime = DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm") + " (UTC)";
+
+        return $@"
+<p>Uma Purchase Order foi {(registrationLabel.StartsWith("P.O. corrigida", StringComparison.OrdinalIgnoreCase) ? "corrigida e re-registada" : "registada")} no Portal Gerencial e aguarda a revis&#227;o de Contas a Pagar.</p>
+<div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:20px 0;'>
+    <table style='width:100%; font-size:14px; color:#333; border-collapse:collapse;'>
+        <tr><td style='padding:6px 0;'><b>Empresa:</b></td><td style='padding:6px 0;'>{enc(companyName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Pedido:</b></td><td style='padding:6px 0;'>{enc(reqRef)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>T&#237;tulo:</b></td><td style='padding:6px 0;'>{enc(requestTitle)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(supplierName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Montante estimado:</b></td><td style='padding:6px 0;'>{amount:N2} {currency}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Situa&#231;&#227;o:</b></td><td style='padding:6px 0;'>{enc(registrationLabel)} &#8212; revis&#227;o necess&#225;ria</td></tr>
+        <tr><td style='padding:6px 0;'><b>A&#231;&#227;o realizada por:</b></td><td style='padding:6px 0;'>{enc(actorName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{dateTime}</td></tr>
+    </table>
+</div>
+<p style='font-size:13px; color:#333;'><b>Este aviso n&#227;o significa que o pagamento est&#225; autorizado ou pronto.</b> O registo da P.O. n&#227;o confirma a rece&#231;&#227;o dos bens/servi&#231;os nem a fatura; para pagamentos p&#243;s-pagos essas condi&#231;&#245;es continuam a aplicar-se antes do agendamento.</p>
 <p style='font-size:13px; color:#666;'>Acesse o Portal Gerencial para consultar os detalhes do pedido.</p>
 <p style='font-size:12px; color:#999;'>Esta &#233; uma mensagem autom&#225;tica do Portal Gerencial.</p>";
     }
@@ -644,9 +706,20 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     /// Resolves all active Finance users scoped to the request's plant.
     /// Falls back to all active Finance users if no plant is specified or no
     /// plant-scoped users exist (global in-app only — email suppressed for global fan-out).
+    /// E-mail to individual Finance users additionally requires the request's company to have an ACTIVE
+    /// Accounts Payable configuration with NotifyFinanceUsersByEmail = true; a missing company, a missing or
+    /// inactive configuration, or the flag off keeps the in-app notification and suppresses the e-mail.
     /// </summary>
-    private async Task AddPlantScopedFinanceRecipientsAsync(List<NotificationRecipient> recipients, int? plantId)
+    private async Task AddPlantScopedFinanceRecipientsAsync(List<NotificationRecipient> recipients, int? plantId, int? companyId)
     {
+        var financeEmailEnabled = companyId.HasValue && await _context.AccountsPayableNotificationConfigs
+            .AsNoTracking()
+            .AnyAsync(c => c.CompanyId == companyId.Value && c.IsActive && c.NotifyFinanceUsersByEmail);
+        if (!financeEmailEnabled)
+        {
+            _logger.LogDebug("Finance individual e-mail suppressed (company {CompanyId}: no active AP configuration with NotifyFinanceUsersByEmail); in-app notifications continue.", companyId);
+        }
+
         IQueryable<Guid> financeUserIds;
 
         if (plantId.HasValue)
@@ -679,8 +752,8 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         {
             recipients.Add(new NotificationRecipient(user.Id, user.Email, user.FullName)
             {
-                // If we fell back to global (no plant scope match), suppress email
-                SuppressEmail = !plantId.HasValue
+                // Suppress e-mail when we fell back to global (no plant) OR the company did not opt in
+                SuppressEmail = !plantId.HasValue || !financeEmailEnabled
             });
         }
     }

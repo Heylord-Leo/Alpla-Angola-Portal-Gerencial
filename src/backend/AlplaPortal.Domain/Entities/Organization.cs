@@ -220,6 +220,20 @@ public class AccountsPayableNotificationConfig
     /// <summary>Send notification when payment is completed (PAYMENT_COMPLETED).</summary>
     public bool NotifyOnCompleted { get; set; } = true;
 
+    /// <summary>
+    /// Notify the Accounts Payable address (To/CC) when a P.O. is registered or re-registered on a request of this
+    /// company ("P.O. registered; review required" — NOT a statement that the payment is authorized or ready).
+    /// Default false: existing rows and new rows are opted out until an administrator enables it.
+    /// </summary>
+    public bool NotifyOnPoRegistered { get; set; } = false;
+
+    /// <summary>
+    /// Also e-mail Finance-role users individually (plant-scoped) for PO_REGISTERED, PO_CORRECTION_COMPLETED and
+    /// ADVANCE_PAYMENT_REQUIRED. Default false. Governs e-mail only: Finance in-app notifications are unaffected.
+    /// A missing or inactive company configuration never enables individual Finance e-mail.
+    /// </summary>
+    public bool NotifyFinanceUsersByEmail { get; set; } = false;
+
     // Audit
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;

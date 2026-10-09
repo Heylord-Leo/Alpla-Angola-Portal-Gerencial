@@ -804,7 +804,10 @@ public class ApplicationDbContext : DbContext
         // ─── Accounts Payable Notification Logs (dedup + audit) ───
         modelBuilder.Entity<AccountsPayableNotificationLog>(entity =>
         {
-            entity.HasIndex(l => new { l.RequestId, l.EventCode, l.RecipientEmail })
+            // Dedup guard. CorrelationId is part of the key so that per-action events (PO_REGISTERED) can record one
+            // successful send per registration/correction while payment events keep writing CorrelationId = NULL
+            // (NULLs compare equal in a SQL Server unique index → still one success per request/event/recipient).
+            entity.HasIndex(l => new { l.RequestId, l.EventCode, l.RecipientEmail, l.CorrelationId })
                 .IsUnique()
                 .HasFilter("[Success] = 1 AND [Skipped] = 0")
                 .HasDatabaseName("IX_ApNotifLogs_Dedup");

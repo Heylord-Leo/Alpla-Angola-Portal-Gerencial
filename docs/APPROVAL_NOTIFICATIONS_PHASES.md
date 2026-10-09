@@ -680,3 +680,196 @@ newly generated alert. Cycle log: 1 queued, 1 re-queued, 12 skipped by dedup, 0 
 **Not validated (outstanding)**: concurrency with two **distinct** user accounts (the test used one administrator
 account for both calls); action replay refusal (400 on repeating an already-applied decision); rollback rehearsal
 (previous build on the migrated schema); PROD readiness. These remain open before any PROD decision.
+
+### G.10 P.O. registration → Finance e-mail gap (TEST, 2026-10-09) — diagnosis and fix (working tree, unreleased)
+
+**Observed.** REQ-08/10/2026-449 (`C68ADF17-5344-43AE-AE8C-F6D7B447F769`): `REGISTER_PO` persisted at 2026-10-09 07:56:02 UTC
+(NewStatus `PO_ISSUED`); seven "Nova P.O Registrada" in-app notifications share correlation
+`13AC2781-343F-41C5-919E-DD213D6B9E0E`; **no** `PO_REGISTERED` outbox row exists for the request; seven active Finance
+users with e-mail are scoped to its plant. No finance e-mail was received.
+
+**Cause (code, pre-existing since c2b0a75 of 2026-07-14; untouched by v2.246.x).** `RequestsController.RegisterPo` emitted
+`PO_REGISTERED` with only `EventCode`, `RequestId`, `ActionTaken`, `TargetStatusCode`, `ActorUserId` and a fresh GUID
+correlation. The orchestrator resolves `PO_REGISTERED` recipients with `AddPlantScopedFinanceRecipientsAsync(evt.PlantId)`;
+with a null plant it falls back to all Finance users **with e-mail suppressed** (in-app only, by design of the global
+fan-out). Hence bell notifications for everyone and no outbox row, regardless of SMTP, redirect or environment. The
+missing `RequestNumber` would also have produced an empty request reference in the subject.
+
+**Fix.** `RegisterPo` now builds the event like `ProcessCommonOperationalTransition`: `RequestNumber`, `RequestTitle`,
+`ActorName`, `RequesterId`, `BuyerId`, `AreaApproverId`, `FinalApproverId`, `DepartmentId`, `PlantId`, `CompanyId`,
+and `CorrelationId = history.Id` (the persisted `REGISTER_PO`/`REREGISTER_PO` row). The event code is deliberately
+unchanged: a correction re-registration still emits `PO_REGISTERED` (the history row carries `REREGISTER_PO`). The
+previously silent `catch { }` logs a warning.
+Routing rules, permissions, recipient data and the no-plant fallback are unchanged; no orchestrator change was needed
+(the plant is always known on the request).
+
+**Regression tests** (`RegisterPoFinanceNotificationTests`, real controller + real orchestrator, InMemory): plant-scoped
+Finance users get one `PO_REGISTERED` outbox row each, correlated to the history row and carrying the request number
+and actor name, plus their in-app notification; a Finance user scoped only to another plant gets neither; repeating the
+registration on an issued PAYMENT request returns 400 "Ação Inválida" and queues nothing; a correction re-registration
+keeps the `PO_REGISTERED` event code; a request without plant keeps the unchanged in-app-only fallback.
+
+**Replay rules, as verified in code.** Not every re-registration is forbidden: a group in `WAITING_PO_CORRECTION`
+(Finance returned the P.O.) accepts `register-po` again as `REREGISTER_PO`. A QUOTATION group is accepted only in
+`WAITING_PO` or `WAITING_PO_CORRECTION`; a PAYMENT request only in `APPROVED`, `WAITING_PO_CORRECTION` or
+`PO_PARTIALLY_UPLOADED`. Anything else is refused with 400 "Ação Inválida" before any write.
+
+**How to verify the effective destination (correction to earlier guidance).** `EmailOutbox.RecipientEmail` stores the
+**original** recipient; the TEST redirect is applied by `EmailService.ApplyEnvironmentPolicy` at dispatch time and is
+never written back to the row. Verify the effective destination with the `EMAIL_ENV_POLICY` admin-log rows
+(`[TEST] … → Para: <final address>`, payload `Original: <original>. Redirecionado: True`) and with the received message
+(subject prefix `[TEST - IGNORE]`, original-recipient block in the body). Do not expect outbox recipient addresses to
+equal the redirect mailbox.
+
+**Bounded TEST procedure (after this fix is deployed; no historical notification is re-sent).**
+1. Precondition: `SmtpSettings` row shows `RedirectAllToTestRecipient = 1`, `TestRecipientEmail = leonardo.cintra@alpla.com`;
+   `GET /api/app/environment` returns `TEST`.
+2. Pick one request whose plant has scoped Finance users (list them: active users with role Finance and a
+   `UserPlantScopes` row for the request's plant) and register a P.O. through the UI once.
+3. Expect in `RequestStatusHistories` one `REGISTER_PO` row; in `EmailOutbox` one `PO_REGISTERED` row per listed Finance
+   user with `CorrelationId` = that history Id, `RequestNumber` filled, `Status` moving `PENDING → SENT`; in
+   `AdminLogEntries` one `EMAIL_OUTBOX_QUEUED` per recipient and one `EMAIL_ENV_POLICY` per dispatched row whose
+   message ends in `Para: leonardo.cintra@alpla.com`; in the mailbox one message per recipient, prefixed
+   `[TEST - IGNORE]`, body listing the original recipient, subject "Nova P.O para Processamento — REQ-…".
+4. Registration outside the permitted state (e.g. repeating register-po on a group/request already PO_ISSUED): 400
+   "Ação Inválida", no new history, outbox or in-app row. A correction re-registration on a group in
+   `WAITING_PO_CORRECTION` is NOT a replay: it is allowed and produces a distinct `REREGISTER_PO` row and notification
+   (step 5).
+5. If the request has a correction path available (group `WAITING_PO_CORRECTION`), re-register once: one
+   `REREGISTER_PO` history row and `PO_REGISTERED` outbox rows to the same Finance users.
+6. Confirm no `EMAIL_ENV_POLICY` row of the day shows a `Para:` address other than the redirect mailbox.
+
+### G.11 Accounts Payable e-mail: per-company options for P.O. registration and Finance e-mail (working tree, unreleased)
+
+Business direction (whiteboard: "Create PO — Keep Fin informed — AP / Treasury"; later AP communication around
+receipt/service confirmation and invoices; Treasury involvement for advance payments). The whiteboard defines neither
+addresses nor triggers; the two options below implement only the "Create PO — keep Finance informed" step and must not
+be read as a complete approved specification of the AP/Treasury flow.
+
+**Confirmed TEST facts (2026-10-09).** REQ-08/10/2026-449 belongs to AlplaPLASTICO (CompanyId 1), whose AP configuration
+is active (To `alpla-plasticos-accounts@alpla.com`, CC `aovia-treasury@alpla.com`, NotifyOnScheduled/Completed true).
+Registering its P.O. produced seven Finance in-app notifications, no `PO_REGISTERED` outbox row (G.10) and no AP group
+e-mail, because the AP path only ever ran for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`. TEST AP logs hold 187
+successful scheduling sends, 79 successful completion sends and 12 skipped scheduling duplicates; `Success` records SMTP
+acceptance, not mailbox delivery.
+
+**Two per-company options** (`AccountsPayableNotificationConfigs`, Master Data › Accounts Payable Email), both
+**default false** in the entity, in the create DTO and in the migration; existing rows are not enabled:
+
+| Option | Effect when ON (company configuration must also be active) |
+|---|---|
+| `NotifyOnPoRegistered` — "Notificar Contas a Pagar quando uma P.O. é registada" | `PO_REGISTERED` sends the AP **review notice** to To + CC through the existing AP mechanism |
+| `NotifyFinanceUsersByEmail` — "Também enviar e-mail individual aos utilizadores Finance" | plant-scoped Finance users get the individual e-mail for `PO_REGISTERED`, `PO_CORRECTION_COMPLETED`, `ADVANCE_PAYMENT_REQUIRED` (outbox rows). OFF, missing or inactive configuration → in-app notification only |
+
+Unchanged: `NotifyOnScheduled`/`NotifyOnCompleted` behaviour and wording, requester routing on payment events, approval
+e-mails, buyer e-mails, every other event. Finance in-app notifications are never affected by either switch. The
+e-mail-permission decision is **per request company**; a second company's configuration is never consulted.
+
+**Wording.** The P.O. notice is a review notice: subject "[Portal Gerencial] P.O. registada — revisão de Contas a Pagar —
+Pedido …" (or "P.O. corrigida e re-registada …" when the history row is `REREGISTER_PO`), headline "… — Revisão
+Necessária — <empresa>", body stating that the registration **does not mean the payment is authorized or ready** and
+that post-paid receipt/invoice requirements still apply. Scheduling/completion keep "Novo pedido de pagamento …".
+
+**Correction re-registration.** `RegisterPo` keeps emitting `PO_REGISTERED` for corrections (G.10, as agreed); the AP
+option therefore applies to corrections too, with the "corrigida e re-registada" wording, and each correction is its
+own action for dedup purposes (below).
+
+**Dedup granularity, verified and changed minimally.** Before: `AccountsPayableNotificationLogs` unique on
+(RequestId, EventCode, RecipientEmail) with `Success = 1 AND Skipped = 0`, and the application check mirrored it —
+correct for scheduling/completion (one per request), but request-only dedup would silently suppress the second P.O.
+group of a request and every correction. Change: nullable `CorrelationId` on the log; `PO_REGISTERED` dedups on
+(Request, Event, Recipient, **CorrelationId = history row**), payment events keep `CorrelationId = NULL` and their
+request-level rule; the unique filtered index now includes `CorrelationId` (NULLs compare equal in a SQL Server unique
+index, so payment rows keep one success per request/event/recipient). A repeated emission of the **same** action is
+still skipped; the controller guards (G.10) refuse registrations outside the permitted state before any emission,
+while a correction re-registration in `WAITING_PO_CORRECTION` stays allowed and is a distinct action.
+
+**Delivery mechanism, unchanged and documented.** The AP e-mail is a **direct** `SendWorkflowNotificationAsync` call
+inside the request: no `EmailOutbox` row, no automatic retry; a failure is written to the log (`Success = 0`,
+`ErrorMessage`) and never retried or blocks the workflow. Individual Finance e-mails go through the outbox (retries,
+EXPIRED, dedup by correlation). Moving AP e-mails to the outbox is out of scope here. No historical notification is
+replayed.
+
+**Migration `20261009084838_AddAccountsPayablePoRegisteredAndFinanceEmailOptions`** (not applied anywhere):
+`AccountsPayableNotificationConfigs.NotifyOnPoRegistered` and `.NotifyFinanceUsersByEmail` (bit NOT NULL DEFAULT 0);
+`AccountsPayableNotificationLogs.CorrelationId` (uniqueidentifier NULL); drop + recreate `IX_ApNotifLogs_Dedup` with the
+extra key column and the same filter. Previous build on the new schema: inserts work (defaults, nullable column), the
+old application-level dedup still holds for payment events. Rollback (`Down`): drops the three columns and recreates the
+original index. **Caveat:** `Down` fails if more than one successful `PO_REGISTERED` AP row exists for the same
+(request, recipient) — i.e. if the option was used on a request with several groups/corrections; delete or mark those
+rows `Skipped` before rolling back. Rolling back the code without the schema is safe.
+
+
+**Dedup verified on SQL Server (2026-10-09, disposable `Portal-Gerencial-ApDedupCheck`, restored from the clone backup
+and migrated with the real `Up`; dropped afterwards; TEST/PROD untouched).** After the migration: 103 history rows,
+both new columns present, the two pre-existing configuration rows still opted out (`0/2`), index
+`IX_ApNotifLogs_Dedup` unique on (RequestId, EventCode, RecipientEmail, CorrelationId) with filter
+`[Success]=(1) AND [Skipped]=(0)`. `AccountsPayableDedupRelationalTests` (real orchestrator, mocked e-mail) against that
+database: payment scheduling emitted twice with different history correlations → one success + one skipped row, both
+with `CorrelationId NULL`, and a forced second success row is refused by the index; `PO_REGISTERED` for group 1,
+group 2 and a correction → three success rows with three distinct correlations, re-emitting group 1 → skipped, a forced
+duplicate success for group 1 refused by the index, a further distinct action accepted. The same class runs on the
+default LocalDB sandbox in the regular suite.
+
+**Concurrency limitation of the existing direct-send AP path (pre-existing, not changed here).** The dedup is
+check-then-act: the `AnyAsync` lookup and the log insert are separate statements around a synchronous SMTP call. Two
+concurrent emissions of the same action (or, for payment events, of the same request) can both pass the lookup and both
+send; the second insert then fails on the unique index inside the method's `try`, and the catch records a
+`Success = 0` failure row although that e-mail was accepted by SMTP. In practice the controllers only emit once per
+committed transition, so this needs two simultaneous identical transitions; the fix would be an insert-first (reserve)
+pattern or moving AP mail to the outbox, both out of scope for this change.
+
+**Defect found by the SQL Server check and fixed.** On the default LocalDB sandbox (no Finance users seeded) the P.O.
+review notice was never sent: `EmitAsync` returned as soon as the per-user recipient list was empty, before the Accounts
+Payable block. On the migrated clone copy the fallback Finance recipients hid this. Fix: the "no recipients" case now
+skips only the per-user in-app/outbox dispatch; the AP block still runs, so a company whose plant has no Finance user
+still reaches its configured AP address. Covered by
+`AccountsPayableNotificationRoutingTests.Ap_notice_is_sent_even_when_no_finance_user_exists_for_the_plant`. Side effect
+reviewed: for payment events the requester is always a recipient, so nothing changes there; the buyer "awaiting P.O."
+instruction after `FINAL_APPROVED` is now also attempted when no other recipient resolved, which is the intended
+behaviour of that independent block.
+
+**Test-run note.** The relational classes recreate the shared LocalDB sandbox once when its schema predates the model
+(here: the new `CorrelationId` column). That recreation ran while five SQL Server tests outside the `IntegrationTests`
+collection were executing in parallel and failed them once; they pass on rerun and in the subsequent full run. This is
+the pre-existing bootstrap pattern of the other relational classes, not a product defect.
+**Tests** (mocked e-mail service, nothing sent): `AccountsPayableConfigControllerTests` (defaults, persistence,
+independent edits, GET, toggle), `AccountsPayableNotificationRoutingTests` (real orchestrator: all four switch
+combinations; missing/inactive configuration; event without company/plant; To/CC and company selection; second P.O.
+group + correction + repeated action; payment events unchanged incl. request-level dedup and wording; AP failure logged
+not retried), `RegisterPoFinanceNotificationTests` (real controller + orchestrator incl. AP notice and switch-off
+cases), frontend `apNotificationsForm.test.ts` (defaults, display, independent edits, payload, legacy payload → OFF).
+No DOM testing library exists in the frontend (vitest `node` environment), so the UI is covered through the extracted
+pure form helpers, not by rendering the panel.
+
+**Whiteboard vs Portal events (source-based; investigation only)**
+
+| Whiteboard step | Portal trigger | Recipients | Mechanism | Gap |
+|---|---|---|---|---|
+| Create PO — keep Finance informed (AP / Treasury) | `PO_REGISTERED` on register-po | Finance (plant-scoped): in-app always; e-mail only with `NotifyFinanceUsersByEmail`. AP To+CC only with `NotifyOnPoRegistered` | outbox (Finance) / direct (AP) | both options default off → still in-app only until enabled |
+| Advance payment required / Treasury | `ADVANCE_PAYMENT_REQUIRED`, `ADVANCE_PAYMENT_SCHEDULED/COMPLETED` exist in the orchestrator but **nothing emits them**; the b2p endpoints (`schedule-advance`, `confirm-advance`, `reconcile`, `confirm-delivery`) emit no event | — | — | no notification at all for advance payments |
+| Goods / service receipt confirmation | `confirm-receiving` emits `REQUEST_FINALIZED` (reused code) → requester only; `OPERATIONAL_RECEIPT_COMPLETED` / `GROUP_COMPLETED` are history action codes, never emitted | requester | outbox | AP/Finance not informed of receipt |
+| Invoice submission / validation | `FISCAL_RECEIPT_UPLOADED` is a history action code; `FINAL_INVOICE_*` codes have no emitter and no orchestrator case | — | — | no notification |
+| Payment scheduling | `PAYMENT_SCHEDULED` (FinanceController `schedule`) | requester (outbox) + AP To/CC (direct, `NotifyOnScheduled`) | outbox / direct | none |
+| Payment completion | `PAYMENT_COMPLETED` (FinanceController `pay`) | requester (outbox) + AP To/CC (direct, `NotifyOnCompleted`) | outbox / direct | none |
+
+**Bounded TEST validation (after deployment and migration; nothing historical is re-sent).**
+1. Preconditions: `GET /api/app/environment` = `TEST`; `SmtpSettings` redirect to `leonardo.cintra@alpla.com` active;
+   sender `donotreply@mail.alpla.com`.
+2. Master Data › Accounts Payable Email: existing AlplaPLASTICO row shows both new switches OFF; enable
+   `NotifyOnPoRegistered` only; save; reload shows it ON and To/CC unchanged.
+3. Register a P.O. on a company-1 request (plant with scoped Finance users): one `REGISTER_PO` history row; one
+   `AccountsPayableNotificationLogs` row (`EventCode PO_REGISTERED`, `Success 1`, `CorrelationId` = history Id,
+   `RecipientEmail alpla-plasticos-accounts@alpla.com`, `CcEmails aovia-treasury@alpla.com`); one `EMAIL_ENV_POLICY`
+   row ending "Para: leonardo.cintra@alpla.com" with the AP address in the payload; the received message has the review
+   wording and the `[TEST - IGNORE]` prefix; Finance users have in-app rows and **no** outbox rows.
+4. Enable `NotifyFinanceUsersByEmail`; register a P.O. on another group/request: outbox `PO_REGISTERED` rows per
+   plant-scoped Finance user (`RecipientEmail` = original addresses) moving to SENT, each with its own
+   `EMAIL_ENV_POLICY` row to the redirect mailbox; still one AP log row for this action.
+5. Register a second group on the same request → a second AP log row with a different `CorrelationId`; re-register a
+   corrected P.O. (group in `WAITING_PO_CORRECTION`) → "P.O. corrigida e re-registada" notice with its own AP log row;
+   repeating register-po on the now-issued group (outside the permitted state) → 400 and no new rows.
+6. Schedule and complete a payment → scheduling/completion e-mails and logs exactly as before (one each,
+   `CorrelationId NULL`).
+7. Disable both switches again (or leave as decided); confirm no `EMAIL_ENV_POLICY` row of the day shows a
+   `Para:` address other than the redirect mailbox.
