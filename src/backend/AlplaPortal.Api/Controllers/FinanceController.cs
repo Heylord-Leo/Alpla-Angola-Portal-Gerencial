@@ -1376,7 +1376,11 @@ public class FinanceController : BaseController
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId,
-                CompanyId = r.CompanyId
+                CompanyId = r.CompanyId,
+                // The unit this action operated on: ONE group and ONE scheduled payment row (persisted above).
+                // The Accounts Payable notice renders this group's supplier and this row's planned amount/currency/date.
+                PoGroupId = group.Id,
+                PaymentId = payment.Id
             });
         }
         catch (Exception ex)
@@ -1719,7 +1723,11 @@ public class FinanceController : BaseController
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId,
-                CompanyId = r.CompanyId
+                CompanyId = r.CompanyId,
+                // The unit this action operated on: ONE group and ONE completed payment row (persisted above).
+                // The Accounts Payable notice renders this group's supplier and this row's actual paid amount/currency/date.
+                PoGroupId = group.Id,
+                PaymentId = payment.Id
             });
         }
         catch (Exception ex)

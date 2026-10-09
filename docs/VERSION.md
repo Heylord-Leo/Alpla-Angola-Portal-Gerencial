@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.247.1
+v2.247.2
+
+## [v2.247.2] - 2026-10-09
+
+### Payment scheduling/completion e-mails: AP group and payment content, distinct wording, departmental context
+
+PATCH after the TEST validation of v2.247.1. Accounts Payable scheduling/completion notices take supplier, amount,
+currency and date from the acted-on P.O. group and payment row (`WorkflowEvent.PoGroupId` + `PaymentId`, set by
+`FinanceController`) with distinct subjects and bodies; the departmental notice shows the action amount, labels request
+figures as estimates, aggregates only comparable requests in the request currency with an exclusion disclosure, and
+states its period literally. AP payment dedup unchanged (multi-group suppression documented). No migration, no EF model
+change, no configuration change.
 
 ## [v2.247.1] - 2026-10-09
 

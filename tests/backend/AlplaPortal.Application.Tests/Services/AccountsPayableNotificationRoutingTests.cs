@@ -97,11 +97,33 @@ public class AccountsPayableNotificationRoutingTests
         RequesterId = r.RequesterId, BuyerId = r.BuyerId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = r.CompanyId
     };
 
-    private static WorkflowEvent PaymentEvent(Request r, string code, Guid correlation) => new()
+    private static WorkflowEvent PaymentEvent(Request r, string code, Guid correlation, Guid? groupId = null, int? paymentId = null) => new()
     {
         EventCode = code, RequestId = r.Id, RequestNumber = r.RequestNumber!, TargetStatusCode = code, ActionTaken = code, ActorUserId = r.BuyerId!.Value, ActorName = "Finance",
-        CorrelationId = correlation, RequesterId = r.RequesterId, BuyerId = r.BuyerId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = r.CompanyId
+        CorrelationId = correlation, RequesterId = r.RequesterId, BuyerId = r.BuyerId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = r.CompanyId,
+        PoGroupId = groupId, PaymentId = paymentId
     };
+
+    /// <summary>Two groups on the seeded request: A (MULTI BIZ, 285,000.00 AOA, scheduled row) and B (USD VENDOR &amp; CO, 1,500.00 USD, completed row paid 1,480.00).</summary>
+    private static async Task<(RequestPoGroup A, RequestPoGroup B, RequestPayment PayA, RequestPayment PayB)> SeedTwoGroupsAsync(ApplicationDbContext ctx, Seed s)
+    {
+        ctx.Suppliers.AddRange(
+            new Supplier { Id = 20, Name = "MULTI BIZ, LDA", TaxId = "5020", RegistrationStatus = "ACTIVE" },
+            new Supplier { Id = 21, Name = "USD VENDOR & CO", TaxId = "5021", RegistrationStatus = "ACTIVE" });
+        var a = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = s.Request.Id, SupplierId = 20, SupplierNameSnapshot = "MULTI BIZ, LDA", TotalAmount = 285000m, CurrencyCode = "AOA", Status = RequestConstants.Statuses.PaymentScheduled, CreatedByUserId = s.Buyer };
+        var b = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = s.Request.Id, SupplierId = 21, SupplierNameSnapshot = "USD VENDOR & CO", TotalAmount = 1500m, CurrencyCode = "USD", Status = RequestConstants.Statuses.PaymentCompleted, CreatedByUserId = s.Buyer };
+        var payA = new RequestPayment { RequestId = s.Request.Id, RequestPoGroupId = a.Id, PaymentType = RequestPayment.PaymentTypes.FinalBalance, PaymentSequence = 1, PlannedAmount = 285000m, CurrencyCode = "AOA", ScheduledDateUtc = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc), PaymentStatus = RequestPayment.PaymentStatuses.Scheduled, CreatedByUserId = s.Buyer, CreatedAtUtc = DateTime.UtcNow };
+        var payB = new RequestPayment { RequestId = s.Request.Id, RequestPoGroupId = b.Id, PaymentType = RequestPayment.PaymentTypes.FinalBalance, PaymentSequence = 2, PlannedAmount = 1500m, ActualPaidAmount = 1480m, PaidDateUtc = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc), CurrencyCode = "USD", PaymentStatus = RequestPayment.PaymentStatuses.Completed, CreatedByUserId = s.Buyer, CreatedAtUtc = DateTime.UtcNow };
+        ctx.RequestPoGroups.AddRange(a, b);
+        ctx.RequestPayments.AddRange(payA, payB);
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+        return (a, b, payA, payB);
+    }
+
+    private static List<(string Subject, string Headline, string Body)> ApMails(Mock<IEmailService> email) =>
+        email.Invocations.Where(i => i.Method.Name == nameof(IEmailService.SendWorkflowNotificationAsync))
+            .Select(i => ((string)i.Arguments[2], (string)i.Arguments[3], (string)i.Arguments[4])).ToList();
 
     private static void VerifyApSend(Mock<IEmailService> email, Times times, string? subjectContains = null) =>
         email.Verify(e => e.SendWorkflowNotificationAsync("alpla-plasticos-accounts@alpla.com", "AlplaPLASTICO", It.Is<string>(s => subjectContains == null || s.Contains(subjectContains)), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), "aovia-treasury@alpla.com"), times);
@@ -263,20 +285,93 @@ public class AccountsPayableNotificationRoutingTests
     }
 
     [Fact]
-    public async Task Payment_scheduling_and_completion_keep_request_level_dedup_and_wording()
+    public async Task Payment_scheduling_and_completion_have_distinct_wording_and_keep_request_level_dedup_recipients_and_logs()
     {
         await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (a, b, payA, payB) = await SeedTwoGroupsAsync(ctx, s);
         var (o, _, email) = Build(ctx);
 
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid()));
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid())); // different correlation, same request → still deduped (unchanged)
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, Guid.NewGuid()));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), a.Id, payA.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), b.Id, payB.Id)); // different correlation AND group, same request → still deduped (unchanged rule)
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, Guid.NewGuid(), b.Id, payB.Id));
 
-        email.Verify(e => e.SendWorkflowNotificationAsync("alpla-plasticos-accounts@alpla.com", "AlplaPLASTICO", It.Is<string>(sub => sub.Contains("Novo pedido de pagamento")), It.IsAny<string>(), It.Is<string>(b => b.Contains("pedido de pagamento entrou")), It.IsAny<string?>(), It.IsAny<string?>(), "aovia-treasury@alpla.com"), Times.Exactly(2));
+        // Recipients (TO + CC + company name) unchanged; exactly one mail per event code
+        VerifyApSend(email, Times.Exactly(2));
+        var mails = ApMails(email);
+        var scheduled = Assert.Single(mails, m => m.Subject.Contains("Pagamento agendado"));
+        var completed = Assert.Single(mails, m => m.Subject.Contains("Pagamento realizado"));
+        Assert.DoesNotContain(mails, m => m.Subject.Contains("Novo pedido de pagamento"));
+        Assert.Contains("Pagamento Agendado \u2014 AlplaPLASTICO", scheduled.Headline);
+        Assert.Contains("Pagamento Realizado \u2014 AlplaPLASTICO", completed.Headline);
+        Assert.Contains("foi <b>agendado</b> pelas Finan&#231;as e entrou na lista de Contas a Pagar", scheduled.Body);
+        Assert.Contains("<b>Status atual:</b></td><td style='padding:6px 0;'>Pagamento Agendado", scheduled.Body);
+        Assert.Contains("confirmado como <b>realizado</b> pelas Finan&#231;as", completed.Body);
+        Assert.DoesNotContain("entrou na lista de Contas a Pagar", completed.Body);
+        Assert.Contains("<b>Status atual:</b></td><td style='padding:6px 0;'>Pagamento Realizado", completed.Body);
+
         var logs = await ctx.AccountsPayableNotificationLogs.ToListAsync();
         Assert.Equal(2, logs.Count(l => l.Success));
         Assert.Equal(1, logs.Count(l => l.Skipped && l.EventCode == WorkflowEventCodes.PaymentScheduled));
         Assert.All(logs, l => Assert.Null(l.CorrelationId)); // payment rows keep NULL correlation
+        Assert.All(logs, l => Assert.Equal("alpla-plasticos-accounts@alpla.com", l.RecipientEmail));
+        Assert.Contains(await ctx.EmailOutbox.ToListAsync(), x => x.RecipientEmail == "buyer@test.local"); // requester routing unchanged
+    }
+
+    [Fact]
+    public async Task Payment_notices_render_the_acted_on_group_and_payment_row_never_the_header_another_group_or_a_mixed_currency()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);                    // header: IP WORLD, 400,758.34 (no CurrencyId → AOA)
+        var (a, b, payA, payB) = await SeedTwoGroupsAsync(ctx, s);
+        var (o, _, email) = Build(ctx);
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), a.Id, payA.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, Guid.NewGuid(), b.Id, payB.Id));
+
+        var mails = ApMails(email);
+        var sch = Assert.Single(mails, m => m.Subject.Contains("Pagamento agendado")).Body;
+        Assert.Contains("<b>Fornecedor:</b></td><td style='padding:6px 0;'>MULTI BIZ, LDA</td>", sch);
+        Assert.Contains($"<b>Montante agendado (grupo P.O.):</b></td><td style='padding:6px 0;'>{285000m:N2} AOA</td>", sch);
+        Assert.Contains("<b>Data agendada:</b></td><td style='padding:6px 0;'>20/10/2026</td>", sch);
+        Assert.DoesNotContain("IP WORLD", sch); Assert.DoesNotContain($"{400758.34m:N2}", sch); Assert.DoesNotContain("USD", sch); Assert.DoesNotContain("Data do pagamento", sch);
+
+        var cmp = Assert.Single(mails, m => m.Subject.Contains("Pagamento realizado")).Body;
+        Assert.Contains($"<b>Fornecedor:</b></td><td style='padding:6px 0;'>{System.Net.WebUtility.HtmlEncode("USD VENDOR & CO")}</td>", cmp);
+        Assert.Contains($"<b>Montante pago (grupo P.O.):</b></td><td style='padding:6px 0;'>{1480m:N2} USD</td>", cmp); // actual paid, not planned 1,500.00
+        Assert.Contains("<b>Data do pagamento:</b></td><td style='padding:6px 0;'>09/10/2026</td>", cmp);
+        Assert.DoesNotContain($"{1500m:N2}", cmp); Assert.DoesNotContain("AOA", cmp); Assert.DoesNotContain("MULTI BIZ", cmp); Assert.DoesNotContain($"{400758.34m:N2}", cmp); Assert.DoesNotContain("Data agendada", cmp);
+    }
+
+    [Fact]
+    public async Task Payment_notice_without_a_group_reference_uses_the_request_header_and_labels_it_as_request_level()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        await SeedTwoGroupsAsync(ctx, s);                                                 // groups exist but the (legacy) event does not reference one
+        var (o, _, email) = Build(ctx);
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid()));
+
+        var body = Assert.Single(ApMails(email)).Body;
+        Assert.Contains("<b>Fornecedor:</b></td><td style='padding:6px 0;'>IP WORLD, LDA</td>", body);
+        Assert.Contains($"<b>Montante agendado (pedido):</b></td><td style='padding:6px 0;'>{400758.34m:N2} AOA</td>", body);
+        Assert.DoesNotContain("MULTI BIZ", body); Assert.DoesNotContain("USD VENDOR", body); Assert.DoesNotContain("grupo P.O.", body);
+    }
+
+    [Fact]
+    public async Task Payment_notice_for_a_legacy_group_without_supplier_or_currency_falls_back_to_the_request_supplier_and_currency()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var legacy = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = s.Request.Id, SupplierId = null, SupplierNameSnapshot = null, CurrencyCode = null, TotalAmount = 400758.34m, Status = RequestConstants.Statuses.PaymentScheduled, CreatedByUserId = s.Buyer };
+        var pay = new RequestPayment { RequestId = s.Request.Id, RequestPoGroupId = legacy.Id, PaymentType = RequestPayment.PaymentTypes.FinalBalance, PaymentSequence = 1, PlannedAmount = 400758.34m, CurrencyCode = "---", ScheduledDateUtc = new DateTime(2026, 10, 15, 0, 0, 0, DateTimeKind.Utc), PaymentStatus = RequestPayment.PaymentStatuses.Scheduled, CreatedByUserId = s.Buyer, CreatedAtUtc = DateTime.UtcNow };
+        ctx.RequestPoGroups.Add(legacy); ctx.RequestPayments.Add(pay); await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        var (o, _, email) = Build(ctx);
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), legacy.Id, pay.Id));
+
+        var body = Assert.Single(ApMails(email)).Body;
+        Assert.Contains("<b>Fornecedor:</b></td><td style='padding:6px 0;'>IP WORLD, LDA</td>", body);      // request supplier (FinanceGroupDisplayResolver fall-through)
+        Assert.Contains($"<b>Montante agendado (grupo P.O.):</b></td><td style='padding:6px 0;'>{400758.34m:N2} AOA</td>", body); // "---" payment currency → request currency
+        Assert.Contains("15/10/2026", body);
+        Assert.DoesNotContain("\u2014</td>", body);
     }
 
     [Fact]

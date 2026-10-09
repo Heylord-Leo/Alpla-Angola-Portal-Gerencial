@@ -908,3 +908,208 @@ data with "&amp;" encoding; two success log rows keyed by the two history rows, 
    group's data; a second log row with the `REREGISTER_PO` correlation.
 3. Confirm a scheduling notice still reads "Novo pedido de pagamento" with its previous content, and that
    `EMAIL_ENV_POLICY` rows show only the redirect mailbox as destination.
+
+### G.13 Payment scheduling/completion e-mails: AP content, distinct wording, departmental aggregate (working tree, unreleased)
+
+**TEST evidence (2026-10-09, build 2.247.1+464e4db).** REQ-07/10/2026-538 (`RequestId
+11D0F2EE-27B7-4D82-BFF1-0126F97570F5`, company 1 AlplaPLASTICO, plant 2), P.O. group `7582FD27-2A39-4398-BF8B-CB4E7E8DFD83`,
+supplier PTA-ÁGUAS, LDA, total 126,787.50 AOA. Scheduling and completion each produced one Accounts Payable log
+(`Success=1, Skipped=0, ErrorMessage=NULL`) and two individual outbox messages (Milton Figueiredo, Adelaide Kambambe;
+`SENT, RetryCount=1, LastError=NULL`); all six messages reached the TEST mailbox through the redirect. Delivery is
+correct. Observed content defects: (1) both AP notices show Supplier "—"; (2) the completion notice has the scheduling
+subject "Novo pedido de pagamento para AlplaPLASTICO" and says the request "entrou na lista de Contas a Pagar";
+(3) both departmental notices show "Acumulado (Agendado/Pago) 0.00 AOA" and "0.0%". The development database does not
+hold REQ-538; every scenario below is reproduced with isolated test fixtures.
+
+**Confirmed causes (source).**
+
+1. *Supplier "—".* `FinanceController.SchedulePayment` (`POST finance/{id}/schedule`) and `MarkAsPaid`
+   (`POST finance/{id}/pay`) both resolve ONE group (`SchedulePaymentDto.RequestPoGroupId` / `ConfirmPaymentDto.RequestPoGroupId`)
+   and write ONE `RequestPayment` row (planned = `group.TotalAmount` when scheduling; `ActualPaidAmount`/`PaidDateUtc` when
+   completing), then emitted request-level events (no `PoGroupId`). The AP method read `Request.Supplier`,
+   `Request.ActualPaidAmount ?? Request.EstimatedTotalAmount` and the request currency. QUOTATION requests have no header
+   supplier; the amount happened to be right only because `MarkAsPaid` also copies the last paid amount onto the request
+   header, and the currency was always the request's even when the group is in another currency.
+2. *Same subject/body.* One template (`BuildApNotificationBody`) served both events; only the "Status atual" row varied.
+3. *Departmental 0.00 / 0.0%.* The aggregate (introduced in commit 4c1ce07, 2026-04-13) filtered
+   `Status.Code IN ('SCHEDULED','PAID','PARTIAL_PAID')`. None of these codes exists in the request-status catalog
+   (`ApplicationDbContext` seed: `PAYMENT_SCHEDULED`, `PAYMENT_COMPLETED`, `ADVANCE_PAYMENT_*`; the `PAID` constant exists but
+   is not seeded), so the sum was always zero and the percentage was "0 / 0 → 0.0%". Two further defects in the same block:
+   amounts of every currency were summed and labelled with the request's currency, and a zero denominator was rendered as
+   "0.0%" instead of "not available".
+
+**The existing departmental rule, as written.** Scope = `Request.DepartmentId` only (departments are global, see
+`Department`; the recipients, however, are the department+plant managers). Period = `Request.UpdatedAtUtc >= first day of the
+current UTC month` (any update, not the scheduled/paid date). Statuses = the request-level (scalar) status, not group
+statuses. Amount = `Request.EstimatedTotalAmount` (for QUOTATION this is the selected quotation total once selected,
+otherwise 0). Currency = the request's currency as a label only. Inclusion of the current request = only if its scalar
+status matched (after `SaveChanges` + `StatusAggregationService`, so a PAYMENT request is included; a multi-group QUOTATION
+whose parent stays at the furthest-behind sibling status is not). Timing = computed after persistence and aggregation.
+
+**Corrections implemented (narrow).**
+
+- `WorkflowEvent.PaymentId` (optional `int?`, the `RequestPayment` row) added next to `PoGroupId`; `SchedulePayment` and
+  `MarkAsPaid` set `PoGroupId = group.Id`, `PaymentId = payment.Id` after their `SaveChanges`.
+- AP notice for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` (`ResolveApPaymentUnitAsync` + `BuildApPaymentBody`): supplier =
+  `group.Supplier.Name` → `group.SupplierNameSnapshot` → selected quotation supplier (QUOTATION) → request supplier → "—"
+  (same fall-through as `FinanceGroupDisplayResolver`, which Finance already uses for legacy PAYMENT groups with null
+  snapshots); amount = payment row (`PlannedAmount` when scheduling, `ActualPaidAmount` when completing) → group total;
+  currency = payment row (unless "---") → group → selected quotation → request; dates = `ScheduledDateUtc` /
+  `PaidDateUtc`. Everything is scoped to the event's request and group: never another group, never the request aggregate,
+  never a mix of currencies. Legacy request-level emitters (`RequestsController` `operational/schedule-payment` and
+  `operational/complete-payment`, no group) fall back to the header values, log a warning and label the amount
+  "(pedido)" instead of "(grupo P.O.)".
+- Distinct wording: subject "[Portal Gerencial] Pagamento agendado — Pedido X" / headline "Pagamento Agendado — Company",
+  body "Um pagamento foi agendado pelas Finanças e entrou na lista de Contas a Pagar", rows "Montante agendado (grupo
+  P.O.)" and "Data agendada"; subject "[Portal Gerencial] Pagamento realizado — Pedido X" / headline "Pagamento Realizado —
+  Company", body "Um pagamento foi confirmado como realizado pelas Finanças", rows "Montante pago (grupo P.O.)" and "Data
+  do pagamento". Supplier, currency, title, actor and company are HTML-encoded. The P.O. registration/correction notices
+  (G.11/G.12) are untouched.
+- Departmental aggregate (`ComputeDepartmentalMonthContextAsync`, used by the payment notice only): statuses
+  `PAYMENT_SCHEDULED`, `PAID`, `PAYMENT_COMPLETED` (the set Finance itself names `financeStatusCodes`); same `CurrencyId` as
+  this request; same department; `UpdatedAtUtc >= month start` (unchanged); OTHER requests summed, this request added
+  explicitly (so the share is defined and ≤ 100 % regardless of the parent's aggregated status); label "Acumulado
+  (Agendado/Pago, incl. este pedido)"; "Impacto" shows the percentage only when total > 0 and this amount > 0, otherwise
+  "n/d — sem base de comparação (…)".
+- Not changed: recipients, routing, AP configuration and switches, SMTP, TEST redirect, outbox/direct-send mechanisms,
+  dedup rules (AP scheduling/completion stay per request+event+recipient; `CorrelationId NULL`), permissions.
+
+**Decisions NOT taken (concrete ambiguities, each needs a business answer before the rule is changed).**
+
+1. Plant scope: the aggregate is department-wide across plants while the recipients are department+plant managers.
+2. Period basis: "updated this month" vs "scheduled/paid this month" (`RequestPayment.ScheduledDateUtc` /
+   `Request.ActualPaidAtUtc`). A request scheduled in September and merely commented in October counts; one scheduled in
+   September and untouched does not.
+3. Advance statuses (`ADVANCE_PAYMENT_SCHEDULED/COMPLETED`) are excluded, as before. Note the schedule endpoint emits
+   `PAYMENT_SCHEDULED` even when it schedules an advance (group at `ADVANCE_PAYMENT_REQUIRED`); the AP notice then reads
+   "Pagamento agendado" with the advance row's planned amount. Not changed (advance scope excluded from this task).
+4. Multi-group requests: the departmental "Valor deste Pedido" is the request estimate, not the scheduled group's amount.
+5. Foreign-currency activity is excluded from the sum rather than converted (no FX source in the portal).
+6. The area-approval notice (`HandlePendingAreaApprovalFanningAsync`) contains the identical dead filter and the same
+   mixed-currency sum ("Consumo Departamental Atual"). Left untouched: outside this task's scope; same fix applies.
+7. AP dedup for scheduling/completion is per request: scheduling a second group of the same request produces no second AP
+   notice (a skipped log row is written). Unchanged by instruction; now covered by a test that documents it.
+
+**Tests (backend 2769/2769).** `AccountsPayableNotificationRoutingTests`: distinct wording + dedup/recipients/logs
+preserved; acted-on group and payment row rendered (A: MULTI BIZ 285,000.00 AOA scheduled 20/10/2026; B: USD VENDOR &amp;
+CO paid 1,480.00 USD of 1,500.00 planned on 09/10/2026), never the header (IP WORLD / 400,758.34), never the other group;
+no-group fallback labelled "(pedido)"; legacy group without supplier/currency falls back to the request supplier/currency.
+`FinancePaymentApNotificationTests` (real `FinanceController` + real orchestrator, QUOTATION with no header supplier, zero
+estimate, two groups AOA/USD): `SchedulePayment` → AP scheduling notice with PTA-ÁGUAS, 126,787.50 AOA, 20/10/2026, one
+success log, requester outbox row; second group skipped by dedup (documented); `MarkAsPaid` → AP completion notice with
+USD VENDOR &amp; CO, 1,500.00 USD, 09/10/2026. `DepartmentalPaymentContextTests`: inclusion/exclusion by status, currency,
+department and month boundary (100,000 + 60,000 + 40,000 → 200,000.00 AOA, 50.0 %); inclusion of this request when its
+parent is still PO_ISSUED (25.0 %); only request → 100.0 %; zero basis → "n/d" (no "0.0%"); requester and manager rows.
+
+**Bounded TEST validation (after deployment; redirect active).**
+1. Schedule a payment on a QUOTATION request with ≥ 2 groups of different suppliers: AP subject "Pagamento agendado —
+   Pedido …", Fornecedor = that group's supplier, "Montante agendado (grupo P.O.)" = that group's total and currency,
+   "Data agendada" = the chosen date; one `AccountsPayableNotificationLogs` row (`Success=1`, `CorrelationId NULL`).
+2. Mark it paid with an amount different from the planned total (over-payment allowed): AP subject "Pagamento realizado
+   — Pedido …", "Montante pago (grupo P.O.)" = the amount entered, "Data do pagamento" = the paid date; no "entrou na
+   lista" sentence.
+3. In the departmental e-mails of both steps, "Acumulado (Agendado/Pago, incl. este pedido)" must equal the value of
+   query Q3 below plus the request's estimate, and "Impacto" must be that ratio (or "n/d" when the estimate is 0).
+4. Requester mail, Finance redirect (`EMAIL_ENV_POLICY`), outbox rows and the P.O. registration notice unchanged.
+
+**Read-only TEST queries (optional, to predict step 3 before deployment).**
+```sql
+-- Q1: which of the codes exist in the catalog (expected: only PAYMENT_SCHEDULED and PAYMENT_COMPLETED)
+SELECT Code FROM RequestStatuses WHERE Code IN ('SCHEDULED','PAID','PARTIAL_PAID','PAYMENT_SCHEDULED','PAYMENT_COMPLETED');
+-- Q2: what the OLD rule summed for REQ-538's department this month (expected: 0 rows)
+SELECT COUNT(*) AS Rows_, SUM(r.EstimatedTotalAmount) AS Sum_
+FROM Requests r JOIN RequestStatuses s ON s.Id = r.StatusId
+WHERE r.DepartmentId = (SELECT DepartmentId FROM Requests WHERE Id = '11D0F2EE-27B7-4D82-BFF1-0126F97570F5')
+  AND s.Code IN ('SCHEDULED','PAID','PARTIAL_PAID') AND r.UpdatedAtUtc >= DATEFROMPARTS(YEAR(GETUTCDATE()), MONTH(GETUTCDATE()), 1);
+-- Q3: what the NEW rule sums (other requests, same department, same currency, scheduled/paid, updated this month)
+SELECT COUNT(*) AS Rows_, SUM(r.EstimatedTotalAmount) AS OthersSum, c.Code AS Currency
+FROM Requests r JOIN RequestStatuses s ON s.Id = r.StatusId LEFT JOIN Currencies c ON c.Id = r.CurrencyId
+WHERE r.Id <> '11D0F2EE-27B7-4D82-BFF1-0126F97570F5'
+  AND r.DepartmentId = (SELECT DepartmentId FROM Requests WHERE Id = '11D0F2EE-27B7-4D82-BFF1-0126F97570F5')
+  AND ((r.CurrencyId IS NULL AND (SELECT CurrencyId FROM Requests WHERE Id = '11D0F2EE-27B7-4D82-BFF1-0126F97570F5') IS NULL)
+       OR r.CurrencyId = (SELECT CurrencyId FROM Requests WHERE Id = '11D0F2EE-27B7-4D82-BFF1-0126F97570F5'))
+  AND s.Code IN ('PAYMENT_SCHEDULED','PAID','PAYMENT_COMPLETED')
+  AND r.UpdatedAtUtc >= DATEFROMPARTS(YEAR(GETUTCDATE()), MONTH(GETUTCDATE()), 1)
+GROUP BY c.Code;
+-- Q4: currencies present among scheduled/paid requests of that department this month (shows how much decision 5 matters)
+SELECT ISNULL(c.Code,'(null)') AS Currency, COUNT(*) AS Rows_, SUM(r.EstimatedTotalAmount) AS Sum_
+FROM Requests r JOIN RequestStatuses s ON s.Id = r.StatusId LEFT JOIN Currencies c ON c.Id = r.CurrencyId
+WHERE r.DepartmentId = (SELECT DepartmentId FROM Requests WHERE Id = '11D0F2EE-27B7-4D82-BFF1-0126F97570F5')
+  AND s.Code IN ('PAYMENT_SCHEDULED','PAID','PAYMENT_COMPLETED')
+  AND r.UpdatedAtUtc >= DATEFROMPARTS(YEAR(GETUTCDATE()), MONTH(GETUTCDATE()), 1)
+GROUP BY c.Code;
+```
+Q1 establishes that the old filter could never match; Q2 confirms the observed 0.00; Q3 is the value the corrected
+notice will add to the request's estimate; Q4 shows whether same-currency scoping excludes material amounts.
+Supersedes G.12 step 3 ("Novo pedido de pagamento" is no longer the scheduling subject).
+
+#### G.13.1 Departmental notice — review outcome and final behaviour (revision, working tree)
+
+**Review finding.** The departmental block is a request-level, ESTIMATE-based metric. Numerator = `Request.EstimatedTotalAmount`
+(a single header figure, never derived from P.O. groups or payment rows; for QUOTATION it is the selected quotation or
+line-item total). Denominator = that estimate plus the estimates of other requests of the department (status
+`PAYMENT_SCHEDULED`/`PAID`/`PAYMENT_COMPLETED`, same `CurrencyId`, updated this month). Neither side is a scheduled or paid
+amount; "Agendado/Pago" names the status filter only. With several groups the same figures are rendered for every
+action on the request; partial/divergent payments never affect it; a request whose groups are in different currencies
+already carries a mixed estimate before this block sees it, and `Request.CurrencyId` alone does not prove the group
+amounts share that currency. Explicit inclusion of the current request counts its estimate once (others exclude its Id)
+and never duplicates an amount.
+
+**Final rendering (payment notices to area managers).**
+
+| Row | Source | Rule |
+|---|---|---|
+| Valor desta ação (agendado / pago, grupo P.O.) | acted-on `RequestPayment` row via `WorkflowEvent.PoGroupId` + `PaymentId` (same resolver as the AP notice) | planned amount when scheduling, actual paid amount when completing, in the payment row's currency (else group, else request). "n/d (sem registo de pagamento associado a esta ação)" for legacy events without a row. Informative only, never part of the ratio. |
+| Valor estimado deste Pedido | `Request.EstimatedTotalAmount` + request currency | always shown, labelled as an estimate; "(moeda do pedido não registada)" when `CurrencyId` is null. |
+| Acumulado estimado (pedidos agendados/pagos atualizados no mês, incl. este) | estimates of other comparable requests + this estimate | shown only when THIS request is comparable; otherwise "n/d — reason". |
+| Impacto | this estimate / accumulated estimate | percentage only when comparable and both figures > 0; otherwise "n/d — reason". |
+| Período | `UpdatedAtUtc >= first day of current UTC month` | stated literally: "pedidos … com última atualização desde dd/MM/yyyy (UTC); não comprova que o agendamento/pagamento ocorreu neste mês. Valores estimados dos pedidos, não montantes agendados/pagos." |
+
+**Comparability rule (no new metric, no FX).** A request's estimate is accepted as a single-currency figure only when
+its currency is registered (`Request.CurrencyId` → `Currencies.Code`) and every non-cancelled `RequestPoGroup` of the
+request carries that same currency (`CurrencyCode`, else `CurrencyId` → code; vacuously true for a request without
+groups). A group with no registered currency makes the request non-comparable (legacy PAYMENT groups with null
+snapshots fall here). The same test is applied to the other requests of the denominator: non-comparable requests are
+left out of the sum rather than mixed in. Reasons rendered: "moeda do pedido não registada…", "pelo menos um grupo P.O.
+deste pedido não tem moeda registada…", "os grupos P.O. deste pedido estão em moedas diferentes da moeda do pedido
+(AOA, USD vs AOA)…".
+
+**Worked example.** Request R (quotation, AOA, estimate 286,500.00) with groups A (285,000.00 AOA) and B (1,500.00 USD);
+other request X in the department this month, 100,000.00 AOA, PAYMENT_SCHEDULED. Scheduling B renders: Valor desta ação
+1,500.00 USD; Valor estimado 286,500.00 AOA; Acumulado n/d — grupos em moedas diferentes (AOA, USD vs AOA); Impacto n/d.
+Had both groups been AOA: Acumulado 386,500.00 AOA, Impacto 74.1 %, and identical figures for the scheduling of A and B
+(only the action row differs) — the ratio remains a request-level share, not a per-action one.
+
+**Unchanged, explicit limitation — AP dedup.** Accounts Payable scheduling/completion dedup stays per
+(request, event, recipient) with `CorrelationId NULL`. On a request with several groups, the scheduling or completion of
+any group after the first produces NO Accounts Payable notice (a `Skipped=1` log row is written); the requester and
+departmental mails are still sent for each action. Its redesign (per-action dedup like `PO_REGISTERED`) is tracked
+separately and is NOT part of this change. The multi-group notification flow is therefore not validated end to end;
+only the single-group path matches the TEST evidence of REQ-538.
+
+**Tests (final).** `DepartmentalPaymentContextTests`: same-department/same-currency/comparable aggregation with the
+month boundary and exclusion of non-comparable others (100,000 + 60,000 + 40,000 → 200,000.00 AOA, 50.0 %); action
+amount planned 126,787.50 vs paid 130,000.00 against an estimate of 120,000.00 (aggregate stays estimate-based);
+mixed-currency groups → action 1,500.00 USD shown, aggregate and percentage "n/d" with the reason, no 386,500.00 and no
+percentage; group without currency and request without currency → "n/d" with their reasons; inclusion when the parent
+is still PO_ISSUED (25.0 %); legacy event without group/payment → action "n/d", estimate metric kept; zero basis →
+"n/d" (no "0.0%"); requester and manager rows. AP/Finance/RegisterPo classes unchanged and green.
+
+**TEST validation step 3 (replaces the earlier wording).** In the departmental e-mails: "Valor desta ação" equals the
+scheduled (planned) and then the paid amount entered, in the group currency; "Valor estimado deste Pedido" equals the
+request estimate; "Acumulado estimado" equals Q3 (restricted to comparable requests) plus the estimate, and "Impacto"
+their ratio, or "n/d" with the stated reason when the request has a USD group, a group without currency, or no
+currency; the "Período" line names the first day of the month.
+
+**Final review addendum (disclosure of exclusions).** The aggregate row is labelled "Acumulado estimado (pedidos
+agendados/pagos atualizados no mês, apenas comparáveis na moeda do pedido, incl. este)". Scheduled/paid requests of the
+department updated in the period that are NOT summed (other `CurrencyId`, or a non-cancelled group in another or an
+unknown currency) are counted, and when that count is above zero the notice adds "Excluídos: N pedido(s) …, por moeda
+diferente ou não comprovada — o acumulado e a percentagem não representam toda a atividade do departamento." Requests
+outside the status set or the period are neither summed nor counted. Cancelled P.O. groups are ignored both when
+testing this request's comparability and when testing the other requests'; the acted-on group for "Valor desta ação" is
+looked up by Id and is never cancelled at the time of the action. Legacy requests without groups keep the documented
+behaviour: comparable when the request currency is registered, action amount "n/d" without a payment row. Tests:
+exclusion count of 3 in the main aggregation scenario; no disclosure when a cancelled USD group is the only
+foreign-currency element (other request included, 62.5 %); cancelled USD group on this request does not break
+comparability. Backend 2774/2774.

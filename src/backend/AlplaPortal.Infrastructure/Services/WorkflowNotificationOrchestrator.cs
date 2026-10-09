@@ -2,6 +2,7 @@ using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Events;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using Microsoft.EntityFrameworkCore;
@@ -377,27 +378,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 
         var req = await _context.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == evt.RequestId);
         if (req == null) return;
-        
-        var thisAmount = req.EstimatedTotalAmount;
-        
-        // Month boundaries: first day of current UTC month
-        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        
-        // Calculate departmental financial accumulation metric (SCHEDULED / PAID in the current month)
-        var summedAmount = await _context.Requests
-            .AsNoTracking()
-            .Where(r => r.DepartmentId == evt.DepartmentId.Value 
-                     && (r.Status.Code == "SCHEDULED" || r.Status.Code == "PAID" || r.Status.Code == "PARTIAL_PAID")
-                     && r.UpdatedAtUtc >= monthStart)
-            .SumAsync(r => r.EstimatedTotalAmount);
 
-        // Safety against division by zero
-        var percentage = summedAmount > 0 ? (thisAmount / summedAmount * 100) : 0;
-        
-        // Currency formatting
-        var currency = req.CurrencyId.HasValue 
-            ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync() ?? "AOA" 
-            : "AOA";
+        var ctxMonth = await ComputeDepartmentalMonthContextAsync(req, evt.DepartmentId.Value);
+        var isScheduledEvent = evt.EventCode == WorkflowEventCodes.PaymentScheduled;
+        // The acted-on unit (same resolver as the Accounts Payable notice): planned amount when scheduling, actual paid
+        // amount when completing, with the payment row's / group's currency. Informative only — never part of the ratio.
+        var unit = await ResolveApPaymentUnitAsync(evt, req, req.Supplier?.Name ?? "\u2014", ctxMonth.RequestCurrency ?? "AOA", req.ActualPaidAmount ?? req.EstimatedTotalAmount);
 
         // Phase B: departmental payment info goes to the area managers resolved by
         // department + PLANT (strict cascade) — fixes the cross-plant leak where every
@@ -405,15 +391,33 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var paymentRouting = await _approvalRouting.ResolveAreaManagersAsync(evt.DepartmentId.Value, evt.PlantId ?? req.PlantId);
         var areaApprovers = paymentRouting.Managers;
 
-        var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Agendado" : "Realizado";
+        var paymentState = isScheduledEvent ? "Agendado" : "Realizado";
+        var actionLabel = isScheduledEvent ? "Valor desta a\u00e7\u00e3o (agendado, grupo P.O.)" : "Valor desta a\u00e7\u00e3o (pago, grupo P.O.)";
+        var actionHtml = unit.FromPaymentRow
+            ? $"{unit.Amount:N2} {System.Net.WebUtility.HtmlEncode(unit.Currency)}"
+            : "<b>n/d</b> (sem registo de pagamento associado a esta a\u00e7\u00e3o)";
+        var estimateCurrency = ctxMonth.RequestCurrency != null ? System.Net.WebUtility.HtmlEncode(ctxMonth.RequestCurrency) : "(moeda do pedido n\u00e3o registada)";
+        var totalHtml = ctxMonth.Comparable
+            ? $"{ctxMonth.TotalAmount!.Value:N2} {estimateCurrency}"
+            : $"<b>n/d</b> \u2014 {ctxMonth.NotComparableReason}";
+        var impactHtml = ctxMonth.Percentage.HasValue
+            ? $"Este pedido representa <b>{ctxMonth.Percentage.Value:N1}%</b> do acumulado estimado ({estimateCurrency}) do seu departamento."
+            : (ctxMonth.Comparable
+                ? "<b>n/d</b> \u2014 sem base de compara\u00e7\u00e3o (acumulado estimado ou valor estimado deste pedido igual a zero)."
+                : $"<b>n/d</b> \u2014 {ctxMonth.NotComparableReason}");
+        var exclusionHtml = ctxMonth.ExcludedCount > 0
+            ? $"\n        <li style='margin-bottom: 5px'><b>Exclu\u00eddos:</b> {ctxMonth.ExcludedCount} pedido(s) agendado(s)/pago(s) do departamento neste per\u00edodo, por moeda diferente ou n\u00e3o comprovada \u2014 o acumulado e a percentagem n\u00e3o representam toda a atividade do departamento.</li>"
+            : "";
         var htmlOverride = $@"
 <p>O processo financeiro para o pedido <b>{reqRef}</b> foi <b>{paymentState.ToLower()}</b> pelas Finanças.</p>
 <div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:20px 0;'>
-    <h3 style='color:#0369a1; margin-top:0;'>Contexto Financeiro Departamental (Mês Corrente)</h3>
+    <h3 style='color:#0369a1; margin-top:0;'>Contexto Financeiro Departamental (pedidos atualizados no mês corrente)</h3>
     <ul style='color:#0c4a6e; font-size:14px; margin-bottom:0;'>
-        <li style='margin-bottom: 5px'><b>Valor deste Pedido:</b> {thisAmount:N2} {currency}</li>
-        <li style='margin-bottom: 5px'><b>Acumulado (Agendado/Pago):</b> {summedAmount:N2} {currency}</li>
-        <li><b>Impacto:</b> Este pedido representa <b>{percentage:N1}%</b> do total financeiro do seu departamento neste mês.</li>
+        <li style='margin-bottom: 5px'><b>{actionLabel}:</b> {actionHtml}</li>
+        <li style='margin-bottom: 5px'><b>Valor estimado deste Pedido:</b> {ctxMonth.ThisAmount:N2} {estimateCurrency}</li>
+        <li style='margin-bottom: 5px'><b>Acumulado estimado (pedidos agendados/pagos atualizados no mês, apenas comparáveis na moeda do pedido, incl. este):</b> {totalHtml}</li>
+        <li style='margin-bottom: 5px'><b>Impacto:</b> {impactHtml}</li>{exclusionHtml}
+        <li style='font-size:12px;'><b>Período:</b> pedidos do departamento com última atualização desde {ctxMonth.MonthStartUtc:dd/MM/yyyy} (UTC); não comprova que o agendamento/pagamento ocorreu neste mês. Valores estimados dos pedidos, não montantes agendados/pagos.</li>
     </ul>
 </div>";
 
@@ -430,6 +434,81 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailBodyOverride = htmlOverride
             });
         }
+    }
+
+    /// <summary>
+    /// Departmental month context shown to the area managers on PAYMENT_SCHEDULED / PAYMENT_COMPLETED (request-level,
+    /// ESTIMATE-based metric — see docs/APPROVAL_NOTIFICATIONS_PHASES.md §G.13).
+    /// Numerator = this request's <c>EstimatedTotalAmount</c>. Denominator = that plus the estimates of the OTHER requests of
+    /// the same department whose request-level status is scheduled/paid (PAYMENT_SCHEDULED, PAID, PAYMENT_COMPLETED — the set
+    /// Finance calls "financeStatusCodes"), same <c>CurrencyId</c>, updated since the first day of the current UTC month.
+    /// Comparability: a request's estimate is accepted as a single-currency figure only when its currency is registered and
+    /// every non-cancelled P.O. group of the request carries that same currency (vacuously true without groups). The current
+    /// request is included explicitly (never duplicated: others exclude its Id). When the current request is not comparable,
+    /// no aggregate or percentage is rendered; other requests that are not comparable are left out of the sum.
+    /// Open decisions deliberately NOT taken here: plant scope, period basis (UpdatedAtUtc), advance statuses, FX conversion.
+    /// </summary>
+    internal sealed record DepartmentalMonthContext(
+        decimal ThisAmount, string? RequestCurrency, bool Comparable, string? NotComparableReason,
+        decimal? OthersAmount, decimal? TotalAmount, decimal? Percentage, DateTime MonthStartUtc, int ExcludedCount = 0);
+
+    private static readonly string[] DepartmentalScheduledOrPaidStatuses =
+    {
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.Paid,
+        RequestConstants.Statuses.PaymentCompleted
+    };
+
+    private async Task<DepartmentalMonthContext> ComputeDepartmentalMonthContextAsync(Request req, int departmentId)
+    {
+        var thisAmount = req.EstimatedTotalAmount;
+        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var requestCurrency = req.CurrencyId.HasValue
+            ? await _context.Currencies.AsNoTracking().Where(c => c.Id == req.CurrencyId).Select(c => c.Code).FirstOrDefaultAsync()
+            : null;
+
+        // Group currencies of THIS request (non-cancelled): CurrencyCode, else the Currency lookup, else unknown (null).
+        var groupCurrencies = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == req.Id && g.Status != RequestConstants.PoGroupStatuses.Cancelled)
+            .Select(g => g.CurrencyCode != null ? g.CurrencyCode : (g.Currency != null ? g.Currency.Code : null))
+            .ToListAsync();
+
+        string? reason = null;
+        if (string.IsNullOrWhiteSpace(requestCurrency))
+            reason = "moeda do pedido n\u00e3o registada; n\u00e3o \u00e9 poss\u00edvel comprovar uma moeda \u00fanica para a estimativa.";
+        else if (groupCurrencies.Any(c => string.IsNullOrWhiteSpace(c)))
+            reason = "pelo menos um grupo P.O. deste pedido n\u00e3o tem moeda registada; n\u00e3o \u00e9 poss\u00edvel comprovar que a estimativa est\u00e1 numa moeda \u00fanica.";
+        else if (groupCurrencies.Any(c => c != requestCurrency))
+            reason = $"os grupos P.O. deste pedido est\u00e3o em moedas diferentes da moeda do pedido ({System.Net.WebUtility.HtmlEncode(string.Join(", ", groupCurrencies.Distinct().OrderBy(c => c, StringComparer.Ordinal)))} vs {System.Net.WebUtility.HtmlEncode(requestCurrency)}); a estimativa n\u00e3o \u00e9 compar\u00e1vel.";
+
+        if (reason != null)
+            return new DepartmentalMonthContext(thisAmount, requestCurrency, false, reason, null, null, null, monthStart);
+
+        // Other scheduled/paid requests of the department updated this month. Included in the sum only when they have the
+        // same CurrencyId AND are themselves comparable (no non-cancelled group in another or an unknown currency); the
+        // rest are COUNTED so the notice can disclose that the aggregate does not cover the whole department's activity.
+        var candidates = await _context.Requests
+            .AsNoTracking()
+            .Where(r => r.Id != req.Id
+                     && r.DepartmentId == departmentId
+                     && DepartmentalScheduledOrPaidStatuses.Contains(r.Status!.Code)
+                     && r.UpdatedAtUtc >= monthStart)
+            .Select(r => new
+            {
+                r.EstimatedTotalAmount,
+                Included = r.CurrencyId == req.CurrencyId
+                        && !r.PoGroups.Any(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled
+                                             && (g.CurrencyCode != null ? g.CurrencyCode : (g.Currency != null ? g.Currency.Code : null)) != requestCurrency)
+            })
+            .ToListAsync();
+
+        var others = candidates.Where(c => c.Included).Sum(c => c.EstimatedTotalAmount);
+        var excluded = candidates.Count(c => !c.Included);
+
+        var total = others + thisAmount;
+        decimal? percentage = total > 0 && thisAmount > 0 ? Math.Round(thisAmount / total * 100m, 1) : null;
+        return new DepartmentalMonthContext(thisAmount, requestCurrency, true, null, others, total, percentage, monthStart, excluded);
     }
 
     // =====================================================================
@@ -530,7 +609,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var reqRef = evt.RequestNumber;
 
         string subject, headline, bodyHtml;
-        if (isPerAction)
+        if (!isPerAction)
+        {
+            // PAYMENT_SCHEDULED / PAYMENT_COMPLETED (v2.247.2): both Finance actions operate on ONE P.O. group and ONE
+            // RequestPayment row (FinanceController.SchedulePayment / MarkAsPaid). Supplier comes from that group, the
+            // amount/currency/date from that payment row: planned amount + scheduled date when scheduling, actual paid
+            // amount + paid date when completing. Never another group, never the request aggregate, never a mix of
+            // currencies. Without a group/payment reference (legacy request-level transition in RequestsController
+            // operational/schedule-payment|complete-payment) the request header is used and the row is labelled as such.
+            var unit = await ResolveApPaymentUnitAsync(evt, req, supplierName, currency, amount);
+            var isScheduled = evt.EventCode == WorkflowEventCodes.PaymentScheduled;
+            subject = isScheduled
+                ? $"[Portal Gerencial] Pagamento agendado \u2014 Pedido {reqRef}"
+                : $"[Portal Gerencial] Pagamento realizado \u2014 Pedido {reqRef}";
+            headline = isScheduled
+                ? $"Pagamento Agendado \u2014 {companyName}"
+                : $"Pagamento Realizado \u2014 {companyName}";
+            bodyHtml = BuildApPaymentBody(reqRef, req.Title ?? "", unit, isScheduled, evt.ActorName, companyName);
+        }
+        else
         {
             // Content comes from the REGISTERED P.O. GROUP (evt.PoGroupId): a request can carry several groups with
             // different suppliers, totals and currencies, and QUOTATION requests have no header supplier and a zero
@@ -566,13 +663,6 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             subject = $"[Portal Gerencial] {registrationLabel} \u2014 revis\u00e3o de Contas a Pagar \u2014 Pedido {reqRef}";
             headline = $"{registrationLabel} \u2014 Revis\u00e3o Necess\u00e1ria \u2014 {companyName}";
             bodyHtml = BuildApPoRegisteredBody(reqRef, req.Title ?? "", supplierName, amount, currency, registrationLabel, evt.ActorName, companyName);
-        }
-        else
-        {
-            var paymentState = evt.EventCode == WorkflowEventCodes.PaymentScheduled ? "Pagamento Agendado" : "Pagamento Realizado";
-            subject = $"[Portal Gerencial] Novo pedido de pagamento para {companyName} \u2014 Pedido {reqRef}";
-            headline = $"Notifica\u00e7\u00e3o de Contas a Pagar \u2014 {companyName}";
-            bodyHtml = BuildApNotificationBody(reqRef, req.Title ?? "", supplierName, amount, currency, paymentState, evt.ActorName, companyName);
         }
 
         var frontendBaseUrl = _config["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
@@ -627,26 +717,107 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         }
     }
 
+    /// <summary>The affected unit of a scheduling/completion action as rendered to Accounts Payable.</summary>
+    internal sealed record ApPaymentUnit(string SupplierName, decimal Amount, string Currency, DateTime? ScheduledDateUtc, DateTime? PaidDateUtc, bool FromGroup, bool FromPaymentRow = false);
+
     /// <summary>
-    /// Builds the neutral Portuguese email body for Accounts Payable notification.
+    /// Resolves supplier/amount/currency/dates for a PAYMENT_SCHEDULED or PAYMENT_COMPLETED notice from the event's group
+    /// and payment row, scoped to the event's request. Supplier: group.Supplier.Name → group.SupplierNameSnapshot →
+    /// selected quotation's supplier (QUOTATION) → request supplier (legacy PAYMENT groups never synced a snapshot — same
+    /// fall-through as FinanceGroupDisplayResolver) → "—". Currency: payment row → group → selected quotation → request.
+    /// Amount: payment row (planned when scheduling, actual paid when completing) → group total. A missing group reference
+    /// falls back to the request header values the caller resolved and is logged; FromGroup=false labels that in the body.
     /// </summary>
-    private static string BuildApNotificationBody(
-        string reqRef, string requestTitle, string supplierName,
-        decimal amount, string currency, string statusLabel,
-        string actorName, string companyName)
+    private async Task<ApPaymentUnit> ResolveApPaymentUnitAsync(WorkflowEvent evt, Request req, string headerSupplier, string headerCurrency, decimal headerAmount)
+    {
+        var isCompleted = evt.EventCode == WorkflowEventCodes.PaymentCompleted;
+        if (!evt.PoGroupId.HasValue)
+        {
+            _logger.LogWarning("AP notification for {EventCode} on Request {RequestId} carries no PoGroupId; falling back to request header values.", evt.EventCode, evt.RequestId);
+            return new ApPaymentUnit(headerSupplier, headerAmount, headerCurrency, null, isCompleted ? req.ActualPaidAtUtc : null, false);
+        }
+
+        var group = await _context.RequestPoGroups
+            .AsNoTracking()
+            .Where(g => g.Id == evt.PoGroupId.Value && g.RequestId == evt.RequestId)
+            .Select(g => new { SupplierName = g.Supplier != null ? g.Supplier.Name : null, g.SupplierNameSnapshot, g.TotalAmount, g.CurrencyCode })
+            .FirstOrDefaultAsync();
+        if (group == null)
+        {
+            _logger.LogWarning("AP notification for {EventCode} on Request {RequestId}: P.O. group {PoGroupId} not found; falling back to request header values.", evt.EventCode, evt.RequestId, evt.PoGroupId);
+            return new ApPaymentUnit(headerSupplier, headerAmount, headerCurrency, null, isCompleted ? req.ActualPaidAtUtc : null, false);
+        }
+
+        var selectedQuotation = req.SelectedQuotationId.HasValue
+            ? await _context.Quotations.AsNoTracking().Where(q => q.Id == req.SelectedQuotationId.Value).Select(q => new { q.SupplierNameSnapshot, q.Currency }).FirstOrDefaultAsync()
+            : null;
+        var supplier = !string.IsNullOrWhiteSpace(group.SupplierName)
+            ? group.SupplierName!
+            : FinanceGroupDisplayResolver.ResolveSupplierName(group.SupplierNameSnapshot, selectedQuotation != null, selectedQuotation?.SupplierNameSnapshot, req.Supplier?.Name);
+        if (supplier == "---") supplier = "\u2014";
+        var currency = FinanceGroupDisplayResolver.ResolveCurrencyCode(group.CurrencyCode, selectedQuotation != null, selectedQuotation?.Currency, headerCurrency);
+        var amount = group.TotalAmount;
+        DateTime? scheduledAt = null, paidAt = null;
+        var fromPaymentRow = false;
+
+        if (evt.PaymentId.HasValue)
+        {
+            var payment = await _context.RequestPayments
+                .AsNoTracking()
+                .Where(p => p.Id == evt.PaymentId.Value && p.RequestId == evt.RequestId && p.RequestPoGroupId == evt.PoGroupId.Value)
+                .Select(p => new { p.PlannedAmount, p.ActualPaidAmount, p.CurrencyCode, p.ScheduledDateUtc, p.PaidDateUtc })
+                .FirstOrDefaultAsync();
+            if (payment != null)
+            {
+                amount = isCompleted ? (payment.ActualPaidAmount ?? payment.PlannedAmount) : payment.PlannedAmount;
+                if (!string.IsNullOrWhiteSpace(payment.CurrencyCode) && payment.CurrencyCode != "---") currency = payment.CurrencyCode;
+                scheduledAt = payment.ScheduledDateUtc;
+                paidAt = payment.PaidDateUtc;
+                fromPaymentRow = true;
+            }
+            else
+            {
+                _logger.LogWarning("AP notification for {EventCode} on Request {RequestId}: payment row {PaymentId} not found for group {PoGroupId}; using the group total.", evt.EventCode, evt.RequestId, evt.PaymentId, evt.PoGroupId);
+            }
+        }
+        else
+        {
+            _logger.LogWarning("AP notification for {EventCode} on Request {RequestId} carries no PaymentId; using the group total of {PoGroupId}.", evt.EventCode, evt.RequestId, evt.PoGroupId);
+        }
+
+        return new ApPaymentUnit(supplier, amount, currency, scheduledAt, paidAt, true, fromPaymentRow);
+    }
+
+    /// <summary>
+    /// Accounts Payable body for a SCHEDULED or COMPLETED payment. Distinct wording per event: scheduling announces an
+    /// entry in the Accounts Payable list with the planned amount and scheduled date; completion announces a settled
+    /// payment with the actual paid amount and payment date. Amount and supplier are those of the acted-on P.O. group /
+    /// payment row ("Montante agendado (grupo P.O.)" / "Montante pago (grupo P.O.)"); a header fallback is labelled "(pedido)".
+    /// </summary>
+    private static string BuildApPaymentBody(string reqRef, string requestTitle, ApPaymentUnit unit, bool isScheduled, string actorName, string companyName)
     {
         Func<string?, string> enc = System.Net.WebUtility.HtmlEncode;
         var dateTime = DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm") + " (UTC)";
+        var scope = unit.FromGroup ? "grupo P.O." : "pedido";
+        var intro = isScheduled
+            ? "Um pagamento foi <b>agendado</b> pelas Finan&#231;as e entrou na lista de Contas a Pagar."
+            : "Um pagamento foi confirmado como <b>realizado</b> pelas Finan&#231;as.";
+        var amountLabel = isScheduled ? $"Montante agendado ({scope})" : $"Montante pago ({scope})";
+        var dateRow = isScheduled
+            ? (unit.ScheduledDateUtc.HasValue ? $"<tr><td style='padding:6px 0;'><b>Data agendada:</b></td><td style='padding:6px 0;'>{unit.ScheduledDateUtc.Value:dd/MM/yyyy}</td></tr>" : "")
+            : (unit.PaidDateUtc.HasValue ? $"<tr><td style='padding:6px 0;'><b>Data do pagamento:</b></td><td style='padding:6px 0;'>{unit.PaidDateUtc.Value:dd/MM/yyyy}</td></tr>" : "");
+        var statusLabel = isScheduled ? "Pagamento Agendado" : "Pagamento Realizado";
 
         return $@"
-<p>Um pedido de pagamento entrou na lista de Contas a Pagar.</p>
+<p>{intro}</p>
 <div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:20px 0;'>
     <table style='width:100%; font-size:14px; color:#333; border-collapse:collapse;'>
         <tr><td style='padding:6px 0;'><b>Empresa:</b></td><td style='padding:6px 0;'>{enc(companyName)}</td></tr>
         <tr><td style='padding:6px 0;'><b>Pedido:</b></td><td style='padding:6px 0;'>{enc(reqRef)}</td></tr>
         <tr><td style='padding:6px 0;'><b>T&#237;tulo:</b></td><td style='padding:6px 0;'>{enc(requestTitle)}</td></tr>
-        <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(supplierName)}</td></tr>
-        <tr><td style='padding:6px 0;'><b>Montante:</b></td><td style='padding:6px 0;'>{amount:N2} {currency}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(unit.SupplierName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>{amountLabel}:</b></td><td style='padding:6px 0;'>{unit.Amount:N2} {enc(unit.Currency)}</td></tr>
+        {dateRow}
         <tr><td style='padding:6px 0;'><b>Status atual:</b></td><td style='padding:6px 0;'>{statusLabel}</td></tr>
         <tr><td style='padding:6px 0;'><b>A&#231;&#227;o realizada por:</b></td><td style='padding:6px 0;'>{enc(actorName)}</td></tr>
         <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{dateTime}</td></tr>

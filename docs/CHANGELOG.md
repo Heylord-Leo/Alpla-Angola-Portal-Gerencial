@@ -4,7 +4,41 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.1
+v2.247.2
+
+## [v2.247.2] - 2026-10-09 — Payment scheduling/completion e-mails: Accounts Payable group and payment content, distinct wording, departmental context
+
+PATCH after the TEST validation of v2.247.1 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.13, §G.13.1). No migration, no EF
+model change, no configuration change; recipients, routing, AP options, SMTP, redirect, outbox/direct-send mechanisms,
+dedup rules and permissions are unchanged.
+
+TEST (REQ-07/10/2026-538) delivered the scheduling and completion e-mails correctly but (1) both Accounts Payable notices
+showed Supplier "—", (2) the completion notice carried the scheduling subject and body, and (3) the departmental context
+showed "Acumulado 0.00" and "0.0%".
+
+- `WorkflowEvent.PaymentId` (optional) next to `PoGroupId`; `FinanceController.SchedulePayment` and `MarkAsPaid` pass the
+  group and payment row they acted on.
+- Accounts Payable notice for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`: supplier from the acted-on group (name, snapshot,
+  selected quotation, request supplier fall-through), amount and date from the payment row (planned when scheduling,
+  actual paid when completing), currency from the row, group or request; distinct subjects "Pagamento agendado — Pedido X"
+  / "Pagamento realizado — Pedido X" and bodies; HTML-encoded. Events without a group (legacy operational transitions)
+  fall back to the request header labelled "(pedido)". P.O. registration notices unchanged.
+- Departmental notice to area managers: the aggregate filtered request statuses `SCHEDULED`/`PAID`/`PARTIAL_PAID`, none of
+  which exists in the catalog (always 0). Now: "Valor desta ação" from the payment row in its own currency; request-level
+  figures labelled as estimates; aggregate = this estimate + estimates of other comparable scheduled/paid requests of the
+  department (`PAYMENT_SCHEDULED`/`PAID`/`PAYMENT_COMPLETED`, same `CurrencyId`, updated since the first day of the UTC
+  month), "apenas comparáveis na moeda do pedido"; comparability requires a registered request currency and every
+  non-cancelled P.O. group in that currency; "n/d" with a reason otherwise (no currency conversion); "Excluídos: N pedido(s)"
+  disclosure when scheduled/paid requests of the period are left out; percentage only with a real basis; period stated as
+  "última atualização desde dd/MM/yyyy", not proof of payment timing.
+- Documented limitation (unchanged): AP dedup for scheduling/completion is per (request, event, recipient). On a request
+  with several P.O. groups, any group scheduled or completed after the first produces no Accounts Payable notice (a
+  skipped log row is written); requester and departmental mails are still sent. Redesign tracked separately; the
+  multi-group flow is not validated end to end.
+
+Tests: `AccountsPayableNotificationRoutingTests` (distinct wording, group/payment content, fallbacks),
+`FinancePaymentApNotificationTests` (real controller + orchestrator, schedule and pay), `DepartmentalPaymentContextTests`
+(action amounts, mixed currencies, unavailable basis, exclusions, cancelled groups). Backend 2774/2774.
 
 ## [v2.247.1] - 2026-10-09 — Accounts Payable P.O. notice shows the registered group's supplier, total and currency
 
