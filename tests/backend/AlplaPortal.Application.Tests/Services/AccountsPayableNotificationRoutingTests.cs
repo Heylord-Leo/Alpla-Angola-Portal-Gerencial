@@ -216,6 +216,29 @@ public class AccountsPayableNotificationRoutingTests
         Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Success));
     }
 
+    [Fact]
+    public async Task Ap_notice_content_comes_from_the_event_group_not_the_request_header_and_falls_back_without_a_group()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx, notifyOnPoRegistered: true);
+        ctx.Suppliers.Add(new Supplier { Id = 30, Name = "Grupo & Filhos, Lda", TaxId = "8000", RegistrationStatus = "ACTIVE" });
+        var g = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = s.Request.Id, SupplierId = 30, SupplierNameSnapshot = "Grupo & Filhos, Lda", Status = RequestConstants.PoGroupStatuses.Pending, TotalAmount = 1234.56m, CurrencyCode = "USD", CreatedByUserId = s.Buyer };
+        ctx.RequestPoGroups.Add(g); await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        var (o, _, email) = Build(ctx);
+        var bodies = new List<string>();
+        email.Setup(e => e.SendWorkflowNotificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()))
+             .Callback<string, string, string, string, string, string?, string?, string?>((_, _, _, _, body, _, _, _) => bodies.Add(body)).ReturnsAsync(true);
+
+        var withGroup = PoEvent(s.Request, Guid.NewGuid());
+        await o.EmitAsync(new WorkflowEvent { EventCode = withGroup.EventCode, RequestId = withGroup.RequestId, RequestNumber = withGroup.RequestNumber, RequestTitle = withGroup.RequestTitle, TargetStatusCode = withGroup.TargetStatusCode, ActionTaken = withGroup.ActionTaken, ActorUserId = withGroup.ActorUserId, ActorName = withGroup.ActorName, CorrelationId = withGroup.CorrelationId, RequesterId = withGroup.RequesterId, BuyerId = withGroup.BuyerId, DepartmentId = withGroup.DepartmentId, PlantId = withGroup.PlantId, CompanyId = withGroup.CompanyId, PoGroupId = g.Id });
+        Assert.Contains("Grupo &amp; Filhos, Lda", bodies[0]);
+        Assert.Contains($"{1234.56m:N2} USD", bodies[0]);
+        Assert.DoesNotContain("IP WORLD", bodies[0]);
+        Assert.DoesNotContain($"{400758.34m:N2}", bodies[0]);
+
+        await o.EmitAsync(PoEvent(s.Request, Guid.NewGuid())); // no PoGroupId → documented fallback to header values (logged)
+        Assert.Contains("IP WORLD, LDA", bodies[1]);
+    }
+
     // ───────────── dedup granularity ─────────────
 
     [Fact]

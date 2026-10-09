@@ -7417,7 +7417,8 @@ public class RequestsController : BaseController
                 FinalApproverId = request.FinalApproverId,
                 DepartmentId = request.DepartmentId,
                 PlantId = request.PlantId,
-                CompanyId = request.CompanyId
+                CompanyId = request.CompanyId,
+                PoGroupId = poGroup.Id // the registered group: its supplier/total/currency feed the AP notice
             });
         }
         catch (Exception notifyEx)

@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.247.0
+v2.247.1
+
+## [v2.247.1] - 2026-10-09
+
+### Accounts Payable P.O. notice shows the registered group's supplier, total and currency
+
+PATCH after the TEST validation of v2.247.0. The P.O. review notice to Accounts Payable now takes supplier, total and
+currency from the registered P.O. group (`WorkflowEvent.PoGroupId`, set by `RegisterPo`) instead of the request header,
+for initial registration and correction re-registration alike, labelled "Total do grupo P.O." and HTML-encoded. No
+migration, no EF model change, no configuration change.
 
 ## [v2.247.0] - 2026-10-09
 

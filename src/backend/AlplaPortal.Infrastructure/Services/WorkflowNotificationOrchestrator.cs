@@ -532,6 +532,33 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         string subject, headline, bodyHtml;
         if (isPerAction)
         {
+            // Content comes from the REGISTERED P.O. GROUP (evt.PoGroupId): a request can carry several groups with
+            // different suppliers, totals and currencies, and QUOTATION requests have no header supplier and a zero
+            // header estimate (TEST v2.247.0 showed "\u2014" / "0.00 AOA"). Never the header, never another group.
+            if (evt.PoGroupId.HasValue)
+            {
+                var group = await _context.RequestPoGroups
+                    .AsNoTracking()
+                    .Include(g => g.Supplier)
+                    .Where(g => g.Id == evt.PoGroupId.Value && g.RequestId == evt.RequestId)
+                    .Select(g => new { SupplierName = g.Supplier != null ? g.Supplier.Name : g.SupplierNameSnapshot, g.TotalAmount, g.CurrencyCode })
+                    .FirstOrDefaultAsync();
+                if (group != null)
+                {
+                    supplierName = string.IsNullOrWhiteSpace(group.SupplierName) ? "\u2014" : group.SupplierName;
+                    amount = group.TotalAmount;
+                    currency = string.IsNullOrWhiteSpace(group.CurrencyCode) ? currency : group.CurrencyCode;
+                }
+                else
+                {
+                    _logger.LogWarning("AP notification for {EventCode} on Request {RequestId}: P.O. group {PoGroupId} not found; falling back to request header values.", evt.EventCode, evt.RequestId, evt.PoGroupId);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("AP notification for {EventCode} on Request {RequestId} carries no PoGroupId; falling back to request header values.", evt.EventCode, evt.RequestId);
+            }
+
             // "P.O. registered; review required" \u2014 explicitly NOT "payment authorized / ready": a registered P.O. does not
             // establish that post-paid receipt/invoice requirements are satisfied.
             var isCorrection = string.Equals(evt.ActionTaken, "REREGISTER_PO", StringComparison.OrdinalIgnoreCase);
@@ -650,7 +677,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         <tr><td style='padding:6px 0;'><b>Pedido:</b></td><td style='padding:6px 0;'>{enc(reqRef)}</td></tr>
         <tr><td style='padding:6px 0;'><b>T&#237;tulo:</b></td><td style='padding:6px 0;'>{enc(requestTitle)}</td></tr>
         <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(supplierName)}</td></tr>
-        <tr><td style='padding:6px 0;'><b>Montante estimado:</b></td><td style='padding:6px 0;'>{amount:N2} {currency}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Total do grupo P.O.:</b></td><td style='padding:6px 0;'>{amount:N2} {enc(currency)}</td></tr>
         <tr><td style='padding:6px 0;'><b>Situa&#231;&#227;o:</b></td><td style='padding:6px 0;'>{enc(registrationLabel)} &#8212; revis&#227;o necess&#225;ria</td></tr>
         <tr><td style='padding:6px 0;'><b>A&#231;&#227;o realizada por:</b></td><td style='padding:6px 0;'>{enc(actorName)}</td></tr>
         <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{dateTime}</td></tr>

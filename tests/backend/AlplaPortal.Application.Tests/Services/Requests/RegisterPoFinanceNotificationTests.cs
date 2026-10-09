@@ -290,6 +290,61 @@ public class RegisterPoFinanceNotificationTests
     }
 
     [Fact]
+    public async Task Ap_notice_uses_the_registered_group_supplier_total_and_currency_for_registration_and_correction()
+    {
+        // TEST v2.247.0 (REQ-22/09/2026-441, REQ-448): the AP notice showed Supplier "—" and "0.00 AOA" because it read the
+        // request header. A request can hold several groups with different suppliers, totals and currencies.
+        await using var ctx = NewCtx();
+        var s = await SeedAsync(ctx, financeEmail: false, apOnPoRegistered: true);
+        var groupB = Guid.NewGuid();
+        ctx.Suppliers.AddRange(
+            new Supplier { Id = 20, Name = "MULTI BIZ - COMÉRCIO & SERVIÇOS, LDA", TaxId = "6000", RegistrationStatus = "ACTIVE" },
+            new Supplier { Id = 30, Name = "USD VENDOR INC", TaxId = "7000", RegistrationStatus = "ACTIVE" });
+        var groupA = await ctx.RequestPoGroups.SingleAsync(g => g.Id == s.GroupId);
+        groupA.SupplierId = 20; groupA.SupplierNameSnapshot = "MULTI BIZ - COMÉRCIO & SERVIÇOS, LDA"; groupA.TotalAmount = 285000.00m; groupA.CurrencyCode = "AOA";
+        ctx.RequestPoGroups.Add(new RequestPoGroup { Id = groupB, RequestId = s.RequestId, SupplierId = 30, SupplierNameSnapshot = "USD VENDOR INC", Status = RequestConstants.PoGroupStatuses.Pending, TotalAmount = 1500.00m, CurrencyCode = "USD", CreatedByUserId = s.BuyerId });
+        ctx.RequestAttachments.Add(new RequestAttachment { Id = Guid.NewGuid(), RequestId = s.RequestId, RequestPoGroupId = groupB, AttachmentTypeCode = RequestAttachment.TYPE_PO, FileName = "po-b.pdf", StorageReference = "po-b.pdf", UploadedByUserId = s.BuyerId, UploadedAtUtc = DateTime.UtcNow });
+        await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        var (orchestrator, _, email) = RealOrchestrator(ctx);
+        var bodies = new List<(string subject, string body)>();
+        email.Setup(e => e.SendWorkflowNotificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()))
+             .Callback<string, string, string, string, string, string?, string?, string?>((_, _, sub, _, body, _, _, _) => bodies.Add((sub, body))).ReturnsAsync(true);
+
+        // 1) Register group B (USD) — header supplier is IP WORLD (10) and header estimate 400,758.34: neither may appear.
+        Assert.IsType<OkObjectResult>(await BuildBuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, new RegisterPoActionDto { PoGroupId = groupB, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/TesteB" }));
+        var first = Assert.Single(bodies);
+        Assert.Contains("P.O. registada", first.subject);
+        Assert.Contains("USD VENDOR INC", first.body);
+        Assert.Contains($"{1500.00m:N2} USD", first.body);
+        Assert.Contains("Total do grupo P.O.", first.body);
+        Assert.DoesNotContain("IP WORLD", first.body);
+        Assert.DoesNotContain($"{400758.34m:N2}", first.body);
+        Assert.DoesNotContain("Montante estimado", first.body);
+
+        // 2) Finance returned group A → correction re-registration uses group A, HTML-encodes the supplier, keeps its own correlation.
+        ctx.ChangeTracker.Clear();
+        var a = await ctx.RequestPoGroups.SingleAsync(g => g.Id == s.GroupId); a.Status = RequestConstants.Statuses.WaitingPoCorrection;
+        var r = await ctx.Requests.SingleAsync(x => x.Id == s.RequestId); r.StatusId = S_WAITING_PO_CORRECTION;
+        await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        Assert.IsType<OkObjectResult>(await BuildBuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, Dto(s.GroupId)));
+        Assert.Equal(2, bodies.Count);
+        var second = bodies[1];
+        Assert.Contains("P.O. corrigida e re-registada", second.subject);
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("MULTI BIZ - COMÉRCIO & SERVIÇOS, LDA"), second.body); // HTML-encoded supplier (&amp; and numeric entities for accents)
+        Assert.Contains("&amp; SERVI", second.body);
+        Assert.DoesNotContain("COMÉRCIO & SERVIÇOS", second.body);
+        Assert.Contains($"{285000.00m:N2} AOA", second.body);
+        Assert.DoesNotContain("USD VENDOR INC", second.body);                        // not the other group
+
+        // Correlation and dedup unchanged: two distinct actions, two success rows keyed by their own history rows.
+        var reg = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "REGISTER_PO");
+        var rereg = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "REREGISTER_PO");
+        var logs = await ctx.AccountsPayableNotificationLogs.AsNoTracking().OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(new[] { reg.Id, rereg.Id }, logs.Where(l => l.Success).Select(l => l.CorrelationId!.Value).ToArray());
+        Assert.DoesNotContain(logs, l => l.Skipped);
+    }
+
+    [Fact]
     public async Task Request_without_plant_still_notifies_finance_in_app_but_queues_no_email_unchanged_fallback()
     {
         await using var ctx = NewCtx();

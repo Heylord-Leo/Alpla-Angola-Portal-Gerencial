@@ -873,3 +873,38 @@ pure form helpers, not by rendering the panel.
    `CorrelationId NULL`).
 7. Disable both switches again (or leave as decided); confirm no `EMAIL_ENV_POLICY` row of the day shows a
    `Para:` address other than the redirect mailbox.
+
+### G.12 v2.247.0 on TEST: delivery confirmed, AP notice content defect (working tree, unreleased)
+
+**Delivery evidence (TEST, 2026-10-09, build 2.247.0+c7c4f73).** REQ-22/09/2026-441 (`RequestId
+FB421E61-5CC6-4D60-BAA6-50816D041346`), registered P.O. group `3355E6AE-9913-4CCE-BED4-5CB91DA7E3A7`, supplier
+MULTI BIZ - COMÉRCIO E SERVIÇOS, LDA, group total 285,000.00 AOA; `REGISTER_PO` history / correlation
+`96D37D7F-D9CB-4B4D-BACE-A2C2E7499C92`. With both company options enabled: one Accounts Payable e-mail and seven individual
+Finance e-mails, all redirected to the TEST mailbox. Routing, switches, dedup and redirect behaved as designed.
+
+**Content defect.** The AP notice displayed Supplier "—" and "0.00 AOA" (also REQ-08/10/2026-448): the AP method read
+`Request.Supplier` and `Request.EstimatedTotalAmount` from the request header, which are empty for group-based requests
+and in any case belong to the request, not to the registered group.
+
+**Fix (narrow).** `WorkflowEvent.PoGroupId` carries the registered group; `RegisterPo` sets it; for `PO_REGISTERED` the
+AP method reads supplier (name, else snapshot), `TotalAmount` and `CurrencyCode` from **that** group, labels the amount
+"Total do grupo P.O." and HTML-encodes supplier and currency. Initial registration and permitted correction
+re-registration use the same source; another group's data and the aggregate request total are never used. Without a
+`PoGroupId` (not produced by current code) the method logs a warning and falls back to the header values as before.
+Recipients, switches, permissions, SMTP, delivery mechanism, history correlation, dedup and the scheduling/completion
+content are unchanged.
+
+**Tests.** `RegisterPoFinanceNotificationTests.Ap_notice_uses_the_registered_group_supplier_total_and_currency_for_registration_and_correction`
+(real controller + orchestrator; PAYMENT request with header supplier IP WORLD and estimate 400,758.34; group A MULTI
+BIZ 285,000.00 AOA, group B USD VENDOR 1,500.00 USD; registering B shows only B's data; correction of A shows only A's
+data with "&amp;" encoding; two success log rows keyed by the two history rows, none skipped) and
+`AccountsPayableNotificationRoutingTests.Ap_notice_content_comes_from_the_event_group_not_the_request_header_and_falls_back_without_a_group`.
+
+**Bounded TEST validation (after deployment; redirect to leonardo.cintra@alpla.com active, environment `TEST`).**
+1. On a request with at least two P.O. groups of different suppliers (or a QUOTATION request), register one group:
+   the AP notice shows that group's supplier, "Total do grupo P.O." with that group's amount and currency; the
+   `AccountsPayableNotificationLogs` row carries the `REGISTER_PO` history Id as `CorrelationId`.
+2. Return the P.O. from Finance and re-register the corrected group: notice "P.O. corrigida e re-registada" with that
+   group's data; a second log row with the `REREGISTER_PO` correlation.
+3. Confirm a scheduling notice still reads "Novo pedido de pagamento" with its previous content, and that
+   `EMAIL_ENV_POLICY` rows show only the redirect mailbox as destination.

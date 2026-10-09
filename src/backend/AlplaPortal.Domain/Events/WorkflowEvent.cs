@@ -50,6 +50,13 @@ public record WorkflowEvent
     public int? PlantId { get; init; }
     public int? CompanyId { get; init; }
 
+    /// <summary>
+    /// The P.O. group the event is about (PO_REGISTERED: the group just registered or re-registered). A request can
+    /// hold several groups with different suppliers, totals and currencies; e-mail content for the event must come
+    /// from THIS group, never from the request header or another group. Null for request-level events.
+    /// </summary>
+    public Guid? PoGroupId { get; init; }
+
     // --- Adjustment V2 (Phase 3) context — populated only for the batch-adjustment events ---
 
     /// <summary>The lot number the adjustment was requested on (e.g. "Lote #1").</summary>

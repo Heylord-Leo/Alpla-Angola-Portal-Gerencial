@@ -4,7 +4,24 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.0
+v2.247.1
+
+## [v2.247.1] - 2026-10-09 — Accounts Payable P.O. notice shows the registered group's supplier, total and currency
+
+PATCH after the TEST validation of v2.247.0 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.12). No migration, no EF model
+change, no configuration change; recipients, switches, permissions, SMTP, delivery mechanism, dedup and the payment
+scheduling/completion content are unchanged.
+
+TEST (REQ-22/09/2026-441, REQ-08/10/2026-448) delivered the P.O. review notice correctly but displayed Supplier "—" and
+"0.00 AOA": the notice read `Request.Supplier` and `Request.EstimatedTotalAmount` from the request header, which are
+empty for group-based requests and in any case belong to the request, not to the registered group. The workflow event
+now carries the registered P.O. group (`WorkflowEvent.PoGroupId`, set by `RegisterPo`), and the `PO_REGISTERED` notice
+renders that group's supplier (name, else snapshot), `TotalAmount` and `CurrencyCode`, labelled "Total do grupo P.O.",
+HTML-encoded, for both initial registration and permitted correction re-registration. Another group's data and the
+aggregate request total are never used; without a group reference the previous header fallback applies with a warning.
+
+Tests: real controller + orchestrator with two groups of different supplier, amount and currency (registration and
+correction, encoding, correlation and dedup unchanged); orchestrator-level group vs fallback. Backend 2758/2758.
 
 ## [v2.247.0] - 2026-10-09 — P.O. registration notifications: Finance e-mail context fix, Accounts Payable review notice and per-company e-mail options
 
