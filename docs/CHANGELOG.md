@@ -4,7 +4,27 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.2
+v2.247.3
+
+## [v2.247.3] - 2026-10-12 — Departmental payment summary for a requester who is also the eligible manager
+
+PATCH after the TEST validation of v2.247.2 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.14). No migration, no EF model
+change, no configuration change; manager resolution, Accounts Payable notices, routing permissions, SMTP, redirect,
+dedup rules and other workflows are unchanged.
+
+TEST REQ-05/10/2026-526 (department 4, plant 1): the requester was also the only manager resolved by the department/plant
+cascade. The payment fan-out queued the requester notice and skipped the manager entry for the same person, so no
+departmental summary was produced; a second recipient would have been dropped by the outbox dedup.
+
+- `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`: when a resolved eligible manager is the requester, the requester's recipient
+  entry is replaced by a copy whose subject is the standard requester subject followed by "(com informação de
+  departamento)" and whose body is the standard requester sentence followed by the v2.247.2 departmental block (action
+  amount, estimate labels, comparability, exclusion disclosure, period line — same renderer, same calculation). One
+  e-mail and one in-app notification for that person and action.
+- Other resolved managers keep the departmental notice; requesters who are not managers keep the standard notice.
+
+Tests: `DepartmentalRequesterManagerTests` (requester is the only manager / one of several / not a manager, both events).
+Backend 2780/2780.
 
 ## [v2.247.2] - 2026-10-09 — Payment scheduling/completion e-mails: Accounts Payable group and payment content, distinct wording, departmental context
 

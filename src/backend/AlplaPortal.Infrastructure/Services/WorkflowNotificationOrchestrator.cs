@@ -408,8 +408,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var exclusionHtml = ctxMonth.ExcludedCount > 0
             ? $"\n        <li style='margin-bottom: 5px'><b>Exclu\u00eddos:</b> {ctxMonth.ExcludedCount} pedido(s) agendado(s)/pago(s) do departamento neste per\u00edodo, por moeda diferente ou n\u00e3o comprovada \u2014 o acumulado e a percentagem n\u00e3o representam toda a atividade do departamento.</li>"
             : "";
-        var htmlOverride = $@"
-<p>O processo financeiro para o pedido <b>{reqRef}</b> foi <b>{paymentState.ToLower()}</b> pelas Finanças.</p>
+        var departmentalContextHtml = $@"
 <div style='background-color:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:6px; margin:20px 0;'>
     <h3 style='color:#0369a1; margin-top:0;'>Contexto Financeiro Departamental (pedidos atualizados no mês corrente)</h3>
     <ul style='color:#0c4a6e; font-size:14px; margin-bottom:0;'>
@@ -420,13 +419,34 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         <li style='font-size:12px;'><b>Período:</b> pedidos do departamento com última atualização desde {ctxMonth.MonthStartUtc:dd/MM/yyyy} (UTC); não comprova que o agendamento/pagamento ocorreu neste mês. Valores estimados dos pedidos, não montantes agendados/pagos.</li>
     </ul>
 </div>";
+        var htmlOverride = $"\n<p>O processo financeiro para o pedido <b>{reqRef}</b> foi <b>{paymentState.ToLower()}</b> pelas Finanças.</p>" + departmentalContextHtml;
 
         var subjectOverride = $"[{paymentState.ToUpper()}] Informação de departamento - Pedido {reqRef}";
 
         foreach (var approver in areaApprovers)
         {
-            // The Requester is already receiving the raw Requester-scoped email above. We bypass if they are the same person.
-            if (approver.UserId == evt.RequesterId) continue;
+            if (approver.UserId == evt.RequesterId)
+            {
+                // Requester who is ALSO a resolved eligible manager (TEST REQ-05/10/2026-526): one person, one action, ONE
+                // e-mail and ONE in-app notification. The requester entry queued above is replaced by a copy that carries the
+                // requester wording PLUS the departmental context; a second recipient would be dropped by the outbox dedup
+                // (CorrelationId + RecipientEmail) and the departmental summary would be lost, as it was before.
+                var idx = recipients.FindIndex(r => r.UserId == evt.RequesterId);
+                if (idx >= 0)
+                {
+                    var config = await ResolveEventConfigAsync(evt);
+                    var requesterBody = config?.EmailBody ?? $"O pagamento para o pedido <b>{reqRef}</b> foi {paymentState.ToLower()} pela equipa financeira.";
+                    var requesterSubject = config?.EmailSubject ?? $"Pagamento {paymentState} — {reqRef}";
+                    recipients[idx] = recipients[idx] with
+                    {
+                        EmailSubjectOverride = $"{requesterSubject} (com informação de departamento)",
+                        EmailBodyOverride = $"<p>{requesterBody}</p>" + departmentalContextHtml
+                    };
+                    continue;
+                }
+                // Requester entry absent (inactive requester cannot happen here: the cascade also requires an active user) —
+                // fall through and treat the person as a plain manager so the summary is never silently lost.
+            }
 
             recipients.Add(new NotificationRecipient(approver.UserId, approver.Email, approver.FullName)
             {

@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.247.2
+v2.247.3
+
+## [v2.247.3] - 2026-10-12
+
+### Departmental payment summary for a requester who is also the eligible manager
+
+PATCH after the TEST validation of v2.247.2. For `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`, a requester who is also a
+resolved eligible departmental manager now receives one e-mail carrying the requester wording and the departmental
+summary (subject suffixed "(com informação de departamento)"); other managers and non-manager requesters unchanged.
+No migration, no EF model change, no configuration change.
 
 ## [v2.247.2] - 2026-10-09
 

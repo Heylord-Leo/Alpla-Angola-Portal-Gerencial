@@ -1113,3 +1113,46 @@ behaviour: comparable when the request currency is registered, action amount "n/
 exclusion count of 3 in the main aggregation scenario; no disclosure when a cancelled USD group is the only
 foreign-currency element (other request included, 62.5 %); cancelled USD group on this request does not break
 comparability. Backend 2774/2774.
+
+### G.14 Departmental payment notice for a requester who is also the eligible manager (working tree, unreleased)
+
+**TEST evidence (v2.247.2, 2026-10-09/10).** REQ-05/10/2026-526 (`RequestId 8C03AB46-97C6-41A2-A5BB-F18414EAE4C4`,
+department 4, plant 1): scheduling and completion each produced one Accounts Payable log (`Success=1`) and exactly one
+outbox row, to the requester, `SENT`, no error — and no departmental message. Leonardo is both the requester and the
+only manager the department/plant cascade resolves. By contrast REQ-07/10/2026-538 (department 8, requester Adelaide,
+manager Milton) and REQ-531 produced a requester notice and a departmental notice per event.
+
+**Confirmed cause (source).** In the payment fan-out the requester is added first with the standard wording; then each
+resolved manager whose `UserId` equals the requester's was skipped ("already receiving the requester e-mail"). The
+departmental summary was therefore never rendered for that person. A second recipient for the same address would not
+have helped: the outbox dedup (`CorrelationId` + `RecipientEmail`) drops it.
+
+**Business requirement.** A requester who is also an eligible departmental manager must receive the departmental
+summary; avoiding duplicates must not discard that content.
+
+**Fix (narrow).** Manager resolution (department + plant cascade, eligibility filters) is unchanged. When a resolved
+manager is the requester, the requester's recipient entry is replaced by a copy whose subject is the standard requester
+subject followed by "(com informação de departamento)" and whose body is the standard requester sentence followed by the
+v2.247.2 departmental block (action amount, estimate labels, comparability, exclusion disclosure, period line — same
+renderer, same calculation). Result: one e-mail and one in-app notification for that person and action. Other resolved
+managers keep the departmental notice ("[AGENDADO]/[REALIZADO] Informação de departamento …"); requesters who are not
+managers keep the standard notice without context. Should the requester entry be absent (cannot happen: both paths require
+an active user), the person is treated as a plain manager so the summary is never dropped. Accounts Payable notices,
+routing permissions, SMTP, configuration, payment dedup and other workflows untouched.
+
+**Tests.** `DepartmentalRequesterManagerTests` (both events as theory data): requester is the only eligible manager →
+exactly one outbox row to the requester, combined subject, requester wording kept, departmental context present, manager
+intro not duplicated, one in-app notification; requester is one of two managers → requester combined row + other
+manager's departmental row, two in-app notifications; requester not a manager → standard requester row without context +
+manager's departmental row. `DepartmentalPaymentContextTests` unchanged and green.
+
+**Bounded TEST validation (after deployment; redirect active).**
+1. Schedule and then complete a payment on a request whose requester is the only manager of its department at its
+   plant (REQ-526's configuration): per event, exactly ONE outbox row for that person, subject ending "(com informação de
+   departamento)", body containing the requester sentence and the "Contexto Financeiro Departamental" block; one in-app
+   notification; one AP log row as before.
+2. Repeat on a request whose department has that requester plus another manager: two rows per event — the combined one
+   for the requester and "[…] Informação de departamento" for the other manager.
+3. Repeat on a request whose requester is not a manager (REQ-531's configuration): requester row without the block,
+   manager row with it — unchanged from v2.247.2.
+4. `EMAIL_ENV_POLICY` rows show only the redirect mailbox as destination; no AP or Finance change.
