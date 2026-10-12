@@ -82,7 +82,7 @@ public class FinancePaymentApNotificationTests
         return s;
     }
 
-    private static (FinanceController Controller, Mock<IEmailService> Email) Build(ApplicationDbContext ctx, Guid actorId)
+    private static (FinanceController Controller, Mock<IEmailService> Email, WorkflowNotificationOrchestrator Orchestrator) Build(ApplicationDbContext ctx, Guid actorId)
     {
         var inApp = new Mock<INotificationService>();
         inApp.Setup(n => n.CreateNotificationWithDedupAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string?>())).ReturnsAsync(true);
@@ -104,7 +104,7 @@ public class FinancePaymentApNotificationTests
                 User = new ClaimsPrincipal(new ClaimsIdentity(new List<Claim> { new(ClaimTypes.NameIdentifier, actorId.ToString()), new(ClaimTypes.Role, RoleConstants.SystemAdministrator) }, "Test"))
             }
         };
-        return (controller, email);
+        return (controller, email, orchestrator);
     }
 
     private static List<(string To, string Subject, string Headline, string Body, string? Cc)> ApMails(Mock<IEmailService> email) =>
@@ -115,7 +115,7 @@ public class FinancePaymentApNotificationTests
     public async Task SchedulePayment_sends_the_AP_scheduling_notice_with_the_scheduled_groups_supplier_planned_amount_currency_and_date()
     {
         await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
-        var (controller, email) = Build(ctx, s.Actor);
+        var (controller, email, _) = Build(ctx, s.Actor);
 
         var result = await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupA, ScheduledDate = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc), Comment = "Agendado" });
         Assert.IsType<OkResult>(result);
@@ -139,21 +139,26 @@ public class FinancePaymentApNotificationTests
 
         // AP log + recipients + dedup unchanged
         var log = Assert.Single(await ctx.AccountsPayableNotificationLogs.ToListAsync());
-        Assert.True(log.Success); Assert.False(log.Skipped); Assert.Null(log.ErrorMessage); Assert.Null(log.CorrelationId); Assert.Equal(WorkflowEventCodes.PaymentScheduled, log.EventCode);
+        Assert.True(log.Success); Assert.False(log.Skipped); Assert.Null(log.ErrorMessage); Assert.Equal(WorkflowEventCodes.PaymentScheduled, log.EventCode);
+        var schedHistory = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == s.RequestId && h.ActionTaken == RequestConstants.Statuses.PaymentScheduled);
+        Assert.Equal(schedHistory.Id, log.CorrelationId);                                                   // per-action identity = the persisted history row
         Assert.Contains(await ctx.EmailOutbox.ToListAsync(), x => x.RecipientEmail == "requester@test.local" && x.EventCode == WorkflowEventCodes.PaymentScheduled);
 
-        // Documented, unchanged limitation: AP dedup for scheduling is per (request, event, recipient) — scheduling the
-        // second group of the same request does not produce a second AP notice (a skipped log row is written instead).
+        // Second group of the same request: a distinct persisted action, so a second AP notice with ITS data.
         Assert.IsType<OkResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupB, ScheduledDate = new DateTime(2026, 10, 21, 0, 0, 0, DateTimeKind.Utc) }));
-        Assert.Single(ApMails(email));
-        Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Skipped));
+        var mails = ApMails(email);
+        Assert.Equal(2, mails.Count);
+        Assert.Contains($"{System.Net.WebUtility.HtmlEncode("USD VENDOR & CO")}", mails[1].Body);
+        Assert.Contains($"{1500m:N2} USD", mails[1].Body);
+        Assert.Contains("21/10/2026", mails[1].Body);
+        Assert.Equal(0, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Skipped));
     }
 
     [Fact]
     public async Task MarkAsPaid_sends_the_AP_completion_notice_with_the_paid_groups_supplier_actual_amount_currency_and_date()
     {
         await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
-        var (controller, email) = Build(ctx, s.Actor);
+        var (controller, email, _) = Build(ctx, s.Actor);
 
         var result = await controller.MarkAsPaid(s.RequestId, new ConfirmPaymentDto { RequestPoGroupId = s.GroupB, PaymentProofAttachmentId = s.ProofId, ActualPaidAmount = 1500m, PaidDate = new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc), Comment = "Pago" });
         Assert.IsType<OkResult>(result);
@@ -175,7 +180,87 @@ public class FinancePaymentApNotificationTests
         Assert.Equal(1500m, pay.ActualPaidAmount);
 
         var log = Assert.Single(await ctx.AccountsPayableNotificationLogs.ToListAsync());
-        Assert.True(log.Success); Assert.Null(log.CorrelationId); Assert.Equal(WorkflowEventCodes.PaymentCompleted, log.EventCode);
+        Assert.True(log.Success); Assert.Equal(WorkflowEventCodes.PaymentCompleted, log.EventCode);
+        var paidHistory = await ctx.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "PAYMENT_COMPLETED");
+        Assert.Equal(paidHistory.Id, log.CorrelationId);
         Assert.Contains(await ctx.EmailOutbox.ToListAsync(), x => x.RecipientEmail == "requester@test.local" && x.EventCode == WorkflowEventCodes.PaymentCompleted);
+    }
+    [Fact]
+    public async Task Scheduling_and_completing_both_groups_yields_four_notices_and_re_emitting_each_persisted_action_is_skipped()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (controller, email, orchestrator) = Build(ctx, s.Actor);
+
+        Assert.IsType<OkResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupA, ScheduledDate = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.IsType<OkResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupB, ScheduledDate = new DateTime(2026, 10, 21, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.IsType<OkResult>(await controller.MarkAsPaid(s.RequestId, new ConfirmPaymentDto { RequestPoGroupId = s.GroupA, PaymentProofAttachmentId = s.ProofId, ActualPaidAmount = 126787.50m, PaidDate = new DateTime(2026, 10, 22, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.IsType<OkResult>(await controller.MarkAsPaid(s.RequestId, new ConfirmPaymentDto { RequestPoGroupId = s.GroupB, PaymentProofAttachmentId = s.ProofId, ActualPaidAmount = 1500m, PaidDate = new DateTime(2026, 10, 23, 0, 0, 0, DateTimeKind.Utc) }));
+
+        var mails = ApMails(email);
+        Assert.Equal(4, mails.Count);
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("PTA-ÁGUAS, LDA"), mails[0].Body); Assert.Contains($"{126787.50m:N2} AOA", mails[0].Body); Assert.Contains("20/10/2026", mails[0].Body); Assert.Contains("Pagamento agendado", mails[0].Subject);
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("USD VENDOR & CO"), mails[1].Body);  Assert.Contains($"{1500m:N2} USD", mails[1].Body);      Assert.Contains("21/10/2026", mails[1].Body); Assert.Contains("Pagamento agendado", mails[1].Subject);
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("PTA-ÁGUAS, LDA"), mails[2].Body); Assert.Contains($"{126787.50m:N2} AOA", mails[2].Body); Assert.Contains("22/10/2026", mails[2].Body); Assert.Contains("Pagamento realizado", mails[2].Subject);
+        Assert.Contains(System.Net.WebUtility.HtmlEncode("USD VENDOR & CO"), mails[3].Body);  Assert.Contains($"{1500m:N2} USD", mails[3].Body);      Assert.Contains("23/10/2026", mails[3].Body); Assert.Contains("Pagamento realizado", mails[3].Subject);
+        Assert.DoesNotContain("USD", mails[0].Body); Assert.DoesNotContain("AOA", mails[1].Body);
+
+        var logs = await ctx.AccountsPayableNotificationLogs.OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(4, logs.Count); Assert.All(logs, l => { Assert.True(l.Success); Assert.False(l.Skipped); Assert.NotNull(l.CorrelationId); });
+        Assert.Equal(4, logs.Select(l => l.CorrelationId).Distinct().Count());
+        var histories = await ctx.RequestStatusHistories.AsNoTracking().Where(h => h.RequestId == s.RequestId).Select(h => h.Id).ToListAsync();
+        Assert.All(logs, l => Assert.Contains(l.CorrelationId!.Value, histories));                         // every identity is a persisted history row
+
+        // Re-emit each persisted action exactly as the controller did (same history Id, group and payment row): all skipped.
+        var payA = await ctx.RequestPayments.AsNoTracking().Where(p => p.RequestPoGroupId == s.GroupA).OrderBy(p => p.Id).FirstAsync();
+        var payB = await ctx.RequestPayments.AsNoTracking().Where(p => p.RequestPoGroupId == s.GroupB).OrderBy(p => p.Id).FirstAsync();
+        var req = await ctx.Requests.AsNoTracking().SingleAsync(r => r.Id == s.RequestId);
+        foreach (var (log, groupId, payId) in new[] { (logs[0], s.GroupA, payA.Id), (logs[1], s.GroupB, payB.Id), (logs[2], s.GroupA, payA.Id), (logs[3], s.GroupB, payB.Id) })
+        {
+            await orchestrator.EmitAsync(new AlplaPortal.Domain.Events.WorkflowEvent
+            {
+                EventCode = log.EventCode, RequestId = s.RequestId, RequestNumber = Seed.RequestNumber, TargetStatusCode = log.EventCode, ActionTaken = log.EventCode,
+                ActorUserId = s.Actor, ActorName = "Replay", CorrelationId = log.CorrelationId!.Value, RequesterId = req.RequesterId,
+                DepartmentId = req.DepartmentId, PlantId = req.PlantId, CompanyId = req.CompanyId, PoGroupId = groupId, PaymentId = payId
+            });
+        }
+        Assert.Equal(4, ApMails(email).Count);                                                              // no additional send
+        var skipped = await ctx.AccountsPayableNotificationLogs.Where(l => l.Skipped).OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(logs.Select(l => l.CorrelationId).ToArray(), skipped.Select(l => l.CorrelationId).ToArray());
+
+        // Endpoint replay (as opposed to technical re-emission): repeating the same action on an already scheduled / already
+        // paid group is refused by the status guards before any history row or event — nothing is sent and nothing is logged.
+        Assert.IsType<BadRequestObjectResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupA, ScheduledDate = new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.IsType<BadRequestObjectResult>(await controller.MarkAsPaid(s.RequestId, new ConfirmPaymentDto { RequestPoGroupId = s.GroupB, PaymentProofAttachmentId = s.ProofId, ActualPaidAmount = 1500m, PaidDate = new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.Equal(4, ApMails(email).Count);
+        Assert.Equal(8, await ctx.AccountsPayableNotificationLogs.CountAsync());                             // 4 success + 4 skipped, nothing new
+        Assert.Equal(4, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == s.RequestId && (h.ActionTaken == RequestConstants.Statuses.PaymentScheduled || h.ActionTaken == "PAYMENT_COMPLETED")));
+    }
+
+    [Fact]
+    public async Task Rescheduling_after_a_cancelled_schedule_is_a_distinct_action_with_its_own_notice_and_no_ap_notice_for_the_cancellation()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (controller, email, _) = Build(ctx, s.Actor);
+
+        Assert.IsType<OkResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupA, ScheduledDate = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc) }));
+        Assert.IsType<OkResult>(await controller.CancelSchedule(s.RequestId, new CancelSchedulePaymentDto { RequestPoGroupId = s.GroupA, Reason = "Fornecedor pediu nova data de pagamento para a fatura." }));
+        Assert.Single(ApMails(email));                                                                      // cancellation: no Accounts Payable notice (unchanged)
+        Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync());
+
+        Assert.IsType<OkResult>(await controller.SchedulePayment(s.RequestId, new SchedulePaymentDto { RequestPoGroupId = s.GroupA, ScheduledDate = new DateTime(2026, 10, 27, 0, 0, 0, DateTimeKind.Utc) }));
+        var mails = ApMails(email);
+        Assert.Equal(2, mails.Count);
+        Assert.Contains("20/10/2026", mails[0].Body);
+        Assert.Contains("27/10/2026", mails[1].Body);                                                       // the new schedule, not the cancelled one
+        Assert.Contains($"{126787.50m:N2} AOA", mails[1].Body);
+
+        var rows = await ctx.RequestPayments.AsNoTracking().Where(p => p.RequestPoGroupId == s.GroupA).OrderBy(p => p.Id).ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(RequestPayment.PaymentStatuses.Cancelled, rows[0].PaymentStatus);
+        Assert.Equal(RequestPayment.PaymentStatuses.Scheduled, rows[1].PaymentStatus);
+        var logs = await ctx.AccountsPayableNotificationLogs.OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(2, logs.Count); Assert.All(logs, l => Assert.True(l.Success && !l.Skipped));
+        Assert.NotEqual(logs[0].CorrelationId, logs[1].CorrelationId);                                       // two PAYMENT_SCHEDULED history rows, two identities
+        Assert.Equal(2, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == s.RequestId && h.ActionTaken == RequestConstants.Statuses.PaymentScheduled));
     }
 }

@@ -4,7 +4,39 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.3
+v2.247.4
+
+## [v2.247.4] - 2026-10-12 — Accounts Payable payment notices deduplicated per persisted action for multi-group requests
+
+PATCH after the TEST validation of v2.247.3 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.15, §G.15.1). No migration, no EF
+model change, no configuration change; recipients, AP switches, permissions, SMTP, redirect, requester/departmental
+notices and the direct-send mechanism are unchanged.
+
+Limitation fixed: AP dedup for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` was keyed by (request, event, recipient), so after
+the first P.O. group's action the other groups' scheduling or completion on the same request was logged as skipped and
+no notice was sent.
+
+- Payment events that carry group context (set by `FinanceController.SchedulePayment` / `MarkAsPaid`) are now deduplicated
+  per persisted action: the identity is the action's `RequestStatusHistory` row Id (the event `CorrelationId`), stored on
+  the AP log row — the same identity `PO_REGISTERED` uses. `PaymentId` was rejected as identity (one payment row can carry
+  several actions).
+- Legacy request-level fallback preserved: payment events without group context (operational transitions) keep
+  (request, event, recipient) dedup with `CorrelationId NULL`.
+- Database: the filtered unique index `IX_ApNotifLogs_Dedup` (RequestId, EventCode, RecipientEmail, CorrelationId) already
+  enforces the rule; verified on the LocalDB sandbox (duplicate success per action refused, distinct actions accepted,
+  one legacy NULL row accepted, second NULL row refused).
+- Compatibility (documented, not changed): successful rows written by v2.247.0–v2.247.3 keep `CorrelationId NULL` and are
+  neither rewritten nor resent. A re-emission without group context is still skipped; a grouped emission is sent (intended
+  for another group's action; an undetected duplicate only for a hypothetical technical re-emission of a v2.247.2/v2.247.3
+  action — no re-emission path exists in the backend; endpoint replay is refused by the status guards).
+- Remaining limitations (unchanged): check-then-send without a transaction (concurrent emissions of one action may both
+  send; the index refuses the second log row); a cancelled schedule produces no AP notice; the advance rescheduling
+  endpoint (`b2p/schedule-advance`) emits no workflow event and therefore no AP notice.
+
+Tests: `AccountsPayableNotificationRoutingTests` (two groups scheduled and completed → four notices, re-emission skipped,
+same payment row with two history identities, historical NULL row behaviour, legacy fallback),
+`FinancePaymentApNotificationTests` (real controller + orchestrator lifecycle, cancel/reschedule, endpoint replay refused),
+`AccountsPayableDedupRelationalTests` (LocalDB index coverage). Backend 2786/2786.
 
 ## [v2.247.3] - 2026-10-12 — Departmental payment summary for a requester who is also the eligible manager
 

@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.247.3
+v2.247.4
+
+## [v2.247.4] - 2026-10-12
+
+### Accounts Payable payment notices deduplicated per persisted action for multi-group requests
+
+PATCH after the TEST validation of v2.247.3. `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` AP notices for events carrying
+group context are deduplicated by the action's history row Id (same identity as `PO_REGISTERED`), so each P.O. group's
+scheduling and completion gets its own notice while a re-emission of the same persisted action stays skipped. Legacy
+request-level fallback, historical NULL-correlation rows and the direct-send concurrency limitation unchanged and
+documented. No migration (existing filtered unique index), no EF model change, no configuration change.
 
 ## [v2.247.3] - 2026-10-12
 

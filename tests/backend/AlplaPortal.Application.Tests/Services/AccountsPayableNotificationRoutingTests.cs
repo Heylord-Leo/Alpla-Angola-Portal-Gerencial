@@ -285,36 +285,108 @@ public class AccountsPayableNotificationRoutingTests
     }
 
     [Fact]
-    public async Task Payment_scheduling_and_completion_have_distinct_wording_and_keep_request_level_dedup_recipients_and_logs()
+    public async Task Payment_scheduling_and_completion_have_distinct_wording_and_each_group_action_notifies_ap_once()
     {
         await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
         var (a, b, payA, payB) = await SeedTwoGroupsAsync(ctx, s);
         var (o, _, email) = Build(ctx);
+        var schedA = Guid.NewGuid(); var schedB = Guid.NewGuid(); var compA = Guid.NewGuid(); var compB = Guid.NewGuid();
 
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), a.Id, payA.Id));
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid(), b.Id, payB.Id)); // different correlation AND group, same request → still deduped (unchanged rule)
-        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, Guid.NewGuid(), b.Id, payB.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, schedA, a.Id, payA.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, schedB, b.Id, payB.Id));   // second group: its own action, its own notice
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, compA, a.Id, payA.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, compB, b.Id, payB.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, schedA, a.Id, payA.Id));   // same persisted action re-emitted: skipped
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, compB, b.Id, payB.Id));    // same persisted action re-emitted: skipped
 
-        // Recipients (TO + CC + company name) unchanged; exactly one mail per event code
-        VerifyApSend(email, Times.Exactly(2));
+        // Recipients (TO + CC + company name) unchanged; one mail per distinct action
+        VerifyApSend(email, Times.Exactly(4));
         var mails = ApMails(email);
-        var scheduled = Assert.Single(mails, m => m.Subject.Contains("Pagamento agendado"));
-        var completed = Assert.Single(mails, m => m.Subject.Contains("Pagamento realizado"));
+        Assert.Equal(2, mails.Count(m => m.Subject.Contains("Pagamento agendado")));
+        Assert.Equal(2, mails.Count(m => m.Subject.Contains("Pagamento realizado")));
         Assert.DoesNotContain(mails, m => m.Subject.Contains("Novo pedido de pagamento"));
-        Assert.Contains("Pagamento Agendado \u2014 AlplaPLASTICO", scheduled.Headline);
-        Assert.Contains("Pagamento Realizado \u2014 AlplaPLASTICO", completed.Headline);
+        var scheduled = mails.First(m => m.Subject.Contains("Pagamento agendado"));
+        var completed = mails.First(m => m.Subject.Contains("Pagamento realizado"));
+        Assert.Contains("Pagamento Agendado", scheduled.Headline); Assert.Contains("AlplaPLASTICO", scheduled.Headline);
+        Assert.Contains("Pagamento Realizado", completed.Headline); Assert.Contains("AlplaPLASTICO", completed.Headline);
         Assert.Contains("foi <b>agendado</b> pelas Finan&#231;as e entrou na lista de Contas a Pagar", scheduled.Body);
         Assert.Contains("<b>Status atual:</b></td><td style='padding:6px 0;'>Pagamento Agendado", scheduled.Body);
         Assert.Contains("confirmado como <b>realizado</b> pelas Finan&#231;as", completed.Body);
         Assert.DoesNotContain("entrou na lista de Contas a Pagar", completed.Body);
         Assert.Contains("<b>Status atual:</b></td><td style='padding:6px 0;'>Pagamento Realizado", completed.Body);
 
-        var logs = await ctx.AccountsPayableNotificationLogs.ToListAsync();
-        Assert.Equal(2, logs.Count(l => l.Success));
-        Assert.Equal(1, logs.Count(l => l.Skipped && l.EventCode == WorkflowEventCodes.PaymentScheduled));
-        Assert.All(logs, l => Assert.Null(l.CorrelationId)); // payment rows keep NULL correlation
+        var logs = await ctx.AccountsPayableNotificationLogs.OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(new[] { schedA, schedB, compA, compB }, logs.Where(l => l.Success && !l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
+        Assert.Equal(new[] { schedA, compB }, logs.Where(l => l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
         Assert.All(logs, l => Assert.Equal("alpla-plasticos-accounts@alpla.com", l.RecipientEmail));
         Assert.Contains(await ctx.EmailOutbox.ToListAsync(), x => x.RecipientEmail == "buyer@test.local"); // requester routing unchanged
+    }
+
+    [Fact]
+    public async Task Same_payment_row_with_distinct_persisted_history_identities_yields_separate_notices_and_replaying_either_identity_is_skipped()
+    {
+        // Identity is the action's history row, NOT the payment row: the advance cancel path resets the same RequestPayment
+        // row to PLANNED and it is rescheduled later, and scheduling + completion of a FINAL_BALANCE row share one PaymentId.
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (a, _, payA, _) = await SeedTwoGroupsAsync(ctx, s);
+        var (o, _, email) = Build(ctx);
+        var firstSchedule = Guid.NewGuid(); var secondSchedule = Guid.NewGuid();
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, firstSchedule, a.Id, payA.Id));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, secondSchedule, a.Id, payA.Id)); // same group, SAME payment row, new persisted action
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, firstSchedule, a.Id, payA.Id));  // replay of the first identity
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, secondSchedule, a.Id, payA.Id)); // replay of the second identity
+
+        VerifyApSend(email, Times.Exactly(2));
+        var logs = await ctx.AccountsPayableNotificationLogs.OrderBy(l => l.Id).ToListAsync();
+        Assert.Equal(new[] { firstSchedule, secondSchedule }, logs.Where(l => l.Success && !l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
+        Assert.Equal(new[] { firstSchedule, secondSchedule }, logs.Where(l => l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
+    }
+
+    [Fact]
+    public async Task Historical_null_correlation_success_row_blocks_a_faithful_legacy_re_emission_but_not_a_grouped_emission()
+    {
+        // Compatibility statement for rows written by v2.247.0–v2.247.3 (CorrelationId NULL): a re-emission WITHOUT group context
+        // (the shape every pre-v2.247.2 event had) is still skipped by the request-level rule; a grouped emission is sent — which
+        // is the intended "another group's action" outcome and, for a hypothetical technical re-emission of a v2.247.2/v2.247.3
+        // action with its group context restored, an undetected duplicate. No such re-emission path exists in the backend.
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (a, _, payA, _) = await SeedTwoGroupsAsync(ctx, s);
+        ctx.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog
+        {
+            RequestId = s.Request.Id, CompanyId = 1, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = "alpla-plasticos-accounts@alpla.com",
+            Subject = "historical", SentAtUtc = DateTime.UtcNow.AddDays(-3), Success = true, Skipped = false, CorrelationId = null
+        });
+        await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        var (o, _, email) = Build(ctx);
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid()));              // faithful legacy re-emission → skipped
+        VerifyApSend(email, Times.Never());
+        Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Skipped && l.CorrelationId == null));
+
+        var grouped = Guid.NewGuid();
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, grouped, a.Id, payA.Id));       // grouped action → sent (not matched by the NULL row)
+        VerifyApSend(email, Times.Once());
+        Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Success && !l.Skipped && l.CorrelationId == grouped));
+        Assert.Equal(1, await ctx.AccountsPayableNotificationLogs.CountAsync(l => l.Success && !l.Skipped && l.CorrelationId == null)); // historical row untouched
+    }
+
+    [Fact]
+    public async Task Legacy_payment_events_without_group_context_keep_request_level_dedup_with_null_correlation()
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx);
+        var (o, _, email) = Build(ctx);
+
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid()));
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentScheduled, Guid.NewGuid()));   // different history, no group: still one per request/event/recipient
+        await o.EmitAsync(PaymentEvent(s.Request, WorkflowEventCodes.PaymentCompleted, Guid.NewGuid()));
+
+        VerifyApSend(email, Times.Exactly(2));
+        var logs = await ctx.AccountsPayableNotificationLogs.ToListAsync();
+        Assert.Equal(2, logs.Count(l => l.Success && !l.Skipped));
+        Assert.Equal(1, logs.Count(l => l.Skipped && l.EventCode == WorkflowEventCodes.PaymentScheduled));
+        Assert.All(logs, l => Assert.Null(l.CorrelationId));
+        Assert.All(ApMails(email), m => Assert.Contains("(pedido)", m.Body));
     }
 
     [Fact]

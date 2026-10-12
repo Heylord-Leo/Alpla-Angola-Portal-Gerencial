@@ -1156,3 +1156,100 @@ manager's departmental row. `DepartmentalPaymentContextTests` unchanged and gree
 3. Repeat on a request whose requester is not a manager (REQ-531's configuration): requester row without the block,
    manager row with it — unchanged from v2.247.2.
 4. `EMAIL_ENV_POLICY` rows show only the redirect mailbox as destination; no AP or Finance change.
+
+### G.15 Accounts Payable dedup per payment action for multi-group requests (working tree, unreleased)
+
+**Preserved evidence (v2.247.3, TEST).** REQ-537: one combined requester/manager e-mail per payment event, both SENT and
+received through the redirect, plus one successful Accounts Payable notice per event. That behaviour is unchanged here.
+
+**Confirmed limitation (source, v2.247.0–v2.247.3).** AP dedup for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` was keyed by
+(RequestId, EventCode, RecipientEmail) with `CorrelationId NULL`. After the first group's action succeeded, another group's
+scheduling or completion on the same request was logged as `Skipped` and no notice was sent.
+
+**Persisted identity chosen: the action's `RequestStatusHistory` row.** Inspection of the lifecycle:
+- `FinanceController.SchedulePayment` always creates a NEW `RequestPayment` row (sequence from the request-scoped allocator)
+  and a `PAYMENT_SCHEDULED` history row; the event's `CorrelationId` is that history Id.
+- `MarkAsPaid` completes the active FINAL_BALANCE row or creates one, and writes a `PAYMENT_COMPLETED` history row (the
+  `CorrelationId`). A completed row is never completed again; the status guards refuse a second settlement.
+- `CancelSchedule` sets the scheduled FINAL_BALANCE row to `CANCELLED` (a later reschedule creates a new row) but, for an
+  ADVANCE, resets the SAME row to `PLANNED` and it is rescheduled later. So `PaymentId` is NOT a stable identity: one row
+  can carry several actions. The history row is unique per action, persisted before emission, and identical on a
+  re-emission of the same action — the same identity `PO_REGISTERED` already uses.
+
+**Fix (narrow, `SendAccountsPayableNotificationAsync`).** Payment events that carry group context (`PoGroupId` set by the
+two Finance endpoints) are deduplicated per action: the log row stores `CorrelationId = history Id` and the "already sent"
+check matches on it. Events without group context (legacy request-level operational transitions
+`operational/schedule-payment` / `operational/complete-payment`) keep the request-level rule with `CorrelationId NULL`
+— documented fallback, unchanged. `PO_REGISTERED` is unchanged. Recipients, switches, permissions, SMTP, redirect,
+requester/departmental notices and the direct-send mechanism are untouched.
+
+**Database constraint — no migration.** `IX_ApNotifLogs_Dedup` (RequestId, EventCode, RecipientEmail, CorrelationId),
+filtered `Success = 1 AND Skipped = 0`, already expresses the rule: distinct correlations are accepted, a duplicate success
+for one action is refused, and NULL correlations remain unique per request/event/recipient. `has-pending-model-changes`
+reports none; no entity change.
+
+**Compatibility with existing successful logs.** Pre-upgrade payment rows keep `CorrelationId NULL` and are never rewritten
+or deleted. They are not matched by the per-action rule, which is correct: the action they recorded cannot be re-emitted
+(there is no replay mechanism; any new action persists a new history row). Consequence for a request whose first group was
+notified before the upgrade: a later group's action is notified (intended). One legacy NULL row may coexist with per-action
+rows for the same request/event/recipient; a second NULL row is still refused.
+
+**Remaining limitations.**
+- Check-then-send (no transaction around the `AnyAsync` + direct send + log insert): two concurrent emissions of the same
+  action could both send; the index then refuses the second log row. Unchanged, documented since G.11.
+- A cancelled schedule produces no Accounts Payable notice (the `PAYMENT_SCHEDULE_CANCELLED` event has no AP branch);
+  AP learns of the new date only through the reschedule notice. Unchanged.
+- Advance scheduling through `/schedule` still emits `PAYMENT_SCHEDULED` wording. Unchanged.
+
+**Tests.** `AccountsPayableNotificationRoutingTests`: schedule A and B then complete both → four notices, each with its
+own group data, re-emission of each action skipped with a `Skipped` row carrying the same correlation; legacy no-context
+events keep request-level dedup with NULL correlation and the "(pedido)" label. `FinancePaymentApNotificationTests`
+(real controller + orchestrator): second group's scheduling notified with its own supplier/amount/currency/date; log rows
+carry the persisted history Ids; both groups scheduled and completed → four notices; re-emission of each persisted action
+(same history Id, group and payment row) skipped; cancel-schedule then reschedule → two scheduling notices with the two
+dates, no AP notice for the cancellation, two payment rows (CANCELLED, SCHEDULED), two history identities.
+`AccountsPayableDedupRelationalTests` (LocalDB sandbox only): grouped events accepted per action, index refuses a forced
+duplicate success for a scheduling and for a completion action, accepts a further distinct action and one legacy NULL row,
+refuses a second NULL row; legacy and `PO_REGISTERED` tests unchanged.
+
+**Bounded TEST validation (after deployment; redirect active).**
+1. On a QUOTATION request with two P.O. groups (different suppliers), schedule group A then group B: two AP scheduling
+   notices, each with its own supplier, amount, currency and date; two `AccountsPayableNotificationLogs` rows with
+   `Success=1`, distinct non-NULL `CorrelationId` equal to the two `PAYMENT_SCHEDULED` history Ids; no `Skipped` row.
+2. Complete both groups: two AP completion notices; two more success rows with the `PAYMENT_COMPLETED` history Ids.
+3. Cancel the schedule of a third group (or a new request's group) and schedule it again: one scheduling notice per
+   schedule action, none for the cancellation.
+4. Requester and departmental e-mails, in-app notifications, AP switches and `EMAIL_ENV_POLICY` destinations unchanged.
+5. Requests notified before the upgrade keep their NULL-correlation rows; nothing is resent for them.
+
+#### G.15.1 Review corrections: historical rows and the same-payment-row lifecycle
+
+**Historical NULL-correlation rows — what is and is not demonstrated.** Two kinds of "replay" must be distinguished.
+- *Endpoint replay* (a user or client repeats the action): refused by the status guards before any history row or event —
+  a second `SchedulePayment` on a scheduled group and a second `MarkAsPaid` on a paid group return 400 and write nothing
+  (covered by `FinancePaymentApNotificationTests`). A reschedule after a cancellation is a NEW action with its own history
+  row and is meant to notify.
+- *Technical re-emission* (the same `WorkflowEvent` delivered to the orchestrator again): the backend has NO such path.
+  `EmitAsync` is called only from `FinanceController`, `RequestsController`, `ApprovalBatchController` and
+  `RequestCompletionService` (request finalization), always right after the action that persisted the history row; workflow
+  events are not queued, stored or replayed anywhere. Protection against a technical re-emission of a historical action is
+  therefore provided by the absence of a mechanism, not by the dedup rule.
+- Rows written by v2.247.0–v2.247.3 keep `CorrelationId NULL`. A re-emission WITHOUT group context (the shape of every
+  pre-v2.247.2 event) is still skipped by the request-level rule. A grouped emission is sent: that is the intended outcome
+  for another group's action and would be an undetected duplicate only for a hypothetical technical re-emission of a
+  v2.247.2/v2.247.3 action with its group context restored (covered by
+  `Historical_null_correlation_success_row_blocks_a_faithful_legacy_re_emission_but_not_a_grouped_emission`). Nothing is
+  resent and no historical row is backfilled or rewritten.
+
+**Same `PaymentId`, several actions — corrected statement.** Row reuse is real at the data level: `CancelSchedule` resets an
+ADVANCE row to `PLANNED` and `ScheduleAdvancePayment` (`b2p/schedule-advance`) reschedules that same row. That endpoint
+emits NO workflow event, so this lifecycle never reaches the Accounts Payable branch today; the earlier §G.15 wording
+implied otherwise. The AP-notified emitters (`/schedule`, `/pay`) create a new row per scheduling and complete the
+scheduled row, so scheduling and completion of one FINAL_BALANCE row already share a `PaymentId` across two event codes.
+The history-row identity is kept because it is uniform with `PO_REGISTERED`, independent of row reuse, and already
+exercised by the shared-row scheduling/completion case. Coverage:
+`Same_payment_row_with_distinct_persisted_history_identities_yields_separate_notices_and_replaying_either_identity_is_skipped`
+(same group, same payment row, two history identities → two notices; replaying either identity → skipped row with that
+identity) and the controller lifecycle test (schedule A and B, complete both: four notices on two payment rows; re-emission
+of each persisted action skipped; endpoint replay refused with no new rows). Cancel-then-reschedule through `/schedule`
+produces two payment rows and two identities, as tested; no current path produces two AP-notified emissions on one row.

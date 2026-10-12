@@ -574,12 +574,22 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             return;
         }
 
-        // Dedup granularity:
-        //  - payment scheduled/completed: per (Request, Event, Recipient) — unchanged; CorrelationId stays NULL.
-        //  - P.O. registered: per ACTION — a request may hold several P.O. groups and legitimate corrections, each a
-        //    distinct REGISTER_PO/REREGISTER_PO history row (the event's CorrelationId). Request-level dedup would
-        //    silently swallow the 2nd group or a correction; a repeated emission of the SAME action is still skipped.
-        var isPerAction = evt.EventCode == WorkflowEventCodes.PoRegistered;
+        // Dedup granularity (v2.247.4):
+        //  - P.O. registered: per ACTION — the REGISTER_PO/REREGISTER_PO history row Id (evt.CorrelationId).
+        //  - Payment scheduled/completed WITH group context (FinanceController.SchedulePayment / MarkAsPaid set PoGroupId):
+        //    per ACTION as well — the PAYMENT_SCHEDULED / PAYMENT_COMPLETED history row Id. A request may hold several P.O.
+        //    groups and a group may be legitimately rescheduled after a cancellation; each such action persists its own
+        //    history row before the event is emitted, so distinct actions get distinct notices while a re-emission of the
+        //    SAME persisted action is still skipped. PaymentId is NOT the identity: the advance cancel path resets the same
+        //    RequestPayment row to PLANNED and reschedules it, so one row can carry several actions.
+        //  - Payment events WITHOUT group context (legacy request-level operational transitions): per
+        //    (Request, Event, Recipient) with CorrelationId NULL — unchanged fallback.
+        //  The filtered unique index IX_ApNotifLogs_Dedup (RequestId, EventCode, RecipientEmail, CorrelationId) enforces the
+        //  same rule in SQL Server: distinct correlations are accepted, a duplicate success for one action is refused, and
+        //  NULL correlations (legacy rows, which are never rewritten) stay unique per request/event/recipient.
+        var isGroupedPaymentEvent = (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted)
+                                    && evt.PoGroupId.HasValue;
+        var isPerAction = evt.EventCode == WorkflowEventCodes.PoRegistered || isGroupedPaymentEvent;
         Guid? dedupCorrelation = isPerAction ? evt.CorrelationId : null;
         var alreadySent = await _context.AccountsPayableNotificationLogs
             .AnyAsync(l => l.RequestId == evt.RequestId
@@ -629,7 +639,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         var reqRef = evt.RequestNumber;
 
         string subject, headline, bodyHtml;
-        if (!isPerAction)
+        if (evt.EventCode != WorkflowEventCodes.PoRegistered)
         {
             // PAYMENT_SCHEDULED / PAYMENT_COMPLETED (v2.247.2): both Finance actions operate on ONE P.O. group and ONE
             // RequestPayment row (FinanceController.SchedulePayment / MarkAsPaid). Supplier comes from that group, the

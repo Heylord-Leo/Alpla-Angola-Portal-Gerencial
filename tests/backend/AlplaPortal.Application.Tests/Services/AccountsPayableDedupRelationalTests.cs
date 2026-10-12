@@ -68,7 +68,7 @@ public class AccountsPayableDedupRelationalTests
         var e = create(); set.Add(e); return e;
     }
 
-    private sealed record Seed(Guid RequestId, int CompanyId, string ApEmail, Guid UserId, int? ConfigId);
+    private sealed record Seed(Guid RequestId, int CompanyId, string ApEmail, Guid UserId, int? ConfigId, Guid GroupId);
 
     private static async Task<Seed> SeedAsync(bool notifyOnPoRegistered)
     {
@@ -86,8 +86,10 @@ public class AccountsPayableDedupRelationalTests
         ctx.AccountsPayableNotificationConfigs.Add(cfg);
         var request = new Request { Id = Guid.NewGuid(), RequestNumber = tag, Title = tag, StatusId = status.Id, RequestTypeId = paymentType.Id, DepartmentId = 1, CompanyId = company.Id, RequesterId = user.Id, BuyerId = user.Id, EstimatedTotalAmount = 100m, CreatedAtUtc = DateTime.UtcNow, RequestedDateUtc = DateTime.UtcNow };
         ctx.Requests.Add(request);
+        var group = new RequestPoGroup { Id = Guid.NewGuid(), RequestId = request.Id, SupplierNameSnapshot = tag + " SUPPLIER", TotalAmount = 100m, CurrencyCode = "AOA", Status = RequestConstants.Statuses.PoIssued, CreatedByUserId = user.Id, CreatedAtUtc = DateTime.UtcNow };
+        ctx.RequestPoGroups.Add(group);
         await ctx.SaveChangesAsync();
-        return new Seed(request.Id, company.Id, apEmail, user.Id, cfg.Id);
+        return new Seed(request.Id, company.Id, apEmail, user.Id, cfg.Id, group.Id);
     }
 
     private static async Task CleanupAsync(Seed s)
@@ -96,6 +98,7 @@ public class AccountsPayableDedupRelationalTests
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM AccountsPayableNotificationLogs WHERE RequestId = {s.RequestId}");
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM EmailOutbox WHERE RequestId = {s.RequestId}");
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM InformationalNotifications WHERE UserId = {s.UserId}");
+        await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM RequestPoGroups WHERE RequestId = {s.RequestId}");
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM Requests WHERE Id = {s.RequestId}");
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM AccountsPayableNotificationConfigs WHERE CompanyId = {s.CompanyId}");
         await ctx.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM Companies WHERE Id = {s.CompanyId}");
@@ -116,14 +119,15 @@ public class AccountsPayableDedupRelationalTests
         return (new WorkflowNotificationOrchestrator(ctx, inApp.Object, email.Object, config, NullLogger<WorkflowNotificationOrchestrator>.Instance, adminLog.Object, routing.Object), email);
     }
 
-    private static WorkflowEvent Evt(Seed s, string code, Guid correlation, string action) => new()
+    private static WorkflowEvent Evt(Seed s, string code, Guid correlation, string action, Guid? groupId = null) => new()
     {
         EventCode = code, RequestId = s.RequestId, RequestNumber = "REQ-DEDUP", TargetStatusCode = "PO_ISSUED", ActionTaken = action,
-        ActorUserId = s.UserId, ActorName = "Tester", CorrelationId = correlation, RequesterId = s.UserId, BuyerId = s.UserId, DepartmentId = 1, PlantId = null, CompanyId = s.CompanyId
+        ActorUserId = s.UserId, ActorName = "Tester", CorrelationId = correlation, RequesterId = s.UserId, BuyerId = s.UserId, DepartmentId = 1, PlantId = null, CompanyId = s.CompanyId,
+        PoGroupId = groupId
     };
 
     [Fact]
-    public async Task Payment_events_keep_one_success_per_request_event_recipient_with_null_correlation_and_the_index_enforces_it()
+    public async Task Legacy_payment_events_without_group_context_keep_one_success_per_request_event_recipient_with_null_correlation_and_the_index_enforces_it()
     {
         if (!CanConnect()) return;
         var s = await SeedAsync(notifyOnPoRegistered: false);
@@ -147,6 +151,58 @@ public class AccountsPayableDedupRelationalTests
                 // Database constraint: a second SUCCESS row for the same (request, event, recipient) with NULL correlation is refused.
                 verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = s.ApEmail, Subject = "dup", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = null });
                 var ex = await Assert.ThrowsAsync<DbUpdateException>(() => verify.SaveChangesAsync());
+                Assert.True(ApprovalReminderDigestCycleIsUniqueViolation(ex));
+            }
+        }
+        finally { await CleanupAsync(s); }
+    }
+
+    [Fact]
+    public async Task Grouped_payment_events_record_each_action_once_and_the_index_refuses_a_duplicate_success_for_the_same_action()
+    {
+        if (!CanConnect()) return;
+        var s = await SeedAsync(notifyOnPoRegistered: false);
+        var schedA = Guid.NewGuid(); var schedB = Guid.NewGuid(); var compA = Guid.NewGuid(); var compB = Guid.NewGuid();
+        try
+        {
+            await using (var ctx = NewCtx())
+            {
+                var (o, email) = Build(ctx);
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentScheduled, schedA, "PAYMENT_SCHEDULED", s.GroupId));
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentScheduled, schedB, "PAYMENT_SCHEDULED", s.GroupId)); // second scheduling action (e.g. another group or a reschedule)
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentCompleted, compA, "PAYMENT_COMPLETED", s.GroupId));
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentCompleted, compB, "PAYMENT_COMPLETED", s.GroupId));
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentScheduled, schedA, "PAYMENT_SCHEDULED", s.GroupId)); // same persisted action re-emitted: skipped
+                await o.EmitAsync(Evt(s, WorkflowEventCodes.PaymentCompleted, compB, "PAYMENT_COMPLETED", s.GroupId)); // same persisted action re-emitted: skipped
+                email.Verify(e => e.SendWorkflowNotificationAsync(s.ApEmail, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Exactly(4));
+            }
+            await using (var verify = NewCtx())
+            {
+                var logs = await verify.AccountsPayableNotificationLogs.AsNoTracking().Where(l => l.RequestId == s.RequestId).OrderBy(l => l.Id).ToListAsync();
+                Assert.Equal(6, logs.Count);
+                Assert.Equal(new[] { schedA, schedB, compA, compB }, logs.Where(l => l.Success && !l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
+                Assert.Equal(new[] { schedA, compB }, logs.Where(l => l.Skipped).Select(l => l.CorrelationId!.Value).ToArray());
+
+                // Database constraint: a forced second SUCCESS row for the SAME scheduling action is refused by IX_ApNotifLogs_Dedup …
+                verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = s.ApEmail, Subject = "dup", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = schedA });
+                var ex = await Assert.ThrowsAsync<DbUpdateException>(() => verify.SaveChangesAsync());
+                Assert.True(ApprovalReminderDigestCycleIsUniqueViolation(ex));
+                verify.ChangeTracker.Clear();
+
+                // … the same for a completion action …
+                verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentCompleted, RecipientEmail = s.ApEmail, Subject = "dup", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = compB });
+                ex = await Assert.ThrowsAsync<DbUpdateException>(() => verify.SaveChangesAsync());
+                Assert.True(ApprovalReminderDigestCycleIsUniqueViolation(ex));
+                verify.ChangeTracker.Clear();
+
+                // … while a further distinct scheduling action is accepted, and so is one legacy NULL-correlation success row
+                // next to the per-action rows (legacy history is never rewritten; a second NULL row would be refused as before).
+                verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = s.ApEmail, Subject = "reschedule", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = Guid.NewGuid() });
+                verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = s.ApEmail, Subject = "legacy", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = null });
+                await verify.SaveChangesAsync();
+                Assert.Equal(6, await verify.AccountsPayableNotificationLogs.CountAsync(l => l.RequestId == s.RequestId && l.Success && !l.Skipped));
+                verify.AccountsPayableNotificationLogs.Add(new AccountsPayableNotificationLog { RequestId = s.RequestId, CompanyId = s.CompanyId, EventCode = WorkflowEventCodes.PaymentScheduled, RecipientEmail = s.ApEmail, Subject = "legacy dup", SentAtUtc = DateTime.UtcNow, Success = true, Skipped = false, CorrelationId = null });
+                ex = await Assert.ThrowsAsync<DbUpdateException>(() => verify.SaveChangesAsync());
                 Assert.True(ApprovalReminderDigestCycleIsUniqueViolation(ex));
             }
         }
