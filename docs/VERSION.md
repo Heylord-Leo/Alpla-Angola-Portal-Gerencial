@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.247.4
+v2.247.5
+
+## [v2.247.5] - 2026-10-12
+
+### Batch approval currency/timestamp and shared request-level amount resolver for the departmental payment summary
+
+PATCH. Batch final approval now records the request approved currency (single code, "MULTIPLE" or unknown) and the
+first approval timestamp, never inferring legacy batches. The departmental payment summary uses one request-level
+resolver (recorded approved → derived currency for legacy batch approvals under strict evidence → estimate fallback →
+unresolved/excluded) for the current request and every candidate, with disclosed bases, composition and exclusions.
+No migration, no EF model change, no configuration change.
 
 ## [v2.247.4] - 2026-10-12
 

@@ -92,8 +92,8 @@ public class DepartmentalRequesterManagerTests
     {
         Assert.Contains(Context, body);
         Assert.Contains(scheduled ? $"<b>Valor desta ação (agendado, grupo P.O.):</b> {364800m:N2} AOA" : $"<b>Valor desta ação (pago, grupo P.O.):</b> {364800m:N2} AOA", body);
-        Assert.Contains($"<b>Valor estimado deste Pedido:</b> {364800m:N2} AOA", body);
-        Assert.Contains("apenas comparáveis na moeda do pedido, incl. este):</b>", body);
+        Assert.Contains($"<b>Valor deste pedido:</b> {364800m:N2} AOA", body);
+        Assert.Contains("na moeda resolvida deste pedido, incl. este):</b>", body);
         Assert.Contains($"representa <b>{100m:N1}%</b>", body);
         Assert.Contains("<b>Período:</b> pedidos do departamento com última atualização desde", body);
     }

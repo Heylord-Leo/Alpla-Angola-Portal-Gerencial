@@ -4,7 +4,44 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.4
+v2.247.5
+
+## [v2.247.5] - 2026-10-12 — Batch approval currency/timestamp and a shared request-level amount resolver for the departmental payment summary
+
+PATCH after the TEST investigations of v2.247.4 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.17, §G.18, §G.18.1, §G.18.2).
+No migration, no EF model change, no configuration change. Accounts Payable content and dedup, SMTP, switches, routing,
+other notification templates, original estimates, approval permissions, status transitions, cumulative amounts and
+concurrency protection are unchanged.
+
+Batch approval metadata (`ApprovalBatchController.BatchFinalApprove`): the batch path never wrote `ApprovedCurrencyCode`
+or `ApprovedAtUtc` (66 batch-approved requests on TEST). The currency is now taken from the amounts actually summed into
+the batch (activated groups; on the zero-total fallback the candidates'/legacy items' quotations) as a single code,
+"MULTIPLE" or unknown; a non-zero contribution of unknown currency makes the batch currency unknown. Request level: the
+first recorded approval sets the currency and the timestamp; later batches keep the code, record "MULTIPLE" when they
+differ or when "MULTIPLE" is already recorded, and become unknown when a later batch is unknown. Previously approved
+batches without a recorded currency are never inferred and never re-stamped with a new approval date. Pending groups
+never contribute. Mixed-currency cumulative amounts remain a pre-existing limitation, now labelled "MULTIPLE".
+
+Departmental payment summary: one shared request-level resolver (`DepartmentalAmountResolver`) for the current request
+and every candidate — recorded approved total with consistent single currency; else, for legacy batch approvals without
+a recorded currency, the approved total with a currency derived from current consistent data under strict evidence
+(request currency registered; all non-cancelled groups in it; no cancelled or pending groups; every batch approved with
+supporting final-approval history; batch sum and group total equal to the approved total within two-decimal rounding);
+else the estimate under the estimate comparability rules; else unresolved and excluded with the reason (never silently
+replaced by an estimate). Each request counted once; buckets strictly by resolved currency; payment action amounts stay
+outside the ratio; department scope, candidate statuses and the UpdatedAtUtc month filter unchanged. Labels disclose the
+base of each amount, the composition of the aggregate and the exclusions; the derived currency is explicitly labelled as
+derived from current data, not recorded at approval.
+
+Live read-only P6 reconciliation on TEST (2026-10-12 11:00:36 UTC): REQ-26/09/2026-478 DERIVED_APPROVED 351,179.88 AOA;
+departmental aggregate 11,241,804.46 AOA, impact 3.1 %; three recorded-approved, one derived, no estimate fallback; one
+USD request excluded; no unresolved candidates; +351,179.88 AOA over the estimate-based aggregate. Validates the SQL
+diagnostic on current data only. The exact historical cause of REQ-478's zero estimate remains unproven; nothing is
+backfilled or resent.
+
+Tests: `DepartmentalAmountResolverTests` (decision table, tolerances, batch/cumulative currency truth table),
+`DepartmentalPaymentContextTests`, `DepartmentalRequesterManagerTests`, `BatchApprovalCurrencyTests`,
+`AccountsPayableDepartmentalResolverRelationalTests` (LocalDB). Backend 2837/2837.
 
 ## [v2.247.4] - 2026-10-12 — Accounts Payable payment notices deduplicated per persisted action for multi-group requests
 

@@ -21,14 +21,11 @@ using Xunit;
 namespace AlplaPortal.Application.Tests.Services;
 
 /// <summary>
-/// Regression for TEST REQ-07/10/2026-538 (v2.247.1): the departmental "Contexto Financeiro" block on PAYMENT_SCHEDULED /
-/// PAYMENT_COMPLETED always showed "Acumulado 0.00" and "0.0%" because the aggregate filtered request statuses
-/// "SCHEDULED" / "PAID" / "PARTIAL_PAID", none of which exists in the catalog (PAYMENT_SCHEDULED / PAYMENT_COMPLETED do).
-/// Final rule (docs §G.13): "Valor desta ação" from the acted-on payment row (planned when scheduling, actual paid when
-/// completing, its own currency); request-level figures labelled as ESTIMATES; aggregate = this request's estimate + the
-/// estimates of OTHER comparable requests of the same department (status PAYMENT_SCHEDULED/PAID/PAYMENT_COMPLETED, same
-/// CurrencyId, updated since the first day of the current UTC month); comparability requires a registered request
-/// currency and every non-cancelled group in that same currency; "n/d" with a reason otherwise.
+/// Departmental "Contexto Financeiro" block on PAYMENT_SCHEDULED / PAYMENT_COMPLETED through the REAL orchestrator on an
+/// InMemory context. v2.247.2 fixed the dead status filter; this version (docs §G.18) applies ONE request-level resolver
+/// (recorded approved → derived approved for legacy batch approvals → estimate fallback → unresolved) to the current
+/// request and to every denominator candidate, counts each request once, buckets strictly by resolved currency, and
+/// discloses composition and exclusions. Candidate statuses and the UpdatedAtUtc month filter are unchanged.
 /// </summary>
 public class DepartmentalPaymentContextTests
 {
@@ -58,10 +55,11 @@ public class DepartmentalPaymentContextTests
         await ctx.SaveChangesAsync();
     }
 
-    private static Request NewRequest(string number, decimal amount, int statusId, int dept = Dept, int? currencyId = AOA, DateTime? updatedAtUtc = null) => new()
+    private static Request NewRequest(string number, decimal amount, int statusId, int dept = Dept, int? currencyId = AOA, DateTime? updatedAtUtc = null,
+        decimal? approved = null, string? approvedCurrency = null) => new()
     {
         Id = Guid.NewGuid(), RequestNumber = number, Title = number, RequestTypeId = 2, StatusId = statusId, RequesterId = Requester,
-        DepartmentId = dept, PlantId = Plant, CurrencyId = currencyId, EstimatedTotalAmount = amount,
+        DepartmentId = dept, PlantId = Plant, CurrencyId = currencyId, EstimatedTotalAmount = amount, ApprovedTotalAmount = approved, ApprovedCurrencyCode = approvedCurrency,
         CreatedAtUtc = DateTime.UtcNow.AddDays(-10), UpdatedAtUtc = updatedAtUtc ?? DateTime.UtcNow
     };
 
@@ -79,6 +77,17 @@ public class DepartmentalPaymentContextTests
         PaymentStatus = paid.HasValue ? RequestPayment.PaymentStatuses.Completed : RequestPayment.PaymentStatuses.Scheduled,
         CreatedByUserId = Requester, CreatedAtUtc = DateTime.UtcNow
     };
+
+    /// <summary>Legacy batch approval evidence: APPROVED batches summing the request's approved total plus one BATCH_FINAL_APPROVED row each.</summary>
+    private static void AddLegacyBatchEvidence(ApplicationDbContext ctx, Request r, params decimal[] batchAmounts)
+    {
+        var n = 1;
+        foreach (var amt in batchAmounts)
+        {
+            ctx.ApprovalBatches.Add(new ApprovalBatch { Id = Guid.NewGuid(), RequestId = r.Id, BatchNumber = n++, Status = RequestConstants.ApprovalBatchStatuses.Approved, ApprovedTotalAmount = amt, CreatedAtUtc = DateTime.UtcNow.AddDays(-5), CreatedByUserId = Requester });
+            ctx.RequestStatusHistories.Add(new RequestStatusHistory { Id = Guid.NewGuid(), RequestId = r.Id, ActorUserId = Requester, ActionTaken = "BATCH_FINAL_APPROVED", NewStatusId = S_PO_ISSUED, CreatedAtUtc = DateTime.UtcNow.AddDays(-5) });
+        }
+    }
 
     private static DateTime MonthStart => new(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -100,7 +109,7 @@ public class DepartmentalPaymentContextTests
     private static WorkflowEvent Event(Request r, string code, RequestPoGroup? group = null, RequestPayment? payment = null) => new()
     {
         EventCode = code, RequestId = r.Id, RequestNumber = r.RequestNumber!, TargetStatusCode = code, ActionTaken = code, ActorUserId = Requester, ActorName = "Finance",
-        CorrelationId = Guid.NewGuid(), RequesterId = r.RequesterId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = null, // no AP config path
+        CorrelationId = Guid.NewGuid(), RequesterId = r.RequesterId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = null,
         PoGroupId = group?.Id, PaymentId = payment?.Id
     };
 
@@ -109,30 +118,33 @@ public class DepartmentalPaymentContextTests
         var row = Assert.Single(await ctx.EmailOutbox.Where(x => x.RecipientEmail == "manager@test.local").ToListAsync());
         Assert.StartsWith(eventCode == WorkflowEventCodes.PaymentScheduled ? "[AGENDADO] Informa" : "[REALIZADO] Informa", row.Subject);
         Assert.Contains("Contexto Financeiro Departamental (pedidos atualizados no m", row.BodyHtml);
-        Assert.Contains($"<b>Período:</b> pedidos do departamento com última atualização desde {MonthStart:dd/MM/yyyy} (UTC); não comprova que o agendamento/pagamento ocorreu neste mês", row.BodyHtml);
+        Assert.Contains($"<b>Período:</b> pedidos do departamento com última atualização desde {MonthStart:dd/MM/yyyy} (UTC); não comprova que o agendamento/pagamento ocorreu neste mês. Valores ao nível do pedido (aprovado registado, aprovado com moeda derivada de dados atuais consistentes, ou estimativa como fallback), não montantes agendados/pagos.", row.BodyHtml);
         return row.BodyHtml;
     }
 
     private const string ActionScheduled = "<b>Valor desta ação (agendado, grupo P.O.):</b>";
     private const string ActionPaid = "<b>Valor desta ação (pago, grupo P.O.):</b>";
-    private const string Estimate = "<b>Valor estimado deste Pedido:</b>";
-    private const string Accumulated = "<b>Acumulado estimado (pedidos agendados/pagos atualizados no mês, apenas comparáveis na moeda do pedido, incl. este):</b>";
+    private const string This = "<b>Valor deste pedido:</b>";
+    private const string Accumulated = "<b>Acumulado (pedidos agendados/pagos atualizados no mês, na moeda resolvida deste pedido, incl. este):</b>";
     private const string Excluded = "<b>Excluídos:</b>";
+    private const string BaseRecorded = "(base: valor aprovado, moeda registada na aprovação)";
+    private const string BaseDerived = "(base: valor aprovado, moeda derivada de dados atuais consistentes (não registada na aprovação))";
+    private const string BaseEstimate = "(base: estimativa do pedido (fallback: sem valor aprovado utilizável))";
 
     [Fact]
-    public async Task Accumulated_counts_only_same_department_same_currency_comparable_scheduled_or_paid_requests_updated_this_month_plus_this_request()
+    public async Task Estimate_fallback_aggregation_counts_same_department_same_resolved_currency_requests_updated_this_month_plus_this_request_once()
     {
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
         var current = NewRequest("REQ-CUR", 100000m, S_PAYMENT_SCHEDULED);
         var g = Group(current, 10, 100000m, "AOA"); var pay = Payment(current, g, 100000m);
-        var otherMixed = NewRequest("REQ-EX-MIXEDGROUPS", 123456m, S_PAYMENT_SCHEDULED);               // AOA request whose group is in USD → not comparable → excluded
-        var otherNoCurrency = NewRequest("REQ-EX-NOCURRENCY", 654321m, S_PAYMENT_SCHEDULED);           // AOA request whose group has no currency → excluded
+        var otherMixed = NewRequest("REQ-EX-MIXEDGROUPS", 123456m, S_PAYMENT_SCHEDULED);               // AOA request whose group is in USD → unresolved
+        var otherNoCurrency = NewRequest("REQ-EX-NOCURRENCY", 654321m, S_PAYMENT_SCHEDULED);           // AOA request whose group has no currency → unresolved
         ctx.Requests.AddRange(current,
-            NewRequest("REQ-IN-SCHED", 60000m, S_PAYMENT_SCHEDULED),                                        // counted (no groups → comparable)
+            NewRequest("REQ-IN-SCHED", 60000m, S_PAYMENT_SCHEDULED),                                        // counted (no groups → estimate fallback)
             NewRequest("REQ-IN-PAID", 40000m, S_PAYMENT_COMPLETED, updatedAtUtc: MonthStart),                // counted (boundary inclusive)
-            NewRequest("REQ-EX-STATUS", 999999m, S_PO_ISSUED),                                               // not scheduled/paid
-            NewRequest("REQ-EX-AREA", 888888m, S_WAITING_AREA),                                              // not scheduled/paid
-            NewRequest("REQ-EX-USD", 500000m, S_PAYMENT_SCHEDULED, currencyId: USD),                         // other currency, never summed into AOA
+            NewRequest("REQ-EX-STATUS", 999999m, S_PO_ISSUED),                                               // not scheduled/paid → not a candidate
+            NewRequest("REQ-EX-AREA", 888888m, S_WAITING_AREA),                                              // not a candidate
+            NewRequest("REQ-EX-USD", 500000m, S_PAYMENT_SCHEDULED, currencyId: USD),                         // resolves in USD → other currency, never summed
             NewRequest("REQ-EX-DEPT", 300000m, S_PAYMENT_SCHEDULED, dept: OtherDept),                        // other department
             NewRequest("REQ-EX-LASTMONTH", 700000m, S_PAYMENT_COMPLETED, updatedAtUtc: MonthStart.AddSeconds(-1)), // previous month
             otherMixed, otherNoCurrency);
@@ -144,82 +156,99 @@ public class DepartmentalPaymentContextTests
 
         var body = await ManagerBodyAsync(ctx, WorkflowEventCodes.PaymentScheduled);
         Assert.Contains($"{ActionScheduled} {100000m:N2} AOA", body);
-        Assert.Contains($"{Estimate} {100000m:N2} AOA", body);
-        Assert.Contains($"{Accumulated} {200000m:N2} AOA", body);
-        Assert.Contains($"representa <b>{50m:N1}%</b> do acumulado estimado (AOA)", body);
-        Assert.Contains($"{Excluded} 3 pedido(s) agendado(s)/pago(s) do departamento neste período, por moeda diferente ou não comprovada — o acumulado e a percentagem não representam toda a atividade do departamento.", body);
+        Assert.Contains($"{This} {100000m:N2} AOA <span style='color:#555;'>{BaseEstimate}</span>", body);
+        Assert.Contains($"{Accumulated} {200000m:N2} AOA <span style='color:#555;'>(composição: 0 aprovado(s) registado(s), 0 com moeda derivada, 3 estimativa(s) — fallback)</span>", body);
+        Assert.Contains($"representa <b>{50m:N1}%</b> do acumulado resolvido (AOA)", body);
+        Assert.Contains($"{Excluded} 3 pedido(s) agendado(s)/pago(s) do departamento neste período — 1 noutra moeda, 2 sem valor resolvido (estimativa: grupos P.O. ativos noutra moeda; estimativa: um grupo P.O. ativo não tem moeda registada). O acumulado e a percentagem não representam toda a atividade do departamento.", body);
         Assert.DoesNotContain("n/d", body);
     }
 
     [Fact]
-    public async Task No_exclusion_disclosure_when_every_scheduled_or_paid_request_of_the_department_is_included()
+    public async Task One_resolver_governs_numerator_and_denominator_recorded_derived_and_estimate_sources_in_one_bucket()
     {
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
-        var current = NewRequest("REQ-CUR", 100000m, S_PAYMENT_SCHEDULED);
-        var g = Group(current, 10, 100000m, "AOA"); var pay = Payment(current, g, 100000m);
-        var otherWithCancelledUsdGroup = NewRequest("REQ-IN-CANCELLED-USD", 60000m, S_PAYMENT_SCHEDULED);
-        ctx.Requests.AddRange(current, otherWithCancelledUsdGroup,
-            NewRequest("REQ-EX-STATUS", 999999m, S_PO_ISSUED),                                                   // not scheduled/paid → not a candidate, not disclosed
-            NewRequest("REQ-EX-USD-LASTMONTH", 500000m, S_PAYMENT_SCHEDULED, currencyId: USD, updatedAtUtc: MonthStart.AddDays(-1))); // outside the period → not disclosed
-        ctx.RequestPoGroups.AddRange(g,
-            Group(otherWithCancelledUsdGroup, 10, 60000m, "AOA"),
-            Group(otherWithCancelledUsdGroup, 11, 1500m, "USD", RequestConstants.PoGroupStatuses.Cancelled));   // cancelled USD group is ignored → request stays comparable
-        ctx.RequestPayments.Add(pay);
+        // current: legacy batch approval (REQ-478 shape) → derived AOA 351,179.88 although the estimate is 0
+        var current = NewRequest("REQ-478", 0m, S_PAYMENT_COMPLETED, approved: 351179.88m, approvedCurrency: null);
+        var ca = Group(current, 10, 319180.08m, "AOA", RequestConstants.Statuses.PaymentCompleted); var cb = Group(current, 10, 31999.80m, "AOA", RequestConstants.Statuses.PaymentCompleted);
+        var payA = Payment(current, ca, 319180.08m, paid: 319180.08m);
+        AddLegacyBatchEvidence(ctx, current, 319180.08m, 31999.80m);
+        // recorded approved AOA (single-path approval), estimate 0 → 390,000.00
+        var recorded = NewRequest("REQ-REC", 0m, S_PAYMENT_SCHEDULED, approved: 390000m, approvedCurrency: "AOA");
+        // estimate fallback, no approved total → 60,000.00
+        var est = NewRequest("REQ-EST", 60000m, S_PAYMENT_SCHEDULED);
+        // legacy approval WITHOUT evidence (no batches) → unresolved, excluded with reason
+        var noEvidence = NewRequest("REQ-NOEV", 0m, S_PAYMENT_SCHEDULED, approved: 5000m, approvedCurrency: null);
+        // recorded MULTIPLE → unresolved
+        var multiple = NewRequest("REQ-MULTI", 0m, S_PAYMENT_SCHEDULED, approved: 9000m, approvedCurrency: "MULTIPLE");
+        // recorded USD → other currency bucket
+        var usd = NewRequest("REQ-USD", 0m, S_PAYMENT_SCHEDULED, currencyId: USD, approved: 7000m, approvedCurrency: "USD");
+        ctx.Requests.AddRange(current, recorded, est, noEvidence, multiple, usd);
+        ctx.RequestPoGroups.AddRange(ca, cb, Group(recorded, 10, 390000m, "AOA"), Group(noEvidence, 10, 5000m, "AOA"), Group(multiple, 10, 5000m, "AOA"), Group(multiple, 11, 4000m, "USD"), Group(usd, 11, 7000m, "USD"));
+        ctx.RequestPayments.Add(payA);
+        await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+
+        await Build(ctx).EmitAsync(Event(current, WorkflowEventCodes.PaymentCompleted, ca, payA));
+
+        var body = await ManagerBodyAsync(ctx, WorkflowEventCodes.PaymentCompleted);
+        Assert.Contains($"{ActionPaid} {319180.08m:N2} AOA", body);
+        Assert.Contains($"{This} {351179.88m:N2} AOA <span style='color:#555;'>{BaseDerived}</span>", body);
+        Assert.Contains($"{Accumulated} {801179.88m:N2} AOA <span style='color:#555;'>(composição: 1 aprovado(s) registado(s), 1 com moeda derivada, 1 estimativa(s) — fallback)</span>", body);
+        Assert.Contains($"representa <b>{43.8m:N1}%</b>", body);                                                     // 351,179.88 / 801,179.88
+        Assert.Contains($"{Excluded} 3 pedido(s) agendado(s)/pago(s) do departamento neste período — 1 noutra moeda, 2 sem valor resolvido (valor aprovado registado em várias moedas (MULTIPLE); valor aprovado sem moeda registada; lotes de aprovação em falta ou não aprovados)", body);
+        Assert.DoesNotContain($"{59159.90m:N2}", body);
+    }
+
+    [Fact]
+    public async Task Current_request_with_recorded_approved_currency_uses_the_approved_total_not_the_estimate()
+    {
+        await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
+        var current = NewRequest("REQ-CUR", 120000m, S_PAYMENT_SCHEDULED, approved: 390000m, approvedCurrency: "AOA");
+        var g = Group(current, 10, 390000m, "AOA"); var pay = Payment(current, g, 390000m);
+        ctx.Requests.Add(current); ctx.RequestPoGroups.Add(g); ctx.RequestPayments.Add(pay);
         await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
 
         await Build(ctx).EmitAsync(Event(current, WorkflowEventCodes.PaymentScheduled, g, pay));
 
         var body = await ManagerBodyAsync(ctx, WorkflowEventCodes.PaymentScheduled);
-        Assert.Contains($"{Accumulated} {160000m:N2} AOA", body);
-        Assert.Contains($"representa <b>{62.5m:N1}%</b>", body);
+        Assert.Contains($"{This} {390000m:N2} AOA <span style='color:#555;'>{BaseRecorded}</span>", body);
+        Assert.DoesNotContain($"{120000m:N2}", body);
+        Assert.Contains($"representa <b>{100m:N1}%</b>", body);
         Assert.DoesNotContain(Excluded, body);
     }
 
-    [Fact]
-    public async Task Cancelled_group_in_another_currency_on_this_request_does_not_break_comparability()
+    [Theory]
+    [InlineData("cancelled")]
+    [InlineData("pending")]
+    [InlineData("mismatch")]
+    [InlineData("noHistory")]
+    public async Task Legacy_approval_with_undermined_evidence_renders_no_aggregate_and_discloses_the_reason(string defect)
     {
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
-        var current = NewRequest("REQ-CUR", 285000m, S_PAYMENT_SCHEDULED);
-        var a = Group(current, 10, 285000m, "AOA"); var cancelledUsd = Group(current, 11, 1500m, "USD", RequestConstants.PoGroupStatuses.Cancelled);
-        var pay = Payment(current, a, 285000m);
-        ctx.Requests.Add(current); ctx.RequestPoGroups.AddRange(a, cancelledUsd); ctx.RequestPayments.Add(pay);
+        var current = NewRequest("REQ-CUR", 0m, S_PAYMENT_SCHEDULED, approved: 900m, approvedCurrency: null);
+        var g = Group(current, 10, 900m, "AOA"); var pay = Payment(current, g, 900m);
+        ctx.Requests.AddRange(current, NewRequest("REQ-OTHER", 300000m, S_PAYMENT_SCHEDULED));
+        ctx.RequestPoGroups.Add(g); ctx.RequestPayments.Add(pay);
+        switch (defect)
+        {
+            case "cancelled": ctx.RequestPoGroups.Add(Group(current, 11, 300m, "AOA", RequestConstants.PoGroupStatuses.Cancelled)); AddLegacyBatchEvidence(ctx, current, 900m); break;
+            case "pending": ctx.RequestPoGroups.Add(Group(current, 11, 200m, "AOA", RequestConstants.PoGroupStatuses.Pending)); AddLegacyBatchEvidence(ctx, current, 900m); break;
+            case "mismatch": AddLegacyBatchEvidence(ctx, current, 600m); break;
+            case "noHistory":
+                ctx.ApprovalBatches.Add(new ApprovalBatch { Id = Guid.NewGuid(), RequestId = current.Id, BatchNumber = 1, Status = RequestConstants.ApprovalBatchStatuses.Approved, ApprovedTotalAmount = 900m, CreatedAtUtc = DateTime.UtcNow, CreatedByUserId = Requester });
+                break;
+        }
         await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
 
-        await Build(ctx).EmitAsync(Event(current, WorkflowEventCodes.PaymentScheduled, a, pay));
+        await Build(ctx).EmitAsync(Event(current, WorkflowEventCodes.PaymentScheduled, g, pay));
 
         var body = await ManagerBodyAsync(ctx, WorkflowEventCodes.PaymentScheduled);
-        Assert.Contains($"{Accumulated} {285000m:N2} AOA", body);
-        Assert.Contains($"representa <b>{100m:N1}%</b>", body);
-        Assert.DoesNotContain("n/d", body);
-    }
-
-    [Fact]
-    public async Task Action_amount_is_the_planned_amount_when_scheduling_and_the_actual_paid_amount_when_completing_independent_of_the_estimate()
-    {
-        await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
-        var current = NewRequest("REQ-CUR", 120000m, S_PAYMENT_SCHEDULED);                                 // estimate differs from both amounts
-        var g = Group(current, 10, 126787.50m, "AOA");
-        var scheduled = Payment(current, g, 126787.50m, seq: 1);
-        var paid = Payment(current, g, 126787.50m, paid: 130000m, seq: 2);                                 // over-payment allowed by MarkAsPaid
-        ctx.Requests.Add(current); ctx.RequestPoGroups.Add(g); ctx.RequestPayments.AddRange(scheduled, paid);
-        await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
-
-        var o = Build(ctx);
-        await o.EmitAsync(Event(current, WorkflowEventCodes.PaymentScheduled, g, scheduled));
-        var rows = await ctx.EmailOutbox.Where(x => x.RecipientEmail == "manager@test.local").ToListAsync();
-        var sch = Assert.Single(rows).BodyHtml;
-        Assert.Contains($"{ActionScheduled} {126787.50m:N2} AOA", sch);
-        Assert.Contains($"{Estimate} {120000m:N2} AOA", sch);
-        Assert.Contains($"{Accumulated} {120000m:N2} AOA", sch);                                            // aggregate stays estimate-based
-        Assert.Contains($"representa <b>{100m:N1}%</b>", sch);
-        Assert.DoesNotContain("Valor desta ação (pago", sch);
-
-        await o.EmitAsync(Event(current, WorkflowEventCodes.PaymentCompleted, g, paid));
-        rows = await ctx.EmailOutbox.Where(x => x.RecipientEmail == "manager@test.local").ToListAsync();
-        var cmp = Assert.Single(rows, r => r.EventCode == WorkflowEventCodes.PaymentCompleted).BodyHtml;
-        Assert.Contains($"{ActionPaid} {130000m:N2} AOA", cmp);
-        Assert.DoesNotContain($"{126787.50m:N2}", cmp);
-        Assert.Contains($"{Estimate} {120000m:N2} AOA", cmp);
+        Assert.Contains($"{ActionScheduled} {900m:N2} AOA", body);                                                    // action amount stays separate
+        Assert.Contains($"{This} <b>n/d</b> — valor aprovado sem moeda registada;", body);
+        Assert.Contains($"{Accumulated} <b>n/d</b> — valor aprovado sem moeda registada;", body);
+        Assert.Contains("<b>Impacto:</b> <b>n/d</b>", body);
+        Assert.DoesNotContain($"{300000m:N2}", body); Assert.DoesNotContain("%</b>", body); Assert.DoesNotContain(Excluded, body);
+        var expected = defect switch { "cancelled" => "grupos P.O. cancelados", "pending" => "pendentes de aprovação", "mismatch" => "soma dos lotes aprovados difere", _ => "histórico de aprovação final incompleto" };
+        Assert.Contains(expected, body);
     }
 
     [Fact]
@@ -237,11 +266,10 @@ public class DepartmentalPaymentContextTests
 
         var body = await ManagerBodyAsync(ctx, WorkflowEventCodes.PaymentScheduled);
         Assert.Contains($"{ActionScheduled} {1500m:N2} USD", body);
-        Assert.Contains($"{Estimate} {286500m:N2} AOA", body);
-        Assert.Contains($"{Accumulated} <b>n/d</b> — os grupos P.O. deste pedido estão em moedas diferentes da moeda do pedido (AOA, USD vs AOA)", body);
-        Assert.Contains("<b>Impacto:</b> <b>n/d</b> — os grupos P.O. deste pedido estão em moedas diferentes", body);
-        Assert.DoesNotContain($"{386500m:N2}", body); Assert.DoesNotContain($"{100000m:N2}", body); Assert.DoesNotContain("%</b>", body);
-        Assert.DoesNotContain(Excluded, body);
+        Assert.Contains($"{This} <b>n/d</b> — estimativa: grupos P.O. ativos noutra moeda", body);
+        Assert.Contains($"{Accumulated} <b>n/d</b> — estimativa: grupos P.O. ativos noutra moeda", body);
+        Assert.Contains("<b>Impacto:</b> <b>n/d</b> — estimativa: grupos P.O. ativos noutra moeda", body);
+        Assert.DoesNotContain($"{386500m:N2}", body); Assert.DoesNotContain($"{100000m:N2}", body); Assert.DoesNotContain("%</b>", body); Assert.DoesNotContain(Excluded, body);
     }
 
     [Fact]
@@ -262,20 +290,16 @@ public class DepartmentalPaymentContextTests
         var rows = await ctx.EmailOutbox.Where(x => x.RecipientEmail == "manager@test.local").ToListAsync();
         Assert.Equal(2, rows.Count);
         var b1 = Assert.Single(rows, r => r.RequestId == noGroupCurrency.Id).BodyHtml;
-        Assert.Contains($"{ActionScheduled} {50000m:N2} AOA", b1);                                          // "---" payment currency → group (null) → request currency AOA for display
-        Assert.Contains($"{Accumulated} <b>n/d</b> — pelo menos um grupo P.O. deste pedido não tem moeda registada", b1);
-        Assert.Contains("<b>Impacto:</b> <b>n/d</b>", b1);
+        Assert.Contains($"{ActionScheduled} {50000m:N2} AOA", b1);
+        Assert.Contains($"{This} <b>n/d</b> — estimativa: um grupo P.O. ativo não tem moeda registada", b1);
         var b2 = Assert.Single(rows, r => r.RequestId == noRequestCurrency.Id).BodyHtml;
-        Assert.Contains($"{Estimate} {50000m:N2} (moeda do pedido não registada)", b2);
-        Assert.Contains($"{Accumulated} <b>n/d</b> — moeda do pedido não registada", b2);
-        Assert.Contains("<b>Impacto:</b> <b>n/d</b>", b2);
+        Assert.Contains($"{This} <b>n/d</b> — estimativa: moeda do pedido não registada", b2);
         Assert.DoesNotContain("%</b>", b1); Assert.DoesNotContain("%</b>", b2);
     }
 
     [Fact]
     public async Task This_request_is_included_even_when_its_parent_status_is_not_yet_scheduled_or_paid()
     {
-        // Multi-group QUOTATION in one currency: one group just completed, parent still at the furthest-behind sibling status (PO_ISSUED).
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
         var current = NewRequest("REQ-CUR", 100000m, S_PO_ISSUED);
         var a = Group(current, 10, 60000m, "AOA", RequestConstants.Statuses.PaymentCompleted); var b = Group(current, 10, 40000m, "AOA", RequestConstants.Statuses.PoIssued);
@@ -293,7 +317,7 @@ public class DepartmentalPaymentContextTests
     }
 
     [Fact]
-    public async Task Legacy_event_without_group_or_payment_shows_not_available_for_the_action_amount_but_keeps_the_estimate_metric()
+    public async Task Legacy_event_without_group_or_payment_shows_not_available_for_the_action_amount_but_keeps_the_request_level_metric()
     {
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);
         var current = NewRequest("REQ-CUR", 126787.50m, S_PAYMENT_SCHEDULED);
@@ -310,7 +334,7 @@ public class DepartmentalPaymentContextTests
 
     [Theory]
     [InlineData(0, 0)]        // nothing scheduled/paid and a zero request estimate
-    [InlineData(0, 250000)]   // zero request estimate (e.g. QUOTATION without a selected quotation) with other activity
+    [InlineData(0, 250000)]   // zero request estimate with other activity
     public async Task Percentage_is_not_available_instead_of_a_misleading_zero_when_there_is_no_comparison_basis(decimal thisAmount, decimal otherAmount)
     {
         await using var ctx = NewCtx(); await SeedCatalogAsync(ctx);

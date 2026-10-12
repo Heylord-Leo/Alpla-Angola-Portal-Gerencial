@@ -1253,3 +1253,320 @@ exercised by the shared-row scheduling/completion case. Coverage:
 identity) and the controller lifecycle test (schedule A and B, complete both: four notices on two payment rows; re-emission
 of each persisted action skipped; endpoint replay refused with no new rows). Cancel-then-reschedule through `/schedule`
 produces two payment rows and two identities, as tested; no current path produces two AP-notified emissions on one row.
+
+### G.16 TEST validation of v2.247.3 / v2.247.4 and the zero request estimate (investigation only)
+
+**TEST evidence recorded (2026-10-12).**
+- v2.247.3, REQ-06/10/2026-537: requester is also the only resolved departmental manager. Scheduling and completion
+  each produced ONE combined requester/departmental e-mail (SENT, received through the redirect) and one successful
+  Accounts Payable notice. No duplicate outbox rows.
+- v2.247.4, REQ-26/09/2026-478 (`RequestId BDDAAD51-BBFC-4416-A0C4-D9AD9AC9E368`), two P.O. groups: AFRICANA DISCOUNT
+  319,180.08 AOA and L.D.A. MORGEROT 31,999.80 AOA. Two scheduling and two completion AP notices received with the correct
+  group content; four successful AP logs (`Skipped=0`, `ErrorMessage=NULL`) with distinct correlations matching the
+  persisted history actions; eight requester/manager outbox rows, one per recipient and action, all SENT without errors.
+  `Requests.EstimatedTotalAmount` = 0.00; the departmental notice shows that value and renders the impact as "n/d".
+- NOT validated live and not claimed: technical re-emission protection and concurrent-emission behaviour (no mechanism
+  and no concurrency scenario exists in TEST to exercise them; see §G.15.1).
+
+**Zero estimate — what the source demonstrates.** `Request.EstimatedTotalAmount` is written only by:
+1. request create/update and line-item CRUD — `RecalculateEstimatedTotalAsync`: sum of `RequestLineItem.TotalAmount`
+   (quantity × unit price) with proportional discount and IVA, i.e. tax-inclusive; zero when the items carry no price;
+2. the single-selection quotation paths (`SelectedQuotationId` set): header synchronised from the winning quotation's
+   `TotalAmount` (taxable + IVA);
+3. PAYMENT source documents: sum of the active documents' gross amounts;
+4. request copy: reset to 0 ("no items = no total").
+
+The multi-supplier award flow — `GroupBuilderService` (groups per supplier/currency, `TotalAmount = Σ QuotationItem.LineTotal`)
+and `ApprovalBatchController` (batch approval, `Request.ApprovedTotalAmount` = cumulative approved batch amounts) — never
+writes `EstimatedTotalAmount` and never sets `SelectedQuotationId`. At final approval the QUOTATION snapshot is
+`ApprovedTotalAmount = Σ group totals` (recomputed from awarded items when the groups read zero) with
+`ApprovedCurrencyCode` = the single currency or "MULTIPLE"; the estimate is left as it was. The request list projection
+already prefers `ApprovedTotalAmount` when it is above zero and falls back to the estimate otherwise.
+
+**Classification.** For a QUOTATION request whose items were created without unit prices (the normal case: the buyer
+sources the prices) and awarded to several suppliers, 0.00 is the value the lifecycle leaves in place from creation to
+payment — a lifecycle gap in the multi-group flow, not a data corruption and not an intentional representation. It is
+deterministic from source; the only thing the local workstation cannot show is prevalence in TEST/PROD (queries below).
+Single-supplier awards through the legacy selection path do refresh the estimate; PAYMENT requests carry a meaningful
+estimate (submission rejects zero).
+
+**Comparability of the estimate with group totals.** Both the recomputed estimate and `QuotationItem.LineTotal` (hence
+group totals and `ApprovedTotalAmount`) are tax-inclusive in the request's/quotation's currency, so they are comparable
+in kind; they differ in origin (requester's pre-quotation estimate vs awarded prices) and in currency when groups are in
+several currencies (`ApprovedCurrencyCode = "MULTIPLE"`). The estimate therefore cannot stand in for the awarded amount,
+and the awarded amount cannot be summed across currencies — the same constraint the departmental rule already applies.
+
+**Other calculations that read the estimate (unchanged).** Departmental payment context (numerator and denominator,
+§G.13); pending area-approval departmental block (same aggregate, still with the pre-G.13 dead filter — out of scope);
+Accounts Payable header fallback for events without group context; buyer P.O.-creation instruction and buyer
+assignment/quotation-awaiting bodies ("Valor Estimado"); the final-approval buyer summary when no selected quotation
+exists; the proforma deadline alert ("Valor Total"). None of them reads `ApprovedTotalAmount`.
+
+**Read-only TEST queries (prevalence and lifecycle evidence; replace nothing, run as-is).**
+```sql
+-- P1: how many QUOTATION requests reached a payment/post-payment status with a zero estimate, and what they approved/awarded
+SELECT COUNT(*) AS Requests,
+       SUM(CASE WHEN r.ApprovedTotalAmount > 0 THEN 1 ELSE 0 END) AS WithApprovedTotal,
+       SUM(CASE WHEN EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id GROUP BY g.RequestId HAVING COUNT(*) > 1) THEN 1 ELSE 0 END) AS MultiGroup
+FROM Requests r JOIN RequestTypes t ON t.Id = r.RequestTypeId JOIN RequestStatuses s ON s.Id = r.StatusId
+WHERE t.Code = 'QUOTATION' AND r.EstimatedTotalAmount = 0
+  AND s.Code IN ('PO_ISSUED','PAYMENT_REQUEST_SENT','PAYMENT_SCHEDULED','PAYMENT_COMPLETED','WAITING_RECEIPT','IN_FOLLOWUP','COMPLETED');
+
+-- P2: estimate vs approved vs awarded for REQ-478 and every other multi-group QUOTATION request this quarter
+SELECT r.RequestNumber, r.EstimatedTotalAmount, r.ApprovedTotalAmount, r.ApprovedCurrencyCode, r.SelectedQuotationId,
+       (SELECT COUNT(*) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS Groups,
+       (SELECT SUM(g.TotalAmount) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS GroupSum,
+       (SELECT COUNT(DISTINCT ISNULL(g.CurrencyCode,'?')) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS Currencies,
+       (SELECT COUNT(*) FROM RequestLineItems li WHERE li.RequestId = r.Id AND li.IsDeleted = 0 AND li.UnitPrice = 0) AS UnpricedItems,
+       (SELECT COUNT(*) FROM RequestLineItems li WHERE li.RequestId = r.Id AND li.IsDeleted = 0) AS Items
+FROM Requests r JOIN RequestTypes t ON t.Id = r.RequestTypeId
+WHERE t.Code = 'QUOTATION'
+  AND (r.Id = 'BDDAAD51-BBFC-4416-A0C4-D9AD9AC9E368'
+       OR (r.CreatedAtUtc >= '2026-07-01' AND (SELECT COUNT(*) FROM RequestPoGroups g WHERE g.RequestId = r.Id) > 1))
+ORDER BY r.CreatedAtUtc DESC;
+
+-- P3: did the estimate ever change on REQ-478 (field-change audit rows, if the request edit audit recorded it)
+SELECT h.CreatedAtUtc, h.ActionTaken, LEFT(h.Comment, 160) AS Comment
+FROM RequestStatusHistories h
+WHERE h.RequestId = 'BDDAAD51-BBFC-4416-A0C4-D9AD9AC9E368'
+  AND (h.Comment LIKE '%Valor Bruto Estimado%' OR h.ActionTaken IN ('SUBMIT','APPROVE','REGISTER_PO'))
+ORDER BY h.CreatedAtUtc;
+
+-- P4: departmental denominators that currently include zero-estimate scheduled/paid QUOTATION requests this month
+SELECT r.DepartmentId, COUNT(*) AS ZeroEstimateRequests, SUM(r.ApprovedTotalAmount) AS ApprovedSumIgnoredByTheNotice
+FROM Requests r JOIN RequestTypes t ON t.Id = r.RequestTypeId JOIN RequestStatuses s ON s.Id = r.StatusId
+WHERE t.Code = 'QUOTATION' AND r.EstimatedTotalAmount = 0
+  AND s.Code IN ('PAYMENT_SCHEDULED','PAID','PAYMENT_COMPLETED')
+  AND r.UpdatedAtUtc >= DATEFROMPARTS(YEAR(GETUTCDATE()), MONTH(GETUTCDATE()), 1)
+GROUP BY r.DepartmentId;
+```
+P1 gives prevalence; P2 shows for each multi-group request whether the estimate stayed at zero while the approved and
+awarded amounts exist, how many currencies are involved and whether the items were unpriced; P3 shows whether the estimate
+was ever edited on REQ-478; P4 shows how much approved value the departmental denominators currently carry as zero.
+
+**Recommended smallest coherent next step (no business-rule change; not implemented).** Keep the estimate field as the
+requester's pre-quotation estimate and stop using it as the only amount in notices: where a request-level amount is
+rendered, read `ApprovedTotalAmount` when it is above zero and `ApprovedCurrencyCode` is a single currency, label it
+"Valor aprovado", and fall back to the estimate labelled "Valor estimado" otherwise — the same preference the request
+list projection already applies. For the departmental aggregate this would replace the estimate-based numerator and
+denominator with the approved amounts under the existing comparability rule, which is a change of the metric's basis
+and therefore needs an explicit decision (it would also make "MULTIPLE"-currency requests non-comparable by definition).
+Back-filling or recomputing `EstimatedTotalAmount` from group totals is NOT recommended: it would overwrite the
+requester's figure and conflate two different quantities.
+
+### G.17 Missing `ApprovedCurrencyCode` and a request-level amount/currency resolver (investigation only, 2026-10-12)
+
+**TEST evidence (supplied; current data, not render-time state).**
+- P1 (ref 2026-10-12 09:38:44 UTC): 65 QUOTATION requests with `EstimatedTotalAmount = 0` in PAYMENT_SCHEDULED / PAID /
+  PAYMENT_COMPLETED; 64 have a positive `ApprovedTotalAmount` with NULL `ApprovedCurrencyCode`; one has a recorded AOA
+  approved currency (390,000.00). All 64 show request currency AOA, at least one non-cancelled group, no blank group
+  currency and one distinct group currency. The population is not limited to the current month.
+- REQ-26/09/2026-478 (`BDDAAD51-BBFC-4416-A0C4-D9AD9AC9E368`): estimate 0.00 AOA; `ApprovedTotalAmount` 351,179.88;
+  `ApprovedCurrencyCode` and `ApprovedAtUtc` NULL; two completed AOA groups 319,180.08 + 31,999.80 = 351,179.88; seven
+  active items, four with zero unit price, item totals summing 59,159.90 (so NOT all items were unpriced).
+- P4 (ref 09:39:20 UTC): department 7, four included AOA requests, one excluded USD request; existing estimate-based
+  aggregate 10,890,624.58 AOA; the approved-first diagnostic changed it by 0.00 because REQ-478 fails the recorded-currency
+  requirement; USD bucket 12,650.71, never combined.
+
+**1. Writers of the approval snapshot (source + repository history).**
+| Writer | `ApprovedTotalAmount` | `ApprovedCurrencyCode` | `ApprovedAtUtc` |
+|---|---|---|---|
+| `RequestsController` final approval, single path (`action == "APPROVE"`): QUOTATION = Σ group totals (fallback: awarded items); PAYMENT = estimate | yes | yes (single code, or "MULTIPLE") | yes |
+| `ApprovalBatchController` batch final approval (`BATCH_FINAL_APPROVED`): `batch.ApprovedTotalAmount` = Σ selected candidates (+ legacy quotation items), `request.ApprovedTotalAmount` = cumulative over APPROVED batches | yes | **never** | **never** |
+| `LegacyMonetaryScaleRepairService` | rescales an existing value | reads only | no |
+
+`git log -S` shows the batch writer was introduced in c2b0a75 (2026-07-14) and no commit has ever touched the currency or
+timestamp in that controller; the single-path snapshot dates from 65a7077 (2026-06-25). `ApprovalBatches` has no currency
+column. **Conclusion:** the 64 NULL currencies are the batch-approval path; the omission is historical AND still produced
+by current code for every batch-approved request. The single path is unaffected.
+
+**2. Why REQ-478 has item totals of 59,159.90 and a header estimate of 0.** Source-proven possibilities:
+(a) `PUT {id}/draft` writes `dto.EstimatedTotalAmount` straight into the header (audited as "Valor Bruto Estimado" in
+`RequestFieldChangeHistories`, history action `DADOS_ALTERADOS`): a draft save carrying 0 zeroes the header while items keep
+their totals; (b) `RecalculateEstimatedTotalAsync` returns `Max(0, …)` when the header `DiscountAmount` is at least the
+taxable base; (c) the three priced items were added after the last header write by a path that does not recompute — in
+current code every line-item endpoint recomputes, so (c) would require an older build. The exact live cause is NOT
+established from the supplied facts; P5 sections `P5-478-header` (discount, selected quotation, deleted items) and
+`P5-478-audit` (field-change rows for the estimate and the discount) decide between (a) and (b).
+
+**3. Can the missing currency be derived safely for display?** Current group currencies are not proof of the historical
+approval currency: groups can be cancelled, re-registered or added by later batches after approval. What CAN be stated:
+when the request currency is registered, every non-cancelled group carries that same currency, and the approved total
+is a cumulative sum over batches whose items were priced in those groups' quotations, the only currency the snapshot
+could have been taken in is that code. That is a derivation with a stated basis, to be labelled as such ("moeda derivada
+dos grupos e do pedido"), never presented as a recorded value. Agreement between the approved total and the live group
+sum strengthens it but is not required: cancellations (live < approved), pending batches (live > approved), corrections
+and the awarded-items fallback at approval all produce legitimate differences, and rounding is per line total (the
+approval and the groups sum the same line totals, so a tolerance of 0.01 per group is enough).
+
+**4. Alternative when the snapshot cannot be resolved.** The current non-cancelled group totals per currency, labelled
+"total atual dos grupos P.O. (não é o valor aprovado)". It is a different quantity (post-approval state, includes
+pending-batch groups) and must never be mixed with approved amounts in one figure.
+
+**5. Decision table (request-level resolver, DIAGNOSTIC; same rules for the current request and the denominator; each
+request counted once; buckets strictly by resolved currency; source disclosed in the notice).**
+| Case | Amount | Currency | Bucket / disclosure |
+|---|---|---|---|
+| A. Approved > 0, recorded single currency, groups consistent, request currency equal or unregistered | approved | recorded | "valor aprovado (registado)" |
+| B. Approved > 0, currency missing, ≥1 group, all groups one non-blank currency = request currency | approved | derived | "valor aprovado (moeda derivada)"; amount agreement shown as evidence when true |
+| C. A or B but live group sum ≠ approved beyond tolerance | approved (snapshot) | as A/B | disclose "difere dos grupos atuais" with the explanation (cancelled / pending batch / unexplained); still eligible |
+| D. Approved "MULTIPLE", or groups blank/mixed, or recorded/derived currency ≠ request currency | none | none | excluded from every bucket; current request renders "n/d" with the reason |
+| E. Approved > 0, currency missing, no non-cancelled group | — | — | **decision needed**: request currency alone is weaker evidence; recommended fallback to the estimate under the existing gate (prevalence in TEST today: zero of the 64) |
+| F. No usable approved total (NULL or 0) | estimate | request currency | existing gate; estimate 0 included as 0 and disclosed; current request with 0 renders "n/d" |
+
+**6. Diagnostics.** `P5_approved_currency.sql` (read-only; compiled and executed on the LocalDB sandbox with a rolled-back
+fixture on 2026-10-12: the REQ-478 mirror classified B with amount agreement and batch path; mismatch fixtures explained by
+a cancelled group and by a pending batch; rollback verified). Output: `P5-detail` (classification of every positive-approved
+request without a recorded currency, plus REQ-478), `P5-summary` (counts and approved sums per class and resolved
+currency; sums only where a single currency resolves), `P5-478-header` and `P5-478-audit` (zero-estimate cause).
+
+**7. Required scope expansion before any resolver is implemented.**
+- Approval writer: `ApprovalBatchController` must record `ApprovedCurrencyCode` (single code of the batch's groups, else
+  "MULTIPLE") and `ApprovedAtUtc` on the request at batch final approval, under the same single/MULTIPLE rule as the single
+  path; a batch-level currency on `ApprovalBatches` would make cumulative multi-currency approvals representable (today
+  the cumulative sum silently adds currencies if batches differ). This is a change to approval writers and needs its own
+  review; it stops the growth of the NULL population but does not repair the 64.
+- Historical rows: no bulk backfill. A derived currency is a display-time resolution with disclosure, not a write.
+- Departmental notice: switching the metric from estimates to the resolver is a change of basis (decision pending);
+  the resolver can first be applied to the request-level rows ("Valor aprovado / estimado") without touching the ratio.
+
+### G.18 Batch approval metadata + shared request-level resolver for the departmental summary (working tree, unreleased)
+
+**TEST evidence preserved (P5, 2026-10-12 10:04:06 UTC).** 66 batch-approved QUOTATION requests carry a positive approved
+total with NULL `ApprovedCurrencyCode` / `ApprovedAtUtc`; 64 of them have a zero estimate; their request and group
+currencies are AOA and the approved totals agree with the approved batch sums and the current group totals. Four
+individually approved requests carry a recorded AOA currency (one with a zero estimate). Neither population is limited to
+the current month. REQ-26/09/2026-478 (`BDDAAD51-…`): estimate 0.00 AOA; approved 351,179.88; approved currency and
+timestamp NULL; two approved batches and two completed AOA groups totalling 351,179.88; no cancelled or pending groups;
+seven active items of which four are zero-priced, item total 59,159.90, discount zero, no estimate field-change audit —
+the exact historical cause of the zero estimate remains unproven.
+
+**1. Batch approval metadata (`ApprovalBatchController.BatchFinalApprove`, Step 4b).** Permissions (Final Approver),
+stage guard, concurrency token, group activation, cumulative amount and history are unchanged. After the cumulative
+amount is written: the currency of THIS batch is resolved from the amounts actually summed — the PENDING groups it
+activates (`CurrencyCode`), or on the zero-total fallback the quotations of the selected candidates / legacy quotation
+items — as a single code, "MULTIPLE" when they differ, null when unknown (`ApprovalCurrencyResolver.ResolveBatchCurrency`).
+Request level (`CombineCumulative`): first recorded approval (no previously approved batch) → that currency and
+`ApprovedAtUtc = now`; later batch with a recorded request currency → the same code when equal, "MULTIPLE" when they
+differ or either is MULTIPLE, null when the batch currency is unknown; later batch while the request currency is NOT
+recorded (previously approved batches from before this change) → stays NULL and `ApprovedAtUtc` is NOT stamped: old
+batch currencies are never inferred as recorded facts and legacy approvals get no new historical date. Pending groups of
+unapproved batches never contribute. Known, unchanged limitation: the cumulative AMOUNT still adds currencies when
+batches differ; it is now labelled "MULTIPLE" so no consumer may present it as a single-currency monetary figure.
+
+**Schema (explained, not done).** A reliable cumulative currency across batches, and a per-batch recorded currency for the
+resolver, would need `ApprovalBatches.ApprovedCurrencyCode nvarchar(10) NULL` (additive migration; `Down` drops the
+column; no backfill — existing batches stay NULL and keep resolving through the legacy derivation). Not implemented:
+scope expansion to approval persistence requires its own review. Nothing in this change requires a migration
+(`has-pending-model-changes`: none).
+
+**2. Shared resolver (`DepartmentalAmountResolver`, Domain, pure).** Applied once per request to the current request and
+to every denominator candidate; each request counted exactly once; buckets strictly by resolved currency; no conversion,
+no cross-currency summation; payment action amounts never enter the ratio; department scope, candidate statuses and the
+`UpdatedAtUtc` month filter unchanged; combined requester/manager e-mail and other recipients unchanged.
+
+| Case | Amount | Currency | Rendered as |
+|---|---|---|---|
+| A. Approved > 0, recorded single currency; non-cancelled groups all in it (vacuous without groups); request currency equal or unregistered | approved | recorded | "valor aprovado, moeda registada na aprovação" |
+| B. Approved > 0, currency missing; request currency registered; ≥1 non-cancelled group, all in that currency; no cancelled group; no pending-approval group; every batch APPROVED (≥1); `BATCH_FINAL_APPROVED` rows ≥ approved batches; approved batch sum = approved total (±0.01); live group total = approved total (±0.01 per group) | approved | derived = request currency | "valor aprovado, moeda derivada de dados atuais consistentes (não registada na aprovação)" |
+| C. Approved > 0 but recorded "MULTIPLE", a group in another/unknown currency, request currency ≠ recorded currency, or any B evidence missing (cancelled/pending groups, unapproved or missing batches, incomplete history, batch or group sum mismatch, mixed/blank/missing currencies) | — | — | excluded from every bucket with the reason; as current request: "n/d — reason", no aggregate, no percentage |
+| D. No positive approved total; request currency registered; every non-cancelled group in it | estimate | request currency | "estimativa do pedido (fallback: sem valor aprovado utilizável)"; a zero estimate is included as 0 and disclosed |
+| E. No positive approved total and the estimate is not comparable (currency missing, blank or foreign group) | — | — | excluded with the reason / "n/d" |
+
+Rounding rule (from source): group `TotalAmount` = Σ `QuotationItem.LineTotal` (Round2 per line), batch
+`ApprovedTotalAmount` = Σ the same line totals, request total = Σ batch amounts, all decimal(18,2): equality is expected;
+the tolerances only absorb two-decimal storage rounding. Currency comparison is ordinal and never trims.
+
+**Changed metric basis.** The aggregate is no longer "purely estimated": "Valor deste pedido" states its base; "Acumulado
+(… na moeda resolvida deste pedido, incl. este)" states the composition (N recorded approved, N derived, N estimate
+fallback); "Excluídos" states how many were left out, how many for another currency and how many unresolved with their
+reasons; the period line names the three bases. Effect on REQ-478's department under the TEST facts: REQ-478 resolves
+as B (derived AOA 351,179.88) instead of an estimate of 0.00, so its contribution and percentage change; requests whose
+evidence is incomplete stay excluded with the reason instead of entering as a zero estimate.
+
+**Tests (backend 2,819/2,819).** `DepartmentalAmountResolverTests` (every decision-table row, tolerance edges, ordinal
+comparison, batch/cumulative currency helper); `DepartmentalPaymentContextTests` (real orchestrator: estimate-fallback
+aggregation with exclusions; recorded + derived + estimate sources in one bucket with MULTIPLE, no-evidence and USD
+exclusions; recorded current request; cancelled / pending / batch-sum / history defects rendering "n/d" with the reason;
+mixed currencies; unknown currencies; parent status lag; legacy event; zero basis; recipients);
+`DepartmentalRequesterManagerTests` (combined e-mail preserved); `BatchApprovalCurrencyTests` (single batch, cumulative
+batches with first timestamp kept and pending groups not counted, mixed winners → MULTIPLE, second batch in another
+currency → MULTIPLE, legacy cumulative never inferred nor re-stamped, permission unchanged);
+`AccountsPayableDepartmentalResolverRelationalTests` (LocalDB: the resolver's set-based queries translate to SQL Server
+and derive the legacy currency next to a recorded neighbour). `P6_resolver_reconciliation.sql` mirrors the resolver
+case by case and was executed on the sandbox against a fixture of the REQ-478 shape plus every class (rolled back).
+
+**Limitations.** Derivation is a display-time resolution over CURRENT data with disclosure, never a write; a later
+cancellation, correction or new batch changes a request's class. The pending-approval and cancelled-group exclusions are
+strict by design (any such state undermines the derivation). `ApprovalBatches` has no currency; cumulative multi-currency
+approvals remain "MULTIPLE" with an amount that adds currencies. No backfill, no resend.
+
+**Bounded TEST validation (after deployment; redirect active; no replay).**
+1. Final-approve a new batch on a fresh QUOTATION request: `ApprovedCurrencyCode` = the batch's single currency,
+   `ApprovedAtUtc` set, `ApprovedTotalAmount` = batch sum; approve a second batch in the same currency: currency and
+   timestamp unchanged, amount cumulative. On a request with a batch approved before this release (NULL currency),
+   approve a further batch: currency and timestamp stay NULL, amount cumulative.
+2. Schedule and complete a payment on REQ-478-like request (legacy batch approval, consistent evidence): departmental
+   e-mail shows "Valor deste pedido: 351,179.88 AOA (base: valor aprovado, moeda derivada …)", composition counts and
+   the resolved-currency aggregate; run P6 with the same request Id and compare `P6-current`, `P6-candidates` and
+   `P6-totals` with the e-mail.
+3. Repeat on a request approved through the single path (recorded currency) and on one without an approved total
+   (estimate fallback label); confirm "Excluídos" lists any unresolved or foreign-currency requests with reasons.
+4. Requester/manager recipients, AP notices, dedup and `EMAIL_ENV_POLICY` destinations unchanged.
+
+#### G.18.1 Final review: batch currency accumulation truth table and two corrections
+
+**Defects found in review and fixed (scope: batch approval metadata).** (1) A recorded "MULTIPLE" followed by a batch of
+unknown currency collapsed to null; several currencies are already proven, so "MULTIPLE" now survives any later batch.
+(2) Within one batch, a non-zero contribution with unknown currency was ignored and the batch was labelled with the
+other contributions' code; the batch currency is now unknown (null) unless every non-zero contribution carries the
+same known code. Hardening: the primary branch now honours a group currency known only through its lookup, and a
+recorded request currency counts as prior evidence even without previously approved batches.
+
+**Contribution evidence follows exactly the amount branch used.** Primary branch (`Σ pending groups > 0`): every
+PENDING group, (currency code or lookup, group total). Fallback branch (zero/negative group total): the selected
+candidates' line totals with their quotation currency plus the legacy buyer-selected quotation items' line totals with
+their quotation currency — the same two sums that form `batchApprovedAmount`. Zero amounts carry no evidence.
+
+| Recorded request currency | Previously approved batches | This batch | Result | Timestamp |
+|---|---|---|---|---|
+| none | no | AOA | AOA | set now (first recorded approval) |
+| none | no | unknown | unknown (NULL) | set now |
+| none | no | MULTIPLE | MULTIPLE | set now |
+| none (legacy or earlier unknown) | yes | AOA / unknown / MULTIPLE | **NULL** (never inferred, never upgraded) | **not stamped** |
+| AOA | yes | AOA | AOA | unchanged (first) |
+| AOA | yes | USD | MULTIPLE | unchanged |
+| AOA | yes | MULTIPLE | MULTIPLE | unchanged |
+| AOA | yes | unknown | NULL (not provably single nor multiple) | unchanged |
+| MULTIPLE | yes | anything | MULTIPLE | unchanged |
+| AOA (recorded without batches) | no | USD / AOA / unknown | MULTIPLE / AOA / NULL | unchanged |
+
+**Departmental resolver review (no defect).** A positive approved amount with unresolved currency is excluded with its
+reason and never replaced by the estimate (the approved branch has no estimate fallback); the current request and
+every candidate go through `DepartmentalAmountResolver.Resolve`; the derived label states "moeda derivada de dados
+atuais consistentes (não registada na aprovação)"; a request enters a bucket only when its resolved currency equals the
+current request's, "MULTIPLE" never resolves, so no cross-currency scalar can enter the aggregate.
+
+**Added coverage.** `DepartmentalAmountResolverTests`: contribution rules (unknown non-zero amount, zero amounts,
+empty) and the fifteen-row cumulative truth table above. `BatchApprovalCurrencyTests`: first approval with unknown
+currency keeps NULL while stamping the approval, and a later known batch never makes it known; known followed by unknown
+leaves NULL with the first timestamp; zero-total fallback takes the currency from the candidates' quotations (USD)
+although the groups read blank; group currency known only through its lookup is honoured. Backend 2,837/2,837.
+
+**On the sandbox fixture.** The P6 run on the LocalDB sandbox used synthetic rows (a REQ-478-shaped request and one
+request per resolver class); its totals demonstrate the script's classification and arithmetic only and are NOT
+predictions for live TEST. Run P6 on TEST and compare its output with the e-mail of the same request.
+
+#### G.18.2 Live read-only P6 reconciliation on TEST (recorded before publication of v2.247.5)
+
+Reference UTC 2026-10-12 11:00:36.5892774, current TEST data, read-only. REQ-26/09/2026-478 resolves as
+DERIVED_APPROVED: 351,179.88 AOA. Departmental aggregate 11,241,804.46 AOA; impact 3.1 %. Composition: three
+recorded-approved requests, one derived-approved request, no estimate fallback. One USD request excluded; no unresolved
+candidates. Increase over the previous estimate-based aggregate: 351,179.88 AOA (REQ-478 now contributes its approved
+total instead of a zero estimate). This validates the SQL diagnostic against current TEST data; it does not validate the
+deployed implementation (not yet deployed) nor any historical e-mail state.
+
+Limitations preserved: the legacy derived currency rests on current consistency checks, not on a recorded historical
+currency; historical estimates, approved currencies and approval dates are not backfilled; mixed-currency cumulative
+scalars remain a pre-existing limitation and are excluded from the departmental ratio; the exact historical cause of
+REQ-478's zero estimate remains unproven.

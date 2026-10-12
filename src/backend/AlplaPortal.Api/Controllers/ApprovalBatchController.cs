@@ -1773,6 +1773,55 @@ public class ApprovalBatchController : BaseController
         var cumulativeAmount = batchApprovedAmount + allApprovedBatches.Sum(b => b.ApprovedTotalAmount ?? 0);
         request!.ApprovedTotalAmount = cumulativeAmount;
 
+        // ── Step 4b (v2.247.5): approval currency + timestamp for the batch path (previously never written here) ──
+        // The currency is taken from the amounts actually summed into batchApprovedAmount: the PENDING groups activated by
+        // this batch (primary path) or, on the fallback, the quotations of the selected candidates / legacy quotation items.
+        // Request level: first recorded approval → the batch currency (single code, "MULTIPLE" or null when unknown) and
+        // ApprovedAtUtc = now. Later batches → combined with the recorded request currency ("MULTIPLE" when they differ).
+        // When earlier batches were approved before this field existed (request currency NULL with previously approved
+        // batches), the cumulative currency is NOT inferred and no new historical approval date is stamped: both stay NULL
+        // and the departmental resolver treats the request under its legacy-derivation rules.
+        var hadPreviouslyApprovedBatches = allApprovedBatches.Count > 0;
+        // Contributions (currency, amount) of EXACTLY the branch that produced batchApprovedAmount above.
+        List<(string? Code, decimal Amount)> summedContributions;
+        if (pendingGroups.Sum(g => g.TotalAmount) > 0)
+        {
+            // Primary branch: every PENDING group of the batch (currency code, else its currency lookup).
+            var groupCurrencyIds = pendingGroups.Where(g => g.CurrencyCode == null && g.CurrencyId.HasValue).Select(g => g.CurrencyId!.Value).Distinct().ToList();
+            var groupCurrencyCodes = groupCurrencyIds.Count == 0
+                ? new Dictionary<int, string>()
+                : await _context.Currencies.Where(c => groupCurrencyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Code);
+            summedContributions = pendingGroups
+                .Select(g => (g.CurrencyCode ?? (g.CurrencyId.HasValue && groupCurrencyCodes.TryGetValue(g.CurrencyId.Value, out var code) ? code : null), g.TotalAmount))
+                .ToList();
+        }
+        else
+        {
+            // Fallback branch: the selected candidates' line totals (currency = their quotation's) plus the legacy
+            // buyer-selected quotation items' line totals (currency = their quotation's): the same two sums as above.
+            var selectedCandidates = batch.Items
+                .Where(bi => bi.SelectedCandidateId.HasValue)
+                .Select(bi => bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId!.Value))
+                .Where(c => c != null)
+                .Select(c => (c!.QuotationId, c.LineTotal))
+                .ToList();
+            var legacyItemIds = batch.Items.Where(bi => !bi.SelectedCandidateId.HasValue && bi.SelectedQuotationItemId.HasValue).Select(bi => bi.SelectedQuotationItemId!.Value).Distinct().ToList();
+            var legacyItems = legacyItemIds.Count == 0
+                ? new List<(Guid QuotationId, decimal LineTotal)>()
+                : (await _context.QuotationItems.Where(qi => legacyItemIds.Contains(qi.Id)).Select(qi => new { qi.QuotationId, qi.LineTotal }).ToListAsync()).Select(x => (x.QuotationId, x.LineTotal)).ToList();
+            var quotationIds = selectedCandidates.Select(c => c.QuotationId).Concat(legacyItems.Select(l => l.QuotationId)).Distinct().ToList();
+            var quotationCurrencies = quotationIds.Count == 0
+                ? new Dictionary<Guid, string?>()
+                : await _context.Quotations.Where(q => quotationIds.Contains(q.Id)).ToDictionaryAsync(q => q.Id, q => (string?)q.Currency);
+            summedContributions = selectedCandidates.Concat(legacyItems)
+                .Select(x => (quotationCurrencies.TryGetValue(x.QuotationId, out var cur) ? cur : null, x.LineTotal))
+                .ToList();
+        }
+        var batchCurrency = ApprovalCurrencyResolver.ResolveBatchCurrency(summedContributions);
+        request.ApprovedCurrencyCode = ApprovalCurrencyResolver.CombineCumulative(request.ApprovedCurrencyCode, hadPreviouslyApprovedBatches, batchCurrency);
+        if (!hadPreviouslyApprovedBatches && request.ApprovedAtUtc == null)
+            request.ApprovedAtUtc = DateTime.UtcNow;
+
         // ── Activate this batch's PO groups: PENDING → WAITING_PO ──
         foreach (var group in pendingGroups)
         {
