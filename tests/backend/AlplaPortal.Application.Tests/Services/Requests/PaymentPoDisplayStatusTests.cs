@@ -94,4 +94,18 @@ public class PaymentPoDisplayStatusTests
         var badge = RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride(projection, "CANCELLED");
         Assert.False(badge.HasValue);
     }
+    [Fact]
+    public void Legacy_request_level_return_keeps_the_scalar_badge_when_the_sole_group_is_still_PoIssued()
+    {
+        // docs §G.19 (REQ-156 shape): scalar WAITING_PO_CORRECTION, single group PO_ISSUED → no override (scalar stands).
+        var request = BuildRequest("PAYMENT", "WAITING_PO_CORRECTION", "PO_ISSUED");
+        var projection = RequestWorkflowProjectionBuilder.Build(request, "WAITING_PO_CORRECTION");
+        Assert.Null(RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride(projection, "WAITING_PO_CORRECTION"));
+        // Current-code single-group return: unit equals scalar → no override either (unchanged).
+        var current = BuildRequest("QUOTATION", "WAITING_PO_CORRECTION", "WAITING_PO_CORRECTION");
+        Assert.Null(RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride(RequestWorkflowProjectionBuilder.Build(current, "WAITING_PO_CORRECTION"), "WAITING_PO_CORRECTION"));
+        // Any other lagging scalar still gets the group-derived badge (rule is narrow).
+        var lagging = BuildRequest("PAYMENT", "APPROVED", "PO_ISSUED");
+        Assert.NotNull(RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride(RequestWorkflowProjectionBuilder.Build(lagging, "APPROVED"), "APPROVED"));
+    }
 }

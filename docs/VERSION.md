@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.247.5
+v2.247.6
+
+## [v2.247.6] - 2026-10-14
+
+### Legacy request-level Finance return: financial block, Buyer correction, badge, explicit scoped repair
+
+PATCH. Requests returned by Finance before the group-scoped return (request WAITING_PO_CORRECTION, group still
+PO_ISSUED) can no longer be scheduled, paid or advanced until the Buyer corrects them; the Buyer can correct them through
+the normal flow with a mandatory justification; the badge shows the unresolved return; an explicit PREVIEW/APPLY scoped
+repair is available to administrators (nothing repaired automatically). No migration, no EF model change, no
+configuration change.
 
 ## [v2.247.5] - 2026-10-12
 

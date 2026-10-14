@@ -89,6 +89,19 @@ export interface RequestStatusActionPanelsProps {
     hideLegacyGuidance?: boolean;
 }
 
+/**
+ * v2.247.6 (docs §G.19): legacy request-level Finance return. Returns made before the group-scoped return
+ * (2026-08-23) set only the request scalar to WAITING_PO_CORRECTION and left the sole group at PO_ISSUED, so the
+ * group-filtered "CORRIGIR P.O" button never appeared. For exactly that shape (scalar WAITING_PO_CORRECTION, one
+ * non-cancelled group, and it is PO_ISSUED) the correction button targets that group; the backend accepts it only
+ * when its own evidence predicate holds (REREGISTER_PO with mandatory comment), otherwise it refuses.
+ */
+export function resolveLegacyReturnCorrectionGroup(status: string | undefined, poGroups: any[] | undefined): any | null {
+    if (status !== 'WAITING_PO_CORRECTION' || !poGroups) return null;
+    const live = poGroups.filter(g => g && g.status !== 'CANCELLED');
+    return live.length === 1 && live[0].status === 'PO_ISSUED' ? live[0] : null;
+}
+
 export function RequestStatusActionPanels({
     requestId,
     status,
@@ -257,6 +270,23 @@ export function RequestStatusActionPanels({
                                         </button>
                                     ))
                                 )}
+                                {/* v2.247.6 (§G.19): legacy request-level Finance return — sole live group still PO_ISSUED */}
+                                {(() => {
+                                    const legacyGroup = resolveLegacyReturnCorrectionGroup(status, poGroups);
+                                    return legacyGroup ? (
+                                        <button
+                                            key={`po-correct-legacy-${legacyGroup.id}`}
+                                            onClick={() => {
+                                                setPoGroupIdForUpload(legacyGroup.id);
+                                                setShowCorrectPoModal(true);
+                                            }}
+                                            className="btn-primary"
+                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ea580c' }}
+                                        >
+                                            <Edit2 size={14} /> CORRIGIR P.O ({legacyGroup.supplierNameSnapshot})
+                                        </button>
+                                    ) : null;
+                                })()}
                                 {/* TRANSITIONAL FALLBACK: Removed direct access from Buyer to enforce Receiving ownership */}
                             </div>
                         )}

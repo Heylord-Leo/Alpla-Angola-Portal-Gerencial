@@ -270,4 +270,61 @@ public class AdminRepairsController : BaseController
         if (result.Repaired > 0 || result.AlreadyHealthy > 0) return Ok(result);
         return Conflict(result); // REFUSED / AMBIGUOUS / CONFLICTING / facts mismatch — nothing written
     }
+    /// <summary>
+    /// v2.247.6 (docs §G.19) — legacy request-level Finance return, scoped to EXACTLY ONE request. <c>confirm=false</c>
+    /// (default) previews: it evaluates the shared predicate (scalar WAITING_PO_CORRECTION, sole live group PO_ISSUED,
+    /// FINANCE_RETURN_ADJUSTMENT later than the last REGISTER_PO/REREGISTER_PO, no live payment) and writes nothing.
+    /// <c>confirm=true</c> requires a body with a non-empty <c>reason</c> and the PREVIEW's <c>expectedPoGroupId</c>;
+    /// the service re-evaluates inside a transaction, fails closed when the live qualifying group differs (409, nothing
+    /// written), moves ONLY that group PO_ISSUED → WAITING_PO_CORRECTION with one audit history row
+    /// (LEGACY_RETURN_REPAIR, idempotency key per group), preserves the scalar, amounts, approval metadata, documents,
+    /// history and notification logs, emits no event and no e-mail, and answers ALREADY_REPAIRED on a repeated call.
+    /// Never a population route: one request id per call.
+    /// </summary>
+    [HttpPost("legacy-finance-return/{requestId:guid}")]
+    public async Task<IActionResult> LegacyFinanceReturn(
+        Guid requestId,
+        [FromQuery] bool confirm = false,
+        [FromBody] LegacyFinanceReturnRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+        var service = new LegacyFinanceReturnRepairService(_context);
+        if (!confirm)
+        {
+            var preview = await service.PreviewAsync(requestId, ct);
+            if (preview == null) return NotFound(new { error = "Pedido não encontrado." });
+            return Ok(preview);
+        }
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason) || body.ExpectedPoGroupId == null || body.ExpectedPoGroupId == Guid.Empty)
+            return BadRequest(new { error = "Para aplicar, envie um corpo com reason e expectedPoGroupId (o grupo da pré-visualização)." });
+        var result = await service.ApplyAsync(requestId, CurrentUserId, body.Reason.Trim(), body.ExpectedPoGroupId.Value, ct);
+        if (result == null) return NotFound(new { error = "Pedido não encontrado." });
+        return result.Decision is "REPAIRED" or "ALREADY_REPAIRED" ? Ok(result) : Conflict(result);
+    }
+
+    /// <summary>
+    /// Conditional rollback of <see cref="LegacyFinanceReturn"/>: reverts the group to PO_ISSUED only while the repair
+    /// audit exists, no history row of any kind was written after it, no live payment exists and the group is still
+    /// WAITING_PO_CORRECTION — it can never overwrite a legitimate later action. Requires <c>confirm=true</c>, a reason
+    /// and the repaired group id.
+    /// </summary>
+    [HttpPost("legacy-finance-return/{requestId:guid}/rollback")]
+    public async Task<IActionResult> LegacyFinanceReturnRollback(
+        Guid requestId,
+        [FromQuery] bool confirm = false,
+        [FromBody] LegacyFinanceReturnRepairRequest? body = null,
+        CancellationToken ct = default)
+    {
+        var guard = GuardSysAdmin();
+        if (guard != null) return guard;
+        if (!confirm) return BadRequest(new { error = "A reversão exige confirm=true, reason e expectedPoGroupId." });
+        if (body == null || string.IsNullOrWhiteSpace(body.Reason) || body.ExpectedPoGroupId == null || body.ExpectedPoGroupId == Guid.Empty)
+            return BadRequest(new { error = "A reversão exige um corpo com reason e expectedPoGroupId." });
+        var service = new LegacyFinanceReturnRepairService(_context);
+        var result = await service.RollbackAsync(requestId, CurrentUserId, body.Reason.Trim(), body.ExpectedPoGroupId.Value, ct);
+        if (result == null) return NotFound(new { error = "Pedido não encontrado." });
+        return result.Decision == "ROLLED_BACK" ? Ok(result) : Conflict(result);
+    }
 }

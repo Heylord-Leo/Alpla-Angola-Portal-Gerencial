@@ -17,6 +17,7 @@ using AlplaPortal.Api.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Infrastructure.Services.Finance;
 using AlplaPortal.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -7093,6 +7094,25 @@ public class RequestsController : BaseController
         var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.PoGroupId.Value);
         if (poGroup == null) return NotFound("Grupo P.O não encontrado.");
 
+        // v2.247.6 (docs §G.19): legacy request-level Finance return — scalar WAITING_PO_CORRECTION while the sole live
+        // group is still PO_ISSUED (returns made before the group-scoped return of 2026-08-23). Shared predicate
+        // (LegacyFinanceReturnEvaluator): one live group at PO_ISSUED, a FINANCE_RETURN_ADJUSTMENT later than the last
+        // registration, no live payment. For THAT group only, this registration is the correction: it bypasses nothing
+        // else (Buyer authorization, P.O. attachment, supplier integrity, P.O. number and duplicate checks all ran above).
+        var legacyReturn = await LegacyFinanceReturnShape.EvaluateAsync(_context, request.Id);
+        var isLegacyReturnCorrection = legacyReturn.Qualifies && legacyReturn.GroupId == poGroup.Id;
+        if (isLegacyReturnCorrection && string.IsNullOrWhiteSpace(dto.Comment))
+        {
+            // The Buyer's own justification is mandatory for the legacy correction: the generated group prefix and the
+            // correction success text never satisfy it. Refused before any mutation or notification.
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Justificativa obrigatória",
+                Detail = "A correção de uma P.O devolvida por Finanças exige a justificativa do Comprador (campo Comment).",
+                Status = 400
+            });
+        }
+
         // ── Block PO for DRAFT suppliers ──
         if (poGroup.Supplier != null && poGroup.Supplier.RegistrationStatus == "DRAFT")
         {
@@ -7182,7 +7202,7 @@ public class RequestsController : BaseController
                 RequestConstants.PoGroupStatuses.WaitingPo, 
                 RequestConstants.PoGroupStatuses.WaitingPoCorrection 
             };
-            if (!allowedGroupStatuses.Contains(poGroup.Status))
+            if (!allowedGroupStatuses.Contains(poGroup.Status) && !isLegacyReturnCorrection)
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -7209,7 +7229,7 @@ public class RequestsController : BaseController
             }
         }
 
-        var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection;
+        var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection || isLegacyReturnCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
@@ -7492,6 +7512,21 @@ public class RequestsController : BaseController
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
 
+        // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
+        // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = $"Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
+
         if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento necessário. Status atual: {group.Status}", Status = 400 });
 
@@ -7563,6 +7598,21 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+
+        // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
+        // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = $"Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
 
         if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired && group.Status != RequestConstants.Statuses.AdvancePaymentScheduled)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento. Status atual: {group.Status}", Status = 400 });

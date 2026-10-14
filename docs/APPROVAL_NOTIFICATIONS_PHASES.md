@@ -1570,3 +1570,333 @@ Limitations preserved: the legacy derived currency rests on current consistency 
 currency; historical estimates, approved currencies and approval dates are not backfilled; mixed-currency cumulative
 scalars remain a pre-existing limitation and are excluded from the departmental ratio; the exact historical cause of
 REQ-478's zero estimate remains unproven.
+
+#### G.18.3 Live TEST validation of v2.247.5 (2026-10-12)
+
+**Deployed build.** `/api/app/version` = 2.247.5+c5276c5, environment TEST, buildMetadataStatus Valid.
+
+**1. Legacy derived-currency departmental summary — REQ-07/09/2026-385** (`RequestId FB5BEDE0-9CF1-407D-8AB5-ADEE7E072E1D`).
+A NEW payment completion was performed after deployment (no historical replay). Received in the TEST redirect mailbox:
+the departmental notice for Carolina Modesto, the standard requester notice for Andersan Botelho, and the Accounts
+Payable notice for alpla-plasticos-accounts@alpla.com. The departmental content matched P6 (reference UTC
+2026-10-12 11:52:53.6083671): source DERIVED_APPROVED; request amount 241,879.50 AOA; aggregate including the current
+request 11,963,684.04 AOA; impact 2.0 %; composition 3 recorded-approved, 3 derived-approved, 0 estimate fallback;
+exclusions 1 other currency, 0 unresolved. The body states explicitly that the derived currency comes from current
+consistent data and was not recorded at approval. The AP notice showed Mistoquímica, paid amount 241,879.50 AOA and
+payment date 12/10/2026.
+Narrative correction: REQ-384 was already paid when its UI state was inspected; it was NOT used to establish the
+received-e-mail validation and its `UpdatedAtUtc` must not be read as deployment timing. REQ-385 is the completed case.
+
+**2. New cumulative batch approval metadata — REQ-11/09/2026-410** (`RequestId 0B2E0EED-1F6A-48DB-AF0A-7756916737B8`).
+Initial state: request approved amount/currency/timestamp NULL; batch 1 REJECTED; batches 2 and 3
+WAITING_FINAL_APPROVAL. After final approval of batch 2: batch 2 APPROVED with `ApprovedTotalAmount` 1,148,858.37;
+request `ApprovedTotalAmount` 1,148,858.37; `ApprovedCurrencyCode` AOA; `ApprovedAtUtc` 2026-10-12 12:01:42.6593640.
+After final approval of batch 3: batch 3 APPROVED with 2,189,292.83; request cumulative `ApprovedTotalAmount`
+3,338,151.20; `ApprovedCurrencyCode` remains AOA; `ApprovedAtUtc` remains exactly 2026-10-12 12:01:42.6593640
+(first recorded approval preserved); batch 1 remains REJECTED with NULL approved amount.
+
+**Evidence boundaries.**
+- Live validation covers: derived-currency rendering on a new payment completion (REQ-385) and two successive
+  known-AOA batch approvals with cumulative amount, constant currency and preserved timestamp (REQ-410).
+- Supported by local tests only, NOT claimed as validated live: mixed or unknown currency accumulation ("MULTIPLE",
+  unknown-then-known, known-then-unknown, legacy never inferred), unresolved and estimate-fallback rendering, and
+  technical re-emission / concurrent-emission scenarios.
+- The receipt screenshots establish delivery and content; they do not establish database-level absence of duplicate
+  rows for REQ-385 (that remains a query-level check, not performed here).
+- Limitations of §G.18 / §G.18.2 remain: derived currency rests on current consistency checks, nothing is backfilled,
+  mixed-currency cumulative scalars stay "MULTIPLE" and excluded from the ratio, and the historical cause of REQ-478's
+  zero estimate is unproven. Earlier validated releases (v2.247.1–v2.247.4, §G.12–§G.16) are unaffected.
+
+**Remaining validation items (optional, data-permitting).** Recorded-approved current request (one of the four
+individually approved requests) and estimate-fallback rendering on a request without an approved total; a "MULTIPLE"
+or unknown-currency batch approval if a mixed award becomes available; a query-level duplicate-row check for REQ-385's
+outbox and AP log rows.
+
+#### G.18.4 Further live TEST evidence on v2.247.5 (2026-10-13/14)
+
+**REQ-26/09/2026-476 — recorded-approved departmental rendering validated live.** `RequestId
+E3660357-63B4-4E92-BA5F-879470BDF312`, company 1, department 7, plant 1; group `C42BF007-B007-4166-AD34-235C93876F27`,
+supplier HENDA HOTELARIA, LDA - HCTA. A NEW payment completion (no replay) produced three e-mails through the TEST
+redirect: requester Andersan, department manager Carolina, Accounts Payable. P6 (reference UTC 2026-10-14
+07:58:58.9656751): source RECORDED_APPROVED, 497,226.58 AOA; total including the current request 11,963,684.04 AOA;
+impact 4.2 %; composition 3 recorded-approved, 3 derived-approved, 0 estimate fallback; exclusions 1 other currency, 0
+unresolved. The departmental content matched P6, including the recorded-approval-currency label, composition,
+exclusions and period line. The AP notice showed the supplier, paid amount 497,226.58 AOA and payment date 14/10/2026.
+Persistence: `CorrelationId B119D8CF-803E-4EE1-BC6C-39040A0F0FE4`; `EmailOutbox` rows for Andersan (08:00:38.2667258 UTC)
+and Carolina (08:00:38.2778512 UTC), both SENT with `LastError NULL`; `AccountsPayableNotificationLogs` row at
+08:00:41.5468939 UTC with `Success 1, Skipped 0, ErrorMessage NULL`. The supplied query results contain exactly those
+two outbox rows and one AP row with the same correlation and no duplicates (query-level duplicate check satisfied for
+this request; the earlier REQ-385 remark in §G.18.3 stands for REQ-385).
+
+**REQ-11/09/2026-514 — two-session approval attempt and new approval metadata.** `RequestId
+BBDF574C-A032-4B3E-ABC4-DDC3062E8921`, batch 1 `0AB3D93C-0F7B-456C-A3E6-AF0E7F4B9CF0`. Separate administrator and
+Biavanga Joao sessions attempted area approval. Result: exactly one `BATCH_AREA_APPROVED` history row
+(`EE308C34-230F-4465-9435-2D3A37C521D5`, 2026-10-13 12:49:12.8833629 UTC), two item-award rows and one subsequent
+`STATUS_SYNC`; the second session displayed "O lote não está em fase de aprovação da área (status atual:
+WAITING_FINAL_APPROVAL)." Classification: second-approval rejection by the stage status guard with no duplicated
+approval history. NOT claimed: live RowVersion / HTTP 409 concurrency validation — HTTP responses and overlapping
+request timings were not captured (concurrency remains covered by `ApprovalConcurrencyRelationalTests` only).
+Subsequent single final approval recorded 109,500.00 AOA with `ApprovedAtUtc` 2026-10-13 12:59:16.2794769 UTC; batch
+APPROVED for 109,500.00; group `254EBC4B-500F-4AF3-98E0-C1231AE08BF3` moved PENDING → WAITING_PO. After P.O.
+registration the group was ADVANCE_PAYMENT_REQUIRED, so the recorded-approved e-mail test was performed on REQ-476
+instead; no advance-payment notification coverage is claimed.
+
+**Evidence boundaries (cumulative with §G.18.3).** Live: derived-currency rendering (REQ-385), recorded-approved
+rendering (REQ-476), two successive known-AOA batch approvals (REQ-410), a single first batch approval with recorded
+currency and timestamp after a rejected batch (REQ-514), and stage-guard rejection of a second approval session
+(REQ-514). Local tests only: mixed/unknown currency accumulation, unresolved and estimate-fallback rendering,
+RowVersion concurrency, technical re-emission, advance-payment notices. Limitations of §G.18 / §G.18.2 unchanged.
+
+### G.19 REQ-27/07/2026-156 — request returned by Finance with its group still PO_ISSUED (investigation only, 2026-10-14)
+
+**TEST facts (supplied).** `RequestId 7008BD28-E902-414E-8651-1FE9540E7C19`; request status WAITING_PO_CORRECTION;
+`ApprovedTotalAmount` 1,097,000.00, `ApprovedCurrencyCode` AOA; single group `44BD391C-9D32-496F-B237-30A597A4844E`
+(Qlerius | Serviços de Limpeza, 1,097,000.00 AOA) with status PO_ISSUED; REGISTER_PO on 2026-08-03;
+FINANCE_RETURN_ADJUSTMENT on 2026-08-11 09:42:23 UTC ("INSERIR A FACTURA OU PROFORMA, O CONTRACTO NÃO É ACEITE PARA
+PAGAMENTOS"); no later re-registration in the supplied history; list and detail badge "P.O. emitida"; detail
+responsibility/next action "Comprador — Corrigir P.O devolvida por Finanças e re-registar".
+
+**Confirmed from source and repository history.**
+1. *Which code produced the shape.* On 2026-08-11 the deployed return endpoint was the version of commit 964bb24
+   (2026-07-23): `FinanceController.ReturnForAdjustment` set only `Request.StatusId = WAITING_PO_CORRECTION` and wrote
+   FINANCE_RETURN_ADJUSTMENT; it did not touch the group. The group-scoped return that writes
+   `group.Status = WAITING_PO_CORRECTION` and leaves the scalar to `StatusAggregationService` arrived in cc85ec7
+   (2026-08-23). REQ-156 is therefore a legacy request-level return, consistent with the code of its date, not a
+   defect of the current return endpoint, which cannot produce this shape (`FinanceReturnForAdjustmentTests`).
+2. *Why badge and guidance disagree.* The badge is the display-only override: with one non-cancelled group
+   `RequestGroupDisplayStateCalculator.Resolve` returns no override (single shared code), then
+   `RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride` returns the unit status because it differs from the
+   scalar, hence "P.O. emitida" (`RequestsController` list hydration and `ResolveGroupAwareDisplayBadge`;
+   `useRequestDetail.ts` shows `displayStatusName ?? statusName`). The responsibility/next-action text comes from the
+   legacy scalar-keyed guidance (`frontend/src/lib/utils.ts`, `getRequestGuidance`, case WAITING_PO_CORRECTION). Two
+   truths from two sources: the override intentionally prefers the group, the guidance the scalar.
+3. *Scheduling guards.* `FinancePaymentEligibilityService.CanSchedule`: QUOTATION uses the group status only (PO_ISSUED
+   is schedulable); PAYMENT treats a meaningful group status (PO_ISSUED) as authoritative. Neither consults the scalar
+   WAITING_PO_CORRECTION, so `POST finance/{id}/schedule` would accept REQ-156's group. Visibility: the Finance payments
+   queue (`GET finance/payments`) admits a QUOTATION request through `PoGroups.Any(financeGroupStatuses)` regardless of
+   the scalar; a PAYMENT request is admitted only by scalar, so it would not be listed, but a direct call still passes.
+4. *Correction / re-registration.* `RequestsController.RegisterPo`: for QUOTATION the group must be WAITING_PO or
+   WAITING_PO_CORRECTION, so PO_ISSUED is refused (400) and the Buyer cannot act on the displayed instruction; for
+   PAYMENT the request-level guard accepts WAITING_PO_CORRECTION but `isCorrection` is derived from the group status, so
+   it would run as REGISTER_PO (no mandatory comment, no REREGISTER_PO history, AP notice labelled as a registration)
+   and set the group to PO_ISSUED again. The request type decides which outcome applies.
+5. *Coverage.* `FinanceReturnForAdjustmentTests` covers the current group-scoped return. No test covers the legacy
+   shape (scalar WAITING_PO_CORRECTION with a sole live group PO_ISSUED) for badge/guidance consistency, RegisterPo
+   correction handling or scheduling refusal.
+
+**Hypotheses (not established).** The request type (QUOTATION vs PAYMENT), hence which outcome of item 4 applies;
+whether any payment, schedule attachment or later history exists for the group; how many other requests share the
+shape; and that a later `StatusAggregationService` run on another action would move a QUOTATION scalar back to
+PO_ISSUED silently.
+
+**Read-only TEST queries (table names verified against the EF model).**
+```sql
+USE [Portal-Gerencial-Test]; SET NOCOUNT ON;
+DECLARE @Id uniqueidentifier = '7008BD28-E902-414E-8651-1FE9540E7C19';
+-- R1: type, scalar, groups
+SELECT r.RequestNumber, t.Code AS RequestType, s.Code AS Scalar, g.Id AS GroupId, g.Status AS GroupStatus, g.TotalAmount, g.CurrencyCode, g.PurchaseOrderNumber, g.ApprovalBatchId, g.PoResponsibleBuyerId
+FROM Requests r JOIN RequestTypes t ON t.Id = r.RequestTypeId JOIN RequestStatuses s ON s.Id = r.StatusId
+LEFT JOIN RequestPoGroups g ON g.RequestId = r.Id WHERE r.Id = @Id;
+-- R2: full history in order (previous/new scalar per row)
+SELECT h.CreatedAtUtc, h.ActionTaken, ps.Code AS PrevStatus, ns.Code AS NewStatus, LEFT(h.Comment, 160) AS Comment
+FROM RequestStatusHistories h LEFT JOIN RequestStatuses ps ON ps.Id = h.PreviousStatusId LEFT JOIN RequestStatuses ns ON ns.Id = h.NewStatusId
+WHERE h.RequestId = @Id ORDER BY h.CreatedAtUtc, h.Id;
+-- R3: payments and active documents on the request
+SELECT 'payment' AS Kind, p.Id, p.PaymentType, p.PaymentStatus, p.PlannedAmount, p.ActualPaidAmount, p.ScheduledDateUtc, p.PaidDateUtc FROM RequestPayments p WHERE p.RequestId = @Id;
+SELECT 'attachment' AS Kind, a.Id, a.AttachmentTypeCode, a.FileName, a.RequestPoGroupId, a.UploadedAtUtc FROM RequestAttachments a WHERE a.RequestId = @Id AND a.IsDeleted = 0 ORDER BY a.UploadedAtUtc;
+-- R4: prevalence of the legacy shape (scalar returned, no live group returned)
+SELECT r.RequestNumber, t.Code AS RequestType, s.Code AS Scalar,
+       (SELECT COUNT(*) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS LiveGroups,
+       (SELECT STRING_AGG(g.Status, ',') FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS LiveGroupStatuses,
+       (SELECT MAX(h.CreatedAtUtc) FROM RequestStatusHistories h WHERE h.RequestId = r.Id AND h.ActionTaken IN ('REGISTER_PO','REREGISTER_PO')) AS LastRegistration,
+       (SELECT MAX(h.CreatedAtUtc) FROM RequestStatusHistories h WHERE h.RequestId = r.Id AND h.ActionTaken = 'FINANCE_RETURN_ADJUSTMENT') AS LastReturn,
+       (SELECT COUNT(*) FROM RequestPayments p WHERE p.RequestId = r.Id AND p.PaymentStatus <> 'CANCELLED') AS LivePayments
+FROM Requests r JOIN RequestTypes t ON t.Id = r.RequestTypeId JOIN RequestStatuses s ON s.Id = r.StatusId
+WHERE s.Code = 'WAITING_PO_CORRECTION'
+  AND NOT EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status = 'WAITING_PO_CORRECTION')
+ORDER BY LastReturn;
+-- R5: the inverse shape (a live group returned while the scalar is not), expected under current code for multi-group requests
+SELECT r.RequestNumber, s.Code AS Scalar, COUNT(*) AS GroupsReturned
+FROM Requests r JOIN RequestStatuses s ON s.Id = r.StatusId JOIN RequestPoGroups g ON g.RequestId = r.Id
+WHERE g.Status = 'WAITING_PO_CORRECTION' AND s.Code <> 'WAITING_PO_CORRECTION' GROUP BY r.RequestNumber, s.Code;
+```
+
+**Proposed next implementation scope (not implemented; no blanket SQL update).**
+(a) Guard: refuse scheduling and payment while the request scalar is WAITING_PO_CORRECTION regardless of group status,
+closing the bypass for both types. (b) RegisterPo: treat the legacy shape (scalar WAITING_PO_CORRECTION, sole live
+group PO_ISSUED, a FINANCE_RETURN_ADJUSTMENT later than the last registration, no live payment) as a correction
+(REREGISTER_PO with mandatory comment) and accept the PO_ISSUED group for QUOTATION in that shape only. (c) Display:
+when the scalar is WAITING_PO_CORRECTION and the single unit is PO_ISSUED, do not override the badge, so badge and
+guidance agree. (d) Data: a PREVIEW/APPLY scoped repair, on the pattern of the payment-group linkage repair, that moves
+the group to WAITING_PO_CORRECTION only for requests matching R4 with LastReturn after LastRegistration and no live
+payment, one request at a time, with PREVIEW evidence first. Tests for (a) to (c) on the legacy shape. R1 to R5
+results are needed before choosing between (b) and (d) for REQ-156 itself.
+
+#### G.19.1 Live evidence, implementation and scoped repair for the legacy Finance return (working tree, unreleased, 2026-10-14)
+
+**Correction to G.19 item 1.** Git chronology shows that the request-level return (commit 964bb24, 2026-07-23) was the
+latest committed version of the endpoint before 2026-08-12 and that the group-scoped return was committed on
+2026-08-23 (cc85ec7). Git alone does NOT prove which build was deployed on 2026-08-11; deployment records would.
+What is proven is that the shape matches the pre-cc85ec7 code and that the current endpoint cannot produce it.
+
+**Confirmed read-only TEST evidence (2026-10-14).** Four PAYMENT requests carry the legacy shape — scalar
+WAITING_PO_CORRECTION, exactly one live group at PO_ISSUED, a Finance return later than the last P.O. registration and
+zero non-cancelled payments: REQ-29/07/2026-176, REQ-13/07/2026-047, REQ-21/07/2026-125, REQ-27/07/2026-156. REQ-156:
+`RequestId 7008BD28-E902-414E-8651-1FE9540E7C19`, group `44BD391C-9D32-496F-B237-30A597A4844E` (Qlerius | Serviços de
+Limpeza, 1,097,000.00 AOA), last REGISTER_PO 2026-08-03 16:23:10.2916303 UTC, FINANCE_RETURN_ADJUSTMENT 2026-08-11
+09:42:23.5820198 UTC, no later history, no payment rows, active attachments = one original PROFORMA without group
+linkage and one PO linked to the group; request type PAYMENT proven. R5 also returned REQ-20/08/2026-275 (scalar
+PO_PARTIALLY_UPLOADED with one WAITING_PO_CORRECTION group): a valid multi-group shape, outside the predicate and the
+repair.
+
+**Shared predicate** (`Domain/Services/LegacyFinanceReturnEvaluator`, loaded by
+`Infrastructure/Services/Finance/LegacyFinanceReturnShape`): qualifies only when the scalar is WAITING_PO_CORRECTION,
+exactly one non-cancelled group exists and is PO_ISSUED, a FINANCE_RETURN_ADJUSTMENT row exists and is later than the
+latest REGISTER_PO/REREGISTER_PO row (which must exist), and no non-cancelled payment exists. Any missing or ambiguous
+fact disqualifies (reason text per cause). Used by every path below so they cannot disagree.
+
+**Implemented (local).**
+1. *Financial guard.* `FinanceController.SchedulePayment` and `MarkAsPaid` evaluate the predicate right after the group
+   lookup and before any mutation; a qualifying request is refused with 409 `LEGACY_RETURN_PENDING_CORRECTION`
+   (`requestPoGroupId` in the problem details) — no payment, history, attachment, outbox or AP row is written. The
+   payments queue (`GET finance/payments`) withholds SCHEDULE/PAY for those rows (`FinanceEligibilityInput.
+   LegacyReturnPendingCorrection`, reason `LEGACY_RETURN_PENDING_CORRECTION` in the evaluator, also on the per-group
+   actions). Group-scoped returns, cancel-schedule and valid actions on unaffected groups (REQ-275 shape) are unchanged;
+   the advance endpoints never admit a PO_ISSUED group.
+2. *Correction.* `RequestsController.RegisterPo` evaluates the predicate once the request and group are loaded; when it
+   qualifies for THAT group the registration is the correction for PAYMENT and QUOTATION: the QUOTATION group-status
+   guard admits the PO_ISSUED group for this shape only, `isCorrection` is true (REREGISTER_PO history, correction
+   success text, `PO_REGISTERED` event with `ActionTaken = REREGISTER_PO` → AP notice "P.O. corrigida e re-registada",
+   per-action correlation and dedup unchanged). Buyer authorization, P.O. attachment, supplier integrity, P.O. number
+   and duplicate checks, payment-condition handling, group ownership and status transitions are untouched. The existing
+   comment rule is preserved as it is: the history comment is the group prefix, the Buyer's comment when given, and the
+   correction success text (the "P.O corrigida após devolução" default is unreachable in current code because the
+   prefix is never empty — not changed here).
+3. *Badge.* `RequestWorkflowProjectionBuilder.ResolveSingleUnitBadgeOverride` keeps the scalar when it is
+   WAITING_PO_CORRECTION and the sole unit is PO_ISSUED; every other group-derived badge is unchanged (a current-code
+   single-group return has unit = scalar; multi-unit requests never reach this method).
+4. *Frontend.* `RequestStatusActionPanels.tsx`: for the exact shape (status WAITING_PO_CORRECTION, one non-cancelled
+   group, and it is PO_ISSUED) the "CORRIGIR P.O" button targets that group (helper
+   `resolveLegacyReturnCorrectionGroup`); the backend predicate remains the authority. No other frontend change.
+
+**Scoped repair (prepared; NOT executed outside disposable fixtures).** `AdminRepairsController`:
+- `POST api/v1/admin/repairs/legacy-finance-return/{requestId}` — PREVIEW by default (`confirm=false`): evaluates the
+  predicate and returns the facts (scalar, group and status, latest return and registration times, live group and
+  payment counts) with `QUALIFIES`, `ALREADY_REPAIRED` or `REFUSED` + reason; writes nothing.
+- same route with `confirm=true` and body `{ "reason": "...", "expectedPoGroupId": "<group from PREVIEW>" }` — APPLY:
+  re-evaluates on a fresh load inside a transaction (relational providers), fails closed when the live qualifying group
+  differs from the PREVIEW fact, moves ONLY that group PO_ISSUED → WAITING_PO_CORRECTION, writes ONE audit history row
+  (`LEGACY_RETURN_REPAIR`, `IdempotencyKey = LEGACY_RETURN_REPAIR:<groupId>`, Previous/NewStatusId = the unchanged
+  scalar, comment with the return/registration times and the reason), relies on the group `RowVersion` for concurrency
+  (a concurrent change → `REFUSED`, nothing written), emits no workflow event and no e-mail, and answers
+  `ALREADY_REPAIRED` on a repeated call. Preserved: scalar status, amounts, approval metadata, documents, existing
+  history, notification logs.
+- `POST .../legacy-finance-return/{requestId}/rollback?confirm=true` with the same body — conditional rollback to
+  PO_ISSUED only while the repair audit exists, no history row of any kind was written after it, no live payment exists
+  and the group is still WAITING_PO_CORRECTION; audit `LEGACY_RETURN_REPAIR_ROLLBACK`. It can never overwrite a later
+  legitimate action (e.g. the Buyer's REREGISTER_PO).
+- One request per call; no population route; the four requests are NOT bulk-repaired — each needs its own PREVIEW
+  evidence and decision. After APPLY the request is a normal single-group correction (group WAITING_PO_CORRECTION) and
+  the legacy predicate no longer applies; alternatively the Buyer may correct directly through item 2 without the repair.
+
+**REQ-156 PREVIEW (to run on TEST after review, as SystemAdministrator; read-only).**
+```
+POST /api/v1/admin/repairs/legacy-finance-return/7008BD28-E902-414E-8651-1FE9540E7C19
+(confirm omitted or confirm=false; no body)
+```
+Expected: `Mode=PREVIEW, Decision=QUALIFIES, GroupId=44BD391C-9D32-496F-B237-30A597A4844E, GroupStatusBefore=PO_ISSUED,
+GroupStatusAfter=WAITING_PO_CORRECTION, LatestFinanceReturnUtc=2026-08-11 09:42:23, LatestPoRegistrationUtc=2026-08-03
+16:23:10, LiveGroupCount=1, LivePaymentCount=0`. Only after that review, and only with explicit authorization:
+```
+POST /api/v1/admin/repairs/legacy-finance-return/7008BD28-E902-414E-8651-1FE9540E7C19?confirm=true
+{ "reason": "REQ-156: devolução legada ao nível do pedido (G.19), grupo PO_ISSUED → WAITING_PO_CORRECTION", "expectedPoGroupId": "44BD391C-9D32-496F-B237-30A597A4844E" }
+```
+
+**Tests (backend 2,873/2,873; frontend tsc + Vite build + vitest 916/916).** `LegacyFinanceReturnEvaluatorTests` (REQ-156 shape qualifies; every
+negative: scalar not returned incl. REQ-275, two groups, no groups, group already in correction, group scheduled, no
+return, no registration, registration after/at return, live payment; eligibility flag). `LegacyFinanceReturnCorrectionTests`
+(real controllers: PAYMENT and QUOTATION legacy shape → REREGISTER_PO with correction AP wording and correlation,
+explicit comment kept, QUOTATION refused without full evidence with nothing written, current-code single-group
+correction unchanged, schedule/pay refused with 409 and no side effects, scheduling allowed after the correction, REQ-275
+shape keeps valid actions). `LegacyFinanceReturnRepairServiceTests` (PREVIEW writes nothing; APPLY moves only the group,
+one audit row, everything else preserved, idempotent; fails closed on a different expected group; refuses non-qualifying
+shapes; rollback only while nothing happened after the repair; rollback refused after a later REREGISTER_PO; rollback
+refused without audit). `PaymentPoDisplayStatusTests` (legacy badge rule, narrow).
+
+**Remaining limits.** The actual deployed build on 2026-08-11 is unproven from git. The other three legacy requests
+need individual PREVIEW evidence. Current-code `ReturnForAdjustment` on a legacy-shape request would set the group to
+WAITING_PO_CORRECTION and write a second return row (a business-side alternative to the repair, with a duplicate return
+in history) — unchanged. Relational concurrency of the repair relies on the group `RowVersion`; verified by code path
+and on InMemory (no transaction) only.
+
+#### G.19.2 Review closure: mandatory justification, financial-block scope, SQL Server repair evidence (2026-10-14)
+
+**1. Mandatory correction justification (closed).** `RegisterPo` refuses a qualifying legacy correction with 400
+"Justificativa obrigatória" when `Comment` is null, empty or whitespace — evaluated right after the legacy predicate and
+before any mutation, history, attachment or notification. The generated group prefix and the correction success text
+never satisfy the requirement (they are composed later, from the Buyer's text). With a justification the registration
+produces REREGISTER_PO history ("[Grupo P.O.: …] Justificativa: <text>. P.O corrigida e re-registrada com sucesso."),
+the PO_REGISTERED event with `ActionTaken = REREGISTER_PO`, the AP notice "P.O. corrigida e re-registada" and the
+per-action correlation. Covered for PAYMENT and QUOTATION (null, "", whitespace, tab) with before/after counts of
+histories, payments, attachments, outbox and AP rows. Scope: the legacy correction only; current-code corrections
+(group already WAITING_PO_CORRECTION) keep their existing comment handling unchanged.
+
+**2. Financial-guard scope (closed).** Blocking a financial action and being eligible for the repair are separate
+decisions, now separate predicates on the same facts:
+- `LegacyFinanceReturnEvaluator.Evaluate` (repair / correction eligibility, strict): unchanged (§G.19.1).
+- `LegacyFinanceReturnEvaluator.EvaluateFinancialBlock` (schedule / pay / advance): blocked whenever the scalar is
+  WAITING_PO_CORRECTION and NO live group carries WAITING_PO_CORRECTION — whatever the history or payment rows, and
+  with any number of live groups (several → the returned group is unknown; nothing is guessed, everything is blocked).
+  Not blocked when the scalar is anything else (REQ-275: PO_PARTIALLY_UPLOADED with one returned group) or when some
+  live group is WAITING_PO_CORRECTION (group-scoped return: that group is refused by its own status, siblings keep
+  their actions).
+
+| Scalar | Live groups | Schedule / Pay / Advance | Reason |
+|---|---|---|---|
+| ≠ WAITING_PO_CORRECTION (e.g. PO_PARTIALLY_UPLOADED, PO_ISSUED) | any | group guards decide | not a request-level return |
+| WAITING_PO_CORRECTION | one WAITING_PO_CORRECTION + siblings | siblings allowed; returned group refused by group guard | group-scoped return (current code) |
+| WAITING_PO_CORRECTION | one WAITING_PO_CORRECTION only | refused by group guard | group-scoped return |
+| WAITING_PO_CORRECTION | one PO_ISSUED, full evidence | **blocked** (409 LEGACY_RETURN_PENDING_CORRECTION) | unresolved request-level return (repair-eligible) |
+| WAITING_PO_CORRECTION | one PO_ISSUED, no return/registration history | **blocked** | missing evidence never enables actions |
+| WAITING_PO_CORRECTION | one group with a scheduled payment, none in correction | **blocked** (pay too) | unresolved return |
+| WAITING_PO_CORRECTION | one ADVANCE_PAYMENT_REQUIRED, none in correction | **blocked** (schedule-advance, confirm-advance) | unresolved return |
+| WAITING_PO_CORRECTION | several live, none in correction | **blocked** for every group | returned group unknown |
+| WAITING_PO_CORRECTION | none | **blocked** | nothing carries the return |
+
+Endpoints covered: `FinanceController.SchedulePayment`, `MarkAsPaid`; `RequestsController.ScheduleAdvancePayment`,
+`ConfirmAdvancePayment`; the Finance payments queue withholds SCHEDULE/PAY on the same decision. Refusals happen before
+any mutation; tests assert unchanged counts of payments, histories, attachments, outbox and AP rows, unchanged group and
+scalar status, and no e-mail. Outside scope, stated explicitly: `CancelSchedule` (a reversal, not a financial
+commitment), `ReturnForAdjustment` (a second return on the legacy shape would move the group and add a return row —
+unchanged), the legacy request-level operational endpoints (already refuse: they require scalar PO_ISSUED), and the
+Buyer's correction itself, which is the intended way out.
+
+**3. Real SQL Server repair verification (closed).** `LegacyFinanceReturnRepairRelationalTests` on the LocalDB sandbox
+(IntegrationTestDatabase, real model, real `rowversion` on the group, real transactions; every scenario seeds and
+removes its own request; races synchronized through the service's `BeforeApplySaveHookForTests`):
+- PREVIEW writes nothing: full snapshot (group status + RowVersion, scalar, approved metadata, attachments, payments,
+  history, outbox, AP rows) identical before and after.
+- APPLY changes only the group (status, RowVersion advanced) plus exactly one `LEGACY_RETURN_REPAIR` audit row; scalar,
+  approved amount/currency/timestamp, attachments, payments, outbox and AP rows unchanged.
+- Repeated APPLY → `ALREADY_REPAIRED`, snapshot unchanged (no second mutation or audit).
+- Stale APPLY: a concurrent writer changes the group between the APPLY's tracked load and its SaveChanges → RowVersion
+  conflict → `REFUSED` ("RowVersion"), transaction rolled back, no status change and no audit (no partial write).
+- Transactional recheck: after a `QUALIFIES` PREVIEW, changing the scalar, adding a payment row or adding a
+  REREGISTER_PO row → APPLY `REFUSED`, nothing written.
+- Two concurrent APPLYs rendezvous at a barrier after both loaded the same group version: exactly one `REPAIRED`, one
+  `REFUSED`, one audit row, group WAITING_PO_CORRECTION, business data preserved.
+- Rollback: `ROLLED_BACK` while nothing happened after the repair (group back to PO_ISSUED, scalar untouched); after a
+  legitimate later action (REREGISTER_PO row) → `REFUSED` ("histórico posterior"), nothing written.
+InMemory tests remain for the controller-level behaviour; they are not cited as relational evidence.
+
+**Changed since §G.19.1.** `LegacyFinanceReturnEvaluator` (+`EvaluateFinancialBlock`, `LegacyFinanceReturnBlock`);
+`LegacyFinanceReturnShape` (+`EvaluateFinancialBlockAsync`); `FinanceController` (guards and queue flag on the block
+predicate); `RequestsController` (advance endpoints guarded; mandatory justification); `LegacyFinanceReturnRepairService`
+(test-only `BeforeApplySaveHookForTests`); tests: `LegacyFinanceReturnEvaluatorTests` (block decision table, separation
+of decisions), `LegacyFinanceReturnCorrectionTests` (justification, block table incl. advance endpoints and the
+group-scoped sibling case), new `LegacyFinanceReturnRepairRelationalTests`. Backend 2,903/2,903 (65 in the legacy
+classes, 7 relational scenarios executed on LocalDB). No EF model change.
+
+**Remaining limits.** The deployed build of 2026-08-11 is unproven from git. The other three legacy requests need their
+own PREVIEW evidence. Relational verification used the LocalDB sandbox, not TEST. The `BeforeApplySaveHookForTests`
+property exists only for deterministic race tests and is never set by production code.

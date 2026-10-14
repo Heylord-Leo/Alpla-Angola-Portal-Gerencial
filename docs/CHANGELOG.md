@@ -4,7 +4,43 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.5
+v2.247.6
+
+## [v2.247.6] - 2026-10-14 — Legacy request-level Finance return: financial block, Buyer correction, badge, explicit scoped repair
+
+PATCH after the TEST investigation of REQ-27/07/2026-156 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.19–§G.19.2).
+No migration, no EF model change, no configuration change. Deployment performs NO automatic data repair.
+
+Before the group-scoped return (commit cc85ec7, 2026-08-23) `ReturnForAdjustment` set only the request status to
+WAITING_PO_CORRECTION and left the group at PO_ISSUED. TEST (read-only, 2026-10-14) holds four PAYMENT requests in that
+shape (REQ-176, REQ-047, REQ-125, REQ-156). Which build was deployed on 2026-08-11 is not provable from git alone.
+
+- Financial block (`LegacyFinanceReturnEvaluator.EvaluateFinancialBlock`, separate from repair eligibility): while the
+  request status is WAITING_PO_CORRECTION and no live P.O. group carries WAITING_PO_CORRECTION, scheduling, payment,
+  advance scheduling and advance confirmation are refused with 409 `LEGACY_RETURN_PENDING_CORRECTION` before any
+  mutation, whatever the history or payment rows and with any number of live groups (the returned group is never
+  guessed); the Finance payments queue withholds SCHEDULE/PAY on the same decision. Group-scoped returns (a group in
+  WAITING_PO_CORRECTION) and valid actions on unaffected groups — including the REQ-275 shape — are unchanged.
+- Buyer correction: `RegisterPo` recognises the strict legacy shape (request WAITING_PO_CORRECTION, exactly one live
+  group at PO_ISSUED, a Finance return later than the last registration, no live payment) as the correction of that
+  group for PAYMENT and QUOTATION: REREGISTER_PO history, correction notification wording, per-action correlation and
+  dedup unchanged; the Buyer's justification is mandatory (400 before any mutation); all other checks unchanged.
+- Badge: a request in that shape shows its own status ("Devolvido para Compras") instead of the group-derived
+  "P.O. emitida"; no other group-derived badge changes. Frontend: the action panel offers "CORRIGIR P.O" for the sole
+  issued group in that shape (backend predicate remains the authority).
+- Explicit scoped repair (`POST api/v1/admin/repairs/legacy-finance-return/{requestId}`): PREVIEW by default (writes
+  nothing); APPLY only with `confirm=true`, a reason and the PREVIEW's group id; re-evaluates inside a transaction, fails
+  closed on a mismatch or a concurrent change (group RowVersion), moves ONLY that group PO_ISSUED → WAITING_PO_CORRECTION
+  with one `LEGACY_RETURN_REPAIR` audit row (idempotent), preserves the request status, amounts, approval metadata,
+  documents, history and notification logs, emits no event and no e-mail; conditional rollback endpoint refuses after
+  any later action. One request per call; nothing is repaired by deployment; the four TEST requests need individual
+  PREVIEW evidence and authorization.
+
+Verification: `LegacyFinanceReturnEvaluatorTests`, `LegacyFinanceReturnCorrectionTests` (real controllers),
+`LegacyFinanceReturnRepairServiceTests` (InMemory), `LegacyFinanceReturnRepairRelationalTests` (seven scenarios on the
+disposable LocalDB sandbox with real transactions and RowVersion: preview no-write, apply only group + audit, repeated
+apply, stale apply, transactional recheck, concurrent applies, conditional rollback), `PaymentPoDisplayStatusTests`.
+Backend 2903/2903. Local relational verification is not live TEST evidence; live evidence recorded in §G.18.3–§G.18.4.
 
 ## [v2.247.5] - 2026-10-12 — Batch approval currency/timestamp and a shared request-level amount resolver for the departmental payment summary
 

@@ -124,6 +124,12 @@ public static class RequestWorkflowProjectionBuilder
 
         var unit = projection.Units[0];
         if (unit.StatusCode == scalarStatusCode) return null;
+        // v2.247.6 (docs §G.19): legacy request-level Finance return — scalar WAITING_PO_CORRECTION while the sole
+        // unit is still PO_ISSUED. The unresolved return is the operational truth here (the group was never moved by
+        // the pre-2026-08-23 return endpoint), so the scalar stands. A current-code single-group correction has the
+        // unit at WAITING_PO_CORRECTION (= scalar) and multi-unit requests never reach this method, so no valid
+        // group-derived badge is suppressed.
+        if (scalarStatusCode == RequestConstants.Statuses.WaitingPoCorrection && unit.StatusCode == RequestConstants.PoGroupStatuses.PoIssued) return null;
 
         return (unit.StatusCode, unit.StatusLabel);
     }
