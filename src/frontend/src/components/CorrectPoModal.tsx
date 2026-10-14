@@ -9,6 +9,7 @@ import { api } from '../lib/api';
 import { formatCurrencyAO } from '../lib/utils';
 import { logger } from '../lib/logger';
 import { RequestDetailsDto, RequestAttachmentDto } from '../types';
+import { resolveJustificationPolicy, submitCorrectPo, validateCorrectPoSubmission } from '../lib/correctPoSubmission';
 import {
     resolveExpectedSupplierName,
     resolveExpectedTotalAmount,
@@ -137,6 +138,12 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const selectedGroup = requestData?.poGroups?.find(g => g.id === poGroupId) ?? null;
     // A poGroupId that resolves to no group is a hard error — never fall back to 0 / "Não definido".
     const groupMissing = !loading && !!requestData && !!poGroupId && !selectedGroup;
+    // The detail fetch failed: no group context and no server decision → the form is not offered at all.
+    const detailsUnavailable = !loading && !requestData;
+    // docs §G.19.3 — whether the Buyer's justification is mandatory is the BACKEND's decision for the legacy
+    // request-level Finance return (requestData.legacyReturnCorrection, same predicate RegisterPo enforces) and,
+    // as before, an unresolved OCR divergence. Current-code corrections keep the comment optional.
+    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches);
     const totalAmount = resolveExpectedTotalAmount(selectedGroup?.totalAmount);
     const expectedSupplierName = resolveExpectedSupplierName(selectedGroup?.supplierNameSnapshot);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
@@ -255,22 +262,16 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     };
 
     const handleConfirm = async () => {
-        if (groupMissing) {
-            setFeedback({ type: 'error', message: 'Não foi possível carregar os dados do grupo P.O. selecionado. Atualize a página e tente novamente.' });
-            return;
-        }
-        if (!file) {
-            setFeedback({ type: 'error', message: 'É obrigatório anexar o novo documento de P.O em formato PDF.' });
-            return;
-        }
-
-        if (ocrResult?.hasMismatches && !overrideConfirmed) {
-            setFeedback({ type: 'error', message: 'Confirme estar ciente das divergências antes de registrar.' });
-            return;
-        }
-
-        if (ocrResult?.hasMismatches && !comment.trim()) {
-            setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório quando há divergências.' });
+        // docs §G.19.3 — validation, payload and submission live in lib/correctPoSubmission (unit-tested on the
+        // real payload path). The modal never fabricates a justification: a blank comment is sent as absent, and
+        // when the backend declared it mandatory the submission is refused here, before any upload.
+        const submission = {
+            requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult, overrideConfirmed,
+            paymentCondition, advancePercent, paymentConditionSource, justification
+        };
+        const validationError = validateCorrectPoSubmission(submission);
+        if (validationError) {
+            setFeedback({ type: 'error', message: validationError });
             return;
         }
 
@@ -278,28 +279,17 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         setFeedback({ type: 'error', message: null });
 
         try {
-            // 1. Upload the new PO file
-            await api.attachments.upload(requestId, [file], 'PO', poGroupId);
-
-            // 2. Register PO (transitions back to PO_ISSUED)
-            const result = await api.requests.registerPo(requestId, {
-                poGroupId,
-                comment: comment || 'P.O corrigida após devolução por Finanças.',
-                hasMismatches: ocrResult?.hasMismatches || false,
-                overrideConfirmed,
-                mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : '',
-                // v2.242.0 — forward the ACTUAL OCR extraction so the backend recomputes divergence
-                // against the persisted RequestPoGroup (authoritative "Esperado"), no longer trusting
-                // the frontend hasMismatches flag as the sole source. Only real extracted values are
-                // sent (OCR does not surface a currency in this flow, so it is omitted).
-                extractedTotalAmount: ocrResult?.extractedTotal,
-                extractedSupplierName: ocrResult?.extractedSupplier || undefined,
-                paymentConditionCode: paymentCondition,
-                advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
-                paymentConditionSource: paymentConditionSource || 'USER_SELECTED'
-            });
-
-            onSuccess(result.message || 'P.O corrigida e registrada com sucesso!');
+            // 1. Upload the new PO file, 2. register the P.O. (correction) — same order as before.
+            const outcome = await submitCorrectPo(
+                { upload: api.attachments.upload, registerPo: api.requests.registerPo },
+                submission
+            );
+            if (!outcome.ok) {
+                setFeedback({ type: 'error', message: outcome.error });
+                setProcessing(false);
+                return;
+            }
+            onSuccess(outcome.message);
         } catch (err: any) {
             setFeedback({ type: 'error', message: err.message || 'Não foi possível registrar a P.O. Tente novamente.' });
             setProcessing(false);
@@ -375,11 +365,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 </motion.div>
                                 <p style={{ fontWeight: 700, color: 'var(--color-text-muted)' }}>Carregando dados do pedido...</p>
                             </div>
-                        ) : groupMissing ? (
+                        ) : (detailsUnavailable || groupMissing) ? (
                             <div style={{ padding: '40px 20px', textAlign: 'center' }}>
                                 <AlertTriangle size={32} style={{ color: 'var(--color-status-red)', marginBottom: '12px' }} />
                                 <p style={{ fontWeight: 700, color: 'var(--color-status-red)', maxWidth: '460px', margin: '0 auto', lineHeight: 1.5 }}>
-                                    Não foi possível carregar os dados do grupo P.O. selecionado. Atualize a página e tente novamente.
+                                    {detailsUnavailable
+                                        ? 'Não foi possível carregar os dados do pedido. Atualize a página e tente novamente.'
+                                        : 'Não foi possível carregar os dados do grupo P.O. selecionado. Atualize a página e tente novamente.'}
                                 </p>
                             </div>
                         ) : (
@@ -780,18 +772,28 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 </div>
                                 <div style={{ marginBottom: '32px' }}>
                                     <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                        Comentário {!ocrResult?.hasMismatches ? '(opcional)' : '(Obrigatório)'}
+                                        Comentário {justification.required ? '(Obrigatório)' : '(opcional)'}
                                     </label>
+                                    {justification.source === 'LEGACY_RETURN' && (
+                                        <div style={{ marginBottom: '10px', fontSize: '0.78rem', fontWeight: 600, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <AlertTriangle size={14} />
+                                            Esta P.O foi devolvida por Finanças: a justificativa do Comprador é obrigatória e ficará registada no histórico.
+                                        </div>
+                                    )}
                                     <textarea
                                         value={comment}
                                         onChange={(e) => setComment(e.target.value)}
-                                        placeholder={ocrResult?.hasMismatches ? 'Justifique o motivo de ignorar a divergência...' : 'Descreva a correção realizada na P.O, se necessário...'}
+                                        placeholder={justification.source === 'OCR_MISMATCH'
+                                            ? 'Justifique o motivo de ignorar a divergência...'
+                                            : justification.source === 'LEGACY_RETURN'
+                                                ? 'Descreva a correção realizada na P.O devolvida por Finanças...'
+                                                : 'Descreva a correção realizada na P.O, se necessário...'}
                                         rows={3}
                                         style={{
                                             ...inputStyle,
                                             height: 'auto',
                                             padding: '16px',
-                                            borderColor: ocrResult?.hasMismatches && !comment.trim() ? '#f97316' : 'var(--color-border)'
+                                            borderColor: justification.required && !comment.trim() ? '#f97316' : 'var(--color-border)'
                                         }}
                                     />
                                 </div>
@@ -817,7 +819,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                         CANCELAR
                                     </button>
                                     <button
-                                        disabled={processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
+                                        disabled={processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())}
                                         onClick={handleConfirm}
                                         style={{
                                             height: '48px',
@@ -828,13 +830,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '8px',
-                                            cursor: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 'not-allowed' : 'pointer',
+                                            cursor: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())) ? 'not-allowed' : 'pointer',
                                             fontWeight: 800,
                                             borderRadius: 'var(--radius-sm)',
                                             boxShadow: 'var(--shadow-md)',
                                             fontFamily: 'var(--font-family-display)',
                                             fontSize: '0.875rem',
-                                            opacity: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 0.7 : 1
+                                            opacity: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())) ? 0.7 : 1
                                         }}
                                     >
                                         <Save size={18} />

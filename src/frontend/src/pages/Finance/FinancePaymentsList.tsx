@@ -337,7 +337,7 @@ export default function FinancePaymentsList() {
                 onCloseFeedback={() => setFeedback({ type: 'success', message: null })}
             />
 
-            <RequestDrawerPresentation requestId={drawerRequestId} isOpen={!!drawerRequestId} onClose={() => setDrawerRequestId(null)} />
+            <RequestDrawerPresentation requestId={drawerRequestId} isOpen={!!drawerRequestId} onClose={() => { setDrawerRequestId(null); loadData(); /* §G.19.3: list rows re-read from the server after drawer actions */ }} />
         </PageContainer>
     );
 }

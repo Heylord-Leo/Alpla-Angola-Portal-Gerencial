@@ -110,6 +110,13 @@ public class RequestDetailsDto
 
     public List<RequestLineItemDto> LineItems { get; set; } = new();
     public List<RequestPoGroupDto> PoGroups { get; set; } = new();
+    /// <summary>
+    /// docs §G.19.3 — null unless this request is a legacy request-level Finance return whose sole live group is
+    /// still PO_ISSUED (LegacyFinanceReturnShape). When set, the next registration on that group is a correction
+    /// and the Buyer's justification is mandatory. Current-code corrections (group already WAITING_PO_CORRECTION)
+    /// never set it: their comment stays optional.
+    /// </summary>
+    public LegacyFinanceReturnCorrectionDto? LegacyReturnCorrection { get; set; }
     public List<RequestAttachmentDto> Attachments { get; set; } = new();
     public List<RequestStatusHistoryDto> StatusHistory { get; set; } = new();
     public List<SavedQuotationDto> Quotations { get; set; } = new();
@@ -360,3 +367,16 @@ public class RequestFieldChangeHistoryDto
     public string ActorName { get; set; } = string.Empty;
 }
 
+
+/// <summary>
+/// docs §G.19.3 — the backend's own decision that the next P.O. registration on <see cref="PoGroupId"/> is the
+/// correction of a legacy request-level Finance return and therefore requires the Buyer's justification (the same
+/// predicate RegisterPo enforces with 400 "Justificativa obrigatória"). Exposed so the client reuses the decision
+/// instead of inferring it from the scalar status. Read-only, never persisted, never used for permissions.
+/// </summary>
+public class LegacyFinanceReturnCorrectionDto
+{
+    public Guid PoGroupId { get; set; }
+    public bool JustificationRequired { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}

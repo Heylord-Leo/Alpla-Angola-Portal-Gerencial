@@ -161,6 +161,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
         handleDeleteRequest,
         handleAttachmentRefresh,
         loadData,
+        refreshWorkflowState,
         navigate,
         location,
         poGroups,
@@ -206,12 +207,15 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
     // decides whether the projection is needed at all. Fetch failure falls back to the legacy
     // single-status guidance — never blocks the page.
     const [projectionLoad, setProjectionLoad] = useState(PROJECTION_IDLE);
+    // §G.19.3 — bumped after an action that changes group state without necessarily changing the scalar
+    // (a P.O. correction on one group of several), so the projection-owned badge/guidance re-read the server.
+    const [projectionReloadTick, setProjectionReloadTick] = useState(0);
     useEffect(() => {
         let cancelled = false;
         loadWorkflowProjection(api.requests.getWorkflowProjection, id, requestTypeCode, status,
             load => { if (!cancelled) setProjectionLoad(load); }, () => cancelled);
         return () => { cancelled = true; };
-    }, [id, requestTypeCode, status]);
+    }, [id, requestTypeCode, status, projectionReloadTick]);
     // The QUOTATION-only panels keep the last loaded projection while a reload (status change) is in
     // flight — same as before v2.245.7 — while the guidance pair below follows the live load state.
     const lastLoadedProjectionRef = useRef(null);
@@ -609,6 +613,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     isQuotationPartiallyEditable={isQuotationPartiallyEditable}
                     isCopyMode={isCopyMode}
                     poGroups={poGroups || []}
+                    legacyReturnCorrection={detail?.legacyReturnCorrection ?? null}
                     setPoGroupIdForUpload={setPoGroupIdForUpload}
                     setShowCorrectPoModal={setShowCorrectPoModal}
                     setShowReconciliationModal={setShowReconciliationModal}
@@ -1090,14 +1095,18 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                     onSuccess={async (msg) => {
                         setShowCorrectPoModal(false);
                         setPoGroupIdForUpload(null);
-                    setFeedback({ type: 'success', message: msg });
-                    const data = await api.requests.get(id);
-                    setStatus(data.statusCode);
-                    setStatusFullName(data.statusName);
-                    setStatusBadgeColor(data.statusBadgeColor);
-                    setStatusHistory(data.statusHistory || []);
-                    setAttachments(data.attachments || []);
-                }}
+                        setFeedback({ type: 'success', message: msg });
+                        // docs §G.19.3 — reload the WHOLE workflow state from the server: display label (group-aware
+                        // override first), groups, history, attachments and the legacy-return decision. The previous
+                        // partial refresh kept the persisted status name and stale groups. The projection-owned
+                        // badge/guidance re-read as well, even when the scalar did not change.
+                        try {
+                            await refreshWorkflowState();
+                            setProjectionReloadTick(t => t + 1);
+                        } catch {
+                            setFeedback({ type: 'error', message: 'P.O registada, mas não foi possível atualizar os dados do pedido. Atualize a página.' });
+                        }
+                    }}
             />
             )}
 

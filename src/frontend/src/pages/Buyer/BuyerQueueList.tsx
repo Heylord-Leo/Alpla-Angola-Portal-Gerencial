@@ -372,7 +372,7 @@ export function BuyerQueueList() {
       )}
 
       {/* Detail drawer (existing experience — temporary until the Workspace phase) */}
-      <RequestDrawerPresentation isOpen={!!detailRequestId} requestId={detailRequestId} onClose={() => setDetailRequestId(null)} />
+      <RequestDrawerPresentation isOpen={!!detailRequestId} requestId={detailRequestId} onClose={() => { setDetailRequestId(null); refreshAll(); /* §G.19.3: list rows re-read from the server after drawer actions */ }} />
 
       {/* Add-note modal */}
       {noteModal && (

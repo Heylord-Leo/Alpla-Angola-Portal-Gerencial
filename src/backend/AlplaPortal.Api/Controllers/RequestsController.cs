@@ -1490,6 +1490,20 @@ public class RequestsController : BaseController
             request.DisplayStatusName = badge.Name;
         }
 
+        // docs §G.19.3 — the Buyer-justification decision for a legacy request-level Finance return is the backend's
+        // (LegacyFinanceReturnShape: the predicate RegisterPo enforces). The client reuses it; it never infers it
+        // from the scalar status. Null unless the exact shape qualifies.
+        var legacyReturnVerdict = await LegacyFinanceReturnShape.EvaluateAsync(_context, id);
+        if (legacyReturnVerdict.Qualifies && legacyReturnVerdict.GroupId.HasValue)
+        {
+            request.LegacyReturnCorrection = new LegacyFinanceReturnCorrectionDto
+            {
+                PoGroupId = legacyReturnVerdict.GroupId.Value,
+                JustificationRequired = true,
+                Reason = legacyReturnVerdict.Reason
+            };
+        }
+
         // Enrich with Selected Quotation data if applicable to avoid redundant subqueries in the projection
         if (request.SelectedQuotationId.HasValue)
         {

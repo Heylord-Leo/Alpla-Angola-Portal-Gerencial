@@ -56,6 +56,7 @@ public class LegacyFinanceReturnCorrectionTests
         var s = new Seed { RequestId = Guid.NewGuid(), GroupId = Guid.NewGuid(), BuyerId = Guid.NewGuid(), FinanceId = Guid.NewGuid(), ProofId = Guid.NewGuid() };
         ctx.Companies.Add(new Company { Id = 1, Name = "AlplaPLASTICO", IsActive = true });
         ctx.Plants.Add(new Plant { Id = 1, Name = "Planta 1" });
+        ctx.Set<Department>().Add(new Department { Id = 7, Name = "Serviços Gerais", IsActive = true }); // required navigation of the detail projection (GetRequest)
         ctx.RequestTypes.AddRange(new RequestType { Id = 1, Code = RequestConstants.Types.Quotation, Name = "Cotação" }, new RequestType { Id = 2, Code = RequestConstants.Types.Payment, Name = "Pagamento" });
         ctx.RequestStatuses.AddRange(
             new RequestStatus { Id = S_PO_ISSUED, Code = RequestConstants.Statuses.PoIssued, Name = "P.O. emitida" },
@@ -375,5 +376,57 @@ public class LegacyFinanceReturnCorrectionTests
         var pay = await ctx.RequestPayments.AsNoTracking().SingleAsync(p => p.RequestId == s.RequestId);
         Assert.Equal(RequestPayment.PaymentStatuses.Planned, pay.PaymentStatus); Assert.Null(pay.ScheduledDateUtc);
         email.Verify(e => e.SendWorkflowNotificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    // ── Detail projection: the justification decision is the backend's (docs §G.19.3) ──────────────────────
+
+    private static async Task<RequestDetailsDto> DetailAsync(RequestsController ctl, Guid requestId)
+        => Assert.IsType<RequestDetailsDto>(Assert.IsType<OkObjectResult>((await ctl.GetRequest(requestId)).Result).Value);
+
+    [Theory]
+    [InlineData("PAYMENT")]
+    [InlineData("QUOTATION")]
+    public async Task Detail_exposes_the_mandatory_justification_decision_for_the_legacy_group_and_clears_it_after_the_correction(string type)
+    {
+        await using var ctx = NewCtx(); var s = await SeedAsync(ctx, type);
+        var (orchestrator, _) = RealOrchestrator(ctx);
+        var ctl = BuyerController(ctx, s.BuyerId, orchestrator);
+
+        var before = await DetailAsync(ctl, s.RequestId);
+        Assert.NotNull(before.LegacyReturnCorrection);
+        Assert.Equal(s.GroupId, before.LegacyReturnCorrection!.PoGroupId);
+        Assert.True(before.LegacyReturnCorrection.JustificationRequired);
+        Assert.Equal(LegacyFinanceReturnEvaluator.ReasonCode, before.LegacyReturnCorrection.Reason);
+        Assert.Null(before.DisplayStatusName);                                   // badge rule of §G.19.1 unchanged: scalar name stands
+        Assert.Equal(RequestConstants.Statuses.WaitingPoCorrection, before.StatusCode);
+
+        // The decision the detail advertises is exactly the one RegisterPo enforces.
+        var refused = await ctl.RegisterPo(s.RequestId, Dto(s.GroupId, "   "));
+        Assert.Equal(400, Assert.IsType<ProblemDetails>(Assert.IsType<BadRequestObjectResult>(refused).Value).Status);
+
+        Assert.IsType<OkObjectResult>(await ctl.RegisterPo(s.RequestId, Dto(s.GroupId, "P.O corrigida: NIF do fornecedor.")));
+        ctx.ChangeTracker.Clear();
+        var after = await DetailAsync(ctl, s.RequestId);
+        Assert.Null(after.LegacyReturnCorrection);                               // no longer the legacy shape
+        Assert.NotEqual(RequestConstants.Statuses.WaitingPoCorrection, after.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("currentCodeReturn")]   // group itself WAITING_PO_CORRECTION → current-code correction, comment optional
+    [InlineData("notReturned")]         // scalar WAITING_PO_CORRECTION without a return row → not repair/correction eligible
+    [InlineData("twoLiveGroups")]       // returned group unknown → never advertised
+    public async Task Detail_does_not_advertise_a_mandatory_justification_outside_the_exact_legacy_shape(string shape)
+    {
+        await using var ctx = NewCtx();
+        var s = await SeedAsync(ctx, "PAYMENT", returned: shape != "notReturned", secondLiveGroup: shape == "twoLiveGroups");
+        if (shape == "currentCodeReturn")
+        {
+            var g = await ctx.RequestPoGroups.SingleAsync(x => x.Id == s.GroupId);
+            g.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+            await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
+        }
+        var (orchestrator, _) = RealOrchestrator(ctx);
+        var dto = await DetailAsync(BuyerController(ctx, s.BuyerId, orchestrator), s.RequestId);
+        Assert.Null(dto.LegacyReturnCorrection);
     }
 }

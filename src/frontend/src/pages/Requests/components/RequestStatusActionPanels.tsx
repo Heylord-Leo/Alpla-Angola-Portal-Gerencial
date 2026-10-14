@@ -24,6 +24,8 @@ import {
     Clock
 } from 'lucide-react';
 import { GUIDANCE_LOADING } from '../../../lib/workflowProjection';
+import { resolveLegacyReturnCorrectionGroup } from '../../../lib/legacyFinanceReturn';
+import type { LegacyFinanceReturnCorrectionDto } from '../../../types';
 
 export interface RequestStatusActionPanelsProps {
     // Identity
@@ -46,6 +48,8 @@ export interface RequestStatusActionPanelsProps {
     isCopyMode?: boolean;
 
     poGroups?: any[];
+    /** docs §G.19.3 — server decision for the legacy request-level Finance return (null = none). */
+    legacyReturnCorrection?: LegacyFinanceReturnCorrectionDto | null;
 
     // Modal setters
     setPoGroupIdForUpload: (groupId: string | null) => void;
@@ -89,19 +93,6 @@ export interface RequestStatusActionPanelsProps {
     hideLegacyGuidance?: boolean;
 }
 
-/**
- * v2.247.6 (docs §G.19): legacy request-level Finance return. Returns made before the group-scoped return
- * (2026-08-23) set only the request scalar to WAITING_PO_CORRECTION and left the sole group at PO_ISSUED, so the
- * group-filtered "CORRIGIR P.O" button never appeared. For exactly that shape (scalar WAITING_PO_CORRECTION, one
- * non-cancelled group, and it is PO_ISSUED) the correction button targets that group; the backend accepts it only
- * when its own evidence predicate holds (REREGISTER_PO with mandatory comment), otherwise it refuses.
- */
-export function resolveLegacyReturnCorrectionGroup(status: string | undefined, poGroups: any[] | undefined): any | null {
-    if (status !== 'WAITING_PO_CORRECTION' || !poGroups) return null;
-    const live = poGroups.filter(g => g && g.status !== 'CANCELLED');
-    return live.length === 1 && live[0].status === 'PO_ISSUED' ? live[0] : null;
-}
-
 export function RequestStatusActionPanels({
     requestId,
     status,
@@ -109,6 +100,7 @@ export function RequestStatusActionPanels({
     isBuyer, isAreaApprover, isFinalApprover, isFinance, isReceiving,
     canExecuteOperationalAction, isQuotationPartiallyEditable, isCopyMode,
     poGroups = [],
+    legacyReturnCorrection = null,
     setPoGroupIdForUpload, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
     getRequestGuidance,
@@ -270,9 +262,11 @@ export function RequestStatusActionPanels({
                                         </button>
                                     ))
                                 )}
-                                {/* v2.247.6 (§G.19): legacy request-level Finance return — sole live group still PO_ISSUED */}
+                                {/* v2.247.6 (§G.19) / §G.19.3: legacy request-level Finance return — the server names the
+                                    group that needs the correction (and makes the justification mandatory); the client
+                                    only maps that decision onto the loaded groups, never the scalar status. */}
                                 {(() => {
-                                    const legacyGroup = resolveLegacyReturnCorrectionGroup(status, poGroups);
+                                    const legacyGroup = resolveLegacyReturnCorrectionGroup(legacyReturnCorrection, poGroups);
                                     return legacyGroup ? (
                                         <button
                                             key={`po-correct-legacy-${legacyGroup.id}`}

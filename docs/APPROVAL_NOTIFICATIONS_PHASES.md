@@ -1778,6 +1778,8 @@ fact disqualifies (reason text per cause). Used by every path below so they cann
 4. *Frontend.* `RequestStatusActionPanels.tsx`: for the exact shape (status WAITING_PO_CORRECTION, one non-cancelled
    group, and it is PO_ISSUED) the "CORRIGIR P.O" button targets that group (helper
    `resolveLegacyReturnCorrectionGroup`); the backend predicate remains the authority. No other frontend change.
+   *(Superseded by §G.19.3: the decision is now server-provided in the detail payload and the modal enforces the
+   mandatory justification; the scalar-based inference is gone.)*
 
 **Scoped repair (prepared; NOT executed outside disposable fixtures).** `AdminRepairsController`:
 - `POST api/v1/admin/repairs/legacy-finance-return/{requestId}` — PREVIEW by default (`confirm=false`): evaluates the
@@ -1831,7 +1833,8 @@ and on InMemory (no transaction) only.
 
 #### G.19.2 Review closure: mandatory justification, financial-block scope, SQL Server repair evidence (2026-10-14)
 
-**1. Mandatory correction justification (closed).** `RegisterPo` refuses a qualifying legacy correction with 400
+**1. Mandatory correction justification (closed on the backend only — corrected by §G.19.3: it was NOT validated end to
+end; the v2.247.6 modal replaced a blank comment with generated text, see the TEST failure below).** `RegisterPo` refuses a qualifying legacy correction with 400
 "Justificativa obrigatória" when `Comment` is null, empty or whitespace — evaluated right after the legacy predicate and
 before any mutation, history, attachment or notification. The generated group prefix and the correction success text
 never satisfy the requirement (they are composed later, from the Buyer's text). With a justification the registration
@@ -1900,3 +1903,111 @@ classes, 7 relational scenarios executed on LocalDB). No EF model change.
 **Remaining limits.** The deployed build of 2026-08-11 is unproven from git. The other three legacy requests need their
 own PREVIEW evidence. Relational verification used the LocalDB sandbox, not TEST. The `BeforeApplySaveHookForTests`
 property exists only for deterministic race tests and is never set by production code.
+
+#### G.19.3 TEST v2.247.6 — the correction modal accepted a blank justification on REQ-156; cause, fix, badge refresh (working tree, unreleased, 2026-10-14)
+
+**Live validation FAILED (TEST, v2.247.6, 2026-10-14, supplied facts).** REQ-27/07/2026-156 (`RequestId
+7008BD28-E902-414E-8651-1FE9540E7C19`, group `44BD391C-9D32-496F-B237-30A597A4844E`): the modal showed "COMENTÁRIO
+(OPCIONAL)"; the Buyer left it empty, attached a valid PDF, chose ADVANCE_FULL and submitted; the action succeeded.
+Persisted: history `06A9E0F7-D286-4219-B1EF-48639428D39C` (2026-10-14 10:26:51 UTC) REREGISTER_PO with
+"Justificativa: P.O corrigida após devolução por Finanças."; request and group now ADVANCE_PAYMENT_REQUIRED
+(1,097,000.00 AOA). After the success message the detail badge still read "Devolvido para Compras" while guidance showed
+Finance / schedule advance. Consequences: REQ-156 is NO LONGER the legacy shape (its PREVIEW would now be REFUSED: a
+registration later than the return); it must not be reverted and is not a repair candidate. The remaining legacy
+candidates are REQ-176, REQ-047 and REQ-125, each needing its own PREVIEW evidence. No repair APPLY was performed.
+
+**Correction of earlier claims.** §G.19.2 item 1 ("mandatory justification — closed") rested on backend controller
+tests only (`Comment` null / "" / whitespace / tab). The rule was never bypassed, but it was never exercised by the UI
+either: the modal never sent a blank `Comment`. The end-to-end claim is withdrawn; this section records the fix.
+
+**Confirmed cause (source, v2.247.6 `a87f04f`).** `src/frontend/src/components/CorrectPoModal.tsx` line 287 built the
+`register-po` payload with `comment: comment || 'P.O corrigida após devolução por Finanças.'`, i.e. an empty textarea
+was replaced by the generated sentence before `POST /api/v1/requests/{id}/operational/register-po` (`lib/api.ts`
+`registerPo`, the single call site). The label was `!ocrResult?.hasMismatches ? '(opcional)' : '(Obrigatório)'`: the
+only mandatory case the modal knew was an OCR divergence. The legacy-return decision lived in the backend
+(`LegacyFinanceReturnShape`) and, on the client, only as a scalar-status inference in the action panel
+(`resolveLegacyReturnCorrectionGroup(status, poGroups)`), never in the modal. The backend check
+`string.IsNullOrWhiteSpace(dto.Comment)` cannot tell generated text from a Buyer's text, and the composition
+`[Grupo P.O.: …] Justificativa: {dto.Comment}. …` recorded it as a justification. The captured request payload is not
+available; the persisted comment is byte-identical to the frontend literal, which with the single call site identifies
+the path. The backend branch `finalComment = "P.O corrigida após devolução por Finanças."` (dead: the prefix is never
+empty) is unrelated and unchanged.
+
+**Stale badge — confirmed partial refresh (code), element not determinable (screenshot).** The CorrectPoModal
+`onSuccess` handler in `RequestEdit.tsx` re-read `api.requests.get(id)` but set `statusFullName = data.statusName`
+(persisted name, ignoring the server's `displayStatusName`) and refreshed neither `poGroups`, `quotations` nor the raw
+`detail`, so action panels, the group summary and every group-aware projection kept the pre-correction groups next to
+the new scalar. The list hosts that open the detail drawer (Buyer queue `BuyerQueueList`, `BuyerItemsList`, Finance
+`FinancePaymentsList`) did not re-read their rows when the drawer closed (`RequestsDashboard` already did). By that
+code the header itself would have shown the persisted name of the new scalar, so the label seen is most consistent
+with a list row behind the drawer or a projection fed by the stale group state; the screenshot cannot settle which.
+Both paths are corrected; no destination status is assumed anywhere on the client.
+
+**Fix (local, no migration, no business-data change).**
+1. *Backend decision exposed.* `RequestDetailsDto.LegacyReturnCorrection { PoGroupId, JustificationRequired, Reason }`
+   set by `GetRequest` from `LegacyFinanceReturnShape.EvaluateAsync` — the same predicate `RegisterPo` enforces. Null
+   for every other request, including current-code corrections (group already WAITING_PO_CORRECTION). Read-only.
+2. *Modal policy and payload* (`src/frontend/src/lib/correctPoSubmission.ts`, framework-free): `resolveJustificationPolicy`
+   → LEGACY_RETURN (server decision for the selected group) | OCR_MISMATCH (pre-existing rule) | NONE;
+   `validateCorrectPoSubmission` refuses null/empty/whitespace when required BEFORE the P.O. upload (nothing written);
+   `buildRegisterPoPayload` sends the Buyer's text trimmed, or NO `comment` at all — the generated fallback no longer
+   exists; `submitCorrectPo` = validate → upload → register-po. `CorrectPoModal.tsx` labels the field "(Obrigatório)"
+   with an explanatory line for the legacy case, disables the button while blank, and submits through the module with
+   the real `api.attachments.upload` / `api.requests.registerPo`.
+3. *Current-code corrections keep the comment optional.* The only intended change: with an empty textarea the history
+   now reads "[Grupo P.O.: …] P.O corrigida e re-registrada com sucesso." without a fabricated "Justificativa:" segment.
+   OCR divergence handling, payment condition, override and extraction fields are forwarded exactly as before.
+4. *Correction button.* `src/frontend/src/lib/legacyFinanceReturn.ts` `resolveLegacyReturnCorrectionGroup(decision,
+   poGroups)` maps the server decision onto the loaded groups; the action panel receives `legacyReturnCorrection` from
+   the detail payload. The scalar inference of v2.247.6 is removed.
+5. *Refresh from authoritative data.* `useRequestDetail.refreshWorkflowState()` reloads the whole workflow state from
+   one server payload through `lib/requestWorkflowSnapshot.deriveWorkflowSnapshot` (`displayStatusName ?? statusName`,
+   badge colour, history, attachments, quotations, groups, raw detail); the initial load uses the same derivation; the
+   CorrectPo success handler calls it. `BuyerQueueList`, `BuyerItemsList` and `FinancePaymentsList` re-read their rows
+   when the drawer closes.
+
+**Unchanged by design.** RegisterPo logic (guards, composition, group/scalar transitions, notifications, correlation,
+AP dedup, routing), permissions, OCR rules, payment-condition handling, the approval-modal refresh path, the repair
+service and endpoints, the badge rule of §G.19.1.
+
+**Tests.** Backend — `LegacyFinanceReturnCorrectionTests` +5: the detail advertises the decision for the PAYMENT and
+QUOTATION legacy shape (group id, required, reason, badge rule intact), `RegisterPo` still refuses whitespace, the
+decision disappears after the justified correction; not advertised for a current-code return, a scalar return without a
+return row, or two live groups. The null / "" / whitespace / tab refusals of §G.19.2 are kept. Frontend (vitest, node
+environment) — `correctPoSubmission.test.ts`: policy resolution (server decision wins, other group / absent / not
+required → optional, OCR rule intact); blank variants ("", spaces, tab+newline, NBSP) refused before the upload with no
+call made; the generated text never appears in any payload; valid text trimmed with every other field preserved;
+optional current-code path sends no `comment`; ADVANCE_PARTIAL percentage; validation order; modal wiring guards (no
+fallback literal, submission through the module, label/disabled bound to the policy). `requestWorkflowSnapshot.test.ts`:
+post-paid and advance-required outcomes derive the new label and groups from the server payload, display-override
+precedence, no hard-coded status, hook/page wiring (success handler calls `refreshWorkflowState`, panel receives the
+decision). `legacyFinanceReturn.test.ts`: decision mapping and panel wiring. Results: frontend tsc clean, Vite build OK,
+vitest 954/954 (+38); backend 2,908/2,908 (+5), `has-pending-model-changes`: none.
+
+**Evidence boundaries.** The frontend suite has no DOM runtime (vitest `node`, no jsdom / Testing Library installed):
+label, disabled state and click wiring are guarded at source level, and the submission logic is exercised on the real
+payload path with captured dependencies — not a rendered-component test. Nothing here was validated live; a human TEST
+pass of the modal is still required. The REQ-156 action of 2026-10-14 remains as persisted (no reversal, no repair).
+
+**Deferred investigation (recorded, NOT implemented).** Should requests returned by Finance (including PAYMENT) appear
+in Gestão de Cotações / the Buyer queue with "Devolvido para Compras" and CORRIGIR P.O? The TEST screenshot without a
+search does not prove absence; whether the correction belongs in the queue or only in the request detail is a product
+decision; the queue projection (`BuyerQueueProjectionBuilder`) must be analysed before any change.
+
+**Bounded TEST plan after deployment (requires authorization — it is a business action).** On ONE remaining legacy
+request (REQ-176 / 047 / 125) after its own read-only PREVIEW: open the detail → CORRIGIR P.O → the label reads
+"(Obrigatório)" with the explanatory line; submit blank and whitespace → refused before any upload (no new PO attachment
+row, no history row); submit with text → REREGISTER_PO history with "Justificativa: <text>"; then verify the header
+badge, the groups and the queue row after closing the drawer, all from fresh server reads.
+
+**Final local review (2026-10-14) — two gaps closed before publication.** (a) When the modal's own detail fetch failed
+it still rendered the form with no group context and no server decision, so a blank legacy submission would have
+uploaded the P.O. file before the backend refusal (orphan attachment): the modal now shows the error branch and
+`validateCorrectPoSubmission` refuses `detailsUnavailable` first, before `groupMissing`. (b) The projection-owned
+badge/guidance (QUOTATION display override, receiving-phase guidance) reloaded only when the scalar changed; the
+success handler now bumps a reload tick so the projection re-reads the server after every correction, and a failed
+refresh surfaces an explicit "atualize a página" message instead of leaving stale state behind a success notice.
+Verified unchanged: `refreshWorkflowState` never touches `formData`, `initialFormData` or line items (unsaved header
+edits and the dirty-state guard survive the refresh); the legacy CORRIGIR P.O button is rendered inside the Buyer
+block from the server decision only; current-code corrections keep the comment optional. The rendered-DOM limitation
+stands: live TEST validation of the modal is still required.

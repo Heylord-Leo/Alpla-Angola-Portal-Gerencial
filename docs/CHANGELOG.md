@@ -4,7 +4,52 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.6
+v2.247.7
+
+## [v2.247.7] - 2026-10-14 — P.O. correction modal: mandatory justification from the server decision, no generated fallback, full refresh after the correction
+
+PATCH after the failed TEST validation of v2.247.6 on REQ-27/07/2026-156 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md`
+§G.19.3). No migration, no EF model change, no configuration change. Backend P.O. registration logic (guards, history
+composition, group/request transitions, notifications, correlation, dedup, permissions) is unchanged; the only backend
+change is a read-only field on the request detail.
+
+On TEST the "Corrigir P.O" modal labelled the comment "(opcional)" and replaced an empty comment with the generated
+sentence "P.O corrigida após devolução por Finanças." before calling `register-po`, so the mandatory-justification rule
+of v2.247.6 (backend, `Comment` null/empty/whitespace → 400) was satisfied by generated text and REQ-156 was
+re-registered with a fabricated justification. After the success the detail kept the persisted status name and the
+pre-correction groups, and the list hosts did not re-read their rows.
+
+- Server decision exposed: `GET api/v1/requests/{id}` returns `legacyReturnCorrection { poGroupId, justificationRequired,
+  reason }` computed by the same predicate `RegisterPo` enforces (legacy request-level Finance return: request
+  WAITING_PO_CORRECTION, sole live group PO_ISSUED, return later than the last registration, no live payment). Null for
+  every other request, including current-code corrections.
+- Modal (`lib/correctPoSubmission.ts`): the justification is mandatory when the server names the selected group
+  (LEGACY_RETURN) or when an OCR divergence is unresolved (pre-existing rule). A required blank/whitespace comment is
+  refused BEFORE the P.O. upload or any submission; the generated fallback was removed, so no generated text can satisfy
+  the rule; the Buyer's text is sent trimmed, or no `comment` at all. When the modal's own detail fetch fails, the form
+  is not offered and submission is blocked (the server decision is unknown; previously the file would have been uploaded
+  before the backend refusal). The field reads "(Obrigatório)" with an explanatory line for the legacy case.
+- Optional current-code corrections (group already WAITING_PO_CORRECTION) remain optional; with an empty comment the
+  history no longer carries a fabricated "Justificativa:" segment. OCR divergence, payment-condition, override and
+  extraction fields are forwarded exactly as before.
+- "CORRIGIR P.O" for the legacy shape is offered from the server decision for that group (`lib/legacyFinanceReturn.ts`);
+  the v2.247.6 client-side inference from the request status is removed. Current-code correction buttons unchanged.
+- Refresh after a successful correction (`useRequestDetail.refreshWorkflowState`, `lib/requestWorkflowSnapshot.ts`):
+  the whole workflow state is re-read from the server — display label (group-aware override before the persisted
+  name), badge colour, groups, history, attachments, quotations, raw detail — for both post-paid and advance-required
+  outcomes; no destination status is assumed on the client. Unsaved header edits are preserved (the form state is not
+  touched). The projection-owned badge/guidance re-reads the server even when the request status did not change, and a
+  failed refresh is reported instead of leaving stale state behind a success notice. Buyer queue, Buyer items and
+  Finance payments lists re-read their rows when the detail drawer closes.
+
+Verification: `LegacyFinanceReturnCorrectionTests` (+5: detail advertises the decision for the PAYMENT and QUOTATION
+legacy shape, whitespace still refused, decision cleared after the justified correction; never advertised for a
+current-code return, a return without history or several live groups), `correctPoSubmission.test.ts`,
+`requestWorkflowSnapshot.test.ts`, `legacyFinanceReturn.test.ts`, updated `CorrectPoModal.test.ts` and
+`v2457QuickViewGuidance.test.ts`. Backend 2,908/2,908; frontend tsc clean, Vite build, vitest 956/956. Limitation: the
+frontend suite has no DOM runtime — modal label/disabled/click wiring is guarded at source level and the submission
+logic is tested on the real payload path with captured dependencies; the rendered modal behaviour still requires live
+TEST validation (bounded plan in §G.19.3). REQ-156 remains as persisted (no reversal, no repair).
 
 ## [v2.247.6] - 2026-10-14 — Legacy request-level Finance return: financial block, Buyer correction, badge, explicit scoped repair
 

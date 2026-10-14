@@ -2,7 +2,18 @@
 
 ## Current Version
 
-v2.247.6
+v2.247.7
+
+## [v2.247.7] - 2026-10-14
+
+### P.O. correction modal: mandatory justification from the server decision, no generated fallback, full refresh after the correction
+
+PATCH. The "Corrigir P.O" modal takes the mandatory-justification decision from the request detail (server-computed
+for the legacy request-level Finance return), refuses a blank or whitespace justification before any upload, no longer
+substitutes a generated sentence for an empty comment, blocks submission when its detail fetch failed, keeps the
+comment optional for current-code corrections, and reloads the whole workflow state (display label, groups, history,
+attachments, projection) from the server after a successful correction without touching unsaved form edits. Rendered
+modal behaviour still requires live TEST validation. No migration, no EF model change, no configuration change.
 
 ## [v2.247.6] - 2026-10-14
 
