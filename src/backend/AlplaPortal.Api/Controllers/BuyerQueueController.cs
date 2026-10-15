@@ -170,9 +170,13 @@ public class BuyerQueueController : BaseController
         switch ((ownership ?? "all").ToLowerInvariant())
         {
             case "me":
-                q = q.Where(r => r.BuyerId == currentUserId
-                    || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection
-                        && g.PoResponsibleBuyerId == currentUserId));
+                // docs §G.20 D2 — the SAME rule as PersonalPoCorrectionPredicate / myTasksOnly / PoCorrectionsForMe:
+                // QUOTATION → Request.BuyerId; PAYMENT → a WAITING_PO_CORRECTION group's PoResponsibleBuyerId. A
+                // PAYMENT's Request.BuyerId (historical request-level claims) is not correction ownership.
+                q = q.Where(r => (r.RequestType.Code == RequestConstants.Types.Quotation && r.BuyerId == currentUserId)
+                    || (r.RequestType.Code == RequestConstants.Types.Payment
+                        && r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                            && g.PoResponsibleBuyerId == currentUserId)));
                 break;
             case "unassigned":
                 q = q.Where(r => (r.RequestType.Code == RequestConstants.Types.Quotation && r.BuyerId == null)

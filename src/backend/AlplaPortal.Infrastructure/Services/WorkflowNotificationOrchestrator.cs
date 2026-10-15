@@ -229,10 +229,14 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await HandlePaymentFanningOverridesAsync(recipients, evt, reqRef);
                 break;
 
-            // --- Finance Return: notify the buyer ---
+            // --- Finance Return: notify the Buyer who owns the returned P.O. (docs §G.20 D1) ---
             case WorkflowEventCodes.FinanceReturned:
-                await AddUserRecipientAsync(recipients, evt.BuyerId);
+            {
+                var owner = await ResolveFinanceReturnOwnerAsync(evt);
+                if (owner.HasValue) await AddUserRecipientAsync(recipients, owner);
+                // null → the caller's existing "No recipients resolved" warning; nothing is invented or fanned out.
                 break;
+            }
 
             // --- PO Correction Completed: notify Finance (same plant-scoped pattern as initial PO) ---
             case WorkflowEventCodes.PoCorrectionCompleted:
@@ -941,6 +945,45 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
 <p style='font-size:13px; color:#333;'><b>Este aviso n&#227;o significa que o pagamento est&#225; autorizado ou pronto.</b> O registo da P.O. n&#227;o confirma a rece&#231;&#227;o dos bens/servi&#231;os nem a fatura; para pagamentos p&#243;s-pagos essas condi&#231;&#245;es continuam a aplicar-se antes do agendamento.</p>
 <p style='font-size:13px; color:#666;'>Acesse o Portal Gerencial para consultar os detalhes do pedido.</p>
 <p style='font-size:12px; color:#999;'>Esta &#233; uma mensagem autom&#225;tica do Portal Gerencial.</p>";
+    }
+
+    /// <summary>
+    /// docs §G.20 D1 — the Buyer responsible for a P.O. returned by Finance, by the ownership rule shared with the
+    /// Buyer queue, "Para Minha Ação" and the dashboard count (PersonalPoCorrectionPredicate):
+    /// QUOTATION → <c>Request.BuyerId</c> (as carried on the event); PAYMENT → the acted-on group's
+    /// <c>PoResponsibleBuyerId</c>. Precedence is by request type only: a PAYMENT never falls back to
+    /// <c>Request.BuyerId</c> (a historical request-level assignment is not correction ownership) and a QUOTATION never
+    /// reads the group owner. The group context must belong to the event's request — a group of another request, a
+    /// missing context or an unassigned group resolve to nobody (logged), never to a sibling or to every Buyer.
+    /// </summary>
+    private async Task<Guid?> ResolveFinanceReturnOwnerAsync(WorkflowEvent evt)
+    {
+        var request = await _context.Requests.AsNoTracking()
+            .Where(r => r.Id == evt.RequestId)
+            .Select(r => new { TypeCode = r.RequestType != null ? r.RequestType.Code : null })
+            .FirstOrDefaultAsync();
+        if (request == null) return null;
+
+        if (request.TypeCode != RequestConstants.Types.Payment)
+            return evt.BuyerId;
+
+        if (!evt.PoGroupId.HasValue)
+        {
+            _logger.LogWarning("FinanceReturned on PAYMENT Request {RequestId} carries no PoGroupId; no Buyer recipient resolved", evt.RequestId);
+            return null;
+        }
+        var group = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.Id == evt.PoGroupId.Value && g.RequestId == evt.RequestId)
+            .Select(g => new { g.PoResponsibleBuyerId })
+            .FirstOrDefaultAsync();
+        if (group == null)
+        {
+            _logger.LogWarning("FinanceReturned: PoGroupId {PoGroupId} does not belong to Request {RequestId}; no Buyer recipient resolved", evt.PoGroupId, evt.RequestId);
+            return null;
+        }
+        if (!group.PoResponsibleBuyerId.HasValue)
+            _logger.LogWarning("FinanceReturned: returned group {PoGroupId} of Request {RequestId} has no responsible Buyer (unassigned correction); no Buyer recipient resolved", evt.PoGroupId, evt.RequestId);
+        return group.PoResponsibleBuyerId;
     }
 
     private async Task AddUserRecipientAsync(List<NotificationRecipient> recipients, Guid? userId,

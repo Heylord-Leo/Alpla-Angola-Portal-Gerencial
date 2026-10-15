@@ -1985,7 +1985,10 @@ public class FinanceController : BaseController
         group.UpdatedAtUtc = DateTime.UtcNow;
         r.UpdatedAtUtc = DateTime.UtcNow;
 
-        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        // docs §G.20 D1 — kept as a variable: the notification event is correlated to THIS row (the Finance return),
+        // not to whatever history row happens to be the latest tracked one (the STATUS_SYNC row appended by the
+        // aggregation below used to win, which broke per-return correlation of outbox/in-app rows).
+        var returnHistory = new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
             RequestId = id,
@@ -1996,7 +1999,8 @@ public class FinanceController : BaseController
             Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
                 + $" Grupo devolvido por Finanças para correção da P.O (GroupId: {group.Id}). Motivo: {requestDto.Notes}",
             CreatedAtUtc = DateTime.UtcNow
-        });
+        };
+        _context.RequestStatusHistories.Add(returnHistory);
 
         await _context.SaveChangesAsync();
 
@@ -2010,7 +2014,6 @@ public class FinanceController : BaseController
         try
         {
             var actor = await _context.Users.FindAsync(CurrentUserId);
-            var historyEntry = _context.RequestStatusHistories.Local.OrderByDescending(h => h.CreatedAtUtc).FirstOrDefault(h => h.RequestId == id);
             await _orchestrator.EmitAsync(new WorkflowEvent
             {
                 EventCode = WorkflowEventCodes.FinanceReturned,
@@ -2022,9 +2025,12 @@ public class FinanceController : BaseController
                 ActorUserId = CurrentUserId,
                 ActorName = actor?.FullName ?? "Sistema",
                 Comment = requestDto.Notes,
-                CorrelationId = historyEntry?.Id ?? Guid.NewGuid(),
+                CorrelationId = returnHistory.Id,
                 RequesterId = r.RequesterId,
                 BuyerId = r.BuyerId,
+                // docs §G.20 D1 — the acted-on group: the orchestrator resolves the Buyer who owns THIS returned
+                // P.O. (PAYMENT → group PoResponsibleBuyerId; QUOTATION → Request.BuyerId), never a sibling's owner.
+                PoGroupId = group.Id,
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
                 PlantId = r.PlantId

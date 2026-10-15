@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.247.7
+v2.247.8
+
+## [v2.247.8] - 2026-10-15
+
+### Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
+
+PATCH. A Finance return now notifies the Buyer who owns the returned P.O. (PAYMENT → group owner; QUOTATION → request
+Buyer) and correlates to the return history row instead of STATUS_SYNC; "Atribuir a Mim" on a PAYMENT correction claims
+the returned group's ownership (never overwriting an owner, ambiguity refused, coordinator transfer recorded,
+concurrency arbitrated by rowversion), assignments enforce the access scope, and the Buyer queue's "Meus" filter follows
+the shared ownership rule. No migration, no EF model change, no configuration change.
 
 ## [v2.247.7] - 2026-10-14
 

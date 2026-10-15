@@ -4,7 +4,50 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.7
+v2.247.8
+
+## [v2.247.8] - 2026-10-15 — Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
+
+PATCH after the investigation of Buyer visibility for requests returned by Finance (`docs/APPROVAL_NOTIFICATIONS_PHASES.md`
+§G.20, §G.20.1). No migration, no EF model change, no configuration change. Queue admission and placement are unchanged;
+no scalar-based legacy visibility rule was added; legacy repairs (§G.19) and the queue-placement product question stay
+separate.
+
+- Finance-return notification (D1): the Buyer notified by `FinanceReturned` is the owner of the P.O. actually returned —
+  PAYMENT → the acted-on group's `PoResponsibleBuyerId` (looked up scoped to the request; `Request.BuyerId` is never a
+  fallback for PAYMENT); QUOTATION → `Request.BuyerId` as before. A missing or foreign group context, an unassigned
+  group or an inactive owner resolve to nobody (existing "No recipients resolved" warning): no invented recipient, no
+  sibling owner, no fan-out. Channels, dedup, templates and the detail link are unchanged. Previously a PAYMENT return
+  notified no Buyer.
+- Return-history correlation: the `FinanceReturned` event now carries the FINANCE_RETURN_ADJUSTMENT history row id;
+  it used to take the latest tracked row, which after scalar aggregation was the STATUS_SYNC row (confirmed live on
+  REQ-275's SENT outbox row, §G.20.1). Per-return in-app and outbox dedup therefore key on the return itself. No
+  historical row is rewritten and nothing is re-sent.
+- "Atribuir a Mim" on a PAYMENT P.O. correction (D2): `assign-buyer` persists ownership where the personal task, the
+  dashboard count and the Buyer queue read it — the returned group's `PoResponsibleBuyerId` — instead of
+  `Request.BuyerId`. Exactly one eligible WAITING_PO_CORRECTION group of the request is claimed (the one named by
+  `poGroupId`, or the sole one); several without an explicit id → 409 `PO_CORRECTION_AMBIGUOUS` (nothing chosen); a
+  group of another request or not returned → 400; a Buyer never overwrites an owner (409
+  `PO_CORRECTION_ALREADY_OWNED`); a coordinator (SysAdmin/LocalManager, the same authority that reassigns a QUOTATION's
+  Buyer) may transfer an owned group, with the previous owner recorded in the history; self-claim is idempotent; the
+  group `rowversion` arbitrates concurrent claims (409 `PO_CORRECTION_CLAIM_CONFLICT`, nothing persisted for the loser).
+  A PAYMENT without any returned group keeps the pre-existing request-level assignment path. QUOTATION assignment
+  unchanged.
+- Assignment scope: `assign-buyer` now enforces the request access scope (company/plant/department; SystemAdministrator
+  unrestricted) with 404 outside it — the queues only ever exposed scoped rows.
+- Ownership alignment: the Buyer queue's "Meus" filter applies the same rule as `PersonalPoCorrectionPredicate`,
+  `myTasksOnly` and `PoCorrectionsForMe` (QUOTATION → `Request.BuyerId`; PAYMENT → correction group owner). The queue
+  row passes its single returned group on claim.
+
+Verification: `FinanceReturnNotificationRecipientTests` (real controller + real orchestrator; actual outbox/in-app
+recipients and correlations: distinct group owners, request/group owner disagreement, QUOTATION regression,
+unassigned/inactive/missing owner, foreign or missing group context), `PoCorrectionClaimTests` (claim, idempotence,
+owner preserved, coordinator transfer, ambiguity, explicit group, foreign/non-returned group, no returned group,
+403/404, QUOTATION unchanged, queue "Meus" alignment), `PoCorrectionClaimRelationalTests` (LocalDB: concurrent claims →
+one owner, one history row; stale claim fails without partial writes), `buyerQueueView.test.ts`. Backend 2,925/2,925;
+frontend tsc, Vite build, vitest 958/958. Remaining live-validation limits: local fixtures are not TEST evidence; the
+PAYMENT recipient path and the claim flow require the bounded post-deploy TEST plan of §G.20.1; the in-app notification
+table was not queried; REQ-429/254/275/047/125 untouched.
 
 ## [v2.247.7] - 2026-10-14 — P.O. correction modal: mandatory justification from the server decision, no generated fallback, full refresh after the correction
 

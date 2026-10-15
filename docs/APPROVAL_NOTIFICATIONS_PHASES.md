@@ -1904,7 +1904,7 @@ classes, 7 relational scenarios executed on LocalDB). No EF model change.
 own PREVIEW evidence. Relational verification used the LocalDB sandbox, not TEST. The `BeforeApplySaveHookForTests`
 property exists only for deterministic race tests and is never set by production code.
 
-#### G.19.3 TEST v2.247.6 — the correction modal accepted a blank justification on REQ-156; cause, fix, badge refresh (working tree, unreleased, 2026-10-14)
+#### G.19.3 TEST v2.247.6 — the correction modal accepted a blank justification on REQ-156; cause, fix, badge refresh (released as v2.247.7 `68c94e8`, 2026-10-14)
 
 **Live validation FAILED (TEST, v2.247.6, 2026-10-14, supplied facts).** REQ-27/07/2026-156 (`RequestId
 7008BD28-E902-414E-8651-1FE9540E7C19`, group `44BD391C-9D32-496F-B237-30A597A4844E`): the modal showed "COMENTÁRIO
@@ -2011,3 +2011,407 @@ Verified unchanged: `refreshWorkflowState` never touches `formData`, `initialFor
 edits and the dirty-state guard survive the refresh); the legacy CORRIGIR P.O button is rendered inside the Buyer
 block from the server decision only; current-code corrections keep the comment optional. The rendered-DOM limitation
 stands: live TEST validation of the modal is still required.
+
+#### G.19.4 Live TEST validation of v2.247.7 on REQ-29/07/2026-176 (2026-10-15)
+
+**Build.** TEST `/api/app/version` = 2.247.7, buildId `2.247.7+68c94e8`, metadata Valid (v2.247.7 = commit `68c94e8`,
+§G.19.3). No migration was applied (none exists for this version).
+
+**Case (supplied facts).** REQ-29/07/2026-176 — `RequestId AD76B531-DAEF-461F-8152-C315ACC53F87`, group
+`DA5641F0-6BD0-46F4-BA2A-FB0B4D8CAEC9`, supplier PITULUI, LDA, 587,816.38 AOA; one of the four legacy request-level
+Finance returns identified in §G.19.1 (REQ-176, 047, 125, 156).
+
+**Sequence and outcome.**
+1. Individual authenticated PREVIEW (`POST api/v1/admin/repairs/legacy-finance-return/{requestId}`, confirm=false):
+   HTTP 200, Mode PREVIEW, Decision QUALIFIES, one live group, zero live payments. No APPLY, no rollback — nothing was
+   written by the repair endpoint. This is the first individual PREVIEW evidence for REQ-176 (§G.19.1 required one per
+   request).
+2. The Buyer opened CORRIGIR P.O from the request detail: the modal showed the comment as mandatory with the
+   explanatory line (server decision `legacyReturnCorrection` for that group, §G.19.3 fix 1–2).
+3. With a validated PDF attached and Pós-Pago selected, the Buyer confirmed that the submit button stayed disabled for an
+   empty comment and for a spaces-only comment. This is user-reported live UI evidence of the client-side block; no
+   backend rejection was captured (none was reached, which is the intended behaviour: nothing is uploaded or submitted).
+4. A non-empty comment enabled the submission.
+5. After the success message the detail immediately showed "P.O. emitida" and the Finance guidance "Pagar ou agendar o
+   pagamento" without a manual page refresh (§G.19.3 fix 5, post-paid outcome).
+6. SQL (read-only) confirmed request status PO_ISSUED and group status PO_ISSUED.
+7. In the supplied latest-five history rows exactly one REREGISTER_PO exists: `597C134B-FA4D-4018-8AFD-FED7A5D766D2`,
+   CreatedAtUtc 2026-10-15 07:22:00.4396909 (UTC). Its comment preserves the Buyer's own text: "Validação em TEST da
+   correção de P.O. após devolução por Finanças, com reanexo do documento e manutenção da condição Pós-Pago." — no
+   generated sentence.
+8. Attachment history: the new P.O. attachment `5212ED0E-CFED-4A99-AFD4-19EEAA5CD35A`, 2026-10-15 07:22:00.1274620 UTC,
+   i.e. uploaded immediately before the registration row (the module's validate → upload → register-po order).
+
+**What this validates live.** The §G.19.3 items on the post-paid path: the mandatory-justification decision reaches
+the modal from the server for the qualifying group; blank and whitespace input cannot be submitted (UI-level, user
+reported); a real justification is recorded verbatim with the REREGISTER_PO row; the correction leaves request and
+group PO_ISSUED; the detail header and guidance refresh from the server without a manual reload; the PREVIEW endpoint
+answers read-only on a live legacy request.
+
+**Correction-notification records (read-only TEST queries, correlation `597C134B-FA4D-4018-8AFD-FED7A5D766D2`).**
+`EmailOutbox`: 0 rows. `AccountsPayableNotificationLogs`: 0 rows. Both Accounts Payable configurations: `IsActive = 1`,
+`NotifyOnPoRegistered = 0`, `NotifyFinanceUsersByEmail = 0`. The absence of e-mail records is consistent with these
+disabled options (§G.11: no AP notice and no Finance-user e-mail are produced for a P.O. registration while they are
+off). No delivery failure is demonstrated by these rows; equally, nothing about correction-notification delivery or
+dedup (the PO_REGISTERED event with `ActionTaken = REREGISTER_PO`, §G.19.2) is validated by this live case. The options
+were not enabled and the correction was not replayed.
+
+**Evidence boundaries.** Correction-notification delivery and dedup remain unvalidated live (see above). No financial
+action was performed afterwards on REQ-176. The following remain supported by local checks only, not by this live case: the
+advance-required outcome refresh, preservation of unsaved header edits during the refresh, the modal's
+detail-fetch-failure block, the optional comment of current-code corrections, the projection re-read when the scalar
+is unchanged, and the list-row re-read on drawer close. Administrative repair APPLY and rollback remain unexecuted on
+TEST. The button-disabled observation is a user report, not a captured request/response.
+
+**Fixture status after this validation.** REQ-176 is no longer an intact legacy fixture (a registration now follows
+the return; its PREVIEW would be REFUSED, as for REQ-156 after §G.19.3). REQ-156 remains as persisted (no reversal, no
+repair). REQ-047 and REQ-125 keep the legacy shape as last observed on 2026-10-14 and require a fresh individual
+PREVIEW before any future action; no authorization for any action on them exists.
+
+**Still deferred and separate.** Whether Finance-returned requests (including PAYMENT) should appear in Gestão de
+Cotações / the Buyer queue with "Devolvido para Compras" and CORRIGIR P.O (§G.19.3) — not investigated, not implemented.
+
+### G.20 Buyer visibility and action placement for requests returned by Finance (investigation only, 2026-10-15)
+
+**Question.** Where should a Buyer find a request returned by Finance for P.O. correction, and does Gestão de Cotações
+(`/buyer/items`) include such requests — PAYMENT included — or is another queue responsible? Source trace on
+`Portal-Gerencial-rev1` at v2.247.7 (`68c94e8`). No change implemented. REQ-156 and REQ-176 have been corrected since
+and their current state is not used as visibility evidence; REQ-047 and REQ-125 need fresh read-only evidence
+(queries below) and no action is authorised on them. The Gestão de Cotações screenshot had no search for REQ-156 and
+proves nothing about its presence; what follows is derived from the code.
+
+**Two return shapes.** (a) *Current, group-scoped* (since cc85ec7): `FinanceController.ReturnForAdjustment`
+(`FinanceController.cs:1826`, `:1984`) sets the target `RequestPoGroup.Status = WAITING_PO_CORRECTION` and keeps
+`PoResponsibleBuyerId` (`:1981`); the request scalar is aggregated afterwards. (b) *Legacy, request-level*: only the
+request scalar is WAITING_PO_CORRECTION while the sole live group stays PO_ISSUED (§G.19). Every queue, counter and
+personal-action rule below is **group-based by design** (v2.242.0), so shape (b) matches none of them.
+
+**Queues and rules (file/line).**
+- *Gestão de Cotações* — `BuyerQueueController.LoadAndProjectAsync` (`BuyerQueueController.cs:150–220`): access scope
+  first (`RequestAccessScope.ScopedRequestsAsync`, `Infrastructure/Data/RequestAccessScope.cs:23–36`: SystemAdministrator
+  → all requests; otherwise `UserPlantScopes` ∩ `UserDepartmentScopes`); admission `RequestType = QUOTATION OR any group
+  WAITING_PO_CORRECTION` (`:164–165`, cross-type); `ownership=me` → `Request.BuyerId = me OR a WAITING_PO_CORRECTION
+  group with PoResponsibleBuyerId = me` (`:172–175`); `ownership=unassigned` → QUOTATION without BuyerId OR a PAYMENT
+  correction group with null PoResponsibleBuyerId (`:177–180`); default `ownership=all`; `includeCompleted=false` keeps
+  `BuyerActiveRequestStatusCodes` (DRAFT, WAITING_QUOTATION, WAITING_AREA_APPROVAL, AREA_ADJUSTMENT,
+  WAITING_FINAL_APPROVAL, FINAL_ADJUSTMENT — `:244–249`) OR any WAITING_PO_CORRECTION group (`:211–212`); search on
+  RequestNumber/Title (`:197–202`); request-level pagination after projection (`:66–67`). Projection
+  (`Domain/Services/BuyerQueueProjectionBuilder.cs:175–194`): `HasPoCorrection` (any WAITING_PO_CORRECTION group,
+  `BuyerQueueProjectionInputFactory.cs:52`) wins over every other state → `PO_CORRECTION`; a non-QUOTATION request without
+  it is `NO_BUYER_ACTION`; a QUOTATION whose scalar left the active set is `COMPLETED_FOR_BUYER`. Summary card
+  `PoCorrections` counts requests in that state (`:140–146`). UI (`pages/Buyer/BuyerQueueList.tsx:414`, `:508–540`): the
+  row shows the returned groups' suppliers and a "Corrigir P.O." CTA → `buildPoCorrectionDeepLink`
+  (`pages/Buyer/buyerQueueView.ts:205–209`) → `/requests?action=PO_CORRECTION&requestId=…&poGroupId=…`.
+- *Classic queue* `/buyer/items/classic` (`LineItemsController.cs:61`, `:92`): QUOTATION line items only; never shows a
+  return of either type.
+- *Para minha ação* (Requests dashboard `ParaMinhaAcaoV2`, `RequestsController.GetMyActions` `:891–925`): scoped, then
+  `any WAITING_PO_CORRECTION group OR active QUOTATION OR actionable scalar` (`:910–915`); `PersonalActionProjectionService`
+  (`Application/Services/Requests/PersonalActionProjectionService.cs:95–108`) emits one `PO_CORRECTION` card per request
+  for the groups the user owns under `PersonalPoCorrectionPredicate.OwnsGroup` (`Domain/Services/PersonalPoCorrectionPredicate.cs`:
+  QUOTATION → `Request.BuyerId`; PAYMENT → `RequestPoGroup.PoResponsibleBuyerId`; null owner matches no one); requires
+  the Buyer role (`IsBuyer`); route `/requests?action=PO_CORRECTION&requestId&poGroupId` (`:156–163`). The deep link
+  from Gestão de Cotações lands here (`components/ParaMinhaAcao/ParaMinhaAcaoV2.tsx:42–100`), which opens the request
+  drawer where the detail's CORRIGIR P.O lives (`RequestStatusActionPanels.tsx` group buttons `:250–251`; legacy button
+  from the server decision, §G.19.3).
+- *Pedidos list* (`RequestsController.GetRequests`, `myTasksOnly`): same cross-type group rule (`:432–437`); without the
+  filter the list is scope-only, so any returned request (either shape) is reachable by search or status filter and shows
+  the scalar badge ("Devolvido para Compras" for shape (b), §G.19.1 badge rule).
+- *Dashboard counters*: `PoCorrectionsForMe` (`DashboardSummaryDto.cs:25`, same predicate) and the operational pipeline
+  stage "Correção de P.O." (`Api/Services/Dashboard/OperationalPipelineProjection.cs:175–191`, group grain).
+- *Notification on return*: `FinanceReturned` → `AddUserRecipientAsync(evt.BuyerId)` only
+  (`WorkflowNotificationOrchestrator.cs:233–235`; null → no recipient, `:949`), with `BuyerId = r.BuyerId`
+  (`FinanceController.cs:2027`); in-app/e-mail link `/requests/{id}?mode=view` (`:1147`), i.e. the detail, not a queue.
+- *Permission to act* is separate from visibility: `RegisterPo` authorises the Buyer and checks the group status /
+  legacy predicate itself (§G.19.1–G.19.3); the detail shows CORRIGIR P.O to Buyers for WAITING_PO_CORRECTION groups and
+  for the server-declared legacy group.
+
+**Matrix (Buyer with scope; "owner" = who the ownership rules recognise).**
+
+| Type | Return shape | Gestão de Cotações | Para minha ação / counters / myTasksOnly | Pedidos list + detail | Owner | Notification to Buyer |
+|---|---|---|---|---|---|---|
+| QUOTATION | group WAITING_PO_CORRECTION | visible (state PO_CORRECTION, CTA Corrigir P.O.); `me` when `Request.BuyerId = me` | card/count when `Request.BuyerId = me` | reachable; CORRIGIR P.O per returned group | `Request.BuyerId` | e-mail + in-app to `Request.BuyerId` |
+| PAYMENT | group WAITING_PO_CORRECTION, owner set | visible (cross-type admission); `me` when `PoResponsibleBuyerId = me` | card/count for that owner only | reachable; CORRIGIR P.O | `RequestPoGroup.PoResponsibleBuyerId` | **none** (`Request.BuyerId` is null for PAYMENT; no owner fallback) |
+| PAYMENT | group WAITING_PO_CORRECTION, owner null | visible only under `ownership=unassigned` (default `all` shows it); "Atribuir a Mim" writes `Request.BuyerId` only | never (null owner matches no one) | reachable; CORRIGIR P.O | nobody | none |
+| QUOTATION | legacy: scalar WAITING_PO_CORRECTION, group PO_ISSUED | excluded by default (scalar outside the active set); with `includeCompleted=true` a COMPLETED_FOR_BUYER row with no correction CTA | not matched (group-based) | reachable by search/status filter; CORRIGIR P.O from the server decision (v2.247.6+) | `Request.BuyerId` (detail only) | historical only |
+| PAYMENT | legacy (REQ-156 shape while returned) | **excluded** (not QUOTATION, no WAITING_PO_CORRECTION group) | not matched | reachable by search/status filter; CORRIGIR P.O from the server decision | none recognised | none |
+| any | SystemAdministrator | full scope, `ownership=all` → everything admitted | `PO_CORRECTION` cards only with the Buyer role | detail actions per role | — | — |
+
+**Answer.** Gestão de Cotações already includes PAYMENT requests returned by Finance — when the return is group-scoped
+(v2.242.0, `BuyerQueueEndpointTests.Queue_Admits_PaymentCorrection_AsPoCorrection_ForOwner_NotOthers`,
+`Queue_Excludes_NormalPayment_WithoutLiveCorrection`, `PoCorrection_*`). A legacy request-level return (REQ-156 while
+returned, REQ-176 before 2026-10-15, possibly REQ-047/125 today) is in no queue, no counter and no personal action; it is
+reachable only through the Pedidos list/detail or a notification link, and since v2.247.6 the detail offers CORRIGIR P.O
+for it. The screenshot therefore neither confirms nor refutes anything; the exclusion follows from `:164–165`.
+
+**Confirmed defects (source) vs intentional scope vs undecided.**
+- D1 *(defect, source-confirmed; live impact to be measured with Q4)*: a Finance return of a PAYMENT group notifies no
+  Buyer — `FinanceReturned` resolves only `evt.BuyerId = r.BuyerId`, which PAYMENT requests do not carry, and nothing
+  falls back to the group's `PoResponsibleBuyerId` (`FinanceController.cs:2027`, orchestrator `:233–235`, `:949`).
+  `FinanceReturnForAdjustmentTests` cover group selection and owner preservation, not recipients.
+- D2 *(defect, source-confirmed)*: after "Atribuir a Mim" on an unassigned PAYMENT correction, the queue's `ownership=me`
+  matches (`Request.BuyerId`, `:173`) but `PersonalPoCorrectionPredicate`, `myTasksOnly` and `PoCorrectionsForMe` do not
+  (PAYMENT → `PoResponsibleBuyerId`, which `assign-buyer` never writes — `RequestsController.cs:~3033`): the two ownership
+  rules disagree for PAYMENT after a claim.
+- D3 *(intentional scope, documented in `PersonalPoCorrectionPredicate`)*: a drifted scalar with a PO_ISSUED group is
+  deliberately NOT matched by the group-based rules. This is correct for scalar drift and wrong for the legacy shape,
+  which is real work. It is a finite population (four requests on TEST on 2026-10-14, two corrected since) rather than
+  an ongoing flow: current code cannot produce it.
+- D4 *(undecided business question)*: whether P.O. corrections (a post-sourcing activity) belong in Gestão de Cotações
+  at all, or in a purchasing/P.O. queue. v2.242.0 decided "in Gestão de Cotações, cross-type" for the group shape; the
+  product has not restated it for PAYMENT volume.
+
+**Read-only TEST queries (table/column names verified in `ApplicationDbContextModelSnapshot.cs`: Requests, RequestTypes,
+RequestStatuses, RequestPoGroups.PoResponsibleBuyerId/SupplierNameSnapshot/PurchaseOrderNumber/Status,
+RequestStatusHistories, RequestPayments, Users, EmailOutbox.RequestId/CorrelationId/RecipientEmail/EventCode).**
+```sql
+USE [Portal-Gerencial-Test]; SET NOCOUNT ON;
+-- Q1: current group-scoped returns (live WAITING_PO_CORRECTION groups) with type, scalar, owner and scope
+SELECT r.RequestNumber, t.Code AS RequestType, s.Code AS Scalar, r.CompanyId, r.PlantId, r.DepartmentId,
+       g.Id AS GroupId, g.SupplierNameSnapshot, g.PurchaseOrderNumber,
+       r.BuyerId AS RequestBuyerId, rb.FullName AS RequestBuyer,
+       g.PoResponsibleBuyerId, gb.FullName AS GroupOwner,
+       CASE WHEN t.Code = 'QUOTATION' THEN CASE WHEN r.BuyerId IS NULL THEN 'UNASSIGNED' ELSE 'REQUEST_BUYER' END
+            ELSE CASE WHEN g.PoResponsibleBuyerId IS NULL THEN 'UNASSIGNED' ELSE 'GROUP_OWNER' END END AS OwnershipRule,
+       (SELECT MAX(h.CreatedAtUtc) FROM RequestStatusHistories h
+         WHERE h.RequestId = r.Id AND h.ActionTaken = 'FINANCE_RETURN_ADJUSTMENT') AS LastReturnUtc
+FROM RequestPoGroups g
+JOIN Requests r        ON r.Id = g.RequestId
+JOIN RequestTypes t    ON t.Id = r.RequestTypeId
+JOIN RequestStatuses s ON s.Id = r.StatusId
+LEFT JOIN Users rb ON rb.Id = r.BuyerId
+LEFT JOIN Users gb ON gb.Id = g.PoResponsibleBuyerId
+WHERE g.Status = 'WAITING_PO_CORRECTION'
+ORDER BY LastReturnUtc DESC, r.RequestNumber;
+
+-- Q2: legacy request-level returns still present (scalar returned, no live group returned) — candidates for individual PREVIEW
+SELECT r.Id AS RequestId, r.RequestNumber, t.Code AS RequestType, s.Code AS Scalar, r.CompanyId, r.PlantId,
+       r.BuyerId AS RequestBuyerId, rb.FullName AS RequestBuyer,
+       (SELECT COUNT(*) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS LiveGroups,
+       (SELECT STRING_AGG(g.Status, ',') FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS LiveGroupStatuses,
+       (SELECT MAX(g.PoResponsibleBuyerId) FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status <> 'CANCELLED') AS SoleGroupOwnerId,
+       (SELECT MAX(h.CreatedAtUtc) FROM RequestStatusHistories h WHERE h.RequestId = r.Id AND h.ActionTaken IN ('REGISTER_PO','REREGISTER_PO')) AS LastRegistrationUtc,
+       (SELECT MAX(h.CreatedAtUtc) FROM RequestStatusHistories h WHERE h.RequestId = r.Id AND h.ActionTaken = 'FINANCE_RETURN_ADJUSTMENT') AS LastReturnUtc,
+       (SELECT COUNT(*) FROM RequestPayments p WHERE p.RequestId = r.Id AND p.PaymentStatus <> 'CANCELLED') AS LivePayments
+FROM Requests r
+JOIN RequestTypes t    ON t.Id = r.RequestTypeId
+JOIN RequestStatuses s ON s.Id = r.StatusId
+LEFT JOIN Users rb ON rb.Id = r.BuyerId
+WHERE s.Code = 'WAITING_PO_CORRECTION'
+  AND NOT EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status = 'WAITING_PO_CORRECTION')
+ORDER BY LastReturnUtc;
+
+-- Q3: population by type and shape (how much each rule matters today)
+;WITH Shape AS (
+    SELECT r.Id, t.Code AS RequestType,
+           CASE WHEN EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status = 'WAITING_PO_CORRECTION')
+                THEN 'GROUP_SCOPED' ELSE 'LEGACY_REQUEST_LEVEL' END AS Shape,
+           CASE WHEN t.Code = 'PAYMENT' AND NOT EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id
+                                                          AND g.Status = 'WAITING_PO_CORRECTION' AND g.PoResponsibleBuyerId IS NOT NULL)
+                THEN 1 ELSE 0 END AS PaymentWithoutRecognisedOwner
+    FROM Requests r
+    JOIN RequestTypes t    ON t.Id = r.RequestTypeId
+    JOIN RequestStatuses s ON s.Id = r.StatusId
+    WHERE s.Code = 'WAITING_PO_CORRECTION'
+       OR EXISTS (SELECT 1 FROM RequestPoGroups g WHERE g.RequestId = r.Id AND g.Status = 'WAITING_PO_CORRECTION')
+)
+SELECT RequestType, Shape, COUNT(*) AS Requests, SUM(PaymentWithoutRecognisedOwner) AS PaymentWithoutRecognisedOwner
+FROM Shape
+GROUP BY RequestType, Shape
+ORDER BY RequestType, Shape;
+
+-- Q4: D1 measurement — Finance returns of the last 90 days and the e-mail rows correlated to each return (expect 0 for PAYMENT)
+SELECT r.RequestNumber, t.Code AS RequestType, h.Id AS ReturnHistoryId, h.CreatedAtUtc AS ReturnUtc,
+       r.BuyerId AS RequestBuyerId,
+       (SELECT COUNT(*) FROM EmailOutbox e WHERE e.CorrelationId = h.Id) AS OutboxRowsForReturn,
+       (SELECT STRING_AGG(e.RecipientEmail, ';') FROM EmailOutbox e WHERE e.CorrelationId = h.Id) AS Recipients
+FROM RequestStatusHistories h
+JOIN Requests r     ON r.Id = h.RequestId
+JOIN RequestTypes t ON t.Id = r.RequestTypeId
+WHERE h.ActionTaken = 'FINANCE_RETURN_ADJUSTMENT' AND h.CreatedAtUtc >= DATEADD(DAY, -90, SYSUTCDATETIME())
+ORDER BY h.CreatedAtUtc DESC;
+```
+Q1/Q2 locate representative currently returned cases of each shape without touching them; Q4 measures D1 on real
+returns (the in-app table `InformationalNotifications` was not column-verified and is not queried here).
+All four queries were compiled and executed read-only on the disposable LocalDB sandbox (same EF schema; no rows there) on
+2026-10-15; they have NOT been run on TEST.
+
+**Recommendation (minimal; nothing changed yet).** Keep Gestão de Cotações as quotation sourcing **plus** the existing
+cross-type admission of group-scoped corrections — the placement v2.242.0 already made and tested — and do **not** add a
+scalar-based (request-level) rule to any queue. Treat the legacy shape as a data condition to normalise, not a routing
+case: for each remaining legacy request (Q2), individual PREVIEW → authorised APPLY of the §G.19.1 repair moves the
+group to WAITING_PO_CORRECTION, after which every existing queue, counter, card and notification path applies unchanged;
+until then those requests remain reachable through the Pedidos list/detail with CORRIGIR P.O (§G.19.3).
+Trade-off: extending the queues with a scalar rule would make the legacy shape visible immediately but would re-open the
+scalar-drift class that the group-based rules were built to exclude (REQ-275 shape), duplicate the ownership logic in a
+fourth place, and would be dead code once the finite legacy population is normalised; the repair path keeps one rule.
+Separately and independently of that decision, D1 (PAYMENT return notifies nobody) and D2 (claim does not transfer
+PAYMENT correction ownership) are small, testable fixes: resolve the `FinanceReturned` Buyer recipient from the returned
+group's `PoResponsibleBuyerId` when `Request.BuyerId` is null, and make `assign-buyer` (or a dedicated claim) set the
+correction group's `PoResponsibleBuyerId` for PAYMENT so both ownership rules agree. D4 (a dedicated purchasing/P.O.
+queue vs. Gestão de Cotações) stays a product decision; nothing here depends on it.
+
+**Proposed next scope (for decision, not started).** (1) Run Q1–Q4 read-only on TEST and record the counts; fresh
+individual PREVIEW for REQ-047 and REQ-125. (2) Decide "normalise via repair" vs "scalar rule"; this investigation
+recommends the former. (3) If accepted: D1 and D2 fixes with controller tests (recipient resolution for PAYMENT returns;
+claim ownership consistency), no queue change. (4) D4 only if the product wants corrections out of Gestão de Cotações.
+
+#### G.20.1 D1 and D2 implemented (released as v2.247.8, 2026-10-15)
+
+**Supplied read-only TEST population (2026-10-15).** Current group-scoped PAYMENT returns: REQ-429 (Company 1 / Plant 2 /
+Department 7) and REQ-254 (Company 2 / Plant 3 / Department 4), both with `Request.BuyerId` NULL and group owner
+Celestina Bernardo (`2B46B82A-6ADA-474F-8B7D-8D9F9EB5DEB1`). Current group-scoped QUOTATION return: REQ-275 (scalar
+PO_PARTIALLY_UPLOADED, Company 2 / Plant 3 / Department 5), `Request.BuyerId` Samuel Mpoco
+(`15271F12-FF7C-49E4-B9F0-403F87AECD22`), group owner NULL. Remaining legacy cases: REQ-047 (`RequestId
+8104E239-2FA2-4C7A-A3F3-1F86F2A77CD7`, Company 2 / Plant 3, sole PO_ISSUED group owned by Samuel) and REQ-125
+(`RequestId EDE642E5-B1EF-4B03-BEA0-6A411AE27846`, Company 1 / Plant 2, sole PO_ISSUED group owned by Celestina), both
+scalar WAITING_PO_CORRECTION, zero live payments, return later than registration. No repair and no business action is
+authorised on any of them; none of these rows was used as a test fixture.
+
+**Q4 evidence limits — and the correlation defect it exposed.** Q4 found zero `EmailOutbox` rows correlated to all
+seven historical returns, including REQ-275, which had a request Buyer. Source inspection explains why the zeros prove
+nothing: `ReturnForAdjustment` wrote the FINANCE_RETURN_ADJUSTMENT row, then `StatusAggregationService` appended a
+STATUS_SYNC row (`StatusAggregationService.cs:100–109`), and the event's `CorrelationId` was taken from the *latest
+tracked* history row (`_context.RequestStatusHistories.Local.OrderByDescending(CreatedAtUtc).First`), i.e. the
+STATUS_SYNC row whenever the scalar changed. Outbox and in-app rows of a return were therefore correlated to the
+STATUS_SYNC row, not to the return row, and Q4's join on the return-row id cannot see them. Q4 shows neither delivery
+nor failure; Q4b below reads the rows by request and event code instead. (The in-app dedup also keyed on that id, so
+a return and its STATUS_SYNC shared one correlation — not a delivery problem, but not the per-return correlation the
+documentation assumed.) Nothing was resent.
+
+```sql
+USE [Portal-Gerencial-Test]; SET NOCOUNT ON;
+-- Q4b: e-mail rows of Finance returns by request and event code (independent of the correlation row), with the
+--      history action the row is actually correlated to
+SELECT r.RequestNumber, t.Code AS RequestType, e.CreatedAtUtc, e.RecipientEmail, e.Status, e.CorrelationId,
+       (SELECT h.ActionTaken FROM RequestStatusHistories h WHERE h.Id = e.CorrelationId) AS CorrelatedHistoryAction
+FROM EmailOutbox e
+JOIN Requests r     ON r.Id = e.RequestId
+JOIN RequestTypes t ON t.Id = r.RequestTypeId
+WHERE e.EventCode = 'FINANCE_RETURNED' AND e.CreatedAtUtc >= DATEADD(DAY, -90, SYSUTCDATETIME())
+ORDER BY e.CreatedAtUtc DESC;
+```
+
+**D1 — recipient of the Finance-return notification (changed).**
+- Contract: `ReturnForAdjustment` already emitted `FinanceReturned` with `PoGroupId = group.Id` (the acted-on group)
+  and `BuyerId = r.BuyerId`; the orchestrator ignored the group and used `BuyerId` only. The event now correlates to
+  the FINANCE_RETURN_ADJUSTMENT row itself (`returnHistory.Id`), never to a later STATUS_SYNC row.
+- Resolution (`WorkflowNotificationOrchestrator.ResolveFinanceReturnOwnerAsync`): precedence is by request type only.
+  QUOTATION → `Request.BuyerId` (as carried on the event; the group owner is never read). PAYMENT → the acted-on
+  group's `PoResponsibleBuyerId`, looked up scoped to the event's request (`g.Id = PoGroupId AND g.RequestId =
+  RequestId`); `Request.BuyerId` is never a fallback for PAYMENT (a historical request-level assignment is not
+  correction ownership). Missing `PoGroupId`, a group of another request, an unassigned group or an inactive owner
+  resolve to nobody: the existing "No recipients resolved" warning fires, no recipient is invented, no sibling owner is
+  used, no fan-out to every Buyer. Eligibility (`IsActive`), channels, dedup, SMTP redirect and templates are unchanged;
+  the link stays `/requests/{id}?mode=view`, i.e. the detail where CORRIGIR P.O for the returned group is offered.
+- Verified by `FinanceReturnNotificationRecipientTests` (real `FinanceController` + real orchestrator on InMemory,
+  asserting the ACTUAL `EmailOutbox` rows — recipient, `CorrelationId`, `EventCode`, link — and the in-app creations):
+  two groups with distinct owners (each return reaches its own owner with its own return-row correlation); PAYMENT
+  request Buyer vs group owner disagreement (group owner wins, request Buyer not notified); QUOTATION regression
+  (request Buyer, group owner ignored); unassigned group, inactive owner and QUOTATION without Buyer → no recipient,
+  nothing created; a group of another request or a missing group context on a PAYMENT → nobody.
+
+**D2 — "Atribuir a Mim" on a PAYMENT correction (changed).** Entry points: Buyer queue row (`BuyerQueueList.doClaim`
+→ `api.requests.assignBuyer`) and the classic items list (QUOTATION only). `RequestsController.AssignBuyer`:
+- enforces the request access scope (company/plant/department; SystemAdministrator unrestricted) — the queues only
+  show scoped rows and the claim now refuses out-of-scope requests with 404; role checks unchanged (Buyer self-claims,
+  SysAdmin/LocalManager assign others, target must be a Buyer);
+- for a PAYMENT request delegates to `Infrastructure/Services/Purchasing/PoCorrectionClaimService.ClaimAsync`: claims
+  exactly one eligible, unassigned WAITING_PO_CORRECTION group of that request — the one named by `poGroupId`, or the
+  sole correction group; several correction groups without an explicit id → 409 `PO_CORRECTION_AMBIGUOUS` with the
+  candidate ids (nothing chosen, nothing written); a group of another request or not in correction → 400; a Buyer
+  never overwrites an owner (409 `PO_CORRECTION_ALREADY_OWNED`); a coordinator (SysAdmin/LocalManager — the same
+  authority that reassigns a QUOTATION's Buyer) may transfer an owned group, with the previous owner recorded in the
+  history row (final review, below); claiming one's own group is idempotent (200); `Request.BuyerId` is never written
+  on the correction path; one `COMPRADOR_ATRIBUIDO` history row with the group prefix; requester in-app notice and the
+  `BuyerAssigned` e-mail event correlated to that row, as for QUOTATION; a PAYMENT without any returned group (and no
+  explicit `poGroupId`) keeps the pre-existing request-level assignment path unchanged;
+- concurrency: the group's `rowversion` arbitrates; the second writer gets 409 `PO_CORRECTION_CLAIM_CONFLICT` and
+  nothing of its attempt is persisted (`PoCorrectionClaimRelationalTests` on the LocalDB sandbox: two concurrent claims
+  synchronised at a barrier → exactly one owner, one history row, the loser's retry sees `OwnedByAnother`; a stale
+  claim whose group changed after loading fails without partial writes);
+- QUOTATION claims unchanged (`Request.BuyerId`, same history text, same event).
+- Ownership alignment: the Buyer queue's `ownership=me` now applies the SAME rule as `PersonalPoCorrectionPredicate`,
+  `myTasksOnly` and `PoCorrectionsForMe` — QUOTATION → `Request.BuyerId`; PAYMENT → a WAITING_PO_CORRECTION group's
+  `PoResponsibleBuyerId` (`BuyerQueueController.cs` "me" branch). A PAYMENT's `Request.BuyerId` written by historical
+  claims no longer counts as correction ownership anywhere. Admission, placement, `unassigned`, display owner and
+  `CanClaim` are unchanged. Frontend: the queue row passes its single correction group id on claim; with several the
+  server's 409 message is shown.
+- Verified by `PoCorrectionClaimTests` (real `RequestsController` and `BuyerQueueController` on InMemory): successful
+  claim (group owner set, `Request.BuyerId` null, history, `BuyerAssigned` event correlation, predicate match,
+  idempotent repeat); existing owner never overwritten (Buyer and coordinator); ambiguous multi-group refused with
+  nothing written, then explicit `poGroupId` claims only that group; cross-request and non-returned group refused; a
+  PAYMENT without a returned group has nothing to claim; Finance role 403 and out-of-scope Buyer 404 without writes;
+  QUOTATION claim unchanged; queue `me` follows the group owner, not a request-level buyer, while `all` still admits
+  the row.
+
+**Changed paths.** `FinanceController.cs` (return-row correlation, `PoGroupId` already carried),
+`WorkflowNotificationOrchestrator.cs` (`FinanceReturned` case + `ResolveFinanceReturnOwnerAsync`),
+`RequestsController.cs` (`AssignBuyer`: scope, `poGroupId`, PAYMENT branch), new
+`Infrastructure/Services/Purchasing/PoCorrectionClaimService.cs`, `BuyerQueueController.cs` ("me" rule),
+`frontend/src/lib/api.ts` (`assignBuyer(id, poGroupId?)`), `frontend/src/pages/Buyer/BuyerQueueList.tsx` (claim passes
+the single group), tests `FinanceReturnNotificationRecipientTests`, `PoCorrectionClaimTests`,
+`PoCorrectionClaimRelationalTests`, `buyerQueueView.test.ts` (+2 guards). No migration, no EF model change
+(`has-pending-model-changes`: none). Queue admission/placement, legacy repairs (§G.19) and the queue-placement product
+question (§G.20 D4) untouched.
+
+**Checks.** Affected suites 75/75 (`FinanceReturnNotificationRecipientTests`, `PoCorrectionClaim*`,
+`FinanceReturnForAdjustmentTests`, `BuyerQueueEndpointTests`, `PersonalPoCorrectionPredicateTests`; relational claim
+tests executed on LocalDB); full backend suite 2,925/2,925 (+17); frontend tsc clean, Vite build OK, vitest 958/958
+(+2). Q4b compiled and executed read-only on the LocalDB sandbox (no rows there), not on TEST.
+
+**Limits.** Local fixtures are not TEST evidence. The correlation defect is confirmed from source and reproduced
+locally; its live effect on the seven historical returns is to be read with Q4b (not run). The in-app table
+(`InformationalNotifications`) is not queried here.
+
+**Bounded post-deploy TEST plan (requires authorisation; a Finance return is a business action).** (1) Read-only:
+Q1 and Q4b before anything. (2) On a disposable TEST request of type PAYMENT with one PO_ISSUED group owned by a known
+Buyer: Finance returns the group → exactly one `EmailOutbox` row with that Buyer's address, `EventCode =
+FINANCE_RETURNED`, `CorrelationId` = the FINANCE_RETURN_ADJUSTMENT row id (Q4b `CorrelatedHistoryAction`), one in-app
+notice for that Buyer, link opening the detail with CORRIGIR P.O. (3) On a disposable PAYMENT request with one
+unassigned WAITING_PO_CORRECTION group: a Buyer clicks "Atribuir a Mim" in Gestão de Cotações → group
+`PoResponsibleBuyerId` = that Buyer, `Request.BuyerId` still NULL, row under "Meus", "Para minha ação" card and
+"Correções de P.O. pendentes" count present for that Buyer only; a second Buyer's claim → 409. (4) No action on
+REQ-429/254/275/047/125.
+
+**Final local review (2026-10-15) — findings and corrections.**
+1. *Assignment compatibility (corrected).* Before this change `AssignBuyer` let a coordinator reassign ANY request,
+   PAYMENT included (writing `Request.BuyerId`), and let a Buyer self-assign a PAYMENT without a returned group. The
+   first implementation refused coordinator reassignment of an owned PAYMENT correction (409) and answered 400 for a
+   PAYMENT without a returned group — two removals outside the intended scope. Corrected: a coordinator may transfer an
+   owned correction group (`PoCorrectionClaimService.ClaimAsync(..., allowTransfer: canReassign)` → outcome
+   `Transferred`, history "reatribuída ao comprador X (anterior: Y)", `BuyerAssigned` event for the new owner), which
+   mirrors the existing QUOTATION authority without adding a new rule; a PAYMENT with no WAITING_PO_CORRECTION group and
+   no explicit `poGroupId` takes the unchanged request-level path (`Request.BuyerId`, legacy history text). A Buyer
+   still never overwrites an owner; a coordinator without the Buyer role still cannot self-claim (unchanged 403).
+   Behaviour changes outside unassigned PAYMENT-correction claims that remain, by design: (a) the access-scope check
+   (404 outside company/plant/department scope; SystemAdministrator unaffected) now applies to every assignment —
+   the queues only ever exposed scoped rows; (b) the queue's `ownership=me` no longer treats a PAYMENT's
+   `Request.BuyerId` as correction ownership (alignment with the shared predicate; `all`/`unassigned`/display/claim
+   visibility unchanged); (c) for a PAYMENT with a returned group the claim writes the group owner instead of
+   `Request.BuyerId`. Everything else in `AssignBuyer` (roles, target-must-be-Buyer, idempotence, QUOTATION path,
+   notices, event) is unchanged; the requester-notice wording for QUOTATION is byte-identical to before.
+2. *Authorization and concurrency (verified).* Order in `AssignBuyer`: actor exists → request exists → access scope →
+   role checks → target-is-Buyer → claim service; no mutation precedes these. The service loads only this request's
+   non-cancelled groups, so an explicit `poGroupId` of another request is `GroupNotFound` and a non-returned group is
+   `GroupNotEligible`; omitted id → sole correction group or `Ambiguous`; sibling groups are never touched; idempotent
+   self-claim and owned-by-another verified on both paths; the `rowversion` race and the stale-claim case verified on
+   LocalDB.
+3. *Notification routing (verified).* PAYMENT → only the acted-on group's active owner (conflicting request Buyer not
+   notified; unassigned/inactive owner → nobody; cross-request or missing group context → nobody); QUOTATION → request
+   Buyer, group owner ignored. The unchanged link opens the request detail; CORRIGIR P.O there is gated by the Buyer
+   ROLE (`useRequestDetail.isBuyer`) and `RegisterPo` authorises by role, so the resolved PAYMENT owner (who is not
+   `Request.BuyerId`) can act.
+4. *Correlation (verified).* The event carries `returnHistory.Id` unconditionally — with or without a STATUS_SYNC row,
+   and regardless of the advance-cancellation row written just before the return row. Downstream, the in-app dedup
+   (`CorrelationId + user`) and the outbox dedup (`CorrelationId + recipient`) now key on the return row, so two returns
+   on one request each produce their own notice; no historical row is rewritten and nothing is re-emitted.
+5. *Housekeeping.* A requester-notice wording regression ("por o seu pedido", "atribuída" for QUOTATION) and a
+   mis-indented initializer line introduced by the first patch were corrected.
+
+**Live Q4b evidence (TEST, read-only, 2026-10-15, supplied).** Q4b returned one row: REQ-20/08/2026-275 (QUOTATION),
+`EmailOutbox.CreatedAtUtc` 2026-09-10 18:42:31.3112843, recipient samuel.mpoco@alpla.com, `Status` SENT,
+`CorrelationId 0D251C08-A089-4F72-8619-70CA03C37A7D`, `CorrelatedHistoryAction` STATUS_SYNC. This confirms, on a real
+historical return, the correlation mismatch described above: the Finance-return e-mail was queued and sent to the
+request Buyer, but correlated to the STATUS_SYNC row rather than to the FINANCE_RETURN_ADJUSTMENT row — which is why
+Q4 (joined on the return-row id) found nothing. No PAYMENT rows were returned; that absence alone is not evidence of a
+delivery failure (D1 is confirmed from source and by local tests, not by this query). Nothing was resent.

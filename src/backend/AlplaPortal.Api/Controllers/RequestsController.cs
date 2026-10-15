@@ -2948,7 +2948,7 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id:guid}/assign-buyer")]
-    public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null)
+    public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null, [FromQuery] Guid? poGroupId = null)
     {
         var actorId = CurrentUserId;
         var user = await _context.Users.FindAsync(actorId);
@@ -2956,9 +2956,22 @@ public class RequestsController : BaseController
 
         var request = await _context.Requests
             .Include(r => r.Status)
+            .Include(r => r.RequestType)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+        // docs §G.20 D2 — the queues only expose scoped rows; the claim enforces the same company/plant/department
+        // access scope (SystemAdministrator: everything).
+        if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+
+        // docs §G.20 D2 — a PAYMENT request carries no Request.BuyerId; its correction ownership is the returned
+        // group's PoResponsibleBuyerId (PersonalPoCorrectionPredicate — the rule of "Para Minha Ação", the dashboard
+        // count and the Buyer queue). When a PAYMENT has a returned group (or the caller names one), this action
+        // claims exactly one eligible WAITING_PO_CORRECTION group and never writes Request.BuyerId. A PAYMENT without
+        // any returned group keeps the pre-existing request-level assignment path unchanged.
+        var isPaymentCorrectionClaim = request.RequestType?.Code == RequestConstants.Types.Payment
+            && (poGroupId.HasValue || await _context.RequestPoGroups.AnyAsync(g => g.RequestId == id && g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection));
 
         // Only allow assignment if it's currently unassigned. Re-assignment should be a different flow/check if needed
         // but the prompt says: "If role/permissions already support it, allow reassignment by authorized users only"
@@ -2995,7 +3008,7 @@ public class RequestsController : BaseController
             });
         }
 
-        if (request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
+        if (!isPaymentCorrectionClaim && request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
         {
             return Conflict(new ProblemDetails
             {
@@ -3025,44 +3038,88 @@ public class RequestsController : BaseController
             }
         }
 
-        if (request.BuyerId == newBuyerId)
-        {
-             return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
-        }
-
-        request.BuyerId = newBuyerId;
-        request.UpdatedAtUtc = DateTime.UtcNow;
-        request.UpdatedByUserId = actorId;
-
-        // History entry
         var targetUser = newBuyerId == actorId ? user : await _context.Users.FindAsync(newBuyerId);
-        var historyComment = newBuyerId == actorId 
-            ? "O comprador assumiu a responsabilidade pelo pedido." 
-            : $"O pedido foi atribuído ao comprador {targetUser?.FullName}.";
+        Guid historyId;
+        string assignedScope;
 
-        var history = new RequestStatusHistory
+        if (isPaymentCorrectionClaim)
         {
-            Id = Guid.NewGuid(),
-            RequestId = request.Id,
-            ActorUserId = actorId,
-            ActionTaken = "COMPRADOR_ATRIBUIDO",
-            PreviousStatusId = request.StatusId,
-            NewStatusId = request.StatusId,
-            Comment = historyComment,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestStatusHistories.Add(history);
+            var claim = await new AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimService(_context)
+                .ClaimAsync(request.Id, poGroupId, newBuyerId, actorId, targetUser?.FullName, allowTransfer: canReassign);
+            switch (claim.Outcome)
+            {
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.AlreadyOwnedByClaimant:
+                    return Ok(new { Message = claim.Message }); // idempotent
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.OwnedByAnother:
+                {
+                    var pd = new ProblemDetails { Title = "Ação Bloqueada", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_ALREADY_OWNED"; pd.Extensions["poGroupId"] = claim.GroupId; pd.Extensions["ownerId"] = claim.OwnerId;
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.Ambiguous:
+                {
+                    var pd = new ProblemDetails { Title = "Grupo Obrigatório", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_AMBIGUOUS"; pd.Extensions["candidateGroupIds"] = claim.CandidateGroupIds;
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.ConcurrencyConflict:
+                {
+                    var pd = new ProblemDetails { Title = "Ação Bloqueada", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_CLAIM_CONFLICT";
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.NoCorrectionGroup:
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.GroupNotFound:
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.GroupNotEligible:
+                    return BadRequest(new ProblemDetails { Title = "Nada a Assumir", Detail = claim.Message, Status = 400 });
+            }
+            historyId = claim.HistoryId!.Value; // Claimed or Transferred
+            assignedScope = "pela correção da P.O do seu pedido";
+        }
+        else
+        {
+            if (request.BuyerId == newBuyerId)
+            {
+                 return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
+            }
 
-        await _context.SaveChangesAsync();
+            request.BuyerId = newBuyerId;
+            request.UpdatedAtUtc = DateTime.UtcNow;
+            request.UpdatedByUserId = actorId;
+
+            // History entry
+            var historyComment = newBuyerId == actorId
+                ? "O comprador assumiu a responsabilidade pelo pedido."
+                : $"O pedido foi atribuído ao comprador {targetUser?.FullName}.";
+
+            var history = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "COMPRADOR_ATRIBUIDO",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = historyComment,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestStatusHistories.Add(history);
+
+            await _context.SaveChangesAsync();
+            historyId = history.Id;
+            assignedScope = "pelo seu pedido";
+        }
 
         // Notifications (in-app)
         try
         {
             if (request.RequesterId != actorId)
             {
-                var msgToRequester = newBuyerId == actorId 
-                    ? $"O comprador {user.FullName} assumiu a responsabilidade pelo seu pedido {(request.RequestNumber ?? "S/N")}."
-                    : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
+                var msgToRequester = newBuyerId == actorId
+                    ? $"O comprador {user.FullName} assumiu a responsabilidade {assignedScope} {(request.RequestNumber ?? "S/N")}."
+                    : isPaymentCorrectionClaim
+                        ? $"A correção da P.O do seu pedido {(request.RequestNumber ?? "S/N")} foi atribuída ao comprador {targetUser?.FullName}."
+                        : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
 
                 await _notificationService.CreateNotificationAsync(
                     request.RequesterId,
@@ -3102,7 +3159,7 @@ public class RequestsController : BaseController
                 ActionTaken = "BUYER_ASSIGNED",
                 ActorUserId = actorId,
                 ActorName = user.FullName ?? "Sistema",
-                CorrelationId = history.Id,
+                CorrelationId = historyId,
                 RequesterId = request.RequesterId,
                 BuyerId = newBuyerId,
                 DepartmentId = request.DepartmentId,

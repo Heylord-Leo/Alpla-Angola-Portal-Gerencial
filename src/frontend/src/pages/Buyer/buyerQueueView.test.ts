@@ -242,3 +242,19 @@ describe('buildPoCorrectionDeepLink + BuyerQueue "Corrigir P.O." navigation (v2.
     expect(listSrc).toMatch(/Abrir Workspace/);
   });
 });
+
+// docs §G.20 D2 — "Atribuir a Mim" on a PAYMENT correction row targets the row's single returned group; with several
+// the server decides (409 ambiguous), never the client. Source-level guard (no DOM runtime in this suite).
+import queueListSrc from './BuyerQueueList.tsx?raw';
+import apiSrc from '../../lib/api.ts?raw';
+describe('BuyerQueueList claim passes the single correction group (§G.20 D2)', () => {
+  it('derives poGroupId only for a non-QUOTATION PO_CORRECTION row with exactly one group', () => {
+    expect(queueListSrc).toMatch(/item\.operationalState === 'PO_CORRECTION' && item\.requestTypeCode && item\.requestTypeCode !== 'QUOTATION'/);
+    expect(queueListSrc).toMatch(/item\.poCorrectionGroups\?\.length === 1 \? item\.poCorrectionGroups\[0\]\.poGroupId : undefined/);
+    expect(queueListSrc).toMatch(/api\.requests\.assignBuyer\(item\.requestId, correctionGroupId\)/);
+  });
+  it('the API forwards poGroupId as a query parameter and omits it otherwise', () => {
+    expect(apiSrc).toMatch(/assignBuyer: async \(id: string, poGroupId\?: string \| null\)/);
+    expect(apiSrc).toMatch(/const qs = poGroupId \? `\?poGroupId=\$\{encodeURIComponent\(poGroupId\)\}` : '';/);
+  });
+});
