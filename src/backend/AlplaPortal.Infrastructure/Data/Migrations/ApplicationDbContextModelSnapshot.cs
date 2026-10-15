@@ -49,7 +49,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("Label")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("NotifyFinanceUsersByEmail")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("NotifyOnCompleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("NotifyOnPoRegistered")
                         .HasColumnType("bit");
 
                     b.Property<bool>("NotifyOnScheduled")
@@ -79,6 +85,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<int>("CompanyId")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("CorrelationId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -116,7 +125,7 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.HasIndex("RequestId");
 
-                    b.HasIndex("RequestId", "EventCode", "RecipientEmail")
+                    b.HasIndex("RequestId", "EventCode", "RecipientEmail", "CorrelationId")
                         .IsUnique()
                         .HasDatabaseName("IX_ApNotifLogs_Dedup")
                         .HasFilter("[Success] = 1 AND [Skipped] = 0");
@@ -252,6 +261,15 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("RequestId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("StageEnteredAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -708,6 +726,165 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasDatabaseName("UX_ApprovalBatchItemCandidate_Item_QuotationItem");
 
                     b.ToTable("ApprovalBatchItemCandidates");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderDigest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DigestDateLocal")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("DryRun")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("OutboxEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("OverflowCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PayloadHtml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OutboxEntryId");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("RecipientUserId", "DigestDateLocal", "DryRun")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ApprovalReminderDigests_Dedup");
+
+                    b.ToTable("ApprovalReminderDigests");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderDigestItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ApprovalBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("BatchNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DaysPending")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("DigestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("StageEnteredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DigestId");
+
+                    b.HasIndex("RequestId");
+
+                    b.ToTable("ApprovalReminderDigestItems");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DigestsDryRun")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DigestsQueued")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("DryRun")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("LocalDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Recipients")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SkippedAllowList")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SkippedDedup")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("UnitsConsidered")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UnitsEligible")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UnitsWithoutRecipient")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UnitsWithoutStageEntry")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocalDate", "StartedAtUtc");
+
+                    b.ToTable("ApprovalReminderRuns");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
@@ -1987,6 +2164,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("EventCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Headline")
                         .IsRequired()
@@ -5994,6 +6174,15 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<bool>("InAppSent")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("LastQueuedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("OutboxEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("QueuedCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("RecipientUserId")
                         .HasColumnType("uniqueidentifier");
 
@@ -6004,6 +6193,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OutboxEntryId");
 
                     b.HasIndex("RecipientUserId");
 
@@ -8631,6 +8822,43 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("QuotationItem");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderDigest", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.EmailOutboxEntry", "OutboxEntry")
+                        .WithMany()
+                        .HasForeignKey("OutboxEntryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "RecipientUser")
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalReminderRun", "Run")
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OutboxEntry");
+
+                    b.Navigation("RecipientUser");
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderDigestItem", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.ApprovalReminderDigest", "Digest")
+                        .WithMany("Items")
+                        .HasForeignKey("DigestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Digest");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgeLayout", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.User", "CreatedByUser")
@@ -9587,6 +9815,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.ProformaDeadlineAlert", b =>
                 {
+                    b.HasOne("AlplaPortal.Domain.Entities.EmailOutboxEntry", "OutboxEntry")
+                        .WithMany()
+                        .HasForeignKey("OutboxEntryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("AlplaPortal.Domain.Entities.User", "RecipientUser")
                         .WithMany()
                         .HasForeignKey("RecipientUserId")
@@ -9598,6 +9831,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("OutboxEntry");
 
                     b.Navigation("RecipientUser");
 
@@ -10341,6 +10576,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
             modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalBatchItem", b =>
                 {
                     b.Navigation("Candidates");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.ApprovalReminderDigest", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.BadgePrintHistory", b =>

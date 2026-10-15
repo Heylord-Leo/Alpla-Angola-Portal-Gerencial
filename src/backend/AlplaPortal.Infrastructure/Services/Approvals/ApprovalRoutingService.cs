@@ -107,6 +107,45 @@ public class ApprovalRoutingService : IApprovalRoutingService
                       && (dm.PlantId == null || dm.Plant!.IsActive));
     }
 
+    // ═══════════ Final-stage NOTIFICATION recipients (current single-final-approver model) ═══════════
+    //
+    // Authorization for the final stage is UNCHANGED and lives in the controllers: "Final Approver"
+    // role + RequestAccessScope. This method only decides who is NOTIFIED by proforma alerts and
+    // reminder digests (the one-shot AREA_APPROVED e-mail targets Request.FinalApproverId directly).
+    // Rule: request nominee (Request.FinalApproverId) if active with an e-mail; else the company's
+    // current nominee (Company.FinalApproverUserId) if active with an e-mail; else nobody (callers
+    // report NO_RECIPIENT). E-mail availability gates sending only — a user without e-mail can still
+    // approve. The role is NOT required to be notified; the resulting gap between "can approve" and
+    // "is notified" is reported by scripts/db/final-approval-recipients-vs-approvers-readonly.sql.
+
+    public async Task<FinalNotificationRecipientsDto> ResolveFinalNotificationRecipientsAsync(Guid? requestNomineeId, int companyId)
+    {
+        if (requestNomineeId.HasValue)
+        {
+            var fromRequest = await NotifiableUser(requestNomineeId.Value).FirstOrDefaultAsync();
+            if (fromRequest != null)
+                return new FinalNotificationRecipientsDto { Source = FinalNotificationSource.RequestNominee, Recipients = new List<FinalApproverDto> { fromRequest } };
+        }
+
+        var companyNomineeId = await _context.Companies.AsNoTracking()
+            .Where(c => c.Id == companyId)
+            .Select(c => c.FinalApproverUserId)
+            .FirstOrDefaultAsync();
+        if (companyNomineeId.HasValue)
+        {
+            var fromCompany = await NotifiableUser(companyNomineeId.Value).FirstOrDefaultAsync();
+            if (fromCompany != null)
+                return new FinalNotificationRecipientsDto { Source = FinalNotificationSource.CompanyNominee, Recipients = new List<FinalApproverDto> { fromCompany } };
+        }
+
+        return new FinalNotificationRecipientsDto();
+    }
+
+    private IQueryable<FinalApproverDto> NotifiableUser(Guid userId) =>
+        _context.Users.AsNoTracking()
+            .Where(u => u.Id == userId && u.IsActive && u.Email != null && u.Email != string.Empty)
+            .Select(u => new FinalApproverDto { UserId = u.Id, FullName = u.FullName, Email = u.Email });
+
     private static List<AreaManagerDto> Distinct(List<AreaManagerDto> managers)
         => managers.GroupBy(m => m.UserId).Select(g => g.First()).ToList();
 }

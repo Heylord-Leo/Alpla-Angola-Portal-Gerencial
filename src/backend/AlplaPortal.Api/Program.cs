@@ -17,6 +17,7 @@ using AlplaPortal.Infrastructure.Services.Extraction;
 using AlplaPortal.Infrastructure.Services.Integration;
 using AlplaPortal.Infrastructure.Services.Auth;
 using AlplaPortal.Infrastructure.Services.Approvals;
+using AlplaPortal.Infrastructure.Services.Reminders;
 using AlplaPortal.Infrastructure.Services.Requests;
 using AlplaPortal.Infrastructure.Services.Suppliers;
 using AlplaPortal.Application.Interfaces.Purchasing;
@@ -167,6 +168,12 @@ builder.Services.AddHostedService<ProformaDeadlineAlertService>();
 
 // Email Outbox Processor — async email delivery queue (polls every 10s)
 builder.Services.AddHostedService<EmailOutboxProcessor>();
+
+// Approval reminder digests — one consolidated e-mail per approver per Luanda business day.
+// SAFE DEFAULTS: AppConfig:ApprovalReminders Enabled=false, DryRun=true (digests recorded, no outbox row).
+builder.Services.Configure<ApprovalReminderOptions>(builder.Configuration.GetSection(ApprovalReminderOptions.SectionName));
+builder.Services.AddScoped<ApprovalReminderDigestCycle>();
+builder.Services.AddHostedService<ApprovalReminderDigestService>();
 
 // Contract OCR Services
 builder.Services.AddScoped<IContractOcrNormalisationService, ContractOcrNormalisationService>();

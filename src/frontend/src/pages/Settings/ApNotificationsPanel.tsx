@@ -3,20 +3,7 @@ import { api } from '../../lib/api';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { KebabMenu } from '../../components/ui/KebabMenu';
 import { Edit2, Power, PowerOff } from 'lucide-react';
-
-interface ApConfig {
-    id: number;
-    companyId: number;
-    companyName: string;
-    email: string;
-    ccEmails: string | null;
-    label: string | null;
-    isActive: boolean;
-    notifyOnScheduled: boolean;
-    notifyOnCompleted: boolean;
-    createdAtUtc: string;
-    updatedAtUtc: string;
-}
+import { defaultApForm, formFromConfig, toApConfigPayload, validateApForm, type ApConfig } from './apNotificationsForm';
 
 interface ApNotificationsPanelProps {
     feedback: { message: string; type: FeedbackType } | null;
@@ -28,14 +15,7 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
     const [configs, setConfigs] = useState<ApConfig[]>([]);
     const [loading, setLoading] = useState(true);
     const [editId, setEditId] = useState<number | null>(null);
-    const [formData, setFormData] = useState({
-        companyId: 0,
-        email: '',
-        ccEmails: '',
-        label: '',
-        notifyOnScheduled: true,
-        notifyOnCompleted: true
-    });
+    const [formData, setFormData] = useState(defaultApForm());
 
     const loadConfigs = useCallback(async () => {
         try {
@@ -55,79 +35,31 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
 
     const handleEdit = (config: ApConfig) => {
         setEditId(config.id);
-        setFormData({
-            companyId: config.companyId,
-            email: config.email,
-            ccEmails: config.ccEmails || '',
-            label: config.label || '',
-            notifyOnScheduled: config.notifyOnScheduled,
-            notifyOnCompleted: config.notifyOnCompleted
-        });
+        setFormData(formFromConfig(config));
     };
 
     const handleCancel = () => {
         setEditId(null);
-        setFormData({
-            companyId: 0,
-            email: '',
-            ccEmails: '',
-            label: '',
-            notifyOnScheduled: true,
-            notifyOnCompleted: true
-        });
+        setFormData(defaultApForm());
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFeedback(null);
 
-        // Frontend validation
-        if (!formData.email.trim()) {
-            setFeedback({ message: 'O e-mail principal é obrigatório.', type: 'error' });
+        // Frontend validation (shared helper, unit-tested in apNotificationsForm.test.ts)
+        const validationError = validateApForm(formData, editId ? 'update' : 'create');
+        if (validationError) {
+            setFeedback({ message: validationError, type: 'error' });
             return;
-        }
-        if (!formData.email.includes('@')) {
-            setFeedback({ message: 'O e-mail principal não tem um formato válido.', type: 'error' });
-            return;
-        }
-
-        if (formData.ccEmails.trim()) {
-            const ccList = formData.ccEmails.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-            if (ccList.length > 10) {
-                setFeedback({ message: 'O número máximo de e-mails CC é 10.', type: 'error' });
-                return;
-            }
-            for (const cc of ccList) {
-                if (!cc.includes('@')) {
-                    setFeedback({ message: `O endereço CC '${cc}' não é um e-mail válido.`, type: 'error' });
-                    return;
-                }
-            }
         }
 
         try {
             if (editId) {
-                await api.apNotificationConfigs.update(editId, {
-                    email: formData.email.trim(),
-                    ccEmails: formData.ccEmails.trim() || null,
-                    label: formData.label.trim() || null,
-                    notifyOnScheduled: formData.notifyOnScheduled,
-                    notifyOnCompleted: formData.notifyOnCompleted
-                });
+                await api.apNotificationConfigs.update(editId, toApConfigPayload(formData, 'update'));
                 setFeedback({ message: 'Configuração atualizada com sucesso.', type: 'success' });
             } else {
-                if (!formData.companyId) {
-                    setFeedback({ message: 'Selecione uma empresa.', type: 'error' });
-                    return;
-                }
-                await api.apNotificationConfigs.create({
-                    companyId: formData.companyId,
-                    email: formData.email.trim(),
-                    ccEmails: formData.ccEmails.trim() || null,
-                    label: formData.label.trim() || null,
-                    notifyOnScheduled: formData.notifyOnScheduled,
-                    notifyOnCompleted: formData.notifyOnCompleted
-                });
+                await api.apNotificationConfigs.create(toApConfigPayload(formData, 'create'));
                 setFeedback({ message: 'Configuração criada com sucesso.', type: 'success' });
             }
             handleCancel();
@@ -275,6 +207,41 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                                     Confirmar Pagamento (PAYMENT_COMPLETED)
                                 </label>
                             </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                    id="notifyPoRegistered"
+                                    type="checkbox"
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                    checked={formData.notifyOnPoRegistered}
+                                    onChange={e => setFormData({ ...formData, notifyOnPoRegistered: e.target.checked })}
+                                />
+                                <label htmlFor="notifyPoRegistered" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                                    Notificar Contas a Pagar quando uma P.O. é registada (PO_REGISTERED)
+                                </label>
+                            </div>
+                            <p style={{ marginTop: '-4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                Aviso de revisão ("P.O. registada") — não significa pagamento autorizado ou pronto. Predefinição: desligado.
+                            </p>
+                        </div>
+
+                        {/* Finance-role users (individual e-mail) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <label style={labelStyle}>Utilizadores com papel Finance</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                    id="notifyFinanceUsersByEmail"
+                                    type="checkbox"
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                    checked={formData.notifyFinanceUsersByEmail}
+                                    onChange={e => setFormData({ ...formData, notifyFinanceUsersByEmail: e.target.checked })}
+                                />
+                                <label htmlFor="notifyFinanceUsersByEmail" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                                    Também enviar e-mail individual aos utilizadores Finance (da planta do pedido)
+                                </label>
+                            </div>
+                            <p style={{ marginTop: '-4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                Aplica-se a PO_REGISTERED, PO_CORRECTION_COMPLETED e ADVANCE_PAYMENT_REQUIRED. As notificações in-app dos utilizadores Finance mantêm-se sempre. Predefinição: desligado.
+                            </p>
                         </div>
 
                         {/* Buttons */}
@@ -330,6 +297,8 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                                     <th style={{ textAlign: 'left', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>CC</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Agendar</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Pago</th>
+                                    <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }} title="Notificar Contas a Pagar quando uma P.O. é registada">P.O.</th>
+                                    <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }} title="E-mail individual aos utilizadores Finance">Finance</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Estado</th>
                                     <th style={{ textAlign: 'right', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Ações</th>
                                 </tr>
@@ -347,6 +316,12 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                                         </td>
                                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                                             {config.notifyOnCompleted ? '✅' : '—'}
+                                        </td>
+                                        <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                            {config.notifyOnPoRegistered ? '✅' : '—'}
+                                        </td>
+                                        <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                            {config.notifyFinanceUsersByEmail ? '✅' : '—'}
                                         </td>
                                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                                             <span style={{

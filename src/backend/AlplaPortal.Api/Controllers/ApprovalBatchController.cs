@@ -22,6 +22,7 @@ using Microsoft.EntityFrameworkCore;
 [Authorize]
 [ApiController]
 [Route("api/v1/requests/{requestId:guid}/batches")]
+[TypeFilter(typeof(AlplaPortal.Api.Filters.ApprovalConcurrencyExceptionFilter))] // RowVersion race between alternative approvers → 409, never 500
 public class ApprovalBatchController : BaseController
 {
     private readonly ILogger<ApprovalBatchController> _logger;
@@ -504,6 +505,7 @@ public class ApprovalBatchController : BaseController
             Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval,
             Comment = dto.Comment,
             CreatedAtUtc = DateTime.UtcNow,
+            StageEnteredAtUtc = DateTime.UtcNow, // entry into WAITING_AREA_APPROVAL (reminder age basis)
             CreatedByUserId = actorId
         };
 
@@ -613,9 +615,10 @@ public class ApprovalBatchController : BaseController
         await _statusSyncService.SyncStatusAsync(requestId, actorId);
 
         // ── 9. Create RequestStatusHistory entry (BATCH_CREATED) ──
+        var batchCreatedHistoryId = Guid.NewGuid(); // doubles as the notification correlation for this submission
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = batchCreatedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_CREATED",
@@ -644,6 +647,16 @@ public class ApprovalBatchController : BaseController
         _logger.LogInformation(
             "Approval batch {BatchId} (#{BatchNumber}) created for request {RequestId} with {ItemCount} items by user {ActorId}",
             batch.Id, batch.BatchNumber, requestId, dto.Items.Count, actorId);
+
+        // ── Notification AFTER commit: the batch is now at Area approval. QUOTATION_COMPLETED is the
+        // quotation-workflow submit event (requester "Cotação Concluída" + area managers via the
+        // DepartmentManager cascade); RequestSubmitted is the non-quotation equivalent. ──
+        await EmitBatchStageNotificationAsync(
+            request, batch,
+            request.RequestType?.Code == RequestConstants.Types.Quotation
+                ? WorkflowEventCodes.QuotationCompleted
+                : WorkflowEventCodes.RequestSubmitted,
+            batchCreatedHistoryId, actorId, comment: null);
 
         // ── 10. Return batch detail ──
         return Ok(await BuildBatchDto(batch.Id));
@@ -976,6 +989,7 @@ public class ApprovalBatchController : BaseController
 
         // ── 12. Update batch state ──
         batch.Status = RequestConstants.ApprovalBatchStatuses.WaitingFinalApproval;
+        batch.StageEnteredAtUtc = DateTime.UtcNow; // entry into WAITING_FINAL_APPROVAL (reminder age basis)
         batch.BudgetJustification = dto.BudgetJustification?.Trim();
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
@@ -989,9 +1003,10 @@ public class ApprovalBatchController : BaseController
         {
             historyComment += $"\nJustificativa orçamental: {dto.BudgetJustification.Trim()}";
         }
+        var areaApprovedHistoryId = Guid.NewGuid(); // notification correlation for this area decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = areaApprovedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_AREA_APPROVED",
@@ -1034,6 +1049,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-approved by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit: the batch is at Final approval (Final Approver + requester/area approver/buyer). ──
+        await EmitBatchStageNotificationAsync(request, batch, WorkflowEventCodes.AreaApproved, areaApprovedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} aprovado pela área com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -1094,9 +1112,10 @@ public class ApprovalBatchController : BaseController
         request!.AreaApproverId = actorId; // Phase B: records who actually decided the area stage
 
         // ── History entry ──
+        var areaRejectedHistoryId = Guid.NewGuid(); // notification correlation for this area decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = areaRejectedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_AREA_REJECTED",
@@ -1112,6 +1131,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} area-rejected by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit (requester / area approver / buyer, per AREA_REJECTED routing). ──
+        await EmitBatchStageNotificationAsync(request!, batch, WorkflowEventCodes.AreaRejected, areaRejectedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} rejeitado com sucesso.", BatchId = batchId, Status = batch.Status });
     }
@@ -1606,6 +1628,7 @@ public class ApprovalBatchController : BaseController
 
         // ── Update batch state ──
         batch.Status = RequestConstants.ApprovalBatchStatuses.WaitingAreaApproval;
+        batch.StageEnteredAtUtc = DateTime.UtcNow; // re-entry into WAITING_AREA_APPROVAL restarts the reminder clock
         batch.UpdatedAtUtc = DateTime.UtcNow;
         batch.UpdatedByUserId = actorId;
 
@@ -1750,6 +1773,55 @@ public class ApprovalBatchController : BaseController
         var cumulativeAmount = batchApprovedAmount + allApprovedBatches.Sum(b => b.ApprovedTotalAmount ?? 0);
         request!.ApprovedTotalAmount = cumulativeAmount;
 
+        // ── Step 4b (v2.247.5): approval currency + timestamp for the batch path (previously never written here) ──
+        // The currency is taken from the amounts actually summed into batchApprovedAmount: the PENDING groups activated by
+        // this batch (primary path) or, on the fallback, the quotations of the selected candidates / legacy quotation items.
+        // Request level: first recorded approval → the batch currency (single code, "MULTIPLE" or null when unknown) and
+        // ApprovedAtUtc = now. Later batches → combined with the recorded request currency ("MULTIPLE" when they differ).
+        // When earlier batches were approved before this field existed (request currency NULL with previously approved
+        // batches), the cumulative currency is NOT inferred and no new historical approval date is stamped: both stay NULL
+        // and the departmental resolver treats the request under its legacy-derivation rules.
+        var hadPreviouslyApprovedBatches = allApprovedBatches.Count > 0;
+        // Contributions (currency, amount) of EXACTLY the branch that produced batchApprovedAmount above.
+        List<(string? Code, decimal Amount)> summedContributions;
+        if (pendingGroups.Sum(g => g.TotalAmount) > 0)
+        {
+            // Primary branch: every PENDING group of the batch (currency code, else its currency lookup).
+            var groupCurrencyIds = pendingGroups.Where(g => g.CurrencyCode == null && g.CurrencyId.HasValue).Select(g => g.CurrencyId!.Value).Distinct().ToList();
+            var groupCurrencyCodes = groupCurrencyIds.Count == 0
+                ? new Dictionary<int, string>()
+                : await _context.Currencies.Where(c => groupCurrencyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Code);
+            summedContributions = pendingGroups
+                .Select(g => (g.CurrencyCode ?? (g.CurrencyId.HasValue && groupCurrencyCodes.TryGetValue(g.CurrencyId.Value, out var code) ? code : null), g.TotalAmount))
+                .ToList();
+        }
+        else
+        {
+            // Fallback branch: the selected candidates' line totals (currency = their quotation's) plus the legacy
+            // buyer-selected quotation items' line totals (currency = their quotation's): the same two sums as above.
+            var selectedCandidates = batch.Items
+                .Where(bi => bi.SelectedCandidateId.HasValue)
+                .Select(bi => bi.Candidates.FirstOrDefault(c => c.Id == bi.SelectedCandidateId!.Value))
+                .Where(c => c != null)
+                .Select(c => (c!.QuotationId, c.LineTotal))
+                .ToList();
+            var legacyItemIds = batch.Items.Where(bi => !bi.SelectedCandidateId.HasValue && bi.SelectedQuotationItemId.HasValue).Select(bi => bi.SelectedQuotationItemId!.Value).Distinct().ToList();
+            var legacyItems = legacyItemIds.Count == 0
+                ? new List<(Guid QuotationId, decimal LineTotal)>()
+                : (await _context.QuotationItems.Where(qi => legacyItemIds.Contains(qi.Id)).Select(qi => new { qi.QuotationId, qi.LineTotal }).ToListAsync()).Select(x => (x.QuotationId, x.LineTotal)).ToList();
+            var quotationIds = selectedCandidates.Select(c => c.QuotationId).Concat(legacyItems.Select(l => l.QuotationId)).Distinct().ToList();
+            var quotationCurrencies = quotationIds.Count == 0
+                ? new Dictionary<Guid, string?>()
+                : await _context.Quotations.Where(q => quotationIds.Contains(q.Id)).ToDictionaryAsync(q => q.Id, q => (string?)q.Currency);
+            summedContributions = selectedCandidates.Concat(legacyItems)
+                .Select(x => (quotationCurrencies.TryGetValue(x.QuotationId, out var cur) ? cur : null, x.LineTotal))
+                .ToList();
+        }
+        var batchCurrency = ApprovalCurrencyResolver.ResolveBatchCurrency(summedContributions);
+        request.ApprovedCurrencyCode = ApprovalCurrencyResolver.CombineCumulative(request.ApprovedCurrencyCode, hadPreviouslyApprovedBatches, batchCurrency);
+        if (!hadPreviouslyApprovedBatches && request.ApprovedAtUtc == null)
+            request.ApprovedAtUtc = DateTime.UtcNow;
+
         // ── Activate this batch's PO groups: PENDING → WAITING_PO ──
         foreach (var group in pendingGroups)
         {
@@ -1767,9 +1839,10 @@ public class ApprovalBatchController : BaseController
         }
 
         // ── History entries ──
+        var finalApprovedHistoryId = Guid.NewGuid(); // notification correlation for this final decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = finalApprovedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_FINAL_APPROVED",
@@ -1800,6 +1873,9 @@ public class ApprovalBatchController : BaseController
         // ── Sync request status ──
         await _statusSyncService.SyncStatusAsync(requestId, actorId);
         await _context.SaveChangesAsync();
+
+        // ── Notification AFTER commit (final approver / requester / buyer, per FINAL_APPROVED routing). ──
+        await EmitBatchStageNotificationAsync(request, batch, WorkflowEventCodes.FinalApproved, finalApprovedHistoryId, actorId, dto.Comment);
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-approved by {ActorId}. Amount: {Amount}", batchId, requestId, actorId, batchApprovedAmount);
 
@@ -1875,9 +1951,10 @@ public class ApprovalBatchController : BaseController
         batch.UpdatedByUserId = actorId;
 
         // ── History entry ──
+        var finalRejectedHistoryId = Guid.NewGuid(); // notification correlation for this final decision
         _context.RequestStatusHistories.Add(new RequestStatusHistory
         {
-            Id = Guid.NewGuid(),
+            Id = finalRejectedHistoryId,
             RequestId = requestId,
             ActorUserId = actorId,
             ActionTaken = "BATCH_FINAL_REJECTED",
@@ -1893,6 +1970,9 @@ public class ApprovalBatchController : BaseController
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Batch {BatchId} of Request {RequestId} final-rejected by {ActorId}", batchId, requestId, actorId);
+
+        // ── Notification AFTER commit (requester, per FINAL_REJECTED routing). ──
+        await EmitBatchStageNotificationAsync(request!, batch, WorkflowEventCodes.FinalRejected, finalRejectedHistoryId, actorId, dto.Comment);
 
         return Ok(new { Message = $"Lote #{batch.BatchNumber} rejeitado na Aprovação Final.", BatchId = batchId, Status = batch.Status });
     }
@@ -2149,6 +2229,67 @@ public class ApprovalBatchController : BaseController
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Batch resubmit notification failed for cycle {CycleId} on Request {RequestId}", cycle.Id, request.Id);
+        }
+    }
+
+    /// <summary>
+    /// Stage notifications for the batch workflow (submit / area decision / final decision).
+    /// Reuses the legacy request-level events so recipients, templates and dedup come from the
+    /// orchestrator unchanged: QUOTATION_COMPLETED fans to the area managers resolved by the
+    /// DepartmentManager cascade (plus the requester), AREA_APPROVED to the Final Approver (plus
+    /// requester/area approver/buyer), FINAL_APPROVED / *_REJECTED to the stakeholders already
+    /// defined for those codes.
+    ///
+    /// <para><b>Correlation:</b> the stage's own RequestStatusHistory row Id (same convention as
+    /// RequestsController). Every committed transition therefore gets its own correlation — a second
+    /// batch, or the same batch approved again after an adjustment cycle, is never suppressed as a
+    /// duplicate of an earlier one — while the outbox/in-app dedup still collapses re-processing of
+    /// the same event. Retrying an action after it committed is stopped by the stage guards (400),
+    /// so it never reaches this method.</para>
+    ///
+    /// <para><b>Ordering:</b> called only AFTER the action's final SaveChanges. Any failure here is
+    /// logged and swallowed — the committed approval action must never be reported as failed because
+    /// a notification could not be queued.</para>
+    /// </summary>
+    private async Task EmitBatchStageNotificationAsync(
+        Request request, ApprovalBatch batch, string eventCode, Guid correlationId, Guid actorId, string? comment)
+    {
+        try
+        {
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == actorId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "Sistema";
+
+            var evt = new WorkflowEvent
+            {
+                EventCode = eventCode,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = request.Status?.Code ?? "",
+                ActionTaken = eventCode,
+                ActorUserId = actorId,
+                ActorName = actorName,
+                Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
+                CorrelationId = correlationId,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                BatchNumber = batch.BatchNumber,
+            };
+
+            await _orchestrator.EmitAsync(evt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Batch stage notification {EventCode} failed for batch {BatchId} (#{BatchNumber}) on Request {RequestId}. The committed action is unaffected.",
+                eventCode, batch.Id, batch.BatchNumber, request.Id);
         }
     }
 

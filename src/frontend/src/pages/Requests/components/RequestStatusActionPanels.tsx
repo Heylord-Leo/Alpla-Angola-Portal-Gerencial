@@ -24,6 +24,8 @@ import {
     Clock
 } from 'lucide-react';
 import { GUIDANCE_LOADING } from '../../../lib/workflowProjection';
+import { resolveLegacyReturnCorrectionGroup } from '../../../lib/legacyFinanceReturn';
+import type { LegacyFinanceReturnCorrectionDto } from '../../../types';
 
 export interface RequestStatusActionPanelsProps {
     // Identity
@@ -46,6 +48,8 @@ export interface RequestStatusActionPanelsProps {
     isCopyMode?: boolean;
 
     poGroups?: any[];
+    /** docs §G.19.3 — server decision for the legacy request-level Finance return (null = none). */
+    legacyReturnCorrection?: LegacyFinanceReturnCorrectionDto | null;
 
     // Modal setters
     setPoGroupIdForUpload: (groupId: string | null) => void;
@@ -96,6 +100,7 @@ export function RequestStatusActionPanels({
     isBuyer, isAreaApprover, isFinalApprover, isFinance, isReceiving,
     canExecuteOperationalAction, isQuotationPartiallyEditable, isCopyMode,
     poGroups = [],
+    legacyReturnCorrection = null,
     setPoGroupIdForUpload, setShowCorrectPoModal, setShowReconciliationModal, setShowApprovalModal,
     navigate, onDrawerClose,
     getRequestGuidance,
@@ -257,6 +262,25 @@ export function RequestStatusActionPanels({
                                         </button>
                                     ))
                                 )}
+                                {/* v2.247.6 (§G.19) / §G.19.3: legacy request-level Finance return — the server names the
+                                    group that needs the correction (and makes the justification mandatory); the client
+                                    only maps that decision onto the loaded groups, never the scalar status. */}
+                                {(() => {
+                                    const legacyGroup = resolveLegacyReturnCorrectionGroup(legacyReturnCorrection, poGroups);
+                                    return legacyGroup ? (
+                                        <button
+                                            key={`po-correct-legacy-${legacyGroup.id}`}
+                                            onClick={() => {
+                                                setPoGroupIdForUpload(legacyGroup.id);
+                                                setShowCorrectPoModal(true);
+                                            }}
+                                            className="btn-primary"
+                                            style={{ height: '32px', padding: '0 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ea580c' }}
+                                        >
+                                            <Edit2 size={14} /> CORRIGIR P.O ({legacyGroup.supplierNameSnapshot})
+                                        </button>
+                                    ) : null;
+                                })()}
                                 {/* TRANSITIONAL FALLBACK: Removed direct access from Buyer to enforce Receiving ownership */}
                             </div>
                         )}

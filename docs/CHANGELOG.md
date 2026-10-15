@@ -4,7 +4,357 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.245.12
+v2.247.8
+
+## [v2.247.8] - 2026-10-15 — Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
+
+PATCH after the investigation of Buyer visibility for requests returned by Finance (`docs/APPROVAL_NOTIFICATIONS_PHASES.md`
+§G.20, §G.20.1). No migration, no EF model change, no configuration change. Queue admission and placement are unchanged;
+no scalar-based legacy visibility rule was added; legacy repairs (§G.19) and the queue-placement product question stay
+separate.
+
+- Finance-return notification (D1): the Buyer notified by `FinanceReturned` is the owner of the P.O. actually returned —
+  PAYMENT → the acted-on group's `PoResponsibleBuyerId` (looked up scoped to the request; `Request.BuyerId` is never a
+  fallback for PAYMENT); QUOTATION → `Request.BuyerId` as before. A missing or foreign group context, an unassigned
+  group or an inactive owner resolve to nobody (existing "No recipients resolved" warning): no invented recipient, no
+  sibling owner, no fan-out. Channels, dedup, templates and the detail link are unchanged. Previously a PAYMENT return
+  notified no Buyer.
+- Return-history correlation: the `FinanceReturned` event now carries the FINANCE_RETURN_ADJUSTMENT history row id;
+  it used to take the latest tracked row, which after scalar aggregation was the STATUS_SYNC row (confirmed live on
+  REQ-275's SENT outbox row, §G.20.1). Per-return in-app and outbox dedup therefore key on the return itself. No
+  historical row is rewritten and nothing is re-sent.
+- "Atribuir a Mim" on a PAYMENT P.O. correction (D2): `assign-buyer` persists ownership where the personal task, the
+  dashboard count and the Buyer queue read it — the returned group's `PoResponsibleBuyerId` — instead of
+  `Request.BuyerId`. Exactly one eligible WAITING_PO_CORRECTION group of the request is claimed (the one named by
+  `poGroupId`, or the sole one); several without an explicit id → 409 `PO_CORRECTION_AMBIGUOUS` (nothing chosen); a
+  group of another request or not returned → 400; a Buyer never overwrites an owner (409
+  `PO_CORRECTION_ALREADY_OWNED`); a coordinator (SysAdmin/LocalManager, the same authority that reassigns a QUOTATION's
+  Buyer) may transfer an owned group, with the previous owner recorded in the history; self-claim is idempotent; the
+  group `rowversion` arbitrates concurrent claims (409 `PO_CORRECTION_CLAIM_CONFLICT`, nothing persisted for the loser).
+  A PAYMENT without any returned group keeps the pre-existing request-level assignment path. QUOTATION assignment
+  unchanged.
+- Assignment scope: `assign-buyer` now enforces the request access scope (company/plant/department; SystemAdministrator
+  unrestricted) with 404 outside it — the queues only ever exposed scoped rows.
+- Ownership alignment: the Buyer queue's "Meus" filter applies the same rule as `PersonalPoCorrectionPredicate`,
+  `myTasksOnly` and `PoCorrectionsForMe` (QUOTATION → `Request.BuyerId`; PAYMENT → correction group owner). The queue
+  row passes its single returned group on claim.
+
+Verification: `FinanceReturnNotificationRecipientTests` (real controller + real orchestrator; actual outbox/in-app
+recipients and correlations: distinct group owners, request/group owner disagreement, QUOTATION regression,
+unassigned/inactive/missing owner, foreign or missing group context), `PoCorrectionClaimTests` (claim, idempotence,
+owner preserved, coordinator transfer, ambiguity, explicit group, foreign/non-returned group, no returned group,
+403/404, QUOTATION unchanged, queue "Meus" alignment), `PoCorrectionClaimRelationalTests` (LocalDB: concurrent claims →
+one owner, one history row; stale claim fails without partial writes), `buyerQueueView.test.ts`. Backend 2,925/2,925;
+frontend tsc, Vite build, vitest 958/958. Remaining live-validation limits: local fixtures are not TEST evidence; the
+PAYMENT recipient path and the claim flow require the bounded post-deploy TEST plan of §G.20.1; the in-app notification
+table was not queried; REQ-429/254/275/047/125 untouched.
+
+## [v2.247.7] - 2026-10-14 — P.O. correction modal: mandatory justification from the server decision, no generated fallback, full refresh after the correction
+
+PATCH after the failed TEST validation of v2.247.6 on REQ-27/07/2026-156 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md`
+§G.19.3). No migration, no EF model change, no configuration change. Backend P.O. registration logic (guards, history
+composition, group/request transitions, notifications, correlation, dedup, permissions) is unchanged; the only backend
+change is a read-only field on the request detail.
+
+On TEST the "Corrigir P.O" modal labelled the comment "(opcional)" and replaced an empty comment with the generated
+sentence "P.O corrigida após devolução por Finanças." before calling `register-po`, so the mandatory-justification rule
+of v2.247.6 (backend, `Comment` null/empty/whitespace → 400) was satisfied by generated text and REQ-156 was
+re-registered with a fabricated justification. After the success the detail kept the persisted status name and the
+pre-correction groups, and the list hosts did not re-read their rows.
+
+- Server decision exposed: `GET api/v1/requests/{id}` returns `legacyReturnCorrection { poGroupId, justificationRequired,
+  reason }` computed by the same predicate `RegisterPo` enforces (legacy request-level Finance return: request
+  WAITING_PO_CORRECTION, sole live group PO_ISSUED, return later than the last registration, no live payment). Null for
+  every other request, including current-code corrections.
+- Modal (`lib/correctPoSubmission.ts`): the justification is mandatory when the server names the selected group
+  (LEGACY_RETURN) or when an OCR divergence is unresolved (pre-existing rule). A required blank/whitespace comment is
+  refused BEFORE the P.O. upload or any submission; the generated fallback was removed, so no generated text can satisfy
+  the rule; the Buyer's text is sent trimmed, or no `comment` at all. When the modal's own detail fetch fails, the form
+  is not offered and submission is blocked (the server decision is unknown; previously the file would have been uploaded
+  before the backend refusal). The field reads "(Obrigatório)" with an explanatory line for the legacy case.
+- Optional current-code corrections (group already WAITING_PO_CORRECTION) remain optional; with an empty comment the
+  history no longer carries a fabricated "Justificativa:" segment. OCR divergence, payment-condition, override and
+  extraction fields are forwarded exactly as before.
+- "CORRIGIR P.O" for the legacy shape is offered from the server decision for that group (`lib/legacyFinanceReturn.ts`);
+  the v2.247.6 client-side inference from the request status is removed. Current-code correction buttons unchanged.
+- Refresh after a successful correction (`useRequestDetail.refreshWorkflowState`, `lib/requestWorkflowSnapshot.ts`):
+  the whole workflow state is re-read from the server — display label (group-aware override before the persisted
+  name), badge colour, groups, history, attachments, quotations, raw detail — for both post-paid and advance-required
+  outcomes; no destination status is assumed on the client. Unsaved header edits are preserved (the form state is not
+  touched). The projection-owned badge/guidance re-reads the server even when the request status did not change, and a
+  failed refresh is reported instead of leaving stale state behind a success notice. Buyer queue, Buyer items and
+  Finance payments lists re-read their rows when the detail drawer closes.
+
+Verification: `LegacyFinanceReturnCorrectionTests` (+5: detail advertises the decision for the PAYMENT and QUOTATION
+legacy shape, whitespace still refused, decision cleared after the justified correction; never advertised for a
+current-code return, a return without history or several live groups), `correctPoSubmission.test.ts`,
+`requestWorkflowSnapshot.test.ts`, `legacyFinanceReturn.test.ts`, updated `CorrectPoModal.test.ts` and
+`v2457QuickViewGuidance.test.ts`. Backend 2,908/2,908; frontend tsc clean, Vite build, vitest 956/956. Limitation: the
+frontend suite has no DOM runtime — modal label/disabled/click wiring is guarded at source level and the submission
+logic is tested on the real payload path with captured dependencies; the rendered modal behaviour still requires live
+TEST validation (bounded plan in §G.19.3). REQ-156 remains as persisted (no reversal, no repair).
+
+## [v2.247.6] - 2026-10-14 — Legacy request-level Finance return: financial block, Buyer correction, badge, explicit scoped repair
+
+PATCH after the TEST investigation of REQ-27/07/2026-156 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.19–§G.19.2).
+No migration, no EF model change, no configuration change. Deployment performs NO automatic data repair.
+
+Before the group-scoped return (commit cc85ec7, 2026-08-23) `ReturnForAdjustment` set only the request status to
+WAITING_PO_CORRECTION and left the group at PO_ISSUED. TEST (read-only, 2026-10-14) holds four PAYMENT requests in that
+shape (REQ-176, REQ-047, REQ-125, REQ-156). Which build was deployed on 2026-08-11 is not provable from git alone.
+
+- Financial block (`LegacyFinanceReturnEvaluator.EvaluateFinancialBlock`, separate from repair eligibility): while the
+  request status is WAITING_PO_CORRECTION and no live P.O. group carries WAITING_PO_CORRECTION, scheduling, payment,
+  advance scheduling and advance confirmation are refused with 409 `LEGACY_RETURN_PENDING_CORRECTION` before any
+  mutation, whatever the history or payment rows and with any number of live groups (the returned group is never
+  guessed); the Finance payments queue withholds SCHEDULE/PAY on the same decision. Group-scoped returns (a group in
+  WAITING_PO_CORRECTION) and valid actions on unaffected groups — including the REQ-275 shape — are unchanged.
+- Buyer correction: `RegisterPo` recognises the strict legacy shape (request WAITING_PO_CORRECTION, exactly one live
+  group at PO_ISSUED, a Finance return later than the last registration, no live payment) as the correction of that
+  group for PAYMENT and QUOTATION: REREGISTER_PO history, correction notification wording, per-action correlation and
+  dedup unchanged; the Buyer's justification is mandatory (400 before any mutation); all other checks unchanged.
+- Badge: a request in that shape shows its own status ("Devolvido para Compras") instead of the group-derived
+  "P.O. emitida"; no other group-derived badge changes. Frontend: the action panel offers "CORRIGIR P.O" for the sole
+  issued group in that shape (backend predicate remains the authority).
+- Explicit scoped repair (`POST api/v1/admin/repairs/legacy-finance-return/{requestId}`): PREVIEW by default (writes
+  nothing); APPLY only with `confirm=true`, a reason and the PREVIEW's group id; re-evaluates inside a transaction, fails
+  closed on a mismatch or a concurrent change (group RowVersion), moves ONLY that group PO_ISSUED → WAITING_PO_CORRECTION
+  with one `LEGACY_RETURN_REPAIR` audit row (idempotent), preserves the request status, amounts, approval metadata,
+  documents, history and notification logs, emits no event and no e-mail; conditional rollback endpoint refuses after
+  any later action. One request per call; nothing is repaired by deployment; the four TEST requests need individual
+  PREVIEW evidence and authorization.
+
+Verification: `LegacyFinanceReturnEvaluatorTests`, `LegacyFinanceReturnCorrectionTests` (real controllers),
+`LegacyFinanceReturnRepairServiceTests` (InMemory), `LegacyFinanceReturnRepairRelationalTests` (seven scenarios on the
+disposable LocalDB sandbox with real transactions and RowVersion: preview no-write, apply only group + audit, repeated
+apply, stale apply, transactional recheck, concurrent applies, conditional rollback), `PaymentPoDisplayStatusTests`.
+Backend 2903/2903. Local relational verification is not live TEST evidence; live evidence recorded in §G.18.3–§G.18.4.
+
+## [v2.247.5] - 2026-10-12 — Batch approval currency/timestamp and a shared request-level amount resolver for the departmental payment summary
+
+PATCH after the TEST investigations of v2.247.4 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.17, §G.18, §G.18.1, §G.18.2).
+No migration, no EF model change, no configuration change. Accounts Payable content and dedup, SMTP, switches, routing,
+other notification templates, original estimates, approval permissions, status transitions, cumulative amounts and
+concurrency protection are unchanged.
+
+Batch approval metadata (`ApprovalBatchController.BatchFinalApprove`): the batch path never wrote `ApprovedCurrencyCode`
+or `ApprovedAtUtc` (66 batch-approved requests on TEST). The currency is now taken from the amounts actually summed into
+the batch (activated groups; on the zero-total fallback the candidates'/legacy items' quotations) as a single code,
+"MULTIPLE" or unknown; a non-zero contribution of unknown currency makes the batch currency unknown. Request level: the
+first recorded approval sets the currency and the timestamp; later batches keep the code, record "MULTIPLE" when they
+differ or when "MULTIPLE" is already recorded, and become unknown when a later batch is unknown. Previously approved
+batches without a recorded currency are never inferred and never re-stamped with a new approval date. Pending groups
+never contribute. Mixed-currency cumulative amounts remain a pre-existing limitation, now labelled "MULTIPLE".
+
+Departmental payment summary: one shared request-level resolver (`DepartmentalAmountResolver`) for the current request
+and every candidate — recorded approved total with consistent single currency; else, for legacy batch approvals without
+a recorded currency, the approved total with a currency derived from current consistent data under strict evidence
+(request currency registered; all non-cancelled groups in it; no cancelled or pending groups; every batch approved with
+supporting final-approval history; batch sum and group total equal to the approved total within two-decimal rounding);
+else the estimate under the estimate comparability rules; else unresolved and excluded with the reason (never silently
+replaced by an estimate). Each request counted once; buckets strictly by resolved currency; payment action amounts stay
+outside the ratio; department scope, candidate statuses and the UpdatedAtUtc month filter unchanged. Labels disclose the
+base of each amount, the composition of the aggregate and the exclusions; the derived currency is explicitly labelled as
+derived from current data, not recorded at approval.
+
+Live read-only P6 reconciliation on TEST (2026-10-12 11:00:36 UTC): REQ-26/09/2026-478 DERIVED_APPROVED 351,179.88 AOA;
+departmental aggregate 11,241,804.46 AOA, impact 3.1 %; three recorded-approved, one derived, no estimate fallback; one
+USD request excluded; no unresolved candidates; +351,179.88 AOA over the estimate-based aggregate. Validates the SQL
+diagnostic on current data only. The exact historical cause of REQ-478's zero estimate remains unproven; nothing is
+backfilled or resent.
+
+Tests: `DepartmentalAmountResolverTests` (decision table, tolerances, batch/cumulative currency truth table),
+`DepartmentalPaymentContextTests`, `DepartmentalRequesterManagerTests`, `BatchApprovalCurrencyTests`,
+`AccountsPayableDepartmentalResolverRelationalTests` (LocalDB). Backend 2837/2837.
+
+## [v2.247.4] - 2026-10-12 — Accounts Payable payment notices deduplicated per persisted action for multi-group requests
+
+PATCH after the TEST validation of v2.247.3 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.15, §G.15.1). No migration, no EF
+model change, no configuration change; recipients, AP switches, permissions, SMTP, redirect, requester/departmental
+notices and the direct-send mechanism are unchanged.
+
+Limitation fixed: AP dedup for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` was keyed by (request, event, recipient), so after
+the first P.O. group's action the other groups' scheduling or completion on the same request was logged as skipped and
+no notice was sent.
+
+- Payment events that carry group context (set by `FinanceController.SchedulePayment` / `MarkAsPaid`) are now deduplicated
+  per persisted action: the identity is the action's `RequestStatusHistory` row Id (the event `CorrelationId`), stored on
+  the AP log row — the same identity `PO_REGISTERED` uses. `PaymentId` was rejected as identity (one payment row can carry
+  several actions).
+- Legacy request-level fallback preserved: payment events without group context (operational transitions) keep
+  (request, event, recipient) dedup with `CorrelationId NULL`.
+- Database: the filtered unique index `IX_ApNotifLogs_Dedup` (RequestId, EventCode, RecipientEmail, CorrelationId) already
+  enforces the rule; verified on the LocalDB sandbox (duplicate success per action refused, distinct actions accepted,
+  one legacy NULL row accepted, second NULL row refused).
+- Compatibility (documented, not changed): successful rows written by v2.247.0–v2.247.3 keep `CorrelationId NULL` and are
+  neither rewritten nor resent. A re-emission without group context is still skipped; a grouped emission is sent (intended
+  for another group's action; an undetected duplicate only for a hypothetical technical re-emission of a v2.247.2/v2.247.3
+  action — no re-emission path exists in the backend; endpoint replay is refused by the status guards).
+- Remaining limitations (unchanged): check-then-send without a transaction (concurrent emissions of one action may both
+  send; the index refuses the second log row); a cancelled schedule produces no AP notice; the advance rescheduling
+  endpoint (`b2p/schedule-advance`) emits no workflow event and therefore no AP notice.
+
+Tests: `AccountsPayableNotificationRoutingTests` (two groups scheduled and completed → four notices, re-emission skipped,
+same payment row with two history identities, historical NULL row behaviour, legacy fallback),
+`FinancePaymentApNotificationTests` (real controller + orchestrator lifecycle, cancel/reschedule, endpoint replay refused),
+`AccountsPayableDedupRelationalTests` (LocalDB index coverage). Backend 2786/2786.
+
+## [v2.247.3] - 2026-10-12 — Departmental payment summary for a requester who is also the eligible manager
+
+PATCH after the TEST validation of v2.247.2 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.14). No migration, no EF model
+change, no configuration change; manager resolution, Accounts Payable notices, routing permissions, SMTP, redirect,
+dedup rules and other workflows are unchanged.
+
+TEST REQ-05/10/2026-526 (department 4, plant 1): the requester was also the only manager resolved by the department/plant
+cascade. The payment fan-out queued the requester notice and skipped the manager entry for the same person, so no
+departmental summary was produced; a second recipient would have been dropped by the outbox dedup.
+
+- `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`: when a resolved eligible manager is the requester, the requester's recipient
+  entry is replaced by a copy whose subject is the standard requester subject followed by "(com informação de
+  departamento)" and whose body is the standard requester sentence followed by the v2.247.2 departmental block (action
+  amount, estimate labels, comparability, exclusion disclosure, period line — same renderer, same calculation). One
+  e-mail and one in-app notification for that person and action.
+- Other resolved managers keep the departmental notice; requesters who are not managers keep the standard notice.
+
+Tests: `DepartmentalRequesterManagerTests` (requester is the only manager / one of several / not a manager, both events).
+Backend 2780/2780.
+
+## [v2.247.2] - 2026-10-09 — Payment scheduling/completion e-mails: Accounts Payable group and payment content, distinct wording, departmental context
+
+PATCH after the TEST validation of v2.247.1 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.13, §G.13.1). No migration, no EF
+model change, no configuration change; recipients, routing, AP options, SMTP, redirect, outbox/direct-send mechanisms,
+dedup rules and permissions are unchanged.
+
+TEST (REQ-07/10/2026-538) delivered the scheduling and completion e-mails correctly but (1) both Accounts Payable notices
+showed Supplier "—", (2) the completion notice carried the scheduling subject and body, and (3) the departmental context
+showed "Acumulado 0.00" and "0.0%".
+
+- `WorkflowEvent.PaymentId` (optional) next to `PoGroupId`; `FinanceController.SchedulePayment` and `MarkAsPaid` pass the
+  group and payment row they acted on.
+- Accounts Payable notice for `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`: supplier from the acted-on group (name, snapshot,
+  selected quotation, request supplier fall-through), amount and date from the payment row (planned when scheduling,
+  actual paid when completing), currency from the row, group or request; distinct subjects "Pagamento agendado — Pedido X"
+  / "Pagamento realizado — Pedido X" and bodies; HTML-encoded. Events without a group (legacy operational transitions)
+  fall back to the request header labelled "(pedido)". P.O. registration notices unchanged.
+- Departmental notice to area managers: the aggregate filtered request statuses `SCHEDULED`/`PAID`/`PARTIAL_PAID`, none of
+  which exists in the catalog (always 0). Now: "Valor desta ação" from the payment row in its own currency; request-level
+  figures labelled as estimates; aggregate = this estimate + estimates of other comparable scheduled/paid requests of the
+  department (`PAYMENT_SCHEDULED`/`PAID`/`PAYMENT_COMPLETED`, same `CurrencyId`, updated since the first day of the UTC
+  month), "apenas comparáveis na moeda do pedido"; comparability requires a registered request currency and every
+  non-cancelled P.O. group in that currency; "n/d" with a reason otherwise (no currency conversion); "Excluídos: N pedido(s)"
+  disclosure when scheduled/paid requests of the period are left out; percentage only with a real basis; period stated as
+  "última atualização desde dd/MM/yyyy", not proof of payment timing.
+- Documented limitation (unchanged): AP dedup for scheduling/completion is per (request, event, recipient). On a request
+  with several P.O. groups, any group scheduled or completed after the first produces no Accounts Payable notice (a
+  skipped log row is written); requester and departmental mails are still sent. Redesign tracked separately; the
+  multi-group flow is not validated end to end.
+
+Tests: `AccountsPayableNotificationRoutingTests` (distinct wording, group/payment content, fallbacks),
+`FinancePaymentApNotificationTests` (real controller + orchestrator, schedule and pay), `DepartmentalPaymentContextTests`
+(action amounts, mixed currencies, unavailable basis, exclusions, cancelled groups). Backend 2774/2774.
+
+## [v2.247.1] - 2026-10-09 — Accounts Payable P.O. notice shows the registered group's supplier, total and currency
+
+PATCH after the TEST validation of v2.247.0 (`docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.12). No migration, no EF model
+change, no configuration change; recipients, switches, permissions, SMTP, delivery mechanism, dedup and the payment
+scheduling/completion content are unchanged.
+
+TEST (REQ-22/09/2026-441, REQ-08/10/2026-448) delivered the P.O. review notice correctly but displayed Supplier "—" and
+"0.00 AOA": the notice read `Request.Supplier` and `Request.EstimatedTotalAmount` from the request header, which are
+empty for group-based requests and in any case belong to the request, not to the registered group. The workflow event
+now carries the registered P.O. group (`WorkflowEvent.PoGroupId`, set by `RegisterPo`), and the `PO_REGISTERED` notice
+renders that group's supplier (name, else snapshot), `TotalAmount` and `CurrencyCode`, labelled "Total do grupo P.O.",
+HTML-encoded, for both initial registration and permitted correction re-registration. Another group's data and the
+aggregate request total are never used; without a group reference the previous header fallback applies with a warning.
+
+Tests: real controller + orchestrator with two groups of different supplier, amount and currency (registration and
+correction, encoding, correlation and dedup unchanged); orchestrator-level group vs fallback. Backend 2758/2758.
+
+## [v2.247.0] - 2026-10-09 — P.O. registration notifications: Finance e-mail context fix, Accounts Payable review notice and per-company e-mail options
+
+MINOR release. One additive migration (`20261009084838_AddAccountsPayablePoRegisteredAndFinanceEmailOptions`), not
+applied to any database by this release. No change to authorization, approval routing, pending counts or
+reminder-age rules; no historical notification is re-sent. Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.10–G.11.
+
+1. **RegisterPo emits the request context.** TEST REQ-08/10/2026-449 showed seven Finance in-app notifications and no
+   e-mail after a P.O. registration: the event carried no plant, request number or history correlation, so the
+   plant-scoped Finance routing fell back to an in-app-only fan-out and the subject would have had no request
+   reference. `RegisterPo` now emits `PO_REGISTERED` with the same context as the other operational transitions
+   (`PlantId`, `CompanyId`, `DepartmentId`, `RequestNumber`, actor, requester/buyer, `CorrelationId` = the
+   `REGISTER_PO`/`REREGISTER_PO` history row). Corrections keep the `PO_REGISTERED` event code.
+2. **Per-company Accounts Payable options** (Master Data › Accounts Payable Email, API `ap-notification-configs`),
+   **both default OFF** in the entity, the DTOs and the migration; existing rows are not enabled:
+   - *Notificar Contas a Pagar quando uma P.O. é registada* (`NotifyOnPoRegistered`): `PO_REGISTERED` sends a
+     **review notice** to the configured To/CC ("P.O. registada — revisão de Contas a Pagar", or "P.O. corrigida e
+     re-registada" for corrections). The body states that a registered P.O. does not mean the payment is authorized or
+     ready and that post-paid receipt/invoice requirements still apply. Scheduling/completion notices are unchanged.
+   - *Também enviar e-mail individual aos utilizadores Finance* (`NotifyFinanceUsersByEmail`): individual Finance
+     e-mails for `PO_REGISTERED`, `PO_CORRECTION_COMPLETED` and `ADVANCE_PAYMENT_REQUIRED` require an active company
+     configuration with this flag on; a missing or inactive configuration never enables them. Finance in-app
+     notifications are unaffected. Approval, requester and buyer e-mails are unaffected.
+3. **Per-action AP deduplication.** `AccountsPayableNotificationLogs.CorrelationId` (nullable) joins the unique dedup
+   index. `PO_REGISTERED` is deduplicated per registration/correction action, so a second P.O. group or a correction on
+   the same request is recorded and notified; a repeated emission of the same action is skipped. Payment scheduling
+   and completion keep their request-level rule (`CorrelationId NULL`). Verified on SQL Server with the real migration.
+4. **AP dispatch independent of per-user recipients.** When no per-user recipient resolves (e.g. a plant without
+   Finance users) the orchestrator no longer skips the Accounts Payable block.
+
+Known limitations, unchanged and documented: the AP group e-mail is a direct SMTP send inside the request (no outbox
+row, no automatic retry; a failure is logged as `Success = 0`, and the dedup is check-then-act, so two simultaneous
+identical transitions could both send). Schema rollback (`Down`) recreates the old three-column unique index and fails
+if more than one successful `PO_REGISTERED` AP row exists for the same request and recipient; delete or mark those rows
+`Skipped` first. Rolling back the application without the schema is safe.
+
+Tests: backend 2756/2756 (+24: AP configuration API, routing combinations, per-action dedup on SQL Server, RegisterPo
+end-to-end), frontend vitest 916/916 (+6), `tsc` and Vite build clean.
+
+## [v2.246.1] - 2026-10-08 — Single e-mail greeting; clean retry fields on SENT outbox rows
+
+PATCH after the TEST validation of v2.246.0 (evidence: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.9). No migration,
+no configuration change, no change to authorization, recipients, pending counts or reminder-age rules.
+
+1. **Duplicate greeting.** Proforma alert e-mails and reminder digests showed "Olá Nome," twice: the shared template in
+   `EmailService.SendWorkflowNotificationAsync` greets from the recipient name, and both bodies greeted again. The
+   template now owns the greeting; `ProformaDeadlineAlertCycle` and `ApprovalReminderDigestRenderer` no longer emit one.
+   Subjects, environment banners, original-recipient block, routing and links are unchanged.
+2. **Retry residue on SENT rows.** An outbox row that was sent after earlier failures kept `LastError` and
+   `NextRetryAtUtc`. `EmailOutboxProcessor` now clears both when a row becomes SENT, on the real-send path and on the
+   duplicate-suppression path (the suppression reason remains in the `EMAIL_OUTBOX_DEDUP` admin-log event).
+   `RetryCount`, backoff, DEAD_LETTER and EXPIRED behaviour are unchanged.
+
+Tests: new `EmailOutboxProcessorSentCleanupTests` (4) plus greeting assertions in the renderer and proforma cycle
+tests; backend 2732/2732.
+
+## [v2.246.0] - 2026-10-07 — Approval notifications: batch events, batch concurrency guard, proforma alerts via outbox, daily digests (disabled)
+
+Branch `Portal-Gerencial-rev1`, five code commits (`ee4b937`, `24eae46`, `4349338`, `c0706fd`, `d21a50d`) plus this
+release commit. Not deployed. Three additive migrations (`20261007152909`, `20261007152958`, `20261007153058`), applied
+to the DEV clone only; TEST and PROD pending. **Approval permissions and scope rules are unchanged**: who may approve
+the final stage is still "Final Approver" role + access scope; e-mail availability only decides whether a notification
+can be sent. Full record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.
+
+1. **Batch workflow notifications + proforma scheduler** (no migration). `ApprovalBatchController` CreateBatch / area
+   approve / area reject / final approve / final reject now emit the matching workflow e-mails (correlated to the stage
+   history row, subject "(Lote #N)"); `ProformaDeadlineAlertService` honours `CheckTimeUtcHour` with one catch-up after
+   restart. Operators must confirm PROD's effective `ProformaDeadlineAlerts` configuration first — the fixed scheduler
+   will start queueing real alerts if it resolves to Enabled (`scripts/server/check-proforma-alerts-config-readonly.ps1`).
+2. **Batch concurrency protection.** `ApprovalBatch.RowVersion` + 409 `APPROVAL_CONCURRENCY_CONFLICT`: two simultaneous
+   decisions on the same batch commit once (one transition, one PO-group activation, one notification).
+3. **Proforma alerts through the outbox.** Alert records are written atomically with their outbox rows (queued ≠
+   delivered); DEAD_LETTER/EXPIRED levels are re-queued; `EmailOutbox.ExpiresAtUtc` + terminal `EXPIRED` status;
+   `GET api/admin/diagnostics/proforma-alerts`. Final-stage recipient = request nominee, else company nominee, if
+   active with e-mail (`IApprovalRoutingService.ResolveFinalNotificationRecipientsAsync`, a notification rule only).
+4. **Daily approval reminder digests** (`AppConfig:ApprovalReminders`, **Enabled=false, DryRun=true**): 08:00 Luanda
+   Mon–Fri, units waiting > 3 days in their stage (`ApprovalBatches.StageEnteredAtUtc`, deterministically backfilled;
+   unestablished rows reported), one digest per approver per day, digest + items + outbox row in one transaction with a
+   unique dedup key; admin read-only endpoints and in-memory preview under `api/admin/approval-reminders`.
+
+Reported, not changed: a role-holder who is not the nominee can approve but is never notified or reminded; a nominee
+without the role is notified but cannot approve (`scripts/db/final-approval-recipients-vs-approvers-readonly.sql`).
+Deferred (preserved under `deferred/company-final-approvers/`): `CompanyFinalApprovers`, its Master Data UI and the
+company-membership authorization restriction.
+
+Tests: backend 2728/2728, frontend `tsc` clean. TEST plan pending (§G.8).
 
 ## [v2.245.12] - 2026-09-23 — PAYMENT_PROOF upload for PAYMENT-type scheduled advances
 

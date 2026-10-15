@@ -20,9 +20,22 @@ public class ProformaDeadlineAlert
     public Guid RecipientUserId { get; set; }
     public User? RecipientUser { get; set; }
 
+    /// <summary>
+    /// LEGACY (direct SmtpClient era): true = the message was accepted by the SMTP server at send
+    /// time. Since alerts go through EmailOutbox this flag is always false; delivery evidence is the
+    /// linked outbox row (<see cref="OutboxEntryId"/>). Never read it as "delivered" for new rows.
+    /// </summary>
     public bool EmailSent { get; set; }
     public bool InAppSent { get; set; }
     public string? ErrorMessage { get; set; }
+
+    /// <summary>Latest EmailOutbox row queued for this alert level (null for legacy direct-send rows).</summary>
+    public Guid? OutboxEntryId { get; set; }
+    public EmailOutboxEntry? OutboxEntry { get; set; }
+
+    /// <summary>How many outbox rows were queued for this alert level (re-queued after DEAD_LETTER/EXPIRED).</summary>
+    public int QueuedCount { get; set; }
+    public DateTime? LastQueuedAtUtc { get; set; }
 
     public DateTime SentAtUtc { get; set; }
 }

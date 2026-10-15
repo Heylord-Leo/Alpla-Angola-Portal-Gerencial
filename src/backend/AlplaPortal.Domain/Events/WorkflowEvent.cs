@@ -50,6 +50,21 @@ public record WorkflowEvent
     public int? PlantId { get; init; }
     public int? CompanyId { get; init; }
 
+    /// <summary>
+    /// The P.O. group the event is about (PO_REGISTERED: the group just registered or re-registered). A request can
+    /// hold several groups with different suppliers, totals and currencies; e-mail content for the event must come
+    /// from THIS group, never from the request header or another group. Null for request-level events.
+    /// </summary>
+    public Guid? PoGroupId { get; init; }
+
+    /// <summary>
+    /// The <c>RequestPayment</c> row the event is about (PAYMENT_SCHEDULED: the row just scheduled; PAYMENT_COMPLETED:
+    /// the row just completed). Both Finance actions operate on ONE P.O. group and ONE payment row, so the Accounts
+    /// Payable notice takes its amount, currency and dates from this row (planned amount when scheduling, actual paid
+    /// amount when completing) and its supplier from <see cref="PoGroupId"/>. Null for request-level (legacy) events.
+    /// </summary>
+    public int? PaymentId { get; init; }
+
     // --- Adjustment V2 (Phase 3) context — populated only for the batch-adjustment events ---
 
     /// <summary>The lot number the adjustment was requested on (e.g. "Lote #1").</summary>

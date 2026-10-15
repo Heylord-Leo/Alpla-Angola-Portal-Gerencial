@@ -185,10 +185,19 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
             if (CanReturn(input.RequestStatusCode)) union.Add(FinancePaymentActionCodes.Return);
         }
 
+        // v2.247.6 (docs §G.19): a legacy request-level Finance return (scalar WAITING_PO_CORRECTION, sole live group
+        // still PO_ISSUED) must be corrected by Purchasing first — the group status alone would otherwise advertise
+        // SCHEDULE/PAY that SchedulePayment/MarkAsPaid now refuse with 409.
+        if (input.LegacyReturnPendingCorrection)
+        {
+            union.Remove(FinancePaymentActionCodes.Schedule);
+            union.Remove(FinancePaymentActionCodes.Pay);
+        }
         void Emit(string code, string absentReason)
         {
             if (union.Contains(code)) actions.Add(code);
-            else reasons[code] = absentReason;
+            else reasons[code] = input.LegacyReturnPendingCorrection && (code == FinancePaymentActionCodes.Schedule || code == FinancePaymentActionCodes.Pay)
+                ? FinancePaymentUnavailableReasons.LegacyReturnPendingCorrection : absentReason;
         }
 
         Emit(FinancePaymentActionCodes.Schedule, input.PoGroups.Count == 0

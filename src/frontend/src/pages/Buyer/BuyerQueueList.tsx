@@ -158,7 +158,11 @@ export function BuyerQueueList() {
 
   const doClaim = async (item: BuyerQueueItem) => {
     setBusy(true);
-    try { await api.requests.assignBuyer(item.requestId); refreshAll(); }
+    // §G.20 D2 — a PAYMENT correction row names its returned group(s); with exactly one, the claim targets it.
+    // With several the server answers 409 (ambiguous) and the message is shown — no group is chosen client-side.
+    const correctionGroupId = item.operationalState === 'PO_CORRECTION' && item.requestTypeCode && item.requestTypeCode !== 'QUOTATION'
+      && item.poCorrectionGroups?.length === 1 ? item.poCorrectionGroups[0].poGroupId : undefined;
+    try { await api.requests.assignBuyer(item.requestId, correctionGroupId); refreshAll(); }
     catch (e: any) { setError(e?.message || 'Falha ao assumir o pedido.'); }
     finally { setBusy(false); }
   };
@@ -372,7 +376,7 @@ export function BuyerQueueList() {
       )}
 
       {/* Detail drawer (existing experience — temporary until the Workspace phase) */}
-      <RequestDrawerPresentation isOpen={!!detailRequestId} requestId={detailRequestId} onClose={() => setDetailRequestId(null)} />
+      <RequestDrawerPresentation isOpen={!!detailRequestId} requestId={detailRequestId} onClose={() => { setDetailRequestId(null); refreshAll(); /* §G.19.3: list rows re-read from the server after drawer actions */ }} />
 
       {/* Add-note modal */}
       {noteModal && (

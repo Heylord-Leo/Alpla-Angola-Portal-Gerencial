@@ -640,6 +640,14 @@ public class FinanceController : BaseController
             })
             .ToListAsync();
 
+        // v2.247.6 (docs §G.19): legacy request-level Finance returns on this page — SCHEDULE/PAY withheld, consistently
+        // with the endpoint guards. Only rows whose scalar is WAITING_PO_CORRECTION are evaluated (few per page).
+        var legacyReturnIds = new HashSet<Guid>();
+        foreach (var candidate in items.Where(i => i.Request.Status != null && i.Request.Status.Code == RequestConstants.Statuses.WaitingPoCorrection))
+        {
+            if ((await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, candidate.Request.Id)).Blocked)
+                legacyReturnIds.Add(candidate.Request.Id);
+        }
         var dtoList = new List<FinanceListItemDto>();
 
         foreach (var item in items)
@@ -666,6 +674,7 @@ public class FinanceController : BaseController
                 RequestStatusCode = r.Status.Code,
                 IsPaid = isPaid,
                 HasProof = item.HasProof,
+                LegacyReturnPendingCorrection = legacyReturnIds.Contains(r.Id),
                 PoGroups = r.PoGroups.Select(g => new FinancePoGroupEligibilityInput
                 {
                     GroupId = g.Id,
@@ -744,7 +753,9 @@ public class FinanceController : BaseController
                     // Per-group Finance actions — derived from THIS group's own status only, so the
                     // multi-group UI gates each card's buttons here (never on the request-level
                     // AvailableFinanceActions). A paid sibling can no longer suppress this group.
-                    FinanceActions = _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).ToList(),
+                    FinanceActions = legacyReturnIds.Contains(r.Id)
+                        ? _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).Where(a => a != FinancePaymentActionCodes.Schedule && a != FinancePaymentActionCodes.Pay).ToList()
+                        : _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).ToList(),
                     Payments = g.Payments.Select(p => new RequestPaymentDto
                     {
                         Id = p.Id,
@@ -1273,6 +1284,25 @@ public class FinanceController : BaseController
         var group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
 
+        // v2.247.6 (docs §G.19.2): unresolved REQUEST-LEVEL Finance return — the scalar is WAITING_PO_CORRECTION but no
+        // live group carries the return (legacy returns made before the group-scoped return). No scheduling or payment may
+        // run on such a request, whatever its history or payment rows; a group-scoped return (some group in
+        // WAITING_PO_CORRECTION) is NOT blocked here — the returned group is refused by its own status and siblings keep
+        // their actions. Checked before any mutation — nothing is written, logged or notified.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = "Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido pelo " +
+                         $"Comprador. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
+
         // ── DEC-110: Status Guard — via IFinancePaymentEligibilityService, same rule GetPayments uses ──
         var allowedScheduleStatuses = new[] {
             RequestConstants.Statuses.PoIssued,
@@ -1376,7 +1406,11 @@ public class FinanceController : BaseController
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId,
-                CompanyId = r.CompanyId
+                CompanyId = r.CompanyId,
+                // The unit this action operated on: ONE group and ONE scheduled payment row (persisted above).
+                // The Accounts Payable notice renders this group's supplier and this row's planned amount/currency/date.
+                PoGroupId = group.Id,
+                PaymentId = payment.Id
             });
         }
         catch (Exception ex)
@@ -1408,6 +1442,25 @@ public class FinanceController : BaseController
                 Detail = "Grupo da P.O não encontrado para este pagamento. Verifique se o grupo P.O foi emitido corretamente.",
                 Status = 400
             });
+        }
+
+        // v2.247.6 (docs §G.19.2): unresolved REQUEST-LEVEL Finance return — the scalar is WAITING_PO_CORRECTION but no
+        // live group carries the return (legacy returns made before the group-scoped return). No scheduling or payment may
+        // run on such a request, whatever its history or payment rows; a group-scoped return (some group in
+        // WAITING_PO_CORRECTION) is NOT blocked here — the returned group is refused by its own status and siblings keep
+        // their actions. Checked before any mutation — nothing is written, logged or notified.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = "Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido pelo " +
+                         $"Comprador. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
         }
 
         // ── v2.245.11: ADVANCE obligations are NEVER settled here (any request type). ──────────
@@ -1719,7 +1772,11 @@ public class FinanceController : BaseController
                 FinalApproverId = r.FinalApproverId,
                 DepartmentId = r.DepartmentId,
                 PlantId = r.PlantId,
-                CompanyId = r.CompanyId
+                CompanyId = r.CompanyId,
+                // The unit this action operated on: ONE group and ONE completed payment row (persisted above).
+                // The Accounts Payable notice renders this group's supplier and this row's actual paid amount/currency/date.
+                PoGroupId = group.Id,
+                PaymentId = payment.Id
             });
         }
         catch (Exception ex)
@@ -1928,7 +1985,10 @@ public class FinanceController : BaseController
         group.UpdatedAtUtc = DateTime.UtcNow;
         r.UpdatedAtUtc = DateTime.UtcNow;
 
-        _context.RequestStatusHistories.Add(new RequestStatusHistory
+        // docs §G.20 D1 — kept as a variable: the notification event is correlated to THIS row (the Finance return),
+        // not to whatever history row happens to be the latest tracked one (the STATUS_SYNC row appended by the
+        // aggregation below used to win, which broke per-return correlation of outbox/in-app rows).
+        var returnHistory = new RequestStatusHistory
         {
             Id = Guid.NewGuid(),
             RequestId = id,
@@ -1939,7 +1999,8 @@ public class FinanceController : BaseController
             Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
                 + $" Grupo devolvido por Finanças para correção da P.O (GroupId: {group.Id}). Motivo: {requestDto.Notes}",
             CreatedAtUtc = DateTime.UtcNow
-        });
+        };
+        _context.RequestStatusHistories.Add(returnHistory);
 
         await _context.SaveChangesAsync();
 
@@ -1953,7 +2014,6 @@ public class FinanceController : BaseController
         try
         {
             var actor = await _context.Users.FindAsync(CurrentUserId);
-            var historyEntry = _context.RequestStatusHistories.Local.OrderByDescending(h => h.CreatedAtUtc).FirstOrDefault(h => h.RequestId == id);
             await _orchestrator.EmitAsync(new WorkflowEvent
             {
                 EventCode = WorkflowEventCodes.FinanceReturned,
@@ -1965,9 +2025,12 @@ public class FinanceController : BaseController
                 ActorUserId = CurrentUserId,
                 ActorName = actor?.FullName ?? "Sistema",
                 Comment = requestDto.Notes,
-                CorrelationId = historyEntry?.Id ?? Guid.NewGuid(),
+                CorrelationId = returnHistory.Id,
                 RequesterId = r.RequesterId,
                 BuyerId = r.BuyerId,
+                // docs §G.20 D1 — the acted-on group: the orchestrator resolves the Buyer who owns THIS returned
+                // P.O. (PAYMENT → group PoResponsibleBuyerId; QUOTATION → Request.BuyerId), never a sibling's owner.
+                PoGroupId = group.Id,
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
                 PlantId = r.PlantId

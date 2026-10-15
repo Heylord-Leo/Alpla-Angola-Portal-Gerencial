@@ -787,8 +787,11 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atualizar fornecedor do pedido.');
         },
-        assignBuyer: async (id: string): Promise<{ message: string; statusCode: string }> => {
-            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/assign-buyer`, {
+        /** §G.20 D2 — for a PAYMENT P.O. correction the claim targets ONE returned group (poGroupId); the server
+         *  refuses an ambiguous multi-group claim (409 PO_CORRECTION_AMBIGUOUS) rather than choosing a group. */
+        assignBuyer: async (id: string, poGroupId?: string | null): Promise<{ message: string; statusCode: string }> => {
+            const qs = poGroupId ? `?poGroupId=${encodeURIComponent(poGroupId)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/assign-buyer${qs}`, {
                 method: 'POST'
             });
             if (!response.ok) return handleApiError(response, 'Falha ao atribuir o pedido para si.');

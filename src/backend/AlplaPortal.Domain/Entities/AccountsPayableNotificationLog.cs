@@ -39,5 +39,13 @@ public class AccountsPayableNotificationLog
     /// <summary>True if this entry was skipped due to duplicate detection.</summary>
     public bool Skipped { get; set; }
 
+    /// <summary>
+    /// Workflow correlation (the history row of the transition) for events whose dedup is per ACTION rather than
+    /// per request: PO_REGISTERED (a request can have several P.O. groups and legitimate corrections). Null for
+    /// payment scheduling/completion rows, whose dedup stays per (RequestId, EventCode, RecipientEmail), and for
+    /// every pre-existing row.
+    /// </summary>
+    public Guid? CorrelationId { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

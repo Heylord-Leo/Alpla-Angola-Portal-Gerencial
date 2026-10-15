@@ -8,6 +8,7 @@ import { FeedbackType } from '../../../components/ui/Feedback';
 import { ApprovalActionType } from '../../../components/ApprovalModal';
 import { scrollToFirstError } from '../../../lib/validation';
 import { completeQuotationAction } from '../../../lib/workflow';
+import { deriveWorkflowSnapshot } from '../../../lib/requestWorkflowSnapshot';
 import { isFiscalDocument, isSelectableDocumentType } from '../../../lib/sourceDocumentType';
 import {
     CONFLICT_JUSTIFICATION_MIN_LENGTH,
@@ -508,6 +509,30 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         }
     };
 
+    // docs §G.19.3 — ONE derivation of the server workflow state (display label precedence, badge colour, history,
+    // attachments, groups, quotations, raw detail), shared by the initial load and by refreshWorkflowState so a
+    // completed action can never leave a fresh scalar next to stale groups or a stale display label.
+    const applyWorkflowSnapshot = useCallback((data: any) => {
+        const snap = deriveWorkflowSnapshot(data);
+        setStatus(snap.status);
+        setStatusFullName(snap.statusFullName);
+        setStatusBadgeColor(snap.statusBadgeColor);
+        setStatusHistory(snap.statusHistory);
+        setAttachments(snap.attachments);
+        setQuotations(snap.quotations);
+        setSelectedQuotationId(snap.selectedQuotationId);
+        setPoGroups(snap.poGroups);
+        setDetail(data as RequestDetailsDto);
+    }, []);
+
+    /** Reloads the whole workflow state from the server after an action (no destination status is assumed). */
+    const refreshWorkflowState = useCallback(async () => {
+        if (!id) return null;
+        const data = await api.requests.get(id);
+        applyWorkflowSnapshot(data);
+        return data;
+    }, [id, applyWorkflowSnapshot]);
+
     const loadData = useCallback(async () => {
         if (!id && !isCopyMode) return;
         try {
@@ -531,22 +556,13 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
                 setDetail(null);
             } else {
                 data = await api.requests.get(id!);
-                setStatus(data.statusCode);
-                // Phase 4B.2: prefer the server's group-aware display label so a request whose
-                // operational group is WAITING_PO reads "Aguardando P.O." (PAYMENT keeps scalar
-                // APPROVED). Null means no override → the persisted status name stands.
-                setStatusFullName(data.displayStatusName ?? data.statusName);
-                setStatusBadgeColor(data.statusBadgeColor);
+                // Phase 4B.2: the server's group-aware display label wins over the persisted status name
+                // (deriveWorkflowSnapshot); groups, history, attachments and quotations come from the same payload.
+                applyWorkflowSnapshot(data);
                 setLineItems(data.lineItems || []);
                 setRequestTypeCode(data.requestTypeCode);
                 setRequestNumber(data.requestNumber || null);
                 setRequesterId(data.requesterId || null);
-                setStatusHistory(data.statusHistory || []);
-                setAttachments(data.attachments || []);
-                setQuotations(data.quotations || []);
-                setSelectedQuotationId(data.selectedQuotationId || null);
-                setPoGroups(data.poGroups || []);
-                setDetail(data as RequestDetailsDto);
             }
 
 
@@ -1341,6 +1357,7 @@ export function useRequestDetail({ id: propsId, onClose }: { id?: string, onClos
         executeDeleteRequest,
         handleAttachmentRefresh,
         loadData,
+        refreshWorkflowState,
         navigate,
         location,
         searchParams,

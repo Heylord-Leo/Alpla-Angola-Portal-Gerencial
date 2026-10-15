@@ -80,6 +80,12 @@ public class FinanceEligibilityInput
     public bool IsPaid { get; init; }
     public bool HasProof { get; init; }
     public IReadOnlyList<FinancePoGroupEligibilityInput> PoGroups { get; init; } = System.Array.Empty<FinancePoGroupEligibilityInput>();
+    /// <summary>
+    /// v2.247.6 (docs §G.19): the request is in the legacy request-level Finance-return shape (scalar
+    /// WAITING_PO_CORRECTION, sole live group still PO_ISSUED, return later than the last registration, no live
+    /// payment). SCHEDULE and PAY are withheld with reason LEGACY_RETURN_PENDING_CORRECTION; the endpoints refuse with 409.
+    /// </summary>
+    public bool LegacyReturnPendingCorrection { get; init; }
 }
 
 public class FinanceActionEligibilityResult
@@ -113,4 +119,5 @@ public static class FinancePaymentUnavailableReasons
     public const string ParentStatusNotEligibleForReturn = "PARENT_STATUS_NOT_ELIGIBLE_FOR_RETURN";
     public const string AlreadyPaid = "ALREADY_PAID";
     public const string NoGroupCurrentlyScheduled = "NO_GROUP_CURRENTLY_SCHEDULED";
+    public const string LegacyReturnPendingCorrection = "LEGACY_RETURN_PENDING_CORRECTION";
 }

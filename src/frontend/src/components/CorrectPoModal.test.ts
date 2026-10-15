@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 // Node-only vitest — source-level guards for the v2.242.0 CorrectPoModal group-context fix (no RTL).
 import src from './CorrectPoModal.tsx?raw';
+import submission from '../lib/correctPoSubmission.ts?raw';
 
 describe('CorrectPoModal — group-scoped expected context (v2.242.0)', () => {
   it('resolves the selected PO group by poGroupId', () => {
@@ -21,12 +22,16 @@ describe('CorrectPoModal — group-scoped expected context (v2.242.0)', () => {
     // A dedicated error branch + guards on OCR and submit.
     expect(src).toMatch(/Não foi possível carregar os dados do grupo P\.O\. selecionado/);
     expect(src).toMatch(/if \(groupMissing\) return;/);           // OCR guard
-    expect(src).toMatch(/if \(groupMissing\) \{/);                // submit guard
+    // §G.19.3: the submit guard moved to lib/correctPoSubmission (validateCorrectPoSubmission, first rule).
+    expect(submission).toMatch(/if \(input\.groupMissing\) return CORRECT_PO_MESSAGES\.groupMissing;/);
+    expect(src).toMatch(/validateCorrectPoSubmission\(submission\)/);
   });
 
   it('forwards the actual OCR extraction to the backend for authoritative recomputation', () => {
-    expect(src).toMatch(/extractedTotalAmount: ocrResult\?\.extractedTotal/);
-    expect(src).toMatch(/extractedSupplierName: ocrResult\?\.extractedSupplier/);
+    // §G.19.3: the payload is built in lib/correctPoSubmission (buildRegisterPoPayload) from the modal's ocrResult.
+    expect(submission).toMatch(/extractedTotalAmount: ocrResult\?\.extractedTotal/);
+    expect(submission).toMatch(/extractedSupplierName: ocrResult\?\.extractedSupplier/);
+    expect(src).toMatch(/submitCorrectPo\(/);
   });
 });
 

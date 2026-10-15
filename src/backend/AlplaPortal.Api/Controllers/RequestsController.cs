@@ -17,6 +17,7 @@ using AlplaPortal.Api.Services;
 using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
+using AlplaPortal.Infrastructure.Services.Finance;
 using AlplaPortal.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1489,6 +1490,20 @@ public class RequestsController : BaseController
             request.DisplayStatusName = badge.Name;
         }
 
+        // docs §G.19.3 — the Buyer-justification decision for a legacy request-level Finance return is the backend's
+        // (LegacyFinanceReturnShape: the predicate RegisterPo enforces). The client reuses it; it never infers it
+        // from the scalar status. Null unless the exact shape qualifies.
+        var legacyReturnVerdict = await LegacyFinanceReturnShape.EvaluateAsync(_context, id);
+        if (legacyReturnVerdict.Qualifies && legacyReturnVerdict.GroupId.HasValue)
+        {
+            request.LegacyReturnCorrection = new LegacyFinanceReturnCorrectionDto
+            {
+                PoGroupId = legacyReturnVerdict.GroupId.Value,
+                JustificationRequired = true,
+                Reason = legacyReturnVerdict.Reason
+            };
+        }
+
         // Enrich with Selected Quotation data if applicable to avoid redundant subqueries in the projection
         if (request.SelectedQuotationId.HasValue)
         {
@@ -2933,7 +2948,7 @@ public class RequestsController : BaseController
     }
 
     [HttpPost("{id:guid}/assign-buyer")]
-    public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null)
+    public async Task<IActionResult> AssignBuyer(Guid id, [FromQuery] Guid? targetUserId = null, [FromQuery] Guid? poGroupId = null)
     {
         var actorId = CurrentUserId;
         var user = await _context.Users.FindAsync(actorId);
@@ -2941,9 +2956,22 @@ public class RequestsController : BaseController
 
         var request = await _context.Requests
             .Include(r => r.Status)
+            .Include(r => r.RequestType)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+        // docs §G.20 D2 — the queues only expose scoped rows; the claim enforces the same company/plant/department
+        // access scope (SystemAdministrator: everything).
+        if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+
+        // docs §G.20 D2 — a PAYMENT request carries no Request.BuyerId; its correction ownership is the returned
+        // group's PoResponsibleBuyerId (PersonalPoCorrectionPredicate — the rule of "Para Minha Ação", the dashboard
+        // count and the Buyer queue). When a PAYMENT has a returned group (or the caller names one), this action
+        // claims exactly one eligible WAITING_PO_CORRECTION group and never writes Request.BuyerId. A PAYMENT without
+        // any returned group keeps the pre-existing request-level assignment path unchanged.
+        var isPaymentCorrectionClaim = request.RequestType?.Code == RequestConstants.Types.Payment
+            && (poGroupId.HasValue || await _context.RequestPoGroups.AnyAsync(g => g.RequestId == id && g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection));
 
         // Only allow assignment if it's currently unassigned. Re-assignment should be a different flow/check if needed
         // but the prompt says: "If role/permissions already support it, allow reassignment by authorized users only"
@@ -2980,7 +3008,7 @@ public class RequestsController : BaseController
             });
         }
 
-        if (request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
+        if (!isPaymentCorrectionClaim && request.BuyerId.HasValue && !canReassign && request.BuyerId.Value != actorId)
         {
             return Conflict(new ProblemDetails
             {
@@ -3010,44 +3038,88 @@ public class RequestsController : BaseController
             }
         }
 
-        if (request.BuyerId == newBuyerId)
-        {
-             return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
-        }
-
-        request.BuyerId = newBuyerId;
-        request.UpdatedAtUtc = DateTime.UtcNow;
-        request.UpdatedByUserId = actorId;
-
-        // History entry
         var targetUser = newBuyerId == actorId ? user : await _context.Users.FindAsync(newBuyerId);
-        var historyComment = newBuyerId == actorId 
-            ? "O comprador assumiu a responsabilidade pelo pedido." 
-            : $"O pedido foi atribuído ao comprador {targetUser?.FullName}.";
+        Guid historyId;
+        string assignedScope;
 
-        var history = new RequestStatusHistory
+        if (isPaymentCorrectionClaim)
         {
-            Id = Guid.NewGuid(),
-            RequestId = request.Id,
-            ActorUserId = actorId,
-            ActionTaken = "COMPRADOR_ATRIBUIDO",
-            PreviousStatusId = request.StatusId,
-            NewStatusId = request.StatusId,
-            Comment = historyComment,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestStatusHistories.Add(history);
+            var claim = await new AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimService(_context)
+                .ClaimAsync(request.Id, poGroupId, newBuyerId, actorId, targetUser?.FullName, allowTransfer: canReassign);
+            switch (claim.Outcome)
+            {
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.AlreadyOwnedByClaimant:
+                    return Ok(new { Message = claim.Message }); // idempotent
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.OwnedByAnother:
+                {
+                    var pd = new ProblemDetails { Title = "Ação Bloqueada", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_ALREADY_OWNED"; pd.Extensions["poGroupId"] = claim.GroupId; pd.Extensions["ownerId"] = claim.OwnerId;
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.Ambiguous:
+                {
+                    var pd = new ProblemDetails { Title = "Grupo Obrigatório", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_AMBIGUOUS"; pd.Extensions["candidateGroupIds"] = claim.CandidateGroupIds;
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.ConcurrencyConflict:
+                {
+                    var pd = new ProblemDetails { Title = "Ação Bloqueada", Detail = claim.Message, Status = 409 };
+                    pd.Extensions["code"] = "PO_CORRECTION_CLAIM_CONFLICT";
+                    return Conflict(pd);
+                }
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.NoCorrectionGroup:
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.GroupNotFound:
+                case AlplaPortal.Infrastructure.Services.Purchasing.PoCorrectionClaimOutcome.GroupNotEligible:
+                    return BadRequest(new ProblemDetails { Title = "Nada a Assumir", Detail = claim.Message, Status = 400 });
+            }
+            historyId = claim.HistoryId!.Value; // Claimed or Transferred
+            assignedScope = "pela correção da P.O do seu pedido";
+        }
+        else
+        {
+            if (request.BuyerId == newBuyerId)
+            {
+                 return Ok(new { Message = "O comprador já está atribuído a este recurso." }); // Idempotent
+            }
 
-        await _context.SaveChangesAsync();
+            request.BuyerId = newBuyerId;
+            request.UpdatedAtUtc = DateTime.UtcNow;
+            request.UpdatedByUserId = actorId;
+
+            // History entry
+            var historyComment = newBuyerId == actorId
+                ? "O comprador assumiu a responsabilidade pelo pedido."
+                : $"O pedido foi atribuído ao comprador {targetUser?.FullName}.";
+
+            var history = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = "COMPRADOR_ATRIBUIDO",
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = historyComment,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestStatusHistories.Add(history);
+
+            await _context.SaveChangesAsync();
+            historyId = history.Id;
+            assignedScope = "pelo seu pedido";
+        }
 
         // Notifications (in-app)
         try
         {
             if (request.RequesterId != actorId)
             {
-                var msgToRequester = newBuyerId == actorId 
-                    ? $"O comprador {user.FullName} assumiu a responsabilidade pelo seu pedido {(request.RequestNumber ?? "S/N")}."
-                    : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
+                var msgToRequester = newBuyerId == actorId
+                    ? $"O comprador {user.FullName} assumiu a responsabilidade {assignedScope} {(request.RequestNumber ?? "S/N")}."
+                    : isPaymentCorrectionClaim
+                        ? $"A correção da P.O do seu pedido {(request.RequestNumber ?? "S/N")} foi atribuída ao comprador {targetUser?.FullName}."
+                        : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
 
                 await _notificationService.CreateNotificationAsync(
                     request.RequesterId,
@@ -3087,7 +3159,7 @@ public class RequestsController : BaseController
                 ActionTaken = "BUYER_ASSIGNED",
                 ActorUserId = actorId,
                 ActorName = user.FullName ?? "Sistema",
-                CorrelationId = history.Id,
+                CorrelationId = historyId,
                 RequesterId = request.RequesterId,
                 BuyerId = newBuyerId,
                 DepartmentId = request.DepartmentId,
@@ -7093,6 +7165,25 @@ public class RequestsController : BaseController
         var poGroup = request.PoGroups.FirstOrDefault(g => g.Id == dto.PoGroupId.Value);
         if (poGroup == null) return NotFound("Grupo P.O não encontrado.");
 
+        // v2.247.6 (docs §G.19): legacy request-level Finance return — scalar WAITING_PO_CORRECTION while the sole live
+        // group is still PO_ISSUED (returns made before the group-scoped return of 2026-08-23). Shared predicate
+        // (LegacyFinanceReturnEvaluator): one live group at PO_ISSUED, a FINANCE_RETURN_ADJUSTMENT later than the last
+        // registration, no live payment. For THAT group only, this registration is the correction: it bypasses nothing
+        // else (Buyer authorization, P.O. attachment, supplier integrity, P.O. number and duplicate checks all ran above).
+        var legacyReturn = await LegacyFinanceReturnShape.EvaluateAsync(_context, request.Id);
+        var isLegacyReturnCorrection = legacyReturn.Qualifies && legacyReturn.GroupId == poGroup.Id;
+        if (isLegacyReturnCorrection && string.IsNullOrWhiteSpace(dto.Comment))
+        {
+            // The Buyer's own justification is mandatory for the legacy correction: the generated group prefix and the
+            // correction success text never satisfy it. Refused before any mutation or notification.
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Justificativa obrigatória",
+                Detail = "A correção de uma P.O devolvida por Finanças exige a justificativa do Comprador (campo Comment).",
+                Status = 400
+            });
+        }
+
         // ── Block PO for DRAFT suppliers ──
         if (poGroup.Supplier != null && poGroup.Supplier.RegistrationStatus == "DRAFT")
         {
@@ -7182,7 +7273,7 @@ public class RequestsController : BaseController
                 RequestConstants.PoGroupStatuses.WaitingPo, 
                 RequestConstants.PoGroupStatuses.WaitingPoCorrection 
             };
-            if (!allowedGroupStatuses.Contains(poGroup.Status))
+            if (!allowedGroupStatuses.Contains(poGroup.Status) && !isLegacyReturnCorrection)
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -7209,7 +7300,7 @@ public class RequestsController : BaseController
             }
         }
 
-        var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection;
+        var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection || isLegacyReturnCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
@@ -7390,17 +7481,42 @@ public class RequestsController : BaseController
         await _context.SaveChangesAsync();
 
         // ── Notifications ──
+        // Same request context as ProcessCommonOperationalTransition: the PO_REGISTERED recipients are
+        // Finance users scoped to the request's PLANT — without PlantId the orchestrator falls back to a
+        // global fan-out that suppresses e-mail (in-app only), which is what TEST observed on
+        // REQ-08/10/2026-449. The persisted history row is the correlation (outbox/in-app dedup key).
         try {
+            var actorName = await _context.Users.AsNoTracking()
+                .Where(u => u.Id == CurrentUserId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "Sistema";
+
             await _orchestrator.EmitAsync(new WorkflowEvent
             {
-                EventCode = "PO_REGISTERED",
+                EventCode = WorkflowEventCodes.PoRegistered, // unchanged: corrections also emit PO_REGISTERED (ActionTaken carries REREGISTER_PO)
                 RequestId = request.Id,
-                ActionTaken = "REGISTER_PO",
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                ActionTaken = actionCode,
                 TargetStatusCode = request.Status!.Code,
                 ActorUserId = CurrentUserId,
-                CorrelationId = Guid.NewGuid()
+                ActorName = actorName,
+                CorrelationId = history.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = request.BuyerId,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                PoGroupId = poGroup.Id // the registered group: its supplier/total/currency feed the AP notice
             });
-        } catch { }
+        }
+        catch (Exception notifyEx)
+        {
+            // Never fails the registration (already committed); the swallowed failure is at least visible.
+            _logger.LogWarning(notifyEx, "PO registration notification failed for Request {RequestId} ({Action}). The registration itself is committed.", request.Id, actionCode);
+        }
 
         // Phase 2 strictly post-save; never fails the registration.
         await EvaluateCompletionPhaseTwoAsync(id);
@@ -7466,6 +7582,21 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+
+        // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
+        // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = $"Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
 
         if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento necessário. Status atual: {group.Status}", Status = 400 });
@@ -7538,6 +7669,21 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+
+        // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
+        // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails
+            {
+                Title = "Devolução pendente de correção",
+                Detail = $"Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido. Nenhuma ação financeira é permitida até à correção. Nenhuma alteração foi efetuada. ({legacyBlock.Reason})",
+                Status = 409
+            };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
 
         if (group.Status != RequestConstants.Statuses.AdvancePaymentRequired && group.Status != RequestConstants.Statuses.AdvancePaymentScheduled)
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = $"O grupo não está em status de adiantamento. Status atual: {group.Status}", Status = 400 });

@@ -19,7 +19,9 @@ describe('Quick View and full page share ONE details component (one projection f
     expect(edit).not.toMatch(/requestTypeCode !== 'QUOTATION'\) \{ setWorkflowProjection\(null\); return; \}/);
     // exactly one place calls the projection endpoint in the details view
     expect(edit.match(/getWorkflowProjection/g)?.length).toBe(1);
-    expect(edit).toMatch(/\}, \[id, requestTypeCode, status\]\);/);
+    // §G.19.3: a reload tick is bumped after a P.O. correction so the projection re-reads the server even when the
+    // scalar did not change — still one effect, one call site.
+    expect(edit).toMatch(/\}, \[id, requestTypeCode, status, projectionReloadTick\]\);/);
   });
 
   it('the fetch is cancellable; the projection object is exposed when loaded (last loaded kept during a reload, cleared on error/idle)', () => {

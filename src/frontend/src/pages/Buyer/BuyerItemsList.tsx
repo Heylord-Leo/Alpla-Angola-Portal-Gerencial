@@ -2622,7 +2622,7 @@ export function BuyerItemsList() {
             <RequestDrawerPresentation
                 isOpen={!!drawerRequestId}
                 requestId={drawerRequestId}
-                onClose={() => setDrawerRequestId(null)}
+                onClose={() => { setDrawerRequestId(null); loadData(); /* §G.19.3: list rows re-read from the server after drawer actions */ }}
             />
 
             </div>

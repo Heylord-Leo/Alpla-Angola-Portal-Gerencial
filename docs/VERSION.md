@@ -2,7 +2,129 @@
 
 ## Current Version
 
-v2.245.12
+v2.247.8
+
+## [v2.247.8] - 2026-10-15
+
+### Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
+
+PATCH. A Finance return now notifies the Buyer who owns the returned P.O. (PAYMENT → group owner; QUOTATION → request
+Buyer) and correlates to the return history row instead of STATUS_SYNC; "Atribuir a Mim" on a PAYMENT correction claims
+the returned group's ownership (never overwriting an owner, ambiguity refused, coordinator transfer recorded,
+concurrency arbitrated by rowversion), assignments enforce the access scope, and the Buyer queue's "Meus" filter follows
+the shared ownership rule. No migration, no EF model change, no configuration change.
+
+## [v2.247.7] - 2026-10-14
+
+### P.O. correction modal: mandatory justification from the server decision, no generated fallback, full refresh after the correction
+
+PATCH. The "Corrigir P.O" modal takes the mandatory-justification decision from the request detail (server-computed
+for the legacy request-level Finance return), refuses a blank or whitespace justification before any upload, no longer
+substitutes a generated sentence for an empty comment, blocks submission when its detail fetch failed, keeps the
+comment optional for current-code corrections, and reloads the whole workflow state (display label, groups, history,
+attachments, projection) from the server after a successful correction without touching unsaved form edits. Rendered
+modal behaviour still requires live TEST validation. No migration, no EF model change, no configuration change.
+
+## [v2.247.6] - 2026-10-14
+
+### Legacy request-level Finance return: financial block, Buyer correction, badge, explicit scoped repair
+
+PATCH. Requests returned by Finance before the group-scoped return (request WAITING_PO_CORRECTION, group still
+PO_ISSUED) can no longer be scheduled, paid or advanced until the Buyer corrects them; the Buyer can correct them through
+the normal flow with a mandatory justification; the badge shows the unresolved return; an explicit PREVIEW/APPLY scoped
+repair is available to administrators (nothing repaired automatically). No migration, no EF model change, no
+configuration change.
+
+## [v2.247.5] - 2026-10-12
+
+### Batch approval currency/timestamp and shared request-level amount resolver for the departmental payment summary
+
+PATCH. Batch final approval now records the request approved currency (single code, "MULTIPLE" or unknown) and the
+first approval timestamp, never inferring legacy batches. The departmental payment summary uses one request-level
+resolver (recorded approved → derived currency for legacy batch approvals under strict evidence → estimate fallback →
+unresolved/excluded) for the current request and every candidate, with disclosed bases, composition and exclusions.
+No migration, no EF model change, no configuration change.
+
+## [v2.247.4] - 2026-10-12
+
+### Accounts Payable payment notices deduplicated per persisted action for multi-group requests
+
+PATCH after the TEST validation of v2.247.3. `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED` AP notices for events carrying
+group context are deduplicated by the action's history row Id (same identity as `PO_REGISTERED`), so each P.O. group's
+scheduling and completion gets its own notice while a re-emission of the same persisted action stays skipped. Legacy
+request-level fallback, historical NULL-correlation rows and the direct-send concurrency limitation unchanged and
+documented. No migration (existing filtered unique index), no EF model change, no configuration change.
+
+## [v2.247.3] - 2026-10-12
+
+### Departmental payment summary for a requester who is also the eligible manager
+
+PATCH after the TEST validation of v2.247.2. For `PAYMENT_SCHEDULED` / `PAYMENT_COMPLETED`, a requester who is also a
+resolved eligible departmental manager now receives one e-mail carrying the requester wording and the departmental
+summary (subject suffixed "(com informação de departamento)"); other managers and non-manager requesters unchanged.
+No migration, no EF model change, no configuration change.
+
+## [v2.247.2] - 2026-10-09
+
+### Payment scheduling/completion e-mails: AP group and payment content, distinct wording, departmental context
+
+PATCH after the TEST validation of v2.247.1. Accounts Payable scheduling/completion notices take supplier, amount,
+currency and date from the acted-on P.O. group and payment row (`WorkflowEvent.PoGroupId` + `PaymentId`, set by
+`FinanceController`) with distinct subjects and bodies; the departmental notice shows the action amount, labels request
+figures as estimates, aggregates only comparable requests in the request currency with an exclusion disclosure, and
+states its period literally. AP payment dedup unchanged (multi-group suppression documented). No migration, no EF model
+change, no configuration change.
+
+## [v2.247.1] - 2026-10-09
+
+### Accounts Payable P.O. notice shows the registered group's supplier, total and currency
+
+PATCH after the TEST validation of v2.247.0. The P.O. review notice to Accounts Payable now takes supplier, total and
+currency from the registered P.O. group (`WorkflowEvent.PoGroupId`, set by `RegisterPo`) instead of the request header,
+for initial registration and correction re-registration alike, labelled "Total do grupo P.O." and HTML-encoded. No
+migration, no EF model change, no configuration change.
+
+## [v2.247.0] - 2026-10-09
+
+### P.O. registration notifications: Finance e-mail context fix, Accounts Payable review notice and per-company options
+
+MINOR release. `RegisterPo` emits `PO_REGISTERED` with the full request context (plant, company, request number,
+history-row correlation), so plant-scoped Finance e-mails can be routed. Two new per-company options in Master Data ›
+Accounts Payable Email, **both default OFF**: notify the AP address (To/CC) with a review notice when a P.O. is
+registered or re-registered, and e-mail Finance-role users individually for P.O./advance events. AP notifications for
+P.O. registration are deduplicated per action (several groups and corrections per request are recorded); payment
+scheduling/completion dedup is unchanged. The AP block now runs even when no per-user recipient resolves.
+
+Migration: `20261009084838_AddAccountsPayablePoRegisteredAndFinanceEmailOptions` (additive: two default-false bit
+columns, nullable log correlation, unique dedup index extended). The previous build runs on the new schema. `Down`
+fails if several successful `PO_REGISTERED` AP rows exist for one request/recipient (see CHANGELOG). AP group e-mail
+remains a direct send without automatic retry. Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md` §G.10–G.11.
+
+## [v2.246.1] - 2026-10-08
+
+### Single e-mail greeting; clean retry fields on SENT outbox rows
+
+PATCH after the TEST validation of v2.246.0. Proforma alert e-mails and reminder digests no longer carry a second
+"Olá Nome," (the shared e-mail template owns the greeting). Outbox rows that reach SENT, by a real send or by
+duplicate suppression, have `LastError` and `NextRetryAtUtc` cleared; `RetryCount`, backoff, DEAD_LETTER and EXPIRED
+behaviour are unchanged. No migration, no configuration change.
+
+## [v2.246.0] - 2026-10-07
+
+### Approval notifications, batch concurrency guard, proforma alerts via outbox, reminder digests (disabled)
+
+MINOR release. The approval-batch workflow now sends the stage e-mails it never sent (create, area approve/reject,
+final approve/reject, subject "(Lote #N)"); the proforma deadline scheduler honours `CheckTimeUtcHour` (operators
+must confirm the effective PROD `ProformaDeadlineAlerts` configuration before deploying, since the fix activates the
+feature where it is enabled); approval batches carry an optimistic-concurrency token so simultaneous decisions commit
+once (409 `APPROVAL_CONCURRENCY_CONFLICT`); proforma alerts are queued through the e-mail outbox with real retry and
+expiry semantics (`EXPIRED` outbox status); daily pending-approval reminder digests ship disabled
+(`AppConfig:ApprovalReminders` `Enabled=false`, `DryRun=true`). Approval permissions and scope rules are unchanged;
+the final-stage recipient is the single nominee (request nominee, else company nominee, if active with e-mail).
+
+Migrations: `20261007152909_AddApprovalBatchConcurrencyToken`, `20261007152958_AddProformaAlertOutboxLinkAndOutboxExpiry`,
+`20261007153058_AddApprovalReminderDigestsAndBatchStageEntry` (all additive; the previous build runs on the new schema).
+Record: `docs/APPROVAL_NOTIFICATIONS_PHASES.md`.
 
 ## [v2.245.12] - 2026-09-23
 

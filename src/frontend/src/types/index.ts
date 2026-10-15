@@ -686,6 +686,20 @@ export interface RequestDetailsDto extends RequestListItemDto {
     paymentConditionCode?: string | null;
     advancePaymentPercent?: number | null;
     paymentConditionSource?: string | null;
+
+    /**
+     * docs §G.19.3 — server decision: this request is a legacy request-level Finance return whose sole live
+     * group is still PO_ISSUED; the next registration on poGroupId is a correction and the Buyer's justification
+     * is MANDATORY (RegisterPo refuses blank with 400). Null for every other request, including current-code
+     * corrections, whose comment stays optional. Never inferred client-side from the scalar status.
+     */
+    legacyReturnCorrection?: LegacyFinanceReturnCorrectionDto | null;
+}
+
+export interface LegacyFinanceReturnCorrectionDto {
+    poGroupId: string;
+    justificationRequired: boolean;
+    reason: string;
 }
 
 export interface IvaRate {
