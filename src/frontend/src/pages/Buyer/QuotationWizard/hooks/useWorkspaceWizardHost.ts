@@ -94,6 +94,26 @@ export function useWorkspaceWizardHost(opts: {
      * its frozen candidate stay immutable. `reworkBatchId` is forwarded so the backend applies the narrow
      * rework status exception. Mode follows the quotation's own source (`quotationEditMode`).
      */
+    /**
+     * Workspace "Editar" on an existing quotation: the SAME in-place EDIT the classic list offers
+     * (controller.handleOpenWizard with editQuotation and no reworkBatchId → PUT …/quotations/{id}):
+     * identity, attachment link (unless the Buyer changes the document) and QUOTATION_UPDATED audit are
+     * the endpoint's. The full quotation (lines with mapping/status) comes from the request detail.
+     */
+    const openEditQuotation = async (requestId: string, quotationId: string) => {
+        try {
+            const request = await api.requests.get(requestId);
+            const quotation = (request.quotations || []).find((q: SavedQuotationDto) => q.id === quotationId);
+            if (!quotation) {
+                opts.onFeedback({ type: 'error', message: 'A cotação já não existe neste pedido. Atualize a página.' });
+                return;
+            }
+            controller.handleOpenWizard(toWizardActiveRequest(request, requestId), quotationEditMode(quotation), quotation);
+        } catch (e: any) {
+            opts.onFeedback({ type: 'error', message: e?.message || 'Falha ao abrir a cotação para edição.' });
+        }
+    };
+
     const openReviseQuotation = async (requestId: string, quotation: SavedQuotationDto, reworkBatchId: string) => {
         try {
             const request = await api.requests.get(requestId);
@@ -128,6 +148,7 @@ export function useWorkspaceWizardHost(opts: {
         controller,
         ivaRates, units, currencies,
         openAddQuotation,
+        openEditQuotation,
         openReviseQuotation,
         onUploadFile,
         dupWarning, confirmDupUpload, dismissDup,

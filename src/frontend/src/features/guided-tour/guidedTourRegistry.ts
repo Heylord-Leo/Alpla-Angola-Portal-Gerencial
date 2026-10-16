@@ -4,6 +4,7 @@ import { PURCHASING_LOGISTICS_STEPS } from './tours/purchasingLogisticsTour';
 import { REQUESTS_PAGE_STEPS } from './tours/requestsPageTour';
 import { BUYER_ITEMS_PAGE_STEPS } from './tours/buyerItemsPageTour';
 import { RECEIVING_WORKSPACE_STEPS } from './tours/receivingWorkspaceTour';
+import { BUYER_REQUEST_WORKSPACE_STEPS } from './tours/buyerRequestWorkspaceTour';
 import { APPROVALS_CENTER_STEPS } from './tours/approvalsCenterTour';
 import { APPROVAL_DRAWER_AREA_STEPS } from './tours/approvalDrawerAreaTour';
 import { APPROVAL_DRAWER_FINAL_STEPS } from './tours/approvalDrawerFinalTour';
@@ -79,6 +80,13 @@ export const TOUR_REGISTRY: TourDefinition[] = [
         label: 'Tour desta tela',
         routes: ['/receiving/workspace', '/receiving'],
         steps: RECEIVING_WORKSPACE_STEPS,
+    },
+    {
+        id: 'page-buyer-request-workspace',
+        level: 'page',
+        label: 'Tour desta tela',
+        routes: ['/buyer/requests'],   // /buyer/requests/:id — the Buyer Request Workspace opened from Gestão de Cotações
+        steps: BUYER_REQUEST_WORKSPACE_STEPS,
     },
     {
         id: 'page-approvals-center',

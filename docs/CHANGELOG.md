@@ -4,7 +4,40 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.8
+v2.247.9
+
+## [v2.247.9] - 2026-10-16 — Buyer Workspace: quotation Edit/Delete actions; access-scope guard on quotation deletion
+
+PATCH (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md`). No migration, no EF model change, no configuration change.
+
+- "Cotações & Documentos" in the Buyer Workspace (`/buyer/requests/{id}`) offers, per quotation row identified by
+  supplier, document number and date, the classic tool's supported actions: **Editar** opens the existing quotation in
+  the shared wizard (same in-place edit as the classic list → `PUT …/quotations/{id}`: identity kept, attachment link
+  kept unless the document is changed, lines upserted, batch-referenced lines protected, `QUOTATION_UPDATED`) and
+  **Excluir** removes the structured quotation through `DELETE …/quotations/{id}` after a confirmation that states the
+  endpoint's real effects (quotation and lines removed definitively, linked document marked removed with
+  `DOCUMENTO_REMOVIDO`, refusal when referenced by an approval batch or outside the quotation window,
+  `QUOTATION_DELETED` audit). A successful edit or deletion silently re-reads the workspace projection (coverage,
+  counts, next actions, quotations, documents); a failed re-read after a successful mutation is reported distinctly and
+  never as a reason to repeat the action; server refusals are shown with the server's text; one submission at a time.
+- Visibility follows the classic rule exactly: request in the quotation window and assigned to the current user, who
+  holds the Buyer role. Unassigned requests, other Buyers, Local Managers and administrators who are not the assigned
+  Buyer see no buttons. Backend authorization is unchanged.
+- Backend: `DELETE …/quotations/{id}` now enforces the request access scope (company/plant/department; 404 outside it)
+  before loading anything, the same guard `PUT` already had. Previously a quotation of a request outside the actor's
+  scope could be deleted by id.
+- Guided Tour: new page tour `page-buyer-request-workspace` for `/buyer/requests/:id` (header, tabs, quotations table,
+  Editar/Excluir actions with their restrictions, classic-tools link), registered with stable `data-tour` anchors; the
+  actions step is skipped automatically when the buttons are not rendered.
+
+Verification: `QuotationDeleteEndpointTests` (success side effects, no-document variant, window and batch-reference
+refusals with nothing written, out-of-scope refusal for DELETE and PUT, unknown ids), `workspaceQuotationActions.test.ts`
+(window/ownership/role matrix incl. administrator, Local Manager and combined roles; confirmation text; delete
+orchestration success, server refusal and re-entry guard; wiring guards). Backend 2,931/2,931; frontend tsc, Vite build,
+vitest 972/972. Not in this release (tracked separately, not implemented): the OCR reconciliation defect of
+REQ-15/10/2026-578 (backend EXACT_MATCH records not consumed by the wizard; link-first guidance) and any API
+role/ownership hardening of the quotation endpoints. The rendered Workspace actions still require the bounded TEST
+validation of the document's §5.
 
 ## [v2.247.8] - 2026-10-15 — Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
 

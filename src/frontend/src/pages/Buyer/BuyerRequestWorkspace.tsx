@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import {
   ArrowLeft, Building2, User as UserIcon, CalendarClock, MapPin, ExternalLink,
   Package, FileText, Layers, Info, BadgeCheck, AlertTriangle, ShoppingCart,
-  ChevronLeft, ChevronRight, Mail, Upload, Pencil, MoreVertical, Ban,
+  ChevronLeft, ChevronRight, Mail, Upload, Pencil, MoreVertical, Ban, Trash2,
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { BuyerLotTimeline } from './BuyerLotTimeline';
@@ -28,6 +28,10 @@ import {
 } from './buyerWorkspaceView';
 import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequestEmail';
 import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
+import { useAuth } from '../../features/auth/AuthContext';
+import { ROLES } from '../../constants/roles';
+import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canManageWorkspaceQuotations, describeWorkspaceQuotation, runDeleteQuotation } from './workspaceQuotationActions';
+import type { BuyerWorkspaceQuotation } from '../../types/buyerWorkspace';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -49,11 +53,19 @@ export function BuyerRequestWorkspace() {
       .catch(e => setError(e?.message || 'Falha ao carregar o workspace.'))
       .finally(() => setLoading(false));
   }, [requestId]);
+  // Silent re-read AFTER a successful mutation: a failure here must not replace the page with the load-error view
+  // (the mutation already happened) — it is reported as a refresh problem, distinct from a mutation failure.
+  const refreshAfterMutation = useCallback(async () => {
+    if (!requestId) return;
+    try { setWs(await api.buyerQueue.getWorkspace(requestId)); setActionError(null); }
+    catch { setActionError(REFRESH_AFTER_MUTATION_FAILED); }
+  }, [requestId]);
   useEffect(() => { loadWorkspace(); }, [loadWorkspace]);
 
   const backTarget = useMemo(() => backToQueueTarget((location.state as any)?.from), [location.state]);
   const setTab = (id: string) => { const p = new URLSearchParams(params); p.set('tab', id); setParams(p, { replace: true }); };
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Phase 4: when a returned batch is composed from >1 existing quotation, "Gerenciar Cotações"
   // shows this chooser before opening the selected one in EDIT mode.
   const [quoteChooser, setQuoteChooser] = useState<{ quotations: SavedQuotationDto[]; reworkBatchId: string } | null>(null);
@@ -63,12 +75,44 @@ export function BuyerRequestWorkspace() {
   // After an in-Workspace mutation (approval/rework), refresh the canonical projection silently so
   // operational state, next action, coverage, items, quotations, suppliers, batches and timeline all
   // reflect the change without a full reload (current tab + route + back-state are preserved).
-  const afterMutation = (msg: string) => { setActiveHost(null); flash(msg); loadWorkspace(true); };
+  const afterMutation = (msg: string) => { setActiveHost(null); flash(msg); void refreshAfterMutation(); };
+
+  // "Cotações & Documentos" actions (Editar / Excluir) — the classic tool's supported behaviour, in the Workspace.
+  // The backend stays the authority (status window, access scope, batch references); the UI only mirrors the
+  // quotation window and the Buyer role to decide whether to show the buttons.
+  const { user } = useAuth();
+  const canManageQuotations = canManageWorkspaceQuotations(ws?.requestStatusCode, user?.roles, ROLES.BUYER, ws?.buyerId, user?.id);
+  const [deleteTarget, setDeleteTarget] = useState<BuyerWorkspaceQuotation | null>(null);
+  const [quotationBusy, setQuotationBusy] = useState(false);
+  const quotationBusyRef = useRef(false);
+  const setQuotationBusyBoth = (b: boolean) => { quotationBusyRef.current = b; setQuotationBusy(b); };
+  const handleEditQuotation = async (q: BuyerWorkspaceQuotation) => {
+    if (!ws || quotationBusyRef.current) return;   // one open/delete at a time (double click, concurrent delete)
+    setActionError(null);
+    setQuotationBusyBoth(true);
+    try { await wizardHost.openEditQuotation(ws.requestId, q.id); }
+    finally { setQuotationBusyBoth(false); }
+  };
+  const confirmDeleteQuotation = async () => {
+    const q = deleteTarget;
+    setDeleteTarget(null);
+    if (!q || !ws) return;
+    setActionError(null);
+    await runDeleteQuotation(
+      {
+        deleteQuotation: api.requests.deleteQuotation,
+        isBusy: () => quotationBusyRef.current,
+        setBusy: setQuotationBusyBoth,
+        onSuccess: (msg) => afterMutation(msg),
+        onError: (msg) => setActionError(msg),
+      },
+      ws.requestId, q);
+  };
 
   // In-Workspace Quotation Wizard host (Stage 2B-R): reuses the accepted shared controller with
   // Workspace-local state. Successful saves silently refresh the whole projection.
   const wizardHost = useWorkspaceWizardHost({
-    onSaved: () => loadWorkspace(true),
+    onSaved: () => refreshAfterMutation(),
     onFeedback: (f) => flash(f.message),
   });
 
@@ -131,15 +175,21 @@ export function BuyerRequestWorkspace() {
   return (
     <PageContainer>
       {/* Top bar: back + link to the classic workbench for the actions NOT yet migrated to the Workspace
-          (editar/excluir cotação, remover proforma, encerrar sem cotação, reutilizar cotação, cancelar lote,
-          cancelar pedido). Retained until those flows land in the Workspace. */}
+          (remover proforma, encerrar sem cotação, reutilizar cotação, cancelar lote, cancelar pedido).
+          Editar/excluir cotação now live in "Cotações & Documentos". Retained until the remaining flows land. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <button onClick={() => navigate(backTarget)} style={ghostBtn}><ArrowLeft size={15} /> Voltar para fila</button>
-        <button onClick={() => navigate(`/buyer/items/classic?search=${encodeURIComponent(ws.requestNumber)}`)} style={classicLink} title="Ações ainda não migradas: editar/excluir cotação, remover proforma, encerrar sem cotação, reutilizar cotação, cancelar lote/pedido">
+        <button data-tour="buyer-workspace-classic-link" onClick={() => navigate(`/buyer/items/classic?search=${encodeURIComponent(ws.requestNumber)}`)} style={classicLink} title="Ações ainda não migradas: editar/excluir cotação, remover proforma, encerrar sem cotação, reutilizar cotação, cancelar lote/pedido">
           <ExternalLink size={13} /> Abrir ferramentas clássicas
         </button>
       </div>
 
+      {actionError && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', fontSize: '0.82rem', fontWeight: 600 }}>
+          <AlertTriangle size={15} /> {actionError}
+          <button type="button" onClick={() => setActionError(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}>Fechar</button>
+        </div>
+      )}
       {feedback && (
         <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-surface))', border: '1px solid color-mix(in srgb, var(--color-primary) 30%, var(--color-border))', color: 'var(--color-primary)', fontSize: '0.84rem', fontWeight: 600 }}>
           <Info size={15} /> {feedback}
@@ -147,7 +197,7 @@ export function BuyerRequestWorkspace() {
       )}
 
       {/* Header */}
-      <div style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderLeft: `4px solid ${stateColor}`, borderRadius: 14, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div data-tour="buyer-workspace-header" style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderLeft: `4px solid ${stateColor}`, borderRadius: 14, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -235,7 +285,7 @@ export function BuyerRequestWorkspace() {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
         <div style={{ flex: '2 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--color-border)' }}>
+          <div data-tour="buyer-workspace-tabs" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--color-border)' }}>
             {WORKSPACE_TABS.map(t => {
               const active = tab === t.id;
               const icon = t.id === 'items' ? <Package size={15} /> : t.id === 'quotes' ? <FileText size={15} /> : <Layers size={15} />;
@@ -250,7 +300,10 @@ export function BuyerRequestWorkspace() {
           </div>
 
           {tab === 'items' && <TabItems ws={ws} onDisregard={(it) => setCloseItem({ lineItemId: it.id, description: it.description, isLastPending: ws.coverage.pending === 1 })} />}
-          {tab === 'quotes' && <TabQuotes ws={ws} />}
+          {tab === 'quotes' && (
+            <TabQuotes ws={ws} canManage={canManageQuotations} busy={quotationBusy}
+              onEdit={handleEditQuotation} onDelete={(q) => { setActionError(null); setDeleteTarget(q); }} />
+          )}
           {tab === 'batches' && <TabBatches ws={ws} />}
         </div>
 
@@ -303,6 +356,26 @@ export function BuyerRequestWorkspace() {
 
       {/* In-Workspace Supplier Sheet drawer — mounts the SHARED SupplierFichaDetailContent (Stage 3D). */}
       <BuyerSupplierFichaDrawer ref={supplierDrawerRef} onSaved={() => loadWorkspace(true)} />
+
+      {deleteTarget && (() => {
+        const c = buildDeleteQuotationConfirmation(deleteTarget);
+        return (
+          <ConfirmationDialog
+            isOpen
+            title={c.title}
+            variant="destructive"
+            confirmText="Excluir cotação"
+            cancelText="Cancelar"
+            onConfirm={confirmDeleteQuotation}
+            onCancel={() => setDeleteTarget(null)}
+            message={(
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {c.lines.map((line, i) => <div key={i}>{line}</div>)}
+              </div>
+            )}
+          />
+        );
+      })()}
 
       {/* "Desconsiderar item" — the SAME shared modal + endpoint as classic (Stage 3E.1). */}
       {closeItem && (
@@ -447,12 +520,16 @@ function TabItems({ ws, onDisregard }: { ws: BuyerWorkspace; onDisregard: (item:
 }
 
 // ── Tab 2: Cotações & Documentos ──
-function TabQuotes({ ws }: { ws: BuyerWorkspace }) {
+function TabQuotes({ ws, canManage, busy, onEdit, onDelete }: {
+  ws: BuyerWorkspace; canManage: boolean; busy: boolean;
+  onEdit: (q: BuyerWorkspaceQuotation) => void; onDelete: (q: BuyerWorkspaceQuotation) => void;
+}) {
   if (ws.quotations.length === 0) return <Empty>Nenhuma cotação registada para este pedido.</Empty>;
   const nowrap: React.CSSProperties = { whiteSpace: 'nowrap' };
+  const actionBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg-surface)', cursor: busy ? 'not-allowed' : 'pointer', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-main)', opacity: busy ? 0.6 : 1 };
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ ...tableStyle, tableLayout: 'fixed', minWidth: 680 }}>
+    <div data-tour="buyer-workspace-quotations" style={{ overflowX: 'auto' }}>
+      <table style={{ ...tableStyle, tableLayout: 'fixed', minWidth: canManage ? 860 : 680 }}>
         <colgroup>
           <col style={{ width: 'auto' }} />{/* Fornecedor — largest flexible */}
           <col style={{ width: 120 }} />{/* Documento */}
@@ -461,6 +538,7 @@ function TabQuotes({ ws }: { ws: BuyerWorkspace }) {
           <col style={{ width: 130 }} />{/* Total */}
           <col style={{ width: 56 }} />{/* Docs */}
           <col style={{ width: 118 }} />{/* Estado */}
+          {canManage && <col style={{ width: 180 }} />}{/* Ações */}
         </colgroup>
         <thead><tr>
           <Th>Fornecedor</Th><Th style={nowrap}>Documento</Th><Th style={nowrap}>Data</Th><Th style={{ ...nowrap, textAlign: 'center' }}>Itens</Th><Th style={{ ...nowrap, textAlign: 'right' }}>Total</Th><Th style={{ ...nowrap, textAlign: 'center' }}>Docs</Th><Th style={nowrap}>Estado</Th>
@@ -474,6 +552,18 @@ function TabQuotes({ ws }: { ws: BuyerWorkspace }) {
               <Td style={{ textAlign: 'center' }}>{q.itemsQuotedCount}</Td>
               <Td style={{ ...nowrap, textAlign: 'right' }}>{q.currency ? `${fmtAmount(q.totalAmount)} ${q.currency}` : fmtAmount(q.totalAmount)}</Td>
               <Td style={{ textAlign: 'center' }}>{q.documentCount}</Td>
+              {canManage && (
+                <Td style={nowrap}>
+                  <div data-tour="buyer-workspace-quotation-actions" style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button type="button" disabled={busy} onClick={() => onEdit(q)} style={actionBtn} title={`Editar ${describeWorkspaceQuotation(q)}`}>
+                      <Pencil size={12} /> Editar
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => onDelete(q)} style={{ ...actionBtn, color: '#991B1B' }} title={`Excluir ${describeWorkspaceQuotation(q)}`}>
+                      <Trash2 size={12} /> Excluir
+                    </button>
+                  </div>
+                </Td>
+              )}
               <Td style={nowrap}>{q.isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-status-green)', fontWeight: 700, fontSize: '0.76rem' }}><BadgeCheck size={13} /> Selecionada</span> : <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>—</span>}</Td>
             </tr>
           ))}

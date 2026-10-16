@@ -4959,6 +4959,10 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(r => r.Id == id);
         
         if (request == null) return NotFound("Pedido não encontrado.");
+        // Access scope (company/plant/department; SystemAdministrator unrestricted) — same guard as UpdateQuotation.
+        // Previously missing here: a quotation of a request outside the actor's scope could be deleted by id.
+        if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
+            return NotFound("Pedido não encontrado.");
 
         // Status Rule Check
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))

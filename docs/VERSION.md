@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.247.8
+v2.247.9
+
+## [v2.247.9] - 2026-10-16
+
+### Buyer Workspace: quotation Edit/Delete actions; access-scope guard on quotation deletion
+
+PATCH. The Workspace tab "Cotações & Documentos" gains the classic tool's Editar/Excluir actions for the assigned
+Buyer (same wizard edit, same delete endpoint, confirmation stating the document consequence, silent refresh of
+coverage and next actions, distinct handling of a failed refresh); `DELETE …/quotations/{id}` now enforces the request
+access scope like `PUT`. No migration, no EF model change, no configuration change.
 
 ## [v2.247.8] - 2026-10-15
 
