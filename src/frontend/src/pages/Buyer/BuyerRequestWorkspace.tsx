@@ -34,7 +34,6 @@ import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canMan
 import type { BuyerWorkspaceQuotation } from '../../types/buyerWorkspace';
 import { resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
 import { TakeOverRequestDialog } from '../../components/Buyer/TakeOverRequestDialog';
-import { BuyerOwnerField } from './BuyerOwnerField';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -245,7 +244,21 @@ export function BuyerRequestWorkspace() {
                 </div>
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div data-tour="buyer-workspace-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
+              {/* Claim / takeover lives in the header action group (not in the "Comprador" metadata cell, whose
+                  nowrap/ellipsis value box clipped it — REQ-271). Same decision helper, dialog and submission as before. */}
+              {assignAction.kind !== 'NONE' && (
+                <button
+                  type="button"
+                  data-tour="buyer-workspace-assign"
+                  disabled={assignBusy || quotationBusy}
+                  onClick={() => assignAction.kind === 'TAKEOVER' ? setAssignConfirm(true) : void performAssign('CLAIM')}
+                  title={assignAction.reason}
+                  style={{ ...outlineBtn, opacity: (assignBusy || quotationBusy) ? 0.6 : 1, cursor: (assignBusy || quotationBusy) ? 'not-allowed' : 'pointer' }}
+                >
+                  <UserIcon size={15} /> {assignAction.label}
+                </button>
+              )}
               {hasOpenItems && (
                 <button onClick={solicitarCotacao} style={outlineBtn}><Mail size={15} /> Solicitar cotação</button>
               )}
@@ -297,14 +310,7 @@ export function BuyerRequestWorkspace() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
           <Meta icon={<AlertTriangle size={13} />} label="Grau de necessidade">{ws.needLevelCode ? (NEED_LEVEL_LABEL[ws.needLevelCode] ?? ws.needLevelCode) : '—'}</Meta>
           <Meta icon={<UserIcon size={13} />} label="Solicitante">{ws.requesterName || '—'}</Meta>
-          {/* Owner + action in separate rows: the action must never sit inside Meta's nowrap/overflow-hidden value box (REQ-271 clipping). */}
-          <BuyerOwnerField
-            buyerName={ws.buyerName}
-            assignAction={assignAction}
-            busy={assignBusy || quotationBusy}
-            onClaim={() => void performAssign('CLAIM')}
-            onTakeover={() => setAssignConfirm(true)}
-          />
+          <Meta icon={<UserIcon size={13} />} label="Comprador">{ws.buyerName || 'Não atribuído'}</Meta>
           <Meta icon={<Building2 size={13} />} label="Empresa / Planta">{[ws.companyName, ws.plantName].filter(Boolean).join(' · ') || '—'}</Meta>
           <Meta icon={<MapPin size={13} />} label="Departamento">{ws.departmentName || '—'}</Meta>
           <Meta icon={<CalendarClock size={13} />} label="Necessário até">{fmtDate(ws.needByDateUtc)}</Meta>

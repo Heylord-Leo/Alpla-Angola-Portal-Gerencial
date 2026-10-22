@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.248.1
+v2.248.2
+
+## [v2.248.2] - 2026-10-22
+
+### Assignment action placement: Workspace header group; queue kebab
+
+PATCH, frontend-only. The claim/takeover button moves into the Workspace header action group (the "Comprador" cell shows
+the name only) and the quotation queue offers the same eligible action in each row's kebab, sharing the eligibility
+policy, dialog and submission; the queue re-reads owner, "Meu pedido", results and counts after success and reports a
+failed re-read distinctly. Tours and tests updated. Browser visual verification pending. No backend change, no migration.
 
 ## [v2.248.1] - 2026-10-22
 

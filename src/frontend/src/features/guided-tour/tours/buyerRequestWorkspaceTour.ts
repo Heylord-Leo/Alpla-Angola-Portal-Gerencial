@@ -5,7 +5,7 @@ import type { TourStep } from '../guidedTourTypes';
  *
  * Route: /buyer/requests/:id (opened from Gestão de Cotações). Steps follow the screen layout:
  * 1. Header — request identity, operational state and next action
- * 1b. Assumir pedido — claim/takeover button (rendered only when the server would accept it; skipped otherwise)
+ * 1b. Assumir pedido — claim/takeover button in the header action group (rendered only when the server would accept it; skipped otherwise)
  * 2. Tabs — Itens · Cotações & Documentos · Lotes & Aprovações
  * 3. Quotations table — one row per quotation (supplier, document, date, total, state)
  * 4. Quotation actions — Editar / Excluir (visible only to the assigned Buyer while the request is in the
@@ -27,7 +27,7 @@ export const BUYER_REQUEST_WORKSPACE_STEPS: TourStep[] = [
     {
         target: '[data-tour="buyer-workspace-assign"]',
         title: 'Assumir pedido',
-        content: 'Quando o pedido não tem comprador atribuído, pode assumi-lo aqui. Um pedido já atribuído a outro comprador pode ser assumido por qualquer comprador do seu âmbito, com justificação obrigatória: a responsabilidade passa para si e o comprador anterior, o requisitante e os participantes do pedido são notificados por e-mail. O botão só aparece quando o servidor aceitaria a ação (não em pedidos de pagamento nem encerrados).',
+        content: 'No grupo de ações do cabeçalho, ao lado de Solicitar cotação / Importar Cotação / Inserir Manualmente: quando o pedido não tem comprador atribuído, pode assumi-lo aqui. Um pedido já atribuído a outro comprador pode ser assumido por qualquer comprador do seu âmbito, com justificação obrigatória: a responsabilidade passa para si e o comprador anterior, o requisitante e os participantes do pedido são notificados por e-mail. O botão só aparece quando o servidor aceitaria a ação (não em pedidos de pagamento nem encerrados).',
         placement: 'bottom',
     },
     {

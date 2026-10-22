@@ -184,6 +184,29 @@ console.table({ buttonInDom: !!b, parentOverflow: box && getComputedStyle(box).o
 Expected before the fix: `buttonInDom: true`, `parentOverflow: hidden`, `clipped: true`. After the fix the button's
 parent is a normal block (`overflow: visible`) and `clipped: false`.
 
+### 6.1 Placement change (working tree, unreleased, after v2.248.1)
+
+**Confirmed TEST evidence (unchanged, v2.248.0 → v2.248.1).** Celestina Bernardo on REQ-20/08/2026-271: every eligibility
+condition true, mode TAKEOVER, button clipped inside the `Meta` value box; v2.248.1 moved the button out of the clipping
+container (`BuyerOwnerField`). That evidence stands on its own and is not re-validated by the change below.
+
+**New placement (this change).** The claim/takeover button leaves the "Comprador" metadata cell (which again shows only
+the Buyer's name) and joins the upper-right header action group, next to "Solicitar cotação", "Importar Cotação" and
+"Inserir Manualmente" when those are available (`data-tour="buyer-workspace-actions"`, anchor
+`buyer-workspace-assign` kept on the button). The group is a wrapping flex row inside a wrapping header, so at narrow
+widths the buttons wrap below "Próxima ação" instead of clipping or overlapping the title. `BuyerOwnerField` and its test
+were removed. The quotation queue (`/buyer/items`) gains the same action in each row's kebab after "Ver detalhes" /
+"Adicionar observação" (`buildRequestRowKebab` + `resolveQueueAssignAction`, same `resolveAssignAction` policy, shared
+`TakeOverRequestDialog`, same `runAssignRequest` submission with `expectedBuyerId`): CLAIM calls the existing claim
+handler; TAKEOVER opens the dialog with the kebab already closed; success re-reads queue and summary (owner, "Meu
+pedido", filtered results, counts) and a failed re-read shows a distinct "não repita a ação" message; cancelling changes
+nothing; one submission at a time. Tours: Workspace step text updated; queue tour gains a step on
+`[data-tour="buyer-queue-row-actions"]`. Tests: `assignActionPlacement.test.ts` (header group placement, Comprador cell
+without a button, queue wiring), `buyerQueueAssignActions.test.ts` (kebab composition), tour tests.
+**Visual verification:** no browser is available to the agent in this session — the wrapping behaviour was not
+visually verified; verify locally at 360 / 768 / 1280 px widths (DevTools device toolbar) that the action group wraps
+below "Próxima ação" without clipping the buttons or overlapping the title.
+
 ## 7. Ordinary Edit/Delete only for quotations EVER submitted for approval — durable marker (working tree, unreleased, 2026-10-16)
 
 **Motivation.** REQ-05/10/2026-517: scalar WAITING_QUOTATION (other items still pending) while a batch was already

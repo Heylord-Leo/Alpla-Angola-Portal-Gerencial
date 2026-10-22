@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { BUYER_REQUEST_WORKSPACE_STEPS } from './buyerRequestWorkspaceTour';
 import { TOUR_REGISTRY } from '../guidedTourRegistry';
 import workspaceSrc from '../../../pages/Buyer/BuyerRequestWorkspace.tsx?raw';
-import ownerFieldSrc from '../../../pages/Buyer/BuyerOwnerField.tsx?raw';
-// The page renders the "Comprador" field (and its assign anchor) through BuyerOwnerField; anchors are looked up in both sources.
-const pageSources = workspaceSrc + ownerFieldSrc;
+const pageSources = workspaceSrc;
 
 // Page tour for /buyer/requests/:id (added with the Workspace quotation Edit/Delete actions). Every step targets a
 // stable data-tour anchor that exists in the page source; dynamic steps (quotations table, actions cell) are skipped

@@ -4,7 +4,36 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.248.1
+v2.248.2
+
+## [v2.248.2] - 2026-10-22 — Assignment action placement: Workspace header action group; claim/takeover in the quotation queue kebab
+
+PATCH, frontend-only (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6.1). No backend change, no EF model change, no
+migration, no configuration change.
+
+- Workspace: "Assumir pedido" / "Assumir pedido de outro comprador" moves from the "Comprador" metadata cell (which again
+  shows only the Buyer's name) into the upper-right header action group, next to "Solicitar cotação", "Importar
+  Cotação" and "Inserir Manualmente" when those are available. The group and the header both wrap, so at narrow widths
+  the buttons wrap below "Próxima ação" instead of clipping or overlapping the title. Decision helper, confirmation
+  dialog, `expectedBuyerId` submission, busy guard and post-success re-read are unchanged; the interim `BuyerOwnerField`
+  of v2.248.1 was removed.
+- Quotation queue (`/buyer/items`): each row's kebab ("Ver detalhes", "Adicionar observação", …) gains the eligible action
+  — "Assumir pedido" (unassigned → existing claim handler) or "Assumir pedido de outro comprador" (opens the shared
+  `TakeOverRequestDialog` after the kebab closes). Same `resolveAssignAction` policy through a thin queue adapter, same
+  `runAssignRequest` submission with the displayed owner, same role/scope/type/status restrictions, mandatory
+  justification and server-side concurrency protection; nothing is offered to the current owner; one submission at a
+  time. After success the queue and the summary are re-read (owner, "Meu pedido", filtered results, counts); a failed
+  re-read after a successful change is reported distinctly ("não repita a ação") because the loaders now return their
+  promises and report post-mutation failures separately. Cancelling the dialog changes nothing.
+- Guided Tour: Workspace step text updated for the new placement (anchor unchanged); queue tour gains a step on the new
+  `buyer-queue-row-actions` anchor describing the kebab actions.
+- Tests: `assignActionPlacement.test.ts` (header placement and wrapping container, Comprador cell without a button,
+  queue wiring, refresh/cancel handling, queue tour step), `buyerQueueAssignActions.test.ts` (kebab composition for
+  TAKEOVER, CLAIM and NONE), tour test back to the page source. **Browser visual verification of the wrapping is
+  pending** (no browser available to the agent); verify at 360 / 768 / 1280 px. The confirmed TEST evidence of
+  v2.248.0/v2.248.1 (REQ-271 clipping) is documented separately and unchanged.
+
+Verification: frontend tsc, Vite build, vitest 1,005/1,005 (94 files). Backend untouched.
 
 ## [v2.248.1] - 2026-10-22 — Buyer Workspace: takeover/claim button was clipped out of view in the "Comprador" field
 
