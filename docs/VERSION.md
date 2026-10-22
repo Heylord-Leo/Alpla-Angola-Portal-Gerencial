@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.247.10
+v2.248.0
+
+## [v2.248.0] - 2026-10-22
+
+### Buyer self-takeover of another Buyer's request
+
+MINOR. Any Buyer within the access scope may take over a QUOTATION request assigned to another Buyer, with a mandatory
+justification and a confirmation naming the request and the current Buyer; refused for PAYMENT requests, non-Buyers and
+terminal statuses. The confirmed owner is sent with the request, so stale or concurrent confirmations are refused and
+never overwrite a newer owner. Ownership, audit (history + field change), in-app notices and e-mail outbox rows commit in
+one transaction; the previous Buyer, the new Buyer, the requester and the request-linked participants are notified.
+Classic list and Workspace share the dialog and the decision; duplicate assignment notices removed. No migration, no EF
+model change, no configuration change.
 
 ## [v2.247.10] - 2026-10-22
 

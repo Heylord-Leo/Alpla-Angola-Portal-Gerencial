@@ -4,7 +4,64 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.10
+v2.248.0
+
+## [v2.248.0] - 2026-10-22 — Buyer self-takeover of another Buyer's request: justification, concurrency protection, atomic audit and participant notifications
+
+MINOR (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6, §8). No migration, no EF model change, no configuration change
+(the new history action and field-change rows use existing tables; the workflow event is not persisted).
+
+- **Takeover by any Buyer** — new endpoint `POST /api/v1/requests/{id}/take-over`: a user holding the Buyer role may take
+  over a QUOTATION request assigned to another Buyer within the existing company/plant/department access scope (404
+  outside it). Refused for PAYMENT requests (409 `TAKEOVER_NOT_APPLICABLE` — correction-group ownership and its claim /
+  coordinator-transfer rules are unchanged), for actors without the Buyer role including System Administrators and Local
+  Managers (403), and in CANCELLED, REJECTED, COMPLETED and PAYMENT_COMPLETED (409 `TAKEOVER_TERMINAL_STATUS`).
+  Third-party assignment (`assign-buyer?targetUserId`) stays coordinator-only; the unassigned-request claim is unchanged.
+- **Justification and confirmation**: a trimmed, non-empty justification of at most 500 characters is mandatory (400
+  `TAKEOVER_JUSTIFICATION_REQUIRED` / `_TOO_LONG`), recorded in the history comment and in every notification
+  (HTML-encoded in e-mails). Both UIs confirm through one shared dialog that names the request and the current Buyer,
+  states that responsibility transfers and that the previous Buyer, the requester and the request participants will be
+  notified by e-mail, and disables confirmation while the justification is invalid or a submission is in flight.
+- **Concurrency and replay protection**: the caller must state the owner it confirmed (`expectedBuyerId`); an omitted
+  field, an explicit null (an unassigned request is claimed, not taken over) and an invalid value are refused with
+  distinct 400 codes; a mismatch is 409 `TAKEOVER_STALE` with the current owner; the `Requests.RowVersion` race between
+  simultaneous takeovers yields exactly one winner and 409 `TAKEOVER_CONCURRENT` for the loser. A retried request by the
+  current owner is idempotent (200 `TAKEOVER_ALREADY_OWNER`, nothing written) and a replay can never overwrite a later
+  transfer. Both UIs send the owner they displayed and block double submission.
+- **Atomic persistence**: ownership, the `COMPRADOR_TRANSFERIDO` history row (previous/new Buyer, actor, time,
+  justification), the `BuyerId` field-change audit row, the in-app notices and the e-mail outbox rows are written in one
+  transaction; a failure to persist the notification intent — outbox or in-app — rolls everything back
+  (`EventConfig.RequireInAppPersistence`, set only for this event; every other event keeps its historical policy).
+  Delivery stays asynchronous through the outbox worker with its retry policy; TEST SMTP redirection is unchanged.
+- **Notifications (`BUYER_TRANSFERRED`)** to the previous Buyer and the new Buyer (role-specific wording), the requester,
+  and request-linked participants derived from persisted relationships only: area/final approvers on record, P.O. owners,
+  receipt completers and fiscal-receipt uploaders, payment schedulers/payers, winner selectors, rework requesters, reuse
+  authorisers, actors of explicit approval/P.O./receiving/finance history actions, pending area managers through the
+  established routing resolver (plant-specific, else global) and the pending final-approver nominee through the
+  established final-recipient resolver (request nominee, else company nominee). Never role groups; active users only;
+  dedup by user and by normalized e-mail (a second account sharing a mailbox keeps its in-app notice, delivery once).
+  Content: request, previous and new Buyer, actor, transfer time in the application timezone with an explicit label
+  ("Luanda, WAT UTC+1" plus UTC), justification, requester, plant, department and the request link.
+- **Single notification source for assignments**: the direct in-app notices the controller wrote on `assign-buyer`
+  duplicated the `BUYER_ASSIGNED` orchestration and were removed; wording now distinguishes a self-claim, a coordinator
+  assignment and a PAYMENT correction claim.
+- **Classic/Workspace parity**: both tools use the same decision helper; the classic list now hides the action whenever
+  the server would refuse it (non-Buyers, PAYMENT, terminal statuses, own request) instead of showing it and failing.
+  Workspace re-reads ownership and available actions after success with the distinct failed-refresh message. Guided
+  Tour: existing page tour `page-buyer-request-workspace` step updated.
+- **REQ-20/08/2026-271 missing button**: cause explicitly UNCONFIRMED. Local evidence (dev clone, PROD data of
+  2026-09-07) shows two accounts named Leonardo Cintra with different roles; token-free diagnostic steps (account
+  identity, role claims, workspace fields, build id) are documented for the live session. No account or permission change.
+
+Verification: `RequestTakeOverTests` (rule matrix, justification and expected-owner validation, stale, unassigned,
+idempotent, out of scope, claim/coordinator paths with no direct notices), `BuyerTransferNotificationTests` (recipient
+matrix, wording, dedup, inactive/no-e-mail rules, pending resolvers only while pending, no duplicates on re-emit,
+in-app failure policy scoped to the transfer event, BUYER_ASSIGNED wording), `RequestTakeOverRelationalTests` (SQL Server
+LocalDB: atomic success, rollback on outbox and on database-level in-app failure, simultaneous takeovers → one winner,
+stale confirmation, replay idempotence), `workspaceAssignActions.test.ts` (decision, confirmation, validation,
+orchestration, wiring of both UIs, dialog, tour). Backend 2,997/2,997; EF model has no pending changes; frontend tsc,
+Vite build, vitest 996/996. Not in this release: OCR reconciliation (REQ-578), API role/ownership hardening of the
+quotation endpoints, opening PAYMENT correction-group transfer to ordinary Buyers.
 
 ## [v2.247.10] - 2026-10-22 — Buyer Workspace: "Assumir pedido"; durable quotation submission lock (ordinary Edit/Delete only for never-submitted quotations)
 

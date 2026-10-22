@@ -27,7 +27,7 @@ export const BUYER_REQUEST_WORKSPACE_STEPS: TourStep[] = [
     {
         target: '[data-tour="buyer-workspace-assign"]',
         title: 'Assumir pedido',
-        content: 'Quando o pedido não tem comprador atribuído, pode assumi-lo aqui. Um pedido já atribuído a outro comprador só pode ser assumido por um coordenador (Administrador do Sistema ou Gestor Local com o papel de Comprador), após confirmação. O botão só aparece quando o servidor aceitaria a ação.',
+        content: 'Quando o pedido não tem comprador atribuído, pode assumi-lo aqui. Um pedido já atribuído a outro comprador pode ser assumido por qualquer comprador do seu âmbito, com justificação obrigatória: a responsabilidade passa para si e o comprador anterior, o requisitante e os participantes do pedido são notificados por e-mail. O botão só aparece quando o servidor aceitaria a ação (não em pedidos de pagamento nem encerrados).',
         placement: 'bottom',
     },
     {

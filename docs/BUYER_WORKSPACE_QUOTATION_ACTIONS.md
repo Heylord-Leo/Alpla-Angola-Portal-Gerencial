@@ -114,48 +114,52 @@ PUT return 404 (API-level check); (8) refresh failure after success is only repr
 between the mutation and the re-read; if attempted, the banner must read "A ação foi concluída com sucesso…" and no
 retry is to be made. Do not run any of this on REQ-578.
 
-## 6. "Assumir pedido" in the Workspace (working tree, unreleased, 2026-10-16)
+## 6. "Assumir pedido" — claim (v2.247.10) and Buyer self-takeover (working tree, unreleased, 2026-10-22)
 
-**Live evidence (TEST, v2.247.9, user-reported).** REQ-05/10/2026-517 was assigned to Samuel Mpoco; Leonardo Cintra
-assumed it through the classic tool; the Workspace then showed Leonardo as Buyer and exposed Editar/Excluir. This
-validates the visibility rule after an ownership change (window AND assigned Buyer). It does not validate edit, save or
-delete behaviour, and it must not be read as "a Buyer can take over another Buyer's request": Leonardo holds System
-Administrator privileges, and the backend allows takeover only to coordinators.
+**Rules in force (v2.247.10, `POST …/assign-buyer`, unchanged for the claim).** Access scope (404); self-claim of an
+UNASSIGNED QUOTATION request requires the Buyer ROLE (System Administrator / Local Manager without it: 403); assigning
+another user is coordinator-only and the target must hold Buyer (409 otherwise); idempotent when already assigned to the
+actor (200). Audit `COMPRADOR_ATRIBUIDO`; ONE notification source: the `BUYER_ASSIGNED` orchestration (new Buyer and
+requester, in-app + outbox, dedup by correlation id). The former direct in-app notices written by the controller
+duplicated the orchestration's and were removed; wording now distinguishes a self-claim ("assumiu o pedido"), a
+coordinator assignment ("foi atribuído(a) ao comprador X por Y") and a PAYMENT correction claim ("correção da P.O",
+`PoGroupId` carried on the event). PAYMENT requests keep the correction-group path (§G.20.1) untouched.
 
-**Backend rules (traced, unchanged).** `POST …/assign-buyer` (`RequestsController.AssignBuyer`): access scope (404);
-self-assignment (no `targetUserId`) requires the Buyer ROLE — a System Administrator or Local Manager without it gets
-403 even on an unassigned request; a request already assigned to someone else is refused for an ordinary Buyer with
-409 ("O reencaminhamento só é permitido por coordenadores") and allowed for System Administrator / Local Manager;
-assigning another user is coordinator-only and the target must hold the Buyer role (409 otherwise); idempotent when
-already assigned to the actor (200). Audit `COMPRADOR_ATRIBUIDO`, requester in-app notice and the `BuyerAssigned`
-e-mail event are the endpoint's. PAYMENT requests take the correction-group path (§G.20.1: claim of an unassigned
-WAITING_PO_CORRECTION group, coordinator transfer, rowversion arbitration) — untouched.
+**Takeover of another Buyer's request — see §8 (new endpoint `POST …/take-over`).** In v2.247.10 a takeover was
+coordinator-only (System Administrator / Local Manager WITH the Buyer role); §8 opens it to any Buyer within the
+access scope, with a mandatory justification, stale-owner protection and a full notification matrix. The Workspace and
+the classic list use the same decision helper (`resolveAssignAction`): CLAIM when unassigned, TAKEOVER when assigned to
+someone else, nothing for PAYMENT, terminal statuses, the current owner or users without the Buyer role.
 
-**Discrepancy reported, not changed.** The classic list shows "Assumir Pedido" to every non-owner and lets the server
-refuse; an ordinary Buyer therefore sees a button that always fails on an assigned request. The backend was not
-broadened: ordinary Buyers still cannot take over an assigned request. `QuotationAssignBuyerTests` pins the matrix
-(claim + idempotence + audit/event; ordinary-Buyer takeover 409 with nothing written; coordinator+Buyer takeover for
-System Administrator and Local Manager; coordinator without Buyer role 403; coordinator reassignment to a Buyer, refusal
-for a non-Buyer target, ordinary Buyer assigning others 403; out-of-scope 404).
+**REQ-20/08/2026-271 — why the button can be absent (evidence, not a confirmed cause).** The Workspace decides from
+the roles cached at login (`sessionStorage.auth_user`, issued from `UserRoleAssignments` into the JWT; 24 h lifetime,
+no refresh endpoint). The local dev clone (PROD data as of 2026-09-07; TEST may differ) shows REQ-271 as QUOTATION /
+WAITING_QUOTATION / Buyer Samuel Mpoco (eligible shape) and TWO accounts named Leonardo Cintra: `leonardo.cintra@alpla.com`
+(System Administrator, Local Manager, Buyer, …) and `leonardo.cintra1988@gmail.com` (Requester, Receiving only). A session
+opened with the second account has no Buyer claim, so neither tool offers the action while the admin screen of the
+first account shows Buyer checked. This explanation is **unconfirmed** until the session is inspected; no account or
+permission is to be changed for the diagnosis. Read-only steps on TEST, in the browser console of the session that
+lacks the button (the snippet prints only the account identity, the role claims and the relevant workspace fields —
+never the token itself; the operator must not share the raw JWT):
 
-**Workspace behaviour (new).** The header's "Comprador" field offers, for QUOTATION requests not in a terminal state:
-"Assumir pedido" when unassigned and the user has the Buyer role; "Assumir pedido de outro comprador" when assigned to
-someone else and the user is a System Administrator or Local Manager WITH the Buyer role — after a confirmation that
-names the request and the current Buyer and states the effects (quotation actions move to the new owner; history and
-requester notice as in the classic tool). Nothing is offered when the server would refuse (ordinary Buyer on an assigned
-request, coordinator without the Buyer role, already mine, PAYMENT, terminal status); the button's tooltip gives the
-reason. Submission goes through the existing endpoint (self-assignment only; no reassignment to others from the
-Workspace). One submission at a time; server refusals shown verbatim; a successful assignment re-reads the projection
-(owner, next actions, quotation Editar/Excluir visibility) and a failed re-read after success is reported with the
-"não repita a ação" message. `BuyerWorkspaceDto.RequestTypeCode` was added (read-only) so the UI can exclude PAYMENT.
-Guided tour: step "Assumir pedido" added (anchor `buyer-workspace-assign`, skipped when the button is not rendered).
+```js
+// 1. Account identity + role claims of THIS session (no token output)
+const t = sessionStorage.getItem('auth_token') || '';
+const claims = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+const roles = [].concat(claims['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] || claims.role || []);
+console.table({ email: claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] || claims.email,
+                userId: claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] || claims.nameid,
+                expiresUtc: new Date(claims.exp * 1000).toISOString(), roles: roles.join(' | ') });
+// 2. Relevant workspace fields of the request (replace REQUEST_ID)
+fetch('/api/v1/requests/REQUEST_ID/workspace', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.json())
+  .then(w => console.table({ requestNumber: w.requestNumber, requestTypeCode: w.requestTypeCode, requestStatusCode: w.requestStatusCode, buyerId: w.buyerId, buyerName: w.buyerName }));
+// 3. Deployed build vs loaded bundle
+fetch('/api/app/version').then(r => r.json()).then(v => console.table({ api: v.version, buildId: v.buildId }));
+```
 
-**TEST plan (bounded).** On disposable QUOTATION requests: (1) unassigned, as a Buyer → "Assumir pedido" → owner,
-next action and Editar/Excluir appear without reload, history `COMPRADOR_ATRIBUIDO`, requester notice; (2) assigned to
-another Buyer, as an ordinary Buyer → no button; direct API call → 409, nothing written; (3) assigned to another Buyer,
-as System Administrator + Buyer → "Assumir pedido de outro comprador" → confirmation names the current Buyer → owner
-changes, previous owner loses the actions; (4) as System Administrator without the Buyer role → no button; API → 403;
-(5) PAYMENT request → no button; (6) cancel the confirmation → nothing changes. Do not use REQ-517 or REQ-578.
+Expected when the hypothesis holds: `roles` without `Buyer` for the signed-in e-mail while the admin screen of the OTHER
+account shows Buyer; or `requestTypeCode` ≠ QUOTATION, a terminal status, or `buyerId` = the signed-in user. Any role
+change requires a new login (24 h token, roles not refreshed). Decision after the check is the operator's.
 
 ## 7. Ordinary Edit/Delete only for quotations EVER submitted for approval — durable marker (working tree, unreleased, 2026-10-16)
 
@@ -306,3 +310,91 @@ unlocked, original marker untouched. `quotationSubmissionLock.test.ts`: per-quot
 Side fixes in the LocalDB suites (seeds used fixed supplier `PortalCode`/`TaxId` that the recreated sandbox's unique
 indexes now reject; randomized, cleanup made tolerant). Assignment feature unchanged (`QuotationAssignBuyerTests`,
 `workspaceAssignActions.test.ts`).
+
+## 8. Buyer self-takeover with justification and participant notifications (working tree, unreleased, 2026-10-22)
+
+**Policy.** Any user holding the Buyer role may take over a QUOTATION request assigned to another Buyer, within the
+existing access scope. Refused in CANCELLED, REJECTED, COMPLETED and PAYMENT_COMPLETED (backend and both UIs). A trimmed,
+non-empty justification of at most 500 characters is mandatory and is written to the audit history and the
+notifications. Third-party assignment stays coordinator-only (`assign-buyer?targetUserId`); coordinators WITHOUT the
+Buyer role still cannot take over; PAYMENT ownership (correction groups) is untouched — opening group transfer to ordinary
+Buyers would be separate work on `PoCorrectionClaimService` and the queue/dashboard rules of §G.20.1.
+
+**Endpoint `POST /api/v1/requests/{id}/take-over`** (`RequestsController.TakeOverRequest`, body
+`{ justification, expectedBuyerId }`), in order: scope 404 → QUOTATION only (409 `TAKEOVER_NOT_APPLICABLE`) → Buyer role
+(403 `TAKEOVER_BUYER_ROLE_REQUIRED`) → terminal status (409 `TAKEOVER_TERMINAL_STATUS`) → justification (400
+`TAKEOVER_JUSTIFICATION_REQUIRED` / `_TOO_LONG`) → expected owner: field OMITTED (400 `TAKEOVER_EXPECTED_OWNER_MISSING`),
+EXPLICIT null (400 `TAKEOVER_EXPECTED_OWNER_NULL` — an unassigned request is claimed, not taken over), invalid (400) →
+already mine (200 `TAKEOVER_ALREADY_OWNER`, nothing written — evaluated before the owner check, so a retried request after a lost response is idempotent whatever `expectedBuyerId` it carries) → request now unassigned (409 `TAKEOVER_NOT_ASSIGNED`) →
+owner differs from `expectedBuyerId` (409 `TAKEOVER_STALE`, carries `currentBuyerId`/`currentBuyerName`). The raw JSON
+element is inspected so omitted and explicit null are distinguishable; a stale confirmation never overwrites a newer
+owner.
+
+**Concurrency.** `Requests.RowVersion` is a configured rowversion (`[Timestamp]`, snapshot `IsConcurrencyToken`) and the
+ownership UPDATE runs under it: two simultaneous takeovers with the same expected owner yield exactly one winner; the
+loser gets 409 `TAKEOVER_CONCURRENT` with nothing written (proven on SQL Server LocalDB:
+`RequestTakeOverRelationalTests.Simultaneous_takeovers…`). A later confirmation with the old owner is `TAKEOVER_STALE`
+(`Stale_confirmation_after_a_completed_takeover…`). Both UIs send the owner they displayed and block double submission.
+
+**Transactional notifications.** Ownership, the `COMPRADOR_TRANSFERIDO` history row (previous/new Buyer, actor, time,
+justification), the `RequestFieldChangeHistories` row for `BuyerId`, the in-app rows and the outbox rows are persisted in
+ONE transaction (`BeginTransactionAsync` around SaveChanges + `EmitAsync`, the repository's existing mechanism; the
+orchestrator, the in-app service and the controller share the scoped `DbContext`). The orchestrator bubbles failures, so
+a failure to record the notification intent rolls ownership and audit back (`Failure_while_recording…`); nothing is sent
+synchronously — the outbox worker delivers later with its retry/dead-letter policy (`EmailOutboxProcessor`), rows start
+PENDING with the worker's `MaxRetries`. Refusals and the idempotent path emit nothing; re-emitting the same correlation
+creates no duplicate rows (outbox and in-app dedup by correlation id + recipient). For this event the in-app rows are
+part of the required intent: `EventConfig.RequireInAppPersistence` makes an in-app persistence failure propagate (every
+other event keeps the historical "log and continue" policy), so ownership, audit, in-app and outbox roll back together
+(`Failure_persisting_an_in_app_notification…`, injected at the database level on SQL Server).
+
+**Recipient matrix — `BUYER_TRANSFERRED` (`WorkflowNotificationOrchestrator.AddBuyerTransferRecipientsAsync`).**
+Persisted relationships only; never role groups; active users only; e-mail only when an address exists (in-app
+otherwise); dedup by user id, then by normalized e-mail (trim + lower-case) — a second account sharing a mailbox keeps
+its own in-app notice and only its e-mail delivery is suppressed.
+
+| # | Recipient | Source | Wording |
+|---|---|---|---|
+| 1 | Previous Buyer | `Request.BuyerId` before the change | "Deixou de ser o comprador responsável" |
+| 2 | New Buyer (actor) | actor | "Passou a ser o comprador responsável" |
+| 3 | Requester | `Request.RequesterId` | generic transfer notice |
+| 4 | Area / final approvers on record | `Request.AreaApproverId`, `Request.FinalApproverId` | generic |
+| 5 | P.O. owners, receipt completers, fiscal-receipt uploaders | `RequestPoGroups.PoResponsibleBuyerId`, `OperationalReceiptCompletedByUserId`, `FiscalReceiptUploadedByUserId` | generic |
+| 6 | Finance participants | `RequestPayments.ScheduledByUserId`, `PaidByUserId` | generic |
+| 7 | Winner selectors, rework requesters, reuse authorisers | `ApprovalBatchItems.WinnerSelectedByUserId`, `ApprovalBatchAdjustments.RequestedByUserId`, `QuotationReuseAuthorizations.AuthorizedByUserId` | generic |
+| 8 | Actors of explicit history actions | `RequestStatusHistories.ActorUserId` where `ActionTaken` ∈ `BuyerTakeOverPolicy.ParticipantHistoryActions` (batch and legacy approval decisions, `QUOTATION_ITEM_AWARDED`, `REGISTER_PO`/`REREGISTER_PO`/`PO_GROUP_ACTIVATED`, `CONFIRM_RECEIVING`/`RECEIVING_PROGRESS`/`RECEIVING_REOPENED`, finance actions, `QUOTATION_REUSE_AUTHORIZED`) — exact codes, no text matching; `OBSERVACAO`, data edits, status syncs excluded | generic |
+| 9 | Pending AREA approvers | only while the request or a batch is WAITING_AREA_APPROVAL / AREA_ADJUSTMENT, through `IApprovalRoutingService.ResolveAreaManagersAsync` (plant-specific managers first, else global managers; active users) — the same resolver the approval e-mails use | generic |
+| 10 | Pending FINAL approver | only while the request or a batch is WAITING_FINAL_APPROVAL / FINAL_ADJUSTMENT, through `ResolveFinalNotificationRecipientsAsync(request.FinalApproverId, companyId)` (request nominee, else the company's nominee — persisted nominations) | generic |
+
+Pending final approvers are therefore NOT the "Final Approver" role group: without a request or company nominee nobody
+is added (the same gap the final-approval e-mails have today). The Accounts Payable mailbox is a group address, not a
+participant, and is not notified. TEST SMTP redirection is unchanged: the outbox worker sends through `EmailService`,
+which in non-production replaces every recipient by the configured test recipient when `RedirectAllToTestRecipient` is on.
+
+**E-mail content.** Subject "Responsabilidade do pedido transferida — {número}" (role-specific for the previous and
+the new Buyer); body: request number and title, previous Buyer, new Buyer, actor, transfer time rendered in the
+application timezone with an explicit label — "dd/MM/yyyy HH:mm (Luanda, WAT UTC+1) — HH:mm UTC"
+(`AppTimeZone.FormatWithUtc`, the Dashboard's Luanda convention; server time is UTC) — the HTML-encoded justification,
+requester, plant, department and the "Ver Pedido" link (`AppConfig:FrontendBaseUrl` + `/requests/{id}?mode=view`).
+
+**UIs.** Shared `TakeOverRequestDialog` (classic list and Workspace): names the request and the current Buyer, states
+the transfer, the audit and the e-mails, requires the justification (client-side mirror of the server rule; confirm
+disabled while invalid or busy), sends `expectedBuyerId` = the displayed owner. Classic list: the button is now hidden
+whenever the decision is NONE (non-Buyers, PAYMENT, terminal, own request) instead of "shown and refused by the server".
+Workspace: unchanged re-read after success (owner, next actions, quotation Editar/Excluir), distinct failed-refresh
+message, one submission at a time; the dialog stays open on a client-side validation failure. Guided tour step updated.
+
+**Tests.** `RequestTakeOverTests` (InMemory: full rule matrix, justification and expected-owner validation incl.
+omitted vs explicit null vs invalid, stale, unassigned, idempotent, out of scope, claim/coordinator paths with a single
+notification source), `BuyerTransferNotificationTests` (matrix, wording, dedup by user and e-mail, inactive/no-e-mail
+rules, pending resolvers consulted only while pending, no duplicates on re-emit, BUYER_ASSIGNED wording),
+`RequestTakeOverRelationalTests` (LocalDB: atomic success with outbox/in-app rows, rollback when the outbox intent
+fails and when the in-app insert fails at the database, simultaneous takeovers → one winner, stale confirmation, replay
+idempotence that can never overwrite a subsequent transfer), `workspaceAssignActions.test.ts` (decision, confirmation,
+validation, orchestration, wiring of both UIs, dialog and tour). No migration: no EF model change (`WorkflowEvent` is
+not persisted; new history/field-change rows use existing tables).
+
+**Limitations.** The pending final approver is resolved from nominations only (no role fan-out); participants are
+limited to the persisted pointers and action codes listed above; the legacy request-level approval path keeps its own
+history codes (`AREA_APPROVED`…), covered by the explicit list but not re-verified live; the REQ-271 duplicate-account
+explanation (§6) is unconfirmed until the session diagnostics are run.

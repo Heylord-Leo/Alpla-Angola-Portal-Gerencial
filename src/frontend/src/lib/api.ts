@@ -799,6 +799,18 @@ export const api = {
             const text = await response.text();
             return text ? JSON.parse(text) : { message: 'Atribuído com sucesso.', statusCode: 'OK' };
         },
+        /** §8 — Buyer self-takeover of a QUOTATION request assigned to another Buyer. `expectedBuyerId` is the owner the
+         *  user confirmed (never omitted): the server refuses a stale confirmation (409 TAKEOVER_STALE / TAKEOVER_CONCURRENT)
+         *  instead of overwriting a newer owner. Justification is mandatory (trimmed, ≤ 500). */
+        takeOverRequest: async (id: string, payload: { justification: string; expectedBuyerId: string }): Promise<{ message: string; code: string; previousBuyerName?: string | null; newBuyerName?: string | null; historyId?: string | null }> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/take-over`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ justification: payload.justification, expectedBuyerId: payload.expectedBuyerId }),
+            });
+            if (!response.ok) return handleApiError(response, 'Não foi possível assumir o pedido.');
+            return response.json();
+        },
         /** @deprecated Use FinanceController.SchedulePayment via api.finance.schedulePayment instead. */
         schedulePayment: async (id: string, comment?: string): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/schedule-payment`, {

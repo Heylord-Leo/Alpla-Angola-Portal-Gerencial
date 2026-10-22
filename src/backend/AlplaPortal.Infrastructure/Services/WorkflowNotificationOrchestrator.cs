@@ -1,5 +1,6 @@
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Common;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Events;
 using AlplaPortal.Domain.Services;
@@ -169,6 +170,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 break;
 
             // --- Buyer Assigned: notify Buyer + Requester ---
+            case WorkflowEventCodes.BuyerTransferred:
+                await AddBuyerTransferRecipientsAsync(recipients, evt, reqRef);
+                break;
             case WorkflowEventCodes.BuyerAssigned:
             {
                 var buyerUser = evt.BuyerId.HasValue
@@ -177,17 +181,23 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                         .Select(u => new { u.FullName }).FirstOrDefaultAsync()
                     : null;
                 var buyerName = buyerUser?.FullName ?? evt.ActorName;
+                var assignedByCoordinator = evt.BuyerId.HasValue && evt.BuyerId.Value != evt.ActorUserId;
+                var assignedScope = evt.PoGroupId.HasValue ? "a correção da P.O do seu pedido" : "o seu pedido de cotação";
 
                 // Buyer: confirmation that the request was assigned to them
                 await AddUserRecipientAsync(recipients, evt.BuyerId,
                     emailSubjectOverride: $"Pedido de Cotação atribuído a você — {reqRef}",
-                    emailBodyOverride: $"O pedido de cotação <b>{reqRef}</b> foi-lhe atribuído. Por favor, prossiga com o processo de cotação.",
+                    emailBodyOverride: assignedByCoordinator
+                        ? $"{(evt.PoGroupId.HasValue ? "A correção da P.O do pedido" : "O pedido de cotação")} <b>{reqRef}</b> foi-lhe atribuído(a) por <b>{System.Net.WebUtility.HtmlEncode(evt.ActorName)}</b>. Por favor, prossiga."
+                        : $"{(evt.PoGroupId.HasValue ? "A correção da P.O do pedido" : "O pedido de cotação")} <b>{reqRef}</b> foi-lhe atribuído(a). Por favor, prossiga com o processo.",
                     bypassSelfNotifyRule: true);
 
                 // Requester: informing who the buyer is
                 await AddUserRecipientAsync(recipients, evt.RequesterId,
                     emailSubjectOverride: $"Comprador atribuído ao seu pedido — {reqRef}",
-                    emailBodyOverride: $"O comprador <b>{buyerName}</b> assumiu a responsabilidade pelo seu pedido de cotação <b>{reqRef}</b>. O processo de cotação prosseguirá em breve.");
+                    emailBodyOverride: assignedByCoordinator
+                        ? $"{(evt.PoGroupId.HasValue ? "A correção da P.O do seu pedido" : "O seu pedido de cotação")} <b>{reqRef}</b> foi atribuído(a) ao comprador <b>{System.Net.WebUtility.HtmlEncode(buyerName)}</b> por <b>{System.Net.WebUtility.HtmlEncode(evt.ActorName)}</b>. O processo continuará a partir deste ponto."
+                        : $"O comprador <b>{System.Net.WebUtility.HtmlEncode(buyerName)}</b> assumiu a responsabilidade por {assignedScope} <b>{reqRef}</b>. O processo continuará a partir deste ponto.");
                 break;
             }
 
@@ -266,12 +276,104 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 break;
         }
 
-        // Deduplicate (multiple events could resolve to the same user)
-        return recipients
-            .GroupBy(r => r.UserId)
-            .Select(g => g.First())
-            .ToList();
+        // Deduplicate by user (several sources may resolve the same person); then, by normalized e-mail, suppress the
+        // DELIVERY for a second account sharing one mailbox while keeping that account's own in-app notice (the first
+        // resolved account keeps its wording and the single e-mail).
+        var byUser = recipients.GroupBy(r => r.UserId).Select(g => g.First()).ToList();
+        var seenEmails = new HashSet<string>(StringComparer.Ordinal);
+        var deduped = new List<NotificationRecipient>(byUser.Count);
+        foreach (var r in byUser)
+        {
+            var key = NormalizeEmail(r.Email);
+            if (key != null && !seenEmails.Add(key))
+            {
+                _logger.LogDebug("Recipient {UserId}: e-mail {Email} already addressed for event {EventCode}; in-app kept, delivery suppressed", r.UserId, key, evt.EventCode);
+                deduped.Add(r with { SuppressEmail = true });
+                continue;
+            }
+            deduped.Add(r);
+        }
+        return deduped;
     }
+
+    private static string? NormalizeEmail(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// §8 BUYER_TRANSFERRED recipients — persisted relationships only, never role groups:
+    ///  1. previous Buyer and 2. new Buyer (role-specific wording), 3. requester;
+    ///  4. persisted pointers: Request.AreaApproverId / FinalApproverId, P.O. group owners (PoResponsibleBuyerId), receipt
+    ///     completers and fiscal-receipt uploaders, payment schedulers/payers, winner selectors, rework requesters, reuse authorisers;
+    ///  5. actors of explicit participant history actions (BuyerTakeOverPolicy.ParticipantHistoryActions);
+    ///  6. PENDING area approvers only while an area decision is pending, through the established routing resolver
+    ///     (plant-specific managers first, else global managers; active users only);
+    ///  7. PENDING final approver only while a final decision is pending, through the established final-recipient resolver
+    ///     (request nominee, else company nominee) — persisted nominations, never the "Final Approver" role group.
+    /// Active users only (AddUserRecipientAsync); e-mail only when an address exists; dedup by user and e-mail at the end.
+    /// </summary>
+    private async Task AddBuyerTransferRecipientsAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef)
+    {
+        var req = await _context.Requests.AsNoTracking()
+            .Include(r => r.Status)
+            .Include(r => r.ApprovalBatches)
+            .Include(r => r.PoGroups)
+            .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+        if (req == null) return;
+        var names = await _context.Users.AsNoTracking()
+            .Where(u => u.Id == evt.BuyerId || u.Id == evt.PreviousBuyerId)
+            .Select(u => new { u.Id, u.FullName }).ToListAsync();
+        string NameOf(Guid? id) => names.FirstOrDefault(n => n.Id == id)?.FullName ?? "—";
+        var newName = System.Net.WebUtility.HtmlEncode(NameOf(evt.BuyerId));
+        var prevName = System.Net.WebUtility.HtmlEncode(NameOf(evt.PreviousBuyerId));
+        var actorName = System.Net.WebUtility.HtmlEncode(evt.ActorName);
+        var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+        var just = System.Net.WebUtility.HtmlEncode(evt.Justification ?? "");
+        var details = BuildBuyerTransferDetailsHtml(reqRef, evt.RequestTitle, prevName, newName, actorName, when, just);
+
+        await AddUserRecipientAsync(recipients, evt.PreviousBuyerId,
+            emailSubjectOverride: $"Deixou de ser o comprador responsável — {reqRef}",
+            emailBodyOverride: $"O pedido <b>{reqRef}</b> deixou de estar sob a sua responsabilidade: o comprador <b>{newName}</b> assumiu-o.<br/><br/>{details}");
+        await AddUserRecipientAsync(recipients, evt.BuyerId,
+            emailSubjectOverride: $"Passou a ser o comprador responsável — {reqRef}",
+            emailBodyOverride: $"Assumiu a responsabilidade pelo pedido <b>{reqRef}</b>, anteriormente de <b>{prevName}</b>.<br/><br/>{details}",
+            bypassSelfNotifyRule: true);
+        await AddUserRecipientAsync(recipients, evt.RequesterId);
+
+        var ids = new HashSet<Guid>();
+        void Add(Guid? id) { if (id.HasValue && id.Value != Guid.Empty) ids.Add(id.Value); }
+        Add(req.AreaApproverId); Add(req.FinalApproverId);
+        foreach (var g in req.PoGroups) { Add(g.PoResponsibleBuyerId); Add(g.OperationalReceiptCompletedByUserId); Add(g.FiscalReceiptUploadedByUserId); }
+        foreach (var pmt in await _context.RequestPayments.AsNoTracking().Where(x => x.RequestId == req.Id).Select(x => new { x.ScheduledByUserId, x.PaidByUserId }).ToListAsync())
+        { Add(pmt.ScheduledByUserId); Add(pmt.PaidByUserId); }
+        var batchIds = req.ApprovalBatches.Select(b => b.Id).ToList();
+        if (batchIds.Count > 0)
+        {
+            foreach (var id in await _context.ApprovalBatchItems.AsNoTracking().Where(bi => batchIds.Contains(bi.ApprovalBatchId) && bi.WinnerSelectedByUserId != null).Select(bi => bi.WinnerSelectedByUserId!.Value).Distinct().ToListAsync()) Add(id);
+            foreach (var id in await _context.ApprovalBatchAdjustments.AsNoTracking().Where(a => batchIds.Contains(a.ApprovalBatchId)).Select(a => a.RequestedByUserId).Distinct().ToListAsync()) Add(id);
+        }
+        foreach (var id in await _context.QuotationReuseAuthorizations.AsNoTracking().Where(a => a.RequestId == req.Id).Select(a => a.AuthorizedByUserId).Distinct().ToListAsync()) Add(id);
+        var actions = BuyerTakeOverPolicy.ParticipantHistoryActions.ToList();
+        foreach (var id in await _context.RequestStatusHistories.AsNoTracking().Where(h => h.RequestId == req.Id && actions.Contains(h.ActionTaken)).Select(h => h.ActorUserId).Distinct().ToListAsync()) Add(id);
+        foreach (var id in ids) await AddUserRecipientAsync(recipients, id);
+
+        var statusCode = req.Status?.Code ?? string.Empty;
+        var pendingArea = BuyerTakeOverPolicy.PendingAreaStatuses.Contains(statusCode) || req.ApprovalBatches.Any(b => BuyerTakeOverPolicy.PendingAreaStatuses.Contains(b.Status));
+        if (pendingArea) await AddAreaManagerRecipientsAsync(recipients, evt);
+        var pendingFinal = BuyerTakeOverPolicy.PendingFinalStatuses.Contains(statusCode) || req.ApprovalBatches.Any(b => BuyerTakeOverPolicy.PendingFinalStatuses.Contains(b.Status));
+        if (pendingFinal)
+        {
+            var fin = await _approvalRouting.ResolveFinalNotificationRecipientsAsync(req.FinalApproverId, req.CompanyId);
+            foreach (var f in fin.Recipients) recipients.Add(new NotificationRecipient(f.UserId, f.Email, f.FullName));
+        }
+    }
+
+    private static string BuildBuyerTransferDetailsHtml(string reqRef, string? title, string prevName, string newName, string actorName, string when, string justificationHtml)
+        => $"<b>Pedido:</b> {reqRef}{(string.IsNullOrWhiteSpace(title) ? "" : " — " + System.Net.WebUtility.HtmlEncode(title))}<br/>" +
+           $"<b>Comprador anterior:</b> {prevName}<br/>" +
+           $"<b>Novo comprador:</b> {newName}<br/>" +
+           $"<b>Ação de:</b> {actorName}<br/>" +
+           $"<b>Data/hora da transferência:</b> {when}<br/>" +
+           $"<b>Justificação:</b> {justificationHtml}";
+
 
     // Helper method to keep ResolveRecipientsAsync clean
     private async Task HandlePendingAreaApprovalFanningAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef, bool isQuotation)
@@ -1207,9 +1309,17 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 _logger.LogDebug("Dedup: notification already exists for CorrelationId {CorrelationId} + User {UserId}", evt.CorrelationId, recipient.UserId);
             }
         }
+        catch (Exception ex) when (!config.RequireInAppPersistence)
+        {
+            // Historical policy for every other event: an in-app failure must not block the business action.
+            _logger.LogWarning(ex, "Failed to create in-app notification for User {UserId} (Event: {EventCode})", recipient.UserId, evt.EventCode);
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to create in-app notification for User {UserId} (Event: {EventCode})", recipient.UserId, evt.EventCode);
+            // §8 transactional events (BUYER_TRANSFERRED): the in-app row is part of the notification intent that must
+            // commit with ownership and audit — propagate so the caller's transaction rolls everything back.
+            _logger.LogError(ex, "In-app notification persistence failed for User {UserId} (Event: {EventCode}); propagating (transactional event)", recipient.UserId, evt.EventCode);
+            throw;
         }
 
         // --- Email Notification (Outbox Pattern — non-blocking) ---
@@ -1559,6 +1669,36 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailBody = $"O pedido <b>{reqRef}</b>{reqContext} foi submetido por <b>{actorLabel}</b> e aguarda a atribuição de um comprador para dar início ao processo de cotação."
             };
 
+            case WorkflowEventCodes.BuyerTransferred:
+            {
+                var req = await _context.Requests.AsNoTracking()
+                    .Include(r => r.Requester).Include(r => r.Plant).Include(r => r.Department)
+                    .FirstOrDefaultAsync(r => r.Id == evt.RequestId);
+                var names = await _context.Users.AsNoTracking()
+                    .Where(u => u.Id == evt.BuyerId || u.Id == evt.PreviousBuyerId)
+                    .Select(u => new { u.Id, u.FullName }).ToListAsync();
+                string NameOf(Guid? id) => names.FirstOrDefault(n => n.Id == id)?.FullName ?? "—";
+                var prevName = NameOf(evt.PreviousBuyerId);
+                var newName = NameOf(evt.BuyerId);
+                var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+                var details = BuildBuyerTransferDetailsHtml(reqRef, evt.RequestTitle, System.Net.WebUtility.HtmlEncode(prevName), System.Net.WebUtility.HtmlEncode(newName),
+                    System.Net.WebUtility.HtmlEncode(actorLabel), when, System.Net.WebUtility.HtmlEncode(evt.Justification ?? ""));
+                return new EventConfig
+                {
+                    Category = NotificationCategories.Quotation,
+                    NotificationType = NotificationTypes.Info,
+                    RequireInAppPersistence = true,
+                    InAppTitle = "Responsabilidade do pedido transferida",
+                    InAppMessage = $"O pedido {reqRef} passou do comprador {prevName} para {newName} (ação de {actorLabel}, {when}). Justificação: {evt.Justification}",
+                    SendEmail = true,
+                    EmailSubject = $"Responsabilidade do pedido transferida — {reqRef}",
+                    EmailHeadline = "Comprador Responsável Transferido",
+                    EmailBody = $"A responsabilidade pelo pedido <b>{reqRef}</b>{reqContext} passou do comprador <b>{System.Net.WebUtility.HtmlEncode(prevName)}</b> para <b>{System.Net.WebUtility.HtmlEncode(newName)}</b>.<br/><br/>{details}<br/>" +
+                        $"<b>Solicitante:</b> {System.Net.WebUtility.HtmlEncode(req?.Requester?.FullName ?? "—")}<br/>" +
+                        $"<b>Planta:</b> {System.Net.WebUtility.HtmlEncode(req?.Plant?.Name ?? "---")}<br/>" +
+                        $"<b>Departamento:</b> {System.Net.WebUtility.HtmlEncode(req?.Department?.Name ?? "---")}"
+                };
+            }
             case WorkflowEventCodes.BuyerAssigned:
             {
                 var req = await _context.Requests.AsNoTracking()
@@ -1573,17 +1713,25 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 var deptName = req?.Department?.Name ?? "---";
                 var currencyCode = req?.Currency?.Code ?? "AOA";
                 var amount = req?.EstimatedTotalAmount ?? 0m;
+                var assignedBuyerName = evt.BuyerId.HasValue
+                    ? (await _context.Users.AsNoTracking().Where(u => u.Id == evt.BuyerId.Value).Select(u => u.FullName).FirstOrDefaultAsync()) ?? actorLabel
+                    : actorLabel;
+                var selfClaim = !evt.BuyerId.HasValue || evt.BuyerId.Value == evt.ActorUserId;
+                var scopeLabel = evt.PoGroupId.HasValue ? "a correção da P.O do pedido" : "o pedido de cotação";
+                var assignedSentence = selfClaim
+                    ? $"O comprador {actorLabel} assumiu {scopeLabel} {reqRef}."
+                    : $"{char.ToUpperInvariant(scopeLabel[0])}{scopeLabel[1..]} {reqRef} foi atribuído(a) ao comprador {assignedBuyerName} por {actorLabel}.";
 
                 return new EventConfig
                 {
                     Category = NotificationCategories.Quotation,
                     NotificationType = NotificationTypes.Info,
                     InAppTitle = "Comprador Atribuído",
-                    InAppMessage = $"O comprador {actorLabel} assumiu o pedido de cotação {reqRef}.",
+                    InAppMessage = assignedSentence,
                     SendEmail = true,
                     EmailSubject = $"Comprador atribuído ao pedido — {reqRef}",
-                    EmailHeadline = "Comprador Atribuído ao Pedido de Cotação",
-                    EmailBody = $"O comprador <b>{actorLabel}</b> assumiu a responsabilidade pelo pedido de cotação <b>{reqRef}</b>{reqContext}.<br/><br/>" +
+                    EmailHeadline = "Comprador Atribuído ao Pedido",
+                    EmailBody = $"{System.Net.WebUtility.HtmlEncode(assignedSentence)}{reqContext}<br/><br/>" +
                         $"<b>Solicitante:</b> {System.Net.WebUtility.HtmlEncode(requesterName)}<br/>" +
                         $"<b>Planta:</b> {System.Net.WebUtility.HtmlEncode(plantName)}<br/>" +
                         $"<b>Departamento:</b> {System.Net.WebUtility.HtmlEncode(deptName)}<br/>" +
@@ -2029,5 +2177,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
         public string EmailSubject { get; init; } = string.Empty;
         public string EmailHeadline { get; init; } = string.Empty;
         public string EmailBody { get; init; } = string.Empty;
+        /// <summary>When true, a failure to persist a recipient's in-app row propagates (the caller runs the emit inside its
+        /// transaction and must roll back ownership, audit and intent together). Default false keeps the historical
+        /// "non-critical" policy for every other event.</summary>
+        public bool RequireInAppPersistence { get; init; }
     }
 }

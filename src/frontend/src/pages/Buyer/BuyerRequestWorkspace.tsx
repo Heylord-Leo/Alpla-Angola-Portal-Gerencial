@@ -32,7 +32,8 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canManageWorkspaceQuotations, describeWorkspaceQuotation, resolveQuotationActionState, runDeleteQuotation } from './workspaceQuotationActions';
 import type { BuyerWorkspaceQuotation } from '../../types/buyerWorkspace';
-import { buildTakeoverConfirmation, resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
+import { resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
+import { TakeOverRequestDialog } from '../../components/Buyer/TakeOverRequestDialog';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -87,26 +88,28 @@ export function BuyerRequestWorkspace() {
   const [quotationBusy, setQuotationBusy] = useState(false);
   const quotationBusyRef = useRef(false);
   const setQuotationBusyBoth = (b: boolean) => { quotationBusyRef.current = b; setQuotationBusy(b); };
-  // "Assumir pedido" (QUOTATION only): the decision mirrors AssignBuyer's rules (Buyer role for self-assignment;
-  // coordinators only for a takeover); the server remains the authority. Takeover asks for confirmation first.
+  // "Assumir pedido" (QUOTATION only): CLAIM mirrors AssignBuyer (Buyer role, unassigned); TAKEOVER (§8) is open to any
+  // Buyer and goes through the dedicated endpoint with a mandatory justification and the owner the user confirmed
+  // (expectedBuyerId) — the server refuses stale/concurrent confirmations; the UI only hides what it would refuse.
   const ASSIGN_ROLE_NAMES = { buyer: ROLES.BUYER, systemAdministrator: ROLES.SYSTEM_ADMINISTRATOR, localManager: ROLES.LOCAL_MANAGER };
   const assignAction = resolveAssignAction({ requestTypeCode: ws?.requestTypeCode, requestStatusCode: ws?.requestStatusCode, buyerId: ws?.buyerId }, user, ASSIGN_ROLE_NAMES);
   const [assignConfirm, setAssignConfirm] = useState(false);
   const [assignBusy, setAssignBusy] = useState(false);
   const assignBusyRef = useRef(false);
-  const performAssign = async (kind: 'CLAIM' | 'TAKEOVER') => {
-    setAssignConfirm(false);
+  const performAssign = async (kind: 'CLAIM' | 'TAKEOVER', justification?: string) => {
     if (!ws) return;
     setActionError(null);
-    await runAssignRequest(
+    const outcome = await runAssignRequest(
       {
         assignBuyer: (id) => api.requests.assignBuyer(id),
+        takeOver: (id, payload) => api.requests.takeOverRequest(id, payload),
         isBusy: () => assignBusyRef.current || quotationBusyRef.current,
         setBusy: (b) => { assignBusyRef.current = b; setAssignBusy(b); },
         onSuccess: (msg) => afterMutation(msg),
         onError: (msg) => setActionError(msg),
       },
-      ws.requestId, kind);
+      ws.requestId, kind, kind === 'TAKEOVER' ? { justification: justification ?? '', expectedBuyerId: ws.buyerId } : undefined);
+    if (outcome !== 'INVALID') setAssignConfirm(false);   // keep the dialog open on client-side validation failure
   };
   const handleEditQuotation = async (q: BuyerWorkspaceQuotation) => {
     if (!ws || quotationBusyRef.current) return;   // one open/delete at a time (double click, concurrent delete)
@@ -393,25 +396,14 @@ export function BuyerRequestWorkspace() {
       {/* In-Workspace Supplier Sheet drawer — mounts the SHARED SupplierFichaDetailContent (Stage 3D). */}
       <BuyerSupplierFichaDrawer ref={supplierDrawerRef} onSaved={() => loadWorkspace(true)} />
 
-      {assignConfirm && ws && (() => {
-        const c = buildTakeoverConfirmation(ws);
-        return (
-          <ConfirmationDialog
-            isOpen
-            title={c.title}
-            variant="warning"
-            confirmText="Assumir pedido"
-            cancelText="Cancelar"
-            onConfirm={() => void performAssign('TAKEOVER')}
-            onCancel={() => setAssignConfirm(false)}
-            message={(
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {c.lines.map((line, i) => <div key={i}>{line}</div>)}
-              </div>
-            )}
-          />
-        );
-      })()}
+      {assignConfirm && ws && (
+        <TakeOverRequestDialog
+          request={ws}
+          busy={assignBusy}
+          onConfirm={(justification) => void performAssign('TAKEOVER', justification)}
+          onCancel={() => setAssignConfirm(false)}
+        />
+      )}
 
       {deleteTarget && (() => {
         const c = buildDeleteQuotationConfirmation(deleteTarget);
