@@ -18,6 +18,7 @@ using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Services.Finance;
+using AlplaPortal.Infrastructure.Services.Purchasing;
 using AlplaPortal.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1282,6 +1283,21 @@ public class RequestsController : BaseController
         _logger.LogInformation("[PERF] GetRequest(id) database query and projection took {Elapsed}ms for RequestId: {Id}", _sw.ElapsedMilliseconds, id);
 
         if (request == null) return NotFound();
+
+        // §7 — server-derived edit/delete eligibility per quotation (ever submitted for approval → locked).
+        if (request.Quotations.Count > 0)
+        {
+            var submissionLocks = await QuotationSubmissionLock.EvaluateForRequestAsync(_context, id);
+            foreach (var qDto in request.Quotations)
+            {
+                if (submissionLocks.TryGetValue(qDto.Id, out var lk) && lk.IsSubmitted)
+                {
+                    qDto.IsSubmittedForApproval = true;
+                    qDto.SubmittedBatchNumber = lk.BatchNumber;
+                    qDto.SubmissionLockReason = lk.Reason;
+                }
+            }
+        }
 
         // v2.245.9: group-scoped lifecycle rows (GROUP_COMPLETED, FISCAL_RECEIPT_UNLOCKED) persist the
         // request scalar in their status FKs (a different status domain; see
@@ -4609,6 +4625,21 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
+        // §7 — a quotation ever submitted for approval (selected item or candidate of ANY batch, any status) is not
+        // edited in place: the revision/rework flow (SaveQuotation with reworkBatchId) creates a new quotation instead.
+        // Evaluated before any mutation (header, attachment link, lines).
+        var submissionLock = await QuotationSubmissionLock.EvaluateAsync(_context, quotation);
+        if (submissionLock.IsSubmitted)
+        {
+            var lockedPd = new ProblemDetails { Title = "Cotação submetida para aprovação", Detail = submissionLock.Reason, Status = 409 };
+            lockedPd.Extensions["code"] = QuotationSubmissionLock.ReasonCode; lockedPd.Extensions["batchNumber"] = submissionLock.BatchNumber; lockedPd.Extensions["evidence"] = submissionLock.Evidence;
+            return Conflict(lockedPd);
+        }
+        // The header row is always rewritten under its RowVersion, even when the payload leaves it unchanged, so a
+        // submission that commits between this check and the save (stamper bumps the row) fails this update (409
+        // below) instead of letting a stale edit slip through.
+        _context.Entry(quotation).State = EntityState.Modified;
+
         // Validation (Explicitly including Currency as per user requirement)
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
         if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
@@ -4862,13 +4893,13 @@ public class RequestsController : BaseController
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            var errLog = $"[ERROR] Concurrency error: {ex.Message}\n";
-            foreach (var entry in ex.Entries)
-            {
-                errLog += $"[ERROR] Entity: {entry.Entity.GetType().Name}, State: {entry.State}\n";
-            }
-            System.IO.File.WriteAllText("c:\\dev\\alpla-portal\\src\\backend\\error.txt", errLog);
-            throw;
+            // §7 — the quotation row changed while this edit was saving (typically: submitted for approval, which
+            // stamps the durable marker). Nothing was written (single SaveChanges = one transaction).
+            _logger.LogWarning(ex, "UpdateQuotation {QuotationId}: concurrent change on {Entities}", quotationId,
+                string.Join(",", ex.Entries.Select(e => e.Entity.GetType().Name)));
+            var concurrencyPd = new ProblemDetails { Title = "Cotação alterada entretanto", Detail = QuotationSubmissionLock.ConcurrencyDetail, Status = 409 };
+            concurrencyPd.Extensions["code"] = QuotationSubmissionLock.ConcurrencyReasonCode;
+            return Conflict(concurrencyPd);
         }
         catch (Exception ex)
         {
@@ -4981,22 +5012,19 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
-        // Check if any quotation item is used in an approval batch (as a winner or as a
-        // submitted candidate — both anchor frozen approval evidence)
-        var quotationItemIds = quotation.Items.Select(i => i.Id).ToList();
-        var isReferencedByBatch = await _context.Set<ApprovalBatchItem>()
-            .AnyAsync(abi => abi.SelectedQuotationItemId != null && quotationItemIds.Contains(abi.SelectedQuotationItemId.Value))
-            || await _context.ApprovalBatchItemCandidates
-                .AnyAsync(c => quotationItemIds.Contains(c.QuotationItemId));
-
-        if (isReferencedByBatch)
+        // §7 — shared decision with UpdateQuotation and the detail/workspace flags: ever submitted (winner or candidate
+        // of ANY batch, any status) → never deleted; use the revision/rework flow instead.
+        var deleteLock = await QuotationSubmissionLock.EvaluateAsync(_context, quotation);
+        if (deleteLock.IsSubmitted)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Esta cotação já foi utilizada em um lote de aprovação e não pode ser excluída. Faça um reajuste ou adicione uma nova revisão/cotação.", 
-                Status = 409 
-            });
+            var lockedPd = new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Esta cotação já foi utilizada em um lote de aprovação e não pode ser excluída. " + deleteLock.Reason,
+                Status = 409
+            };
+            lockedPd.Extensions["code"] = QuotationSubmissionLock.ReasonCode; lockedPd.Extensions["batchNumber"] = deleteLock.BatchNumber; lockedPd.Extensions["evidence"] = deleteLock.Evidence;
+            return Conflict(lockedPd);
         }
 
         if (quotation.ProformaAttachmentId.HasValue)
@@ -5038,7 +5066,21 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(history);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex is DbUpdateConcurrencyException || IsQuotationReferenceConflict(ex))
+        {
+            // §7 — a submission committed while this delete was saving: either the quotation row changed (RowVersion,
+            // DbUpdateConcurrencyException) or a new candidate/winner reference now protects a line (REFERENCE constraint
+            // 547 naming a FK towards Quotations/QuotationItems fires on the line delete before the header row is
+            // reached). Other database errors are NOT mapped here. Nothing was written.
+            _logger.LogWarning(ex, "DeleteQuotation {QuotationId}: concurrent change ({Kind})", quotationId, ex.GetType().Name);
+            var concurrencyPd = new ProblemDetails { Title = "Cotação alterada entretanto", Detail = QuotationSubmissionLock.ConcurrencyDetail, Status = 409 };
+            concurrencyPd.Extensions["code"] = QuotationSubmissionLock.ConcurrencyReasonCode;
+            return Conflict(concurrencyPd);
+        }
 
         return NoContent();
     }
@@ -10624,6 +10666,13 @@ public class RequestsController : BaseController
     /// <para>Deliberately narrow: it recognises our own two index names rather than SQL error codes
     /// 2601/2627, so no unrelated uniqueness violation can be quietly swallowed here.</para>
     /// </summary>
+    /// <summary>§7 — SQL Server error 547 (REFERENCE constraint) raised by a FK that targets Quotations/QuotationItems:
+    /// the only kind of constraint failure a quotation delete can hit once the submission lock has passed, i.e. a
+    /// reference created concurrently. Any other constraint or error is left to the generic pipeline.</summary>
+    private static bool IsQuotationReferenceConflict(DbUpdateException ex)
+        => ex.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 547 } sql
+           && (sql.Message.Contains("_QuotationItems_", StringComparison.Ordinal) || sql.Message.Contains("_Quotations_", StringComparison.Ordinal));
+
     private async Task SaveChangesWithClassificationAuditRetryAsync()
     {
         try

@@ -5,6 +5,7 @@ import type { TourStep } from '../guidedTourTypes';
  *
  * Route: /buyer/requests/:id (opened from Gestão de Cotações). Steps follow the screen layout:
  * 1. Header — request identity, operational state and next action
+ * 1b. Assumir pedido — claim/takeover button (rendered only when the server would accept it; skipped otherwise)
  * 2. Tabs — Itens · Cotações & Documentos · Lotes & Aprovações
  * 3. Quotations table — one row per quotation (supplier, document, date, total, state)
  * 4. Quotation actions — Editar / Excluir (visible only to the assigned Buyer while the request is in the
@@ -22,6 +23,12 @@ export const BUYER_REQUEST_WORKSPACE_STEPS: TourStep[] = [
         content: 'Aqui vê a identificação do pedido, o estado operacional, a cobertura de itens e a próxima ação sugerida ao Comprador.',
         placement: 'bottom',
         skipBeacon: true,
+    },
+    {
+        target: '[data-tour="buyer-workspace-assign"]',
+        title: 'Assumir pedido',
+        content: 'Quando o pedido não tem comprador atribuído, pode assumi-lo aqui. Um pedido já atribuído a outro comprador só pode ser assumido por um coordenador (Administrador do Sistema ou Gestor Local com o papel de Comprador), após confirmação. O botão só aparece quando o servidor aceitaria a ação.',
+        placement: 'bottom',
     },
     {
         target: '[data-tour="buyer-workspace-tabs"]',

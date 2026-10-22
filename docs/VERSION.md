@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.247.9
+v2.247.10
+
+## [v2.247.10] - 2026-10-22
+
+### Buyer Workspace: "Assumir pedido"; durable quotation submission lock
+
+PATCH. The Workspace header offers "Assumir pedido" with the classic tool's server rules (claim when unassigned;
+takeover only by System Administrator / Local Manager holding the Buyer role, after confirmation). Ordinary quotation
+Editar/Excluir are available only for quotations never submitted for approval, decided server-side from a durable
+marker or any remaining batch/award reference (rejected and cancelled batches keep the lock), exposed to both UIs and
+enforced in PUT/DELETE with RowVersion concurrency. **Includes additive migration
+`20261016204148_AddQuotationSubmissionMarker`** (marker columns + RowVersion on `Quotations`, idempotent backfill;
+already-removed historical references cannot be recovered). Apply TEST Migrations before Deploy TEST; prefer code
+rollback retaining the columns (Down destroys submission evidence). No configuration change.
 
 ## [v2.247.9] - 2026-10-16
 

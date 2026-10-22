@@ -92,3 +92,22 @@ export async function runDeleteQuotation(deps: DeleteQuotationDeps, requestId: s
         deps.setBusy(false);
     }
 }
+
+export interface QuotationActionState { editable: boolean; deletable: boolean; locked: boolean; lockLabel?: string; lockReason?: string; }
+
+/**
+ * §7 — per-quotation state for Editar/Excluir. `canManage` is the request-level rule (window + assigned Buyer); the
+ * per-quotation lock is the SERVER's decision (`isSubmittedForApproval`), never recomputed client-side, so classic and
+ * Workspace agree with PUT/DELETE. A locked quotation shows the lock with the server reason instead of the buttons.
+ */
+export function resolveQuotationActionState(q: Pick<BuyerWorkspaceQuotation, 'isSubmittedForApproval' | 'submittedBatchNumber' | 'submissionLockReason'>, canManage: boolean): QuotationActionState {
+    if (!canManage) return { editable: false, deletable: false, locked: false };
+    if (q.isSubmittedForApproval) {
+        return {
+            editable: false, deletable: false, locked: true,
+            lockLabel: q.submittedBatchNumber != null ? `Submetida (Lote #${q.submittedBatchNumber})` : 'Submetida para aprovação',
+            lockReason: q.submissionLockReason || 'Cotação já submetida para aprovação: edição e exclusão diretas bloqueadas; use a revisão/reajuste.',
+        };
+    }
+    return { editable: true, deletable: true, locked: false };
+}

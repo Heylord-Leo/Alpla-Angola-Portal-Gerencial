@@ -1972,7 +1972,7 @@ export function BuyerItemsList() {
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                                                                                     {(() => {
-                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))));
+                                                                                        const isUsedInBatch = q.isSubmittedForApproval === true || (q.isSubmittedForApproval == null && group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))))); // §7: server decision first
                                                                                         if (isUsedInBatch) {
                                                                                             return (
                                                                                                 <div style={{
@@ -1980,8 +1980,8 @@ export function BuyerItemsList() {
                                                                                                     backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px',
                                                                                                     color: '#166534', fontWeight: 800, fontSize: '0.7rem',
                                                                                                     textTransform: 'uppercase'
-                                                                                                }}>
-                                                                                                    <ShieldCheck size={12} /> Protegida por auditoria
+                                                                                                }} title={q.submissionLockReason || 'Cotação já submetida para aprovação: edição e exclusão diretas bloqueadas; use a revisão/reajuste.'}>
+                                                                                                    <ShieldCheck size={12} /> {q.submittedBatchNumber != null ? `Submetida (Lote #${q.submittedBatchNumber})` : 'Protegida por auditoria'}
                                                                                                 </div>
                                                                                             );
                                                                                         }

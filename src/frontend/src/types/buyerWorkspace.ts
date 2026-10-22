@@ -40,6 +40,10 @@ export interface BuyerWorkspaceQuotation {
   totalAmount: number;
   documentCount: number;
   isSelected: boolean;
+  /** §7 — ever submitted for approval: ordinary Editar/Excluir are locked (server decision). */
+  isSubmittedForApproval?: boolean;
+  submittedBatchNumber?: number | null;
+  submissionLockReason?: string | null;
 }
 
 export interface BuyerWorkspaceBatchAdjustmentReason {
@@ -107,6 +111,8 @@ export interface BuyerWorkspace {
   title?: string | null;
   description?: string | null;
   requestStatusCode: string;
+  /** QUOTATION | PAYMENT (request-level "Assumir pedido" applies to QUOTATION only). */
+  requestTypeCode?: string | null;
 
   requesterId?: string | null;
   requesterName?: string | null;

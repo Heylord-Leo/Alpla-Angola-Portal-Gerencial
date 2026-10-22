@@ -113,3 +113,196 @@ the assigned Buyer on a request past FINAL_APPROVED → no buttons; (7) a reques
 PUT return 404 (API-level check); (8) refresh failure after success is only reproducible by interrupting the API
 between the mutation and the re-read; if attempted, the banner must read "A ação foi concluída com sucesso…" and no
 retry is to be made. Do not run any of this on REQ-578.
+
+## 6. "Assumir pedido" in the Workspace (working tree, unreleased, 2026-10-16)
+
+**Live evidence (TEST, v2.247.9, user-reported).** REQ-05/10/2026-517 was assigned to Samuel Mpoco; Leonardo Cintra
+assumed it through the classic tool; the Workspace then showed Leonardo as Buyer and exposed Editar/Excluir. This
+validates the visibility rule after an ownership change (window AND assigned Buyer). It does not validate edit, save or
+delete behaviour, and it must not be read as "a Buyer can take over another Buyer's request": Leonardo holds System
+Administrator privileges, and the backend allows takeover only to coordinators.
+
+**Backend rules (traced, unchanged).** `POST …/assign-buyer` (`RequestsController.AssignBuyer`): access scope (404);
+self-assignment (no `targetUserId`) requires the Buyer ROLE — a System Administrator or Local Manager without it gets
+403 even on an unassigned request; a request already assigned to someone else is refused for an ordinary Buyer with
+409 ("O reencaminhamento só é permitido por coordenadores") and allowed for System Administrator / Local Manager;
+assigning another user is coordinator-only and the target must hold the Buyer role (409 otherwise); idempotent when
+already assigned to the actor (200). Audit `COMPRADOR_ATRIBUIDO`, requester in-app notice and the `BuyerAssigned`
+e-mail event are the endpoint's. PAYMENT requests take the correction-group path (§G.20.1: claim of an unassigned
+WAITING_PO_CORRECTION group, coordinator transfer, rowversion arbitration) — untouched.
+
+**Discrepancy reported, not changed.** The classic list shows "Assumir Pedido" to every non-owner and lets the server
+refuse; an ordinary Buyer therefore sees a button that always fails on an assigned request. The backend was not
+broadened: ordinary Buyers still cannot take over an assigned request. `QuotationAssignBuyerTests` pins the matrix
+(claim + idempotence + audit/event; ordinary-Buyer takeover 409 with nothing written; coordinator+Buyer takeover for
+System Administrator and Local Manager; coordinator without Buyer role 403; coordinator reassignment to a Buyer, refusal
+for a non-Buyer target, ordinary Buyer assigning others 403; out-of-scope 404).
+
+**Workspace behaviour (new).** The header's "Comprador" field offers, for QUOTATION requests not in a terminal state:
+"Assumir pedido" when unassigned and the user has the Buyer role; "Assumir pedido de outro comprador" when assigned to
+someone else and the user is a System Administrator or Local Manager WITH the Buyer role — after a confirmation that
+names the request and the current Buyer and states the effects (quotation actions move to the new owner; history and
+requester notice as in the classic tool). Nothing is offered when the server would refuse (ordinary Buyer on an assigned
+request, coordinator without the Buyer role, already mine, PAYMENT, terminal status); the button's tooltip gives the
+reason. Submission goes through the existing endpoint (self-assignment only; no reassignment to others from the
+Workspace). One submission at a time; server refusals shown verbatim; a successful assignment re-reads the projection
+(owner, next actions, quotation Editar/Excluir visibility) and a failed re-read after success is reported with the
+"não repita a ação" message. `BuyerWorkspaceDto.RequestTypeCode` was added (read-only) so the UI can exclude PAYMENT.
+Guided tour: step "Assumir pedido" added (anchor `buyer-workspace-assign`, skipped when the button is not rendered).
+
+**TEST plan (bounded).** On disposable QUOTATION requests: (1) unassigned, as a Buyer → "Assumir pedido" → owner,
+next action and Editar/Excluir appear without reload, history `COMPRADOR_ATRIBUIDO`, requester notice; (2) assigned to
+another Buyer, as an ordinary Buyer → no button; direct API call → 409, nothing written; (3) assigned to another Buyer,
+as System Administrator + Buyer → "Assumir pedido de outro comprador" → confirmation names the current Buyer → owner
+changes, previous owner loses the actions; (4) as System Administrator without the Buyer role → no button; API → 403;
+(5) PAYMENT request → no button; (6) cancel the confirmation → nothing changes. Do not use REQ-517 or REQ-578.
+
+## 7. Ordinary Edit/Delete only for quotations EVER submitted for approval — durable marker (working tree, unreleased, 2026-10-16)
+
+**Motivation.** REQ-05/10/2026-517: scalar WAITING_QUOTATION (other items still pending) while a batch was already
+"Aguardando P.O."; the Workspace showed Editar/Excluir for the submitted quotation. The classic list hid them through a
+client-side check of batch references; `PUT …/quotations/{id}` allowed in-place edits of a submitted quotation as long
+as no referenced line was removed. REQ-517 and REQ-578 were not modified.
+
+### 7.1 Rule
+A quotation is "submitted" when **either**
+- its durable marker is set (`Quotations.FirstSubmittedForApprovalAtUtc` not null), **or**
+- any of its lines is still referenced as a selected item (`ApprovalBatchItems.SelectedQuotationItemId`) or as an
+  approval candidate (`ApprovalBatchItemCandidates`) of ANY approval batch, whatever the batch status (rejected,
+  cancelled, adjustment and approved batches do not unlock), or as the line-level award pointer of a request item
+  (`RequestLineItems.SelectedQuotationItemId`, legacy request-level approval).
+
+The decision is per quotation: a never-submitted sibling on the same request stays editable and deletable (partial
+submission). Request adjustment states (AREA_ADJUSTMENT / FINAL_ADJUSTMENT) do not unlock an in-place edit: the
+explicit revision/rework flow (`SaveQuotation` with `reworkBatchId` / `revisesQuotationId`) creates a NEW quotation and
+is untouched by the lock (`ReworkRevisionSaveQuotationTests.G_MarkerLockedOriginal…`). Behaviour change: an in-place PUT
+of a submitted quotation during AREA/FINAL_ADJUSTMENT (previously accepted when no referenced line was removed) is now
+refused; the revision is the supported path.
+
+### 7.2 Durable marker (`Quotation.FirstSubmittedForApprovalAtUtc`, `FirstSubmittedBatchId`, `FirstSubmittedSource`, `RowVersion`)
+- Written by `Infrastructure/Services/Purchasing/QuotationSubmissionStamper`, which runs inside **both**
+  `ApplicationDbContext.SaveChanges` overrides before the write is sent — same transaction as the submission evidence,
+  so every submission path is covered structurally: CreateBatch candidates, UpdateBatch rework (new candidates),
+  extra-item INCLUDE (`BatchExtraItemDecisionService`), approver winner stamp (`ApprovalBatchItem.SelectedQuotationItemId`)
+  and the legacy request-level award (`RequestLineItem.SelectedQuotationItemId`, batch id null).
+- Set only when still null (repeated submissions keep the FIRST batch); never overwritten, replaced by another
+  non-null value or cleared through tracked writes (sync and async SaveChanges, including the retry-after-failure
+  path) — a tracked quotation whose marker, pointer or source was nulled/changed in memory has the persisted values
+  restored before save. No product code or `scripts/db` script writes `Quotations` through raw SQL, `ExecuteUpdate`
+  or untracked `Update()`; raw SQL is the only way around the guard and is out of scope by design.
+- `FirstSubmittedSource` records the evidence class: `SUBMISSION` (stamped live by the submission's own SaveChanges:
+  the actual instant), `BACKFILL_BATCH` (migration backfill from a still-existing batch reference: **persisted batch
+  evidence** dated by the batch's `CreatedAtUtc`) or `BACKFILL_LINE_AWARD_ESTIMATED` (legacy line-level award only:
+  proven submission, APPROXIMATE date). Batch creation and first submission are atomic only in `CreateBatch` (batch,
+  items and candidates in one SaveChanges); the rework edit (`UpdateBatch`) and the extra-item INCLUDE add candidates
+  to an EXISTING batch later, so a backfilled batch date is a lower bound, not the exact first-submission time. Wording
+  follows the source: `SUBMISSION` → "submetida para aprovação em dd/MM/yyyy HH:mm UTC"; `BACKFILL_BATCH` → "registo de
+  submissão … Lote #N, STATUS, criado em dd/MM/yyyy" (no time of day, no claim of instant); estimated → "data de
+  referência aproximada dd/MM/yyyy". Several batches: deterministic earliest by (CreatedAtUtc, BatchNumber, BatchId),
+  and the pointer and the timestamp always come from that same row.
+- Scope/performance: the stamper takes ONE snapshot of the tracked entries per SaveChanges (one DetectChanges, which
+  SaveChanges performs anyway), inspects only candidates, batch items and request line items, issues at most two
+  keyed lookups (quotation items / quotations by id) and only when submission evidence is pending, and never calls
+  SaveChanges itself (no recursion, no table scans).
+- Stamped through the quotation's **tracked instance** when one exists (CreateBatch/UpdateBatch load quotation items
+  with `Include(qi => qi.Quotation)`), so the UPDATE runs under the quotation's RowVersion as read at the start of the
+  submission.
+- **FK/delete behaviour (verified on SQL Server LocalDB).** `FirstSubmittedBatchId` is a plain indexed column with **no
+  foreign key** by design: batch deletion (cascade to items/candidates), batch-item removal and candidate removal never
+  clear, null or block it (`QuotationSubmissionMarkerRelationalTests.No_foreign_key_on_FirstSubmittedBatchId…`). When
+  the batch still exists the lock reason names it ("Lote #N, STATUS; referências do lote entretanto removidas ou
+  recompostas"); when it is gone the reason says "lote original já removido ou recomposto". Candidate/selected
+  references themselves keep `DeleteBehavior.NoAction` towards `QuotationItems` (unchanged), which is why a stale
+  DELETE of a just-submitted quotation can also fail on the REFERENCE constraint (see 7.4).
+- Real code paths covered by tests: `BatchExtraItemDecisionServiceTests.ApplyAsync_ReversalIncludeToExclude_WhenSafe…`
+  (reversal removes the batch item → marker kept, still locked) and
+  `CandidateBasedApprovalBatchTests.Returned_batch_can_be_edited_and_resubmitted` (rework recomposition drops a
+  candidate → its quotation keeps the marker and the lock).
+
+### 7.3 Shared decision and enforcement
+`QuotationSubmissionLock` resolves the state from live references first (earliest batch number/status), then the
+line-level award, then the marker (`Evidence` = BATCH_REFERENCE | LINE_AWARD | DURABLE_MARKER; code `QUOTATION_SUBMITTED`).
+- `UpdateQuotation`: evaluated after loading the quotation, before header/attachment/line changes → 409 with
+  `code`, `batchNumber`, `evidence`. `DeleteQuotation`: same decision replaces the previous inline check → 409.
+- Exposed on `RequestDetailsDto.Quotations[]` and `BuyerWorkspaceQuotationDto` (`IsSubmittedForApproval`,
+  `SubmittedBatchNumber`, `SubmissionLockReason`); Workspace shows "Submetida (Lote #N)" / "Submetida para aprovação"
+  with the server reason instead of Editar/Excluir (`resolveQuotationActionState`); classic list uses the server flag
+  first and its legacy client-side check only as a fallback. Both UIs never recompute the lock.
+- Stale forms (edit wizard / delete confirmation opened before a submission) end in the server's 409; nothing is
+  written and no notification is emitted (tests assert header, lines, document link, history and outbox unchanged).
+
+### 7.4 Concurrency (verified on SQL Server LocalDB)
+`Quotations.RowVersion` (rowversion) is the arbiter between a Buyer edit/delete and a submission committing at the
+same time:
+- `UpdateQuotation` always rewrites the header row under its RowVersion (`Entry(quotation).State = Modified`) even
+  when the payload leaves it unchanged; a submission committed between the lock check and the save (the stamper
+  bumps the row) makes the save fail with `DbUpdateConcurrencyException` → 409 `QUOTATION_CONCURRENT_CHANGE`, nothing
+  written (`Stale_edit_is_refused_409…`).
+- `DeleteQuotation`: the same race fails either on the RowVersion or, earlier, on the REFERENCE constraint of the new
+  candidate towards the line being deleted (SqlException 547 naming a FK towards `Quotations`/`QuotationItems`); both
+  are mapped to 409 `QUOTATION_CONCURRENT_CHANGE` (`Stale_delete_is_refused_409…`). Other database errors, including
+  other constraint violations, are not mapped and surface through the generic pipeline as before.
+- Refused actions leave no partial business writes: the stale-edit test also swaps the proforma document and asserts
+  the old attachment is not soft-deleted and the link is unchanged; both race tests assert no history row, no outbox
+  row, no workflow event and no in-app notification.
+- Known residual: the legacy request-level area approval (`RequestsController.ProcessAreaApproval`, line-level award)
+  has no concurrency filter, so a Buyer edit committed between its read and its save surfaces as a 500 instead of a
+  409; the write itself still rolls back (single SaveChanges). Pre-existing endpoint behaviour, not changed here.
+- The reverse race — a Buyer edit committed after the submission read its quotations — fails the submission's save
+  (`DbUpdateConcurrencyException`, mapped to 409 by `ApprovalConcurrencyExceptionFilter` on `ApprovalBatchController`);
+  nothing of the batch or the marker persists (`Submission_fails_and_rolls_back…`). A failed submission save (FK
+  violation) also leaves no marker (`Failed_submission_save_leaves_no_marker_behind`).
+- No new transaction scopes: each endpoint is one `SaveChanges` = one transaction, as before.
+
+### 7.5 Historical boundary (explicit)
+The migration backfills the marker from the references that **still exist** at migration time (candidates and
+selected items of any batch status, source `BACKFILL_BATCH`, persisted batch evidence dated by batch creation; legacy line-level awards, source
+`BACKFILL_LINE_AWARD_ESTIMATED`, approximate date = line `UpdatedAtUtc`, else quotation `CreatedAtUtc`, batch id null:
+a proven submission whose time is an estimate and is labelled as such in the lock reason). A quotation whose references were all removed BEFORE the migration
+(rework recomposition, extra-item reversal, batch deletion) **cannot be recovered**: the `BATCH_CANDIDATES_SUBMITTED`
+history row carries supplier text only, and nothing is inferred from supplier names or free-text history. Such
+quotations stay unlocked until (if ever) they are referenced again; this is a documented limitation, not a claim of
+complete historical recovery. From the deployment onwards the marker is exact for every new submission.
+
+### 7.6 Migration requirements — `20261016204148_AddQuotationSubmissionMarker`
+- Additive: `Quotations.FirstSubmittedForApprovalAtUtc datetime2 NULL`, `Quotations.FirstSubmittedBatchId
+  uniqueidentifier NULL` (+ `IX_Quotations_FirstSubmittedBatchId`, no FK), `Quotations.FirstSubmittedSource nvarchar(40) NULL`,
+  `Quotations.RowVersion rowversion NOT NULL`; then `BackfillSql` (idempotent, only rows still NULL; same text executed
+  by the relational test).
+- `Down` drops the four columns and the index (backfilled/stamped markers are lost on rollback — re-running `Up`
+  re-derives them from references that still exist, within the 7.5 boundary).
+- Validated locally only (2026-10-16, final migration id 20261016204148): Up (20261009084838 + this one) → verify →
+  Down → Up on a disposable LocalDB database restored from a copy-only backup of the local dev clone (146 quotations:
+  131 marked = 129 `BACKFILL_BATCH` + 2 `BACKFILL_LINE_AWARD_ESTIMATED`, 15 never submitted; 0 referenced-but-unmarked,
+  0 marked-without-reference, 0 batch-pointer mismatches, 6 locked through REJECTED/CANCELLED first batches, no FK on
+  the pointer, deterministic after the round trip); the copy was dropped afterwards and the dev clone itself was not migrated. A from-zero
+  database build is not possible in this repository (historical migration `20260603152331` is not replayable), so
+  migrations are validated on already-migrated copies. The EnsureCreated sandbox `Portal-Gerencial-IntegrationTests`
+  was recreated from the current model (its bootstrap detects the missing columns). **Not applied to TEST or PROD.**
+  Deployment:
+  Apply TEST Migrations (this migration, backend down or tolerant — the API with the new build requires the columns),
+  then Deploy TEST; PROD via the standard Apply PRODUCTION Migrations → Deploy PRODUCTION gates. Backend and frontend
+  of the same release go together (DTO flags/409 codes).
+- Rollback coordination: the previous backend build does not read the new columns, so a code rollback without `Down`
+  is safe; `Down` only if the release is abandoned.
+
+### 7.7 Tests
+`QuotationSubmissionLockTests` (InMemory): lock matrix (candidate / selected / both; WAITING_AREA_APPROVAL,
+WAITING_FINAL_APPROVAL, REJECTED, CANCELLED, AREA_ADJUSTMENT with request in adjustment, APPROVED) → PUT/DELETE 409
+with code/batch/evidence, snapshot unchanged, no event, no in-app call; sibling never-submitted editable/deletable;
+no-batch quotation editable/deletable; detail and Workspace projections agree; pure decision order incl. the
+approximate-date wording; stamping on candidate and selected-only seeds (source SUBMISSION); legacy line award
+stamps without batch and locks; award removal/reassignment never unlocks the marked quotation and stamps the new
+target; repeated submission keeps the first marker; marker/pointer/source never cleared, replaced or moved (async and
+sync saves); marker alone keeps the lock after reference removal and after whole-batch
+deletion (guards + both projections). `QuotationSubmissionMarkerRelationalTests` (LocalDB): no FK + marker survives
+removal/deletion; stale edit 409 with document swap (old proforma kept, link unchanged, no history/outbox/event/notice);
+stale delete 409 (no event/notice); submission loses to a prior edit and rolls back; failed submission
+leaves no marker; never-submitted sibling editable/deletable on SQL Server while the others refuse; backfill SQL
+(REJECTED candidate, CANCELLED selected-only, two batches → earliest with consistent pointer, legacy award →
+estimated source and approximate wording once the award pointer is gone, untouched) and idempotence.
+`ReworkRevisionSaveQuotationTests.G_MarkerLockedOriginal…` (LocalDB): explicit revision still accepted, revision starts
+unlocked, original marker untouched. `quotationSubmissionLock.test.ts`: per-quotation UI state and both UIs' wiring.
+Side fixes in the LocalDB suites (seeds used fixed supplier `PortalCode`/`TaxId` that the recreated sandbox's unique
+indexes now reject; randomized, cleanup made tolerant). Assignment feature unchanged (`QuotationAssignBuyerTests`,
+`workspaceAssignActions.test.ts`).

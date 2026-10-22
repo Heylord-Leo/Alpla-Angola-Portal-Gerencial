@@ -119,7 +119,7 @@ describe('workspace wiring (source-level — no DOM runtime in this suite)', () 
         expect(workspaceSrc).toMatch(/onError: \(msg\) => setActionError\(msg\)/);
         expect(workspaceSrc).toMatch(/variant="destructive"/);
         expect(workspaceSrc).toMatch(/buildDeleteQuotationConfirmation\(deleteTarget\)/);
-        expect(workspaceSrc).toMatch(/disabled=\{busy\} onClick=\{\(\) => onEdit\(q\)\}/);
-        expect(workspaceSrc).toMatch(/disabled=\{busy\} onClick=\{\(\) => onDelete\(q\)\}/);
+        expect(workspaceSrc).toMatch(/disabled=\{busy \|\| !st\.editable\} onClick=\{\(\) => onEdit\(q\)\}/); // §7: per-quotation server lock
+        expect(workspaceSrc).toMatch(/disabled=\{busy \|\| !st\.deletable\} onClick=\{\(\) => onDelete\(q\)\}/);
     });
 });

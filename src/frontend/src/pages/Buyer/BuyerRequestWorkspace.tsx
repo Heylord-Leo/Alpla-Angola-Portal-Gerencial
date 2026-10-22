@@ -30,8 +30,9 @@ import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequ
 import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
-import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canManageWorkspaceQuotations, describeWorkspaceQuotation, runDeleteQuotation } from './workspaceQuotationActions';
+import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canManageWorkspaceQuotations, describeWorkspaceQuotation, resolveQuotationActionState, runDeleteQuotation } from './workspaceQuotationActions';
 import type { BuyerWorkspaceQuotation } from '../../types/buyerWorkspace';
+import { buildTakeoverConfirmation, resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -86,6 +87,27 @@ export function BuyerRequestWorkspace() {
   const [quotationBusy, setQuotationBusy] = useState(false);
   const quotationBusyRef = useRef(false);
   const setQuotationBusyBoth = (b: boolean) => { quotationBusyRef.current = b; setQuotationBusy(b); };
+  // "Assumir pedido" (QUOTATION only): the decision mirrors AssignBuyer's rules (Buyer role for self-assignment;
+  // coordinators only for a takeover); the server remains the authority. Takeover asks for confirmation first.
+  const ASSIGN_ROLE_NAMES = { buyer: ROLES.BUYER, systemAdministrator: ROLES.SYSTEM_ADMINISTRATOR, localManager: ROLES.LOCAL_MANAGER };
+  const assignAction = resolveAssignAction({ requestTypeCode: ws?.requestTypeCode, requestStatusCode: ws?.requestStatusCode, buyerId: ws?.buyerId }, user, ASSIGN_ROLE_NAMES);
+  const [assignConfirm, setAssignConfirm] = useState(false);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const assignBusyRef = useRef(false);
+  const performAssign = async (kind: 'CLAIM' | 'TAKEOVER') => {
+    setAssignConfirm(false);
+    if (!ws) return;
+    setActionError(null);
+    await runAssignRequest(
+      {
+        assignBuyer: (id) => api.requests.assignBuyer(id),
+        isBusy: () => assignBusyRef.current || quotationBusyRef.current,
+        setBusy: (b) => { assignBusyRef.current = b; setAssignBusy(b); },
+        onSuccess: (msg) => afterMutation(msg),
+        onError: (msg) => setActionError(msg),
+      },
+      ws.requestId, kind);
+  };
   const handleEditQuotation = async (q: BuyerWorkspaceQuotation) => {
     if (!ws || quotationBusyRef.current) return;   // one open/delete at a time (double click, concurrent delete)
     setActionError(null);
@@ -271,7 +293,21 @@ export function BuyerRequestWorkspace() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
           <Meta icon={<AlertTriangle size={13} />} label="Grau de necessidade">{ws.needLevelCode ? (NEED_LEVEL_LABEL[ws.needLevelCode] ?? ws.needLevelCode) : '—'}</Meta>
           <Meta icon={<UserIcon size={13} />} label="Solicitante">{ws.requesterName || '—'}</Meta>
-          <Meta icon={<UserIcon size={13} />} label="Comprador">{ws.buyerName || 'Não atribuído'}</Meta>
+          <Meta icon={<UserIcon size={13} />} label="Comprador">
+            {ws.buyerName || 'Não atribuído'}
+            {assignAction.kind !== 'NONE' && (
+              <button
+                type="button"
+                data-tour="buyer-workspace-assign"
+                disabled={assignBusy || quotationBusy}
+                onClick={() => assignAction.kind === 'TAKEOVER' ? setAssignConfirm(true) : void performAssign('CLAIM')}
+                title={assignAction.reason}
+                style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 8, border: '1px solid var(--color-primary)', background: assignAction.kind === 'CLAIM' ? 'var(--color-primary)' : 'var(--color-bg-surface)', color: assignAction.kind === 'CLAIM' ? '#fff' : 'var(--color-primary)', fontSize: '0.7rem', fontWeight: 700, cursor: (assignBusy || quotationBusy) ? 'not-allowed' : 'pointer', opacity: (assignBusy || quotationBusy) ? 0.6 : 1 }}
+              >
+                <UserIcon size={12} /> {assignAction.label}
+              </button>
+            )}
+          </Meta>
           <Meta icon={<Building2 size={13} />} label="Empresa / Planta">{[ws.companyName, ws.plantName].filter(Boolean).join(' · ') || '—'}</Meta>
           <Meta icon={<MapPin size={13} />} label="Departamento">{ws.departmentName || '—'}</Meta>
           <Meta icon={<CalendarClock size={13} />} label="Necessário até">{fmtDate(ws.needByDateUtc)}</Meta>
@@ -356,6 +392,26 @@ export function BuyerRequestWorkspace() {
 
       {/* In-Workspace Supplier Sheet drawer — mounts the SHARED SupplierFichaDetailContent (Stage 3D). */}
       <BuyerSupplierFichaDrawer ref={supplierDrawerRef} onSaved={() => loadWorkspace(true)} />
+
+      {assignConfirm && ws && (() => {
+        const c = buildTakeoverConfirmation(ws);
+        return (
+          <ConfirmationDialog
+            isOpen
+            title={c.title}
+            variant="warning"
+            confirmText="Assumir pedido"
+            cancelText="Cancelar"
+            onConfirm={() => void performAssign('TAKEOVER')}
+            onCancel={() => setAssignConfirm(false)}
+            message={(
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {c.lines.map((line, i) => <div key={i}>{line}</div>)}
+              </div>
+            )}
+          />
+        );
+      })()}
 
       {deleteTarget && (() => {
         const c = buildDeleteQuotationConfirmation(deleteTarget);
@@ -552,18 +608,29 @@ function TabQuotes({ ws, canManage, busy, onEdit, onDelete }: {
               <Td style={{ textAlign: 'center' }}>{q.itemsQuotedCount}</Td>
               <Td style={{ ...nowrap, textAlign: 'right' }}>{q.currency ? `${fmtAmount(q.totalAmount)} ${q.currency}` : fmtAmount(q.totalAmount)}</Td>
               <Td style={{ textAlign: 'center' }}>{q.documentCount}</Td>
-              {canManage && (
-                <Td style={nowrap}>
-                  <div data-tour="buyer-workspace-quotation-actions" style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button type="button" disabled={busy} onClick={() => onEdit(q)} style={actionBtn} title={`Editar ${describeWorkspaceQuotation(q)}`}>
-                      <Pencil size={12} /> Editar
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => onDelete(q)} style={{ ...actionBtn, color: '#991B1B' }} title={`Excluir ${describeWorkspaceQuotation(q)}`}>
-                      <Trash2 size={12} /> Excluir
-                    </button>
-                  </div>
-                </Td>
-              )}
+              {canManage && (() => {
+                const st = resolveQuotationActionState(q, canManage);
+                return (
+                  <Td style={nowrap}>
+                    <div data-tour="buyer-workspace-quotation-actions" style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      {st.locked ? (
+                        <span title={st.lockReason} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          <BadgeCheck size={12} /> {st.lockLabel}
+                        </span>
+                      ) : (
+                        <>
+                          <button type="button" disabled={busy || !st.editable} onClick={() => onEdit(q)} style={actionBtn} title={`Editar ${describeWorkspaceQuotation(q)}`}>
+                            <Pencil size={12} /> Editar
+                          </button>
+                          <button type="button" disabled={busy || !st.deletable} onClick={() => onDelete(q)} style={{ ...actionBtn, color: '#991B1B' }} title={`Excluir ${describeWorkspaceQuotation(q)}`}>
+                            <Trash2 size={12} /> Excluir
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </Td>
+                );
+              })()}
               <Td style={nowrap}>{q.isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-status-green)', fontWeight: 700, fontSize: '0.76rem' }}><BadgeCheck size={13} /> Selecionada</span> : <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>—</span>}</Td>
             </tr>
           ))}
