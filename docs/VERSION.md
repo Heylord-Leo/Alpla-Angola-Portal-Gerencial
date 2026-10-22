@@ -2,7 +2,15 @@
 
 ## Current Version
 
-v2.248.0
+v2.248.1
+
+## [v2.248.1] - 2026-10-22
+
+### Buyer Workspace: takeover/claim button clipped in the "Comprador" field
+
+PATCH, frontend-only. The "Assumir pedido" button was rendered inside a nowrap/overflow-hidden header cell and could be
+clipped out of view next to the owner's name (proven on TEST v2.248.0, REQ-271). The "Comprador" field now renders the
+name and the action on separate rows; a rendered regression test guards the structure. No backend change, no migration.
 
 ## [v2.248.0] - 2026-10-22
 

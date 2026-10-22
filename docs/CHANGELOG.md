@@ -4,7 +4,32 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.248.0
+v2.248.1
+
+## [v2.248.1] - 2026-10-22 — Buyer Workspace: takeover/claim button was clipped out of view in the "Comprador" field
+
+PATCH, frontend-only (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6). No backend change, no EF model change, no
+migration, no configuration change.
+
+- Root cause (proven on TEST v2.248.0, REQ-20/08/2026-271, Buyer session with every eligibility condition true and mode
+  TAKEOVER): the "Assumir pedido" / "Assumir pedido de outro comprador" button was rendered inside the generic header
+  `Meta` value box, styled `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` within a
+  `minmax(150px, 1fr)` grid cell. The owner's name plus the button exceeded the cell width, so the button existed in
+  the DOM but was clipped out of view. Role, account and request-type hypotheses did not apply to that case.
+- Correction: the "Comprador" field is a dedicated `BuyerOwnerField` that renders the owner's name (ellipsis on its own
+  row) and the action on a separate row outside any overflow-hidden/nowrap container. Decision, confirmation dialog,
+  endpoint and tour anchor are unchanged.
+- Regression test: vitest runs without a DOM runtime, so `BuyerOwnerField.test.ts` renders the real component through
+  `react-dom/server` and asserts the button has no clipping ancestor (overflow hidden / nowrap / ellipsis) for the
+  TAKEOVER case built from the live inputs, plus CLAIM, NONE and busy variants, and that the header no longer nests the
+  button in `Meta`. The page tour test resolves anchors across the page and this child component.
+- Docs §6: live TEST result, root cause, a read-only browser confirmation snippet (element present, parent overflow,
+  clipped yes/no), and the corrected diagnostic route `/api/v1/buyer/requests/{id}/workspace`.
+- Not in this release: the 403 on `/api/v1/lookups/suppliers/pending-approval` observed in the same session comes from
+  the sidebar pending-approvals badge (endpoint restricted to System Administrator / Final Approver; the hook catches it
+  and shows an empty count); it is independent of the Workspace header and its permission was not changed.
+
+Verification: frontend tsc, Vite build, vitest 999/999 (93 files). Backend untouched (2,997/2,997 at v2.248.0).
 
 ## [v2.248.0] - 2026-10-22 — Buyer self-takeover of another Buyer's request: justification, concurrency protection, atomic audit and participant notifications
 

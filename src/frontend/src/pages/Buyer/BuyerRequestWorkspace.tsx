@@ -34,6 +34,7 @@ import { REFRESH_AFTER_MUTATION_FAILED, buildDeleteQuotationConfirmation, canMan
 import type { BuyerWorkspaceQuotation } from '../../types/buyerWorkspace';
 import { resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
 import { TakeOverRequestDialog } from '../../components/Buyer/TakeOverRequestDialog';
+import { BuyerOwnerField } from './BuyerOwnerField';
 
 export function BuyerRequestWorkspace() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -296,21 +297,14 @@ export function BuyerRequestWorkspace() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
           <Meta icon={<AlertTriangle size={13} />} label="Grau de necessidade">{ws.needLevelCode ? (NEED_LEVEL_LABEL[ws.needLevelCode] ?? ws.needLevelCode) : '—'}</Meta>
           <Meta icon={<UserIcon size={13} />} label="Solicitante">{ws.requesterName || '—'}</Meta>
-          <Meta icon={<UserIcon size={13} />} label="Comprador">
-            {ws.buyerName || 'Não atribuído'}
-            {assignAction.kind !== 'NONE' && (
-              <button
-                type="button"
-                data-tour="buyer-workspace-assign"
-                disabled={assignBusy || quotationBusy}
-                onClick={() => assignAction.kind === 'TAKEOVER' ? setAssignConfirm(true) : void performAssign('CLAIM')}
-                title={assignAction.reason}
-                style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 8, border: '1px solid var(--color-primary)', background: assignAction.kind === 'CLAIM' ? 'var(--color-primary)' : 'var(--color-bg-surface)', color: assignAction.kind === 'CLAIM' ? '#fff' : 'var(--color-primary)', fontSize: '0.7rem', fontWeight: 700, cursor: (assignBusy || quotationBusy) ? 'not-allowed' : 'pointer', opacity: (assignBusy || quotationBusy) ? 0.6 : 1 }}
-              >
-                <UserIcon size={12} /> {assignAction.label}
-              </button>
-            )}
-          </Meta>
+          {/* Owner + action in separate rows: the action must never sit inside Meta's nowrap/overflow-hidden value box (REQ-271 clipping). */}
+          <BuyerOwnerField
+            buyerName={ws.buyerName}
+            assignAction={assignAction}
+            busy={assignBusy || quotationBusy}
+            onClaim={() => void performAssign('CLAIM')}
+            onTakeover={() => setAssignConfirm(true)}
+          />
           <Meta icon={<Building2 size={13} />} label="Empresa / Planta">{[ws.companyName, ws.plantName].filter(Boolean).join(' · ') || '—'}</Meta>
           <Meta icon={<MapPin size={13} />} label="Departamento">{ws.departmentName || '—'}</Meta>
           <Meta icon={<CalendarClock size={13} />} label="Necessário até">{fmtDate(ws.needByDateUtc)}</Meta>

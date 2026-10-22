@@ -151,7 +151,7 @@ console.table({ email: claims['http://schemas.xmlsoap.org/ws/2005/05/identity/cl
                 userId: claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] || claims.nameid,
                 expiresUtc: new Date(claims.exp * 1000).toISOString(), roles: roles.join(' | ') });
 // 2. Relevant workspace fields of the request (replace REQUEST_ID)
-fetch('/api/v1/requests/REQUEST_ID/workspace', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.json())
+fetch('/api/v1/buyer/requests/REQUEST_ID/workspace', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.json())
   .then(w => console.table({ requestNumber: w.requestNumber, requestTypeCode: w.requestTypeCode, requestStatusCode: w.requestStatusCode, buyerId: w.buyerId, buyerName: w.buyerName }));
 // 3. Deployed build vs loaded bundle
 fetch('/api/app/version').then(r => r.json()).then(v => console.table({ api: v.version, buildId: v.buildId }));
@@ -159,7 +159,30 @@ fetch('/api/app/version').then(r => r.json()).then(v => console.table({ api: v.v
 
 Expected when the hypothesis holds: `roles` without `Buyer` for the signed-in e-mail while the admin screen of the OTHER
 account shows Buyer; or `requestTypeCode` ≠ QUOTATION, a terminal status, or `buyerId` = the signed-in user. Any role
-change requires a new login (24 h token, roles not refreshed). Decision after the check is the operator's.
+change requires a new login (24 h token, roles not refreshed).
+
+**Live result on TEST v2.248.0 (operator, 2026-10-22) and proven root cause.** For Celestina Bernardo on REQ-271 every
+condition was true (cached roles and JWT claims include Buyer; QUOTATION / WAITING_QUOTATION / owner Samuel Mpoco;
+mode TAKEOVER) and still no button was visible. Cause (source of `e770363`): the button was rendered INSIDE the generic
+`Meta` value container of the header grid, whose style is `white-space: nowrap; overflow: hidden; text-overflow:
+ellipsis` in a `repeat(auto-fit, minmax(150px, 1fr))` cell; the owner's name plus the label "Assumir pedido de outro
+comprador" exceed the cell width, so the button existed in the DOM but was clipped out of view (the diagnostic's
+decision was correct; the element was simply invisible). The duplicate-account and missing-role hypotheses do not apply
+to this case. Correction (working tree): the "Comprador" field is a dedicated `BuyerOwnerField` that renders the name
+(ellipsis) and the action on separate rows outside any overflow-hidden/nowrap box; `BuyerOwnerField.test.ts` renders
+the component with react-dom/server (no DOM runtime in vitest) and asserts the button has no clipping ancestor, and
+that the header no longer nests the button in `Meta`. The 403 on `/api/v1/lookups/suppliers/pending-approval` is
+independent (a sidebar/lookup call outside the header render path; permission not broadened).
+
+Browser confirmation on a build that still clips (TEST v2.248.0), read-only, in the console of the Workspace page:
+```js
+const b = document.querySelector('[data-tour="buyer-workspace-assign"]');
+const box = b?.parentElement; const r = b?.getBoundingClientRect(); const pr = box?.getBoundingClientRect();
+console.table({ buttonInDom: !!b, parentOverflow: box && getComputedStyle(box).overflow, parentWhiteSpace: box && getComputedStyle(box).whiteSpace,
+  buttonRight: r?.right, parentRight: pr?.right, clipped: !!(r && pr && r.right > pr.right) });
+```
+Expected before the fix: `buttonInDom: true`, `parentOverflow: hidden`, `clipped: true`. After the fix the button's
+parent is a normal block (`overflow: visible`) and `clipped: false`.
 
 ## 7. Ordinary Edit/Delete only for quotations EVER submitted for approval — durable marker (working tree, unreleased, 2026-10-16)
 
