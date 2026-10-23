@@ -836,6 +836,7 @@ public class CandidateBasedApprovalBatchTests
     [Fact]
     public async Task Returned_batch_can_be_edited_and_resubmitted()
     {
+        Guid droppedQuotationItemId;
         var s = await SeedAsync();
         var batchId = await CreateFullBatchAsync(s);
         var approve = await ApproveDtoAsync(s, batchId, new[] { true, false, true, false });
@@ -853,10 +854,23 @@ public class CandidateBasedApprovalBatchTests
         await using (var ctx = new ApplicationDbContext(s.Options))
         {
             var update = FullCandidateBatchDto(s);
+            droppedQuotationItemId = update.Items[0].Candidates[1].QuotationItemId;
             update.Items[0].Candidates.RemoveAt(1);
             update.Items[0].Candidates[0].BuyerNote = "Única opção após revisão do reajuste.";
             var result = await BuildController(ctx, s.Actor).UpdateBatch(s.RequestId, batchId, new UpdateApprovalBatchDto { Items = update.Items });
             Assert.IsType<OkObjectResult>(result);
+        }
+
+        // §7 — the recomposition deleted the dropped option's candidate row, but the quotation it belonged to keeps
+        // its durable submission marker (first batch) and remains locked for ordinary edit/delete.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            Assert.False(await ctx.ApprovalBatchItemCandidates.AnyAsync(c => c.QuotationItemId == droppedQuotationItemId));
+            var droppedQuotationId = await ctx.QuotationItems.Where(qi => qi.Id == droppedQuotationItemId).Select(qi => qi.QuotationId).SingleAsync();
+            var droppedQuotation = await ctx.Quotations.Include(q => q.Items).SingleAsync(q => q.Id == droppedQuotationId);
+            Assert.NotNull(droppedQuotation.FirstSubmittedForApprovalAtUtc);
+            Assert.Equal(batchId, droppedQuotation.FirstSubmittedBatchId);
+            Assert.True((await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(ctx, droppedQuotation)).IsSubmitted);
         }
 
         await using (var ctx = new ApplicationDbContext(s.Options))

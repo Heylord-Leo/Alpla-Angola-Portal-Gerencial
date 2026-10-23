@@ -61,6 +61,13 @@ export const BUYER_ITEMS_PAGE_STEPS: TourStep[] = [
         placement: 'top',
     },
     // 7. Empty state (visible only when no requests exist)
+    // Row actions menu of the quotation queue (conditional: present only when rows are listed)
+    {
+        target: '[data-tour="buyer-queue-row-actions"]',
+        title: 'Ações do pedido',
+        content: 'O menu de cada pedido reúne Ver detalhes, Adicionar observação e, quando elegível, Assumir pedido (pedido sem comprador) ou Assumir pedido de outro comprador — com justificação obrigatória; o comprador anterior, o requisitante e os participantes são notificados. A opção só aparece quando o servidor aceitaria a ação.',
+        placement: 'left',
+    },
     {
         target: '[data-tour="buyer-items-empty-state"]',
         title: 'Sem Pedidos Disponíveis',

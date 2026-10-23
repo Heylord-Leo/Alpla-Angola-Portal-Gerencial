@@ -45,6 +45,8 @@ public static class WorkflowEventCodes
     // --- Quotation Buyer Notifications ---
     public const string QuotationAwaitingBuyer = "QUOTATION_AWAITING_BUYER";
     public const string BuyerAssigned = "BUYER_ASSIGNED";
+    /// <summary>§8 — a Buyer took over a QUOTATION request assigned to another Buyer (previous Buyer, new Buyer, requester and request participants are notified).</summary>
+    public const string BuyerTransferred = "BUYER_TRANSFERRED";
 
     // --- Buy-to-Pay (Advance Payment / Reconciliation) ---
     public const string PaymentConditionDefined = "PAYMENT_CONDITION_DEFINED";

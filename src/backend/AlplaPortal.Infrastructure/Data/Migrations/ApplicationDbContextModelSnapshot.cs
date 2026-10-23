@@ -6259,6 +6259,16 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<Guid?>("FirstSubmittedBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("FirstSubmittedForApprovalAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FirstSubmittedSource")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<bool>("IsSelected")
                         .HasColumnType("bit");
 
@@ -6270,6 +6280,12 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<Guid?>("RevisesQuotationId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("SourceFileName")
                         .HasMaxLength(255)
@@ -6304,6 +6320,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FirstSubmittedBatchId");
 
                     b.HasIndex("ProformaAttachmentId");
 

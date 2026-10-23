@@ -18,6 +18,8 @@ public class BuyerWorkspaceDto
     public string? Title { get; set; }
     public string? Description { get; set; }
     public string RequestStatusCode { get; set; } = string.Empty;
+    /// <summary>QUOTATION | PAYMENT — the Workspace offers request-level "Assumir pedido" for QUOTATION only (PAYMENT ownership is per correction group).</summary>
+    public string RequestTypeCode { get; set; } = string.Empty;
 
     public Guid? RequesterId { get; set; }
     public string? RequesterName { get; set; }
@@ -100,6 +102,10 @@ public class BuyerWorkspaceQuotationDto
     public decimal TotalAmount { get; set; }
     public int DocumentCount { get; set; }   // proforma attachment presence (0/1)
     public bool IsSelected { get; set; }
+    /// <summary>§7 — ever submitted for approval (any batch, any status): ordinary Editar/Excluir are locked server-side.</summary>
+    public bool IsSubmittedForApproval { get; set; }
+    public int? SubmittedBatchNumber { get; set; }
+    public string? SubmissionLockReason { get; set; }
 }
 
 public class BuyerWorkspaceBatchDto

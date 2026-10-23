@@ -5,6 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Plus, Upload, ExternalLink, FileText, CheckCircle2, X, Pencil, Trash2, ShieldCheck, AlertCircle, Hash, Calendar, UserPlus, AlertTriangle, BookOpen, MoreVertical, Package, PieChart, Layers, CheckSquare, History } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
+import { ROLES } from '../../constants/roles';
+import { resolveAssignAction, runAssignRequest } from './workspaceAssignActions';
+import { TakeOverRequestDialog } from '../../components/Buyer/TakeOverRequestDialog';
+
+/** §8 — the same decision the Workspace uses: CLAIM when unassigned (Buyer role), TAKEOVER for any Buyer, nothing for PAYMENT, terminal statuses, non-Buyers or the current owner. */
+const ASSIGN_ROLE_NAMES = { buyer: ROLES.BUYER, systemAdministrator: ROLES.SYSTEM_ADMINISTRATOR, localManager: ROLES.LOCAL_MANAGER };
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO, formatDate, getUrgencyStyle, formatDateTime, computeFileHash } from '../../lib/utils';
@@ -797,6 +803,23 @@ export function BuyerItemsList() {
             setIsSaving(false);
         }
     };
+    // §8 — takeover of another Buyer's request: confirmation + mandatory justification (shared dialog), the owner the
+    // user saw is sent as expectedBuyerId, one submission at a time, ownership and actions refreshed on success.
+    const [takeOverTarget, setTakeOverTarget] = useState<any | null>(null);
+    const takeOverBusyRef = useRef(false);
+    const handleTakeOver = async (group: any, justification: string) => {
+        const outcome = await runAssignRequest(
+            {
+                assignBuyer: (id) => api.requests.assignBuyer(id),
+                takeOver: (id, payload) => api.requests.takeOverRequest(id, payload),
+                isBusy: () => takeOverBusyRef.current || isSaving,
+                setBusy: (b) => { takeOverBusyRef.current = b; setIsSaving(b); },
+                onSuccess: (msg) => { setFeedback({ type: 'success', message: msg }); loadData(); },
+                onError: (msg) => setFeedback({ type: 'error', message: msg }),
+            },
+            group.requestId, 'TAKEOVER', { justification, expectedBuyerId: group.buyerId });
+        if (outcome !== 'INVALID') setTakeOverTarget(null);
+    };
 
     const handleOpenPartialApproval = (group: any) => {
         setPartialApprovalModal({ show: true, group });
@@ -1363,19 +1386,23 @@ export function BuyerItemsList() {
                                         }}>
                                             {actionBadge.label}
                                         </span>
-                                        {group.buyerId !== currentUser?.id && (
-                                            <button
-                                                {...(groupIndex === 0 ? { 'data-guide': 'qm-assign-btn' } : {})}
-                                                onClick={(e) => { e.stopPropagation(); handleAssignToMe(group.requestId); }}
-                                                disabled={isSaving}
-                                                style={{
-                                                    backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap'
-                                                }}
-                                                title={group.buyerId ? "Reatribuir este pedido para mim" : "Reivindicar pedido para mim"}
-                                            >
-                                                <UserPlus size={14} /> {group.buyerId ? "Assumir Pedido" : "Atribuir a Mim"}
-                                            </button>
-                                        )}
+                                        {(() => {
+                                            const assign = resolveAssignAction({ requestTypeCode: group.requestTypeCode, requestStatusCode: group.requestStatusCode, buyerId: group.buyerId }, currentUser, ASSIGN_ROLE_NAMES);
+                                            if (assign.kind === 'NONE') return null;   // §8: hidden when the server would refuse (same decision as the Workspace)
+                                            return (
+                                                <button
+                                                    {...(groupIndex === 0 ? { 'data-guide': 'qm-assign-btn' } : {})}
+                                                    onClick={(e) => { e.stopPropagation(); if (assign.kind === 'TAKEOVER') setTakeOverTarget(group); else void handleAssignToMe(group.requestId); }}
+                                                    disabled={isSaving}
+                                                    style={{
+                                                        backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 600, cursor: isSaving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap'
+                                                    }}
+                                                    title={assign.reason}
+                                                >
+                                                    <UserPlus size={14} /> {assign.kind === 'TAKEOVER' ? "Assumir Pedido" : "Atribuir a Mim"}
+                                                </button>
+                                            );
+                                        })()}
                                         {/* Kebab Menu */}
                                         <div style={{ position: 'relative' }}>
                                             <button
@@ -1972,7 +1999,7 @@ export function BuyerItemsList() {
                                                                             {canMutateQuotation && mode === 'BUYER' && (
                                                                                 <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                                                                                     {(() => {
-                                                                                        const isUsedInBatch = group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))));
+                                                                                        const isUsedInBatch = q.isSubmittedForApproval === true || (q.isSubmittedForApproval == null && group.approvalBatches?.some((po: any) => po.items?.some((poi: any) => q.items?.some((qi: any) => qi.id === poi.selectedQuotationItemId || (poi.candidates || []).some((c: any) => c.quotationItemId === qi.id))))); // §7: server decision first
                                                                                         if (isUsedInBatch) {
                                                                                             return (
                                                                                                 <div style={{
@@ -1980,8 +2007,8 @@ export function BuyerItemsList() {
                                                                                                     backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px',
                                                                                                     color: '#166534', fontWeight: 800, fontSize: '0.7rem',
                                                                                                     textTransform: 'uppercase'
-                                                                                                }}>
-                                                                                                    <ShieldCheck size={12} /> Protegida por auditoria
+                                                                                                }} title={q.submissionLockReason || 'Cotação já submetida para aprovação: edição e exclusão diretas bloqueadas; use a revisão/reajuste.'}>
+                                                                                                    <ShieldCheck size={12} /> {q.submittedBatchNumber != null ? `Submetida (Lote #${q.submittedBatchNumber})` : 'Protegida por auditoria'}
                                                                                                 </div>
                                                                                             );
                                                                                         }
@@ -2688,6 +2715,15 @@ export function BuyerItemsList() {
                     loadData();
                 }}
             />
+
+            {takeOverTarget && (
+                <TakeOverRequestDialog
+                    request={{ requestNumber: takeOverTarget.requestNumber, title: takeOverTarget.title, buyerName: takeOverTarget.buyerName }}
+                    busy={isSaving}
+                    onConfirm={(justification) => void handleTakeOver(takeOverTarget, justification)}
+                    onCancel={() => setTakeOverTarget(null)}
+                />
+            )}
 
             <QuotationWizardModal
                 request={wizardActiveRequest}

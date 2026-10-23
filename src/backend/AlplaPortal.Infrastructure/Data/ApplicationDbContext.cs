@@ -223,6 +223,15 @@ public class ApplicationDbContext : DbContext
             .Property(b => b.RowVersion)
             .IsRowVersion();
 
+        // §7 quotation submission marker: no FK on FirstSubmittedBatchId (historical pointer that must survive
+        // batch deletion/recomposition); RowVersion arbitrates Buyer edit/delete vs. concurrent submission.
+        modelBuilder.Entity<Quotation>(entity =>
+        {
+            entity.Property(q => q.RowVersion).IsRowVersion();
+            entity.Property(q => q.FirstSubmittedSource).HasMaxLength(40);
+            entity.HasIndex(q => q.FirstSubmittedBatchId);
+        });
+
         // ─── Approval Reminder Digests ───
         modelBuilder.Entity<ApprovalReminderRun>(entity =>
         {
@@ -1639,6 +1648,8 @@ public class ApplicationDbContext : DbContext
     // makes a manual retry-after-failure on the same context idempotent (no duplicate transitions).
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        // §7 — durable quotation submission marker, same write unit as the submission evidence.
+        Services.Purchasing.QuotationSubmissionStamper.Stamp(this, DateTime.UtcNow);
         if (!StageCaptureAlreadyPrepared())
         {
             var candidates = OperationalStageTracker.DetectCandidates(ChangeTracker);
@@ -1650,6 +1661,8 @@ public class ApplicationDbContext : DbContext
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        // §7 — durable quotation submission marker, same write unit as the submission evidence.
+        await Services.Purchasing.QuotationSubmissionStamper.StampAsync(this, DateTime.UtcNow, cancellationToken);
         if (!StageCaptureAlreadyPrepared())
         {
             var candidates = OperationalStageTracker.DetectCandidates(ChangeTracker);

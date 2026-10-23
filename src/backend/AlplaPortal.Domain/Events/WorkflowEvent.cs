@@ -79,4 +79,11 @@ public record WorkflowEvent
     /// <summary>Adjustment source stage (AdjustmentConstants.SourceStages: AREA | FINAL) — drives the
     /// "returns first to Area" note on a Final-sourced resubmit. Null for non-adjustment events.</summary>
     public string? AdjustmentSourceStage { get; init; }
+
+    /// <summary>BUYER_TRANSFERRED — the Buyer who owned the request before the takeover.</summary>
+    public Guid? PreviousBuyerId { get; init; }
+    /// <summary>BUYER_TRANSFERRED — the mandatory, trimmed justification given by the new Buyer.</summary>
+    public string? Justification { get; init; }
+    /// <summary>Server UTC instant of the persisted change (rendered in the application timezone with an explicit label).</summary>
+    public DateTime? OccurredAtUtc { get; init; }
 }

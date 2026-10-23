@@ -15,6 +15,7 @@ export type TourId =
     | 'page-requests'
     | 'page-buyer-items'
     | 'page-receiving-workspace'
+    | 'page-buyer-request-workspace'
     | 'page-approvals-center'
     | 'drawer-approval-area'
     | 'drawer-approval-final'

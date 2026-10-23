@@ -50,6 +50,7 @@ Used for module-level guidance, such as:
 Used for screen-specific guidance, such as:
 - `page-requests`
 - `page-buyer-items`
+- `page-buyer-request-workspace` (Buyer Request Workspace, `/buyer/requests/:id`)
 - `page-receiving-workspace`
 - `page-approvals-center`
 
@@ -329,6 +330,7 @@ The active registered tours are:
 - `module-purchasing-logistics`
 - `page-requests`
 - `page-buyer-items`
+- `page-buyer-request-workspace` (Buyer Request Workspace, `/buyer/requests/:id`)
 - `page-receiving-workspace`
 - `page-approvals-center`
 - `drawer-approval-area`

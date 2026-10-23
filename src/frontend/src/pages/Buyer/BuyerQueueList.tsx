@@ -26,6 +26,14 @@ import {
   buildPoCorrectionDeepLink,
 } from './buyerQueueView';
 import { useAuth } from '../../features/auth/AuthContext';
+import { ROLES } from '../../constants/roles';
+import { TakeOverRequestDialog } from '../../components/Buyer/TakeOverRequestDialog';
+import { runAssignRequest, type AssignActionDecision } from './workspaceAssignActions';
+import { buildRequestRowKebab, resolveQueueAssignAction } from './buyerQueueAssignActions';
+
+const ASSIGN_ROLE_NAMES = { buyer: ROLES.BUYER, systemAdministrator: ROLES.SYSTEM_ADMINISTRATOR, localManager: ROLES.LOCAL_MANAGER };
+/** Shown when the ownership change succeeded but the queue could not be re-read (never a reason to repeat the action). */
+export const QUEUE_REFRESH_AFTER_MUTATION_FAILED = 'O pedido foi assumido, mas a fila não pôde ser atualizada. Recarregue a página — não repita a ação.';
 
 const PAGE_SIZE = 20;
 
@@ -82,6 +90,10 @@ export function BuyerQueueList() {
   const [cancelItem, setCancelItem] = useState<BuyerQueueItem | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [busy, setBusy] = useState(false);
+  // §8 takeover from the row kebab — same policy/dialog/submission as the Workspace; one submission at a time.
+  const [takeOverItem, setTakeOverItem] = useState<BuyerQueueItem | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const takeOverBusyRef = useRef(false);
 
   const selectedCard = useMemo(() => QUEUE_CARDS.find(c => c.id === card) ?? QUEUE_CARDS[0], [card]);
   const advancedCount = countAdvancedFilters({ company, plant, department, needLevel, deadline, includeCompleted });
@@ -107,10 +119,10 @@ export function BuyerQueueList() {
   };
 
   // ── Data load ──
-  const loadQueue = useCallback(() => {
+  const loadQueue = useCallback((opts?: { afterMutation?: boolean }) => {
     setLoading(true);
     setError(null);
-    api.buyerQueue.getQueue({
+    return api.buyerQueue.getQueue({
       ownership, buyer: buyer || undefined, query: search || undefined, sort,
       company: company ? Number(company) : undefined,
       plant: plant ? Number(plant) : undefined,
@@ -120,19 +132,19 @@ export function BuyerQueueList() {
       deadline: deadline || undefined,
       needLevel: needLevelApiValue(needLevel),
       includeCompleted, page, pageSize: PAGE_SIZE,
-    }).then(setQueue).catch(e => setError(e?.message || 'Erro ao carregar a fila.')).finally(() => setLoading(false));
+    }).then(setQueue).catch(e => { setError(opts?.afterMutation ? QUEUE_REFRESH_AFTER_MUTATION_FAILED : (e?.message || 'Erro ao carregar a fila.')); if (opts?.afterMutation) throw e; }).finally(() => setLoading(false));
   }, [ownership, buyer, search, sort, company, plant, department, selectedCard, operationalStateParam, deadline, needLevel, includeCompleted, page]);
 
-  const loadSummary = useCallback(() => {
+  const loadSummary = useCallback((opts?: { afterMutation?: boolean }) => {
     // Summary scope = authorization + ownership + search + org filters (NOT the selected card).
-    api.buyerQueue.getSummary({
+    return api.buyerQueue.getSummary({
       ownership, query: search || undefined,
       company: company ? Number(company) : undefined,
       plant: plant ? Number(plant) : undefined,
       department: department ? Number(department) : undefined,
       needLevel: needLevelApiValue(needLevel),
       includeCompleted,
-    }).then(setSummary).catch(() => setSummary(null));
+    }).then(setSummary).catch(e => { setSummary(null); if (opts?.afterMutation) throw e; });
   }, [ownership, search, company, plant, department, needLevel, includeCompleted]);
 
   useEffect(() => { loadQueue(); }, [loadQueue]);
@@ -154,6 +166,26 @@ export function BuyerQueueList() {
   const onCompanyChange = (v: string) => {
     const plantsOfNew = v ? plants.filter((p: any) => String(p.companyId) === v) : plants;
     updateParams({ company: v || null, plant: resolvePlantOnCompanyChange(plant || null, plantsOfNew) });
+  };
+
+  /** Re-read owner, "Meu pedido", filtered results and counts after a successful mutation; a failed re-read is reported distinctly. */
+  const refreshAfterMutation = async () => {
+    try { await Promise.all([loadQueue({ afterMutation: true }), loadSummary({ afterMutation: true })]); }
+    catch { setError(QUEUE_REFRESH_AFTER_MUTATION_FAILED); }
+  };
+  const doTakeOver = async (item: BuyerQueueItem, justification: string) => {
+    setError(null); setNotice(null);
+    const outcome = await runAssignRequest(
+      {
+        assignBuyer: (id) => api.requests.assignBuyer(id),
+        takeOver: (id, payload) => api.requests.takeOverRequest(id, payload),
+        isBusy: () => takeOverBusyRef.current || busy,
+        setBusy: (b) => { takeOverBusyRef.current = b; setBusy(b); },
+        onSuccess: (msg) => { setNotice(msg); void refreshAfterMutation(); },
+        onError: (msg) => setError(msg),
+      },
+      item.requestId, 'TAKEOVER', { justification, expectedBuyerId: item.buyerId });
+    if (outcome !== 'INVALID') setTakeOverItem(null);   // the dialog stays open only on a client-side validation failure
   };
 
   const doClaim = async (item: BuyerQueueItem) => {
@@ -325,7 +357,8 @@ export function BuyerQueueList() {
         </button>
       </div>
 
-      {error && <div style={{ padding: 12, background: 'var(--color-status-red-surface)', color: 'var(--color-status-red)', borderRadius: 8, fontSize: '0.85rem' }}>{error}</div>}
+      {error && <div role="alert" style={{ padding: 12, background: 'var(--color-status-red-surface)', color: 'var(--color-status-red)', borderRadius: 8, fontSize: '0.85rem' }}>{error}</div>}
+      {notice && <div role="status" style={{ padding: 12, background: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-surface))', color: 'var(--color-text-main)', borderRadius: 8, fontSize: '0.85rem' }}>{notice}</div>}
 
       {/* Column header (tabular scanning) */}
       {(queue?.items.length ?? 0) > 0 && (
@@ -351,6 +384,8 @@ export function BuyerQueueList() {
             onNote={() => { setNoteModal({ id: item.requestId, number: item.requestNumber }); setNoteText(''); }}
             onCancel={() => { setCancelItem(item); setCancelReason(''); }}
             onClaim={() => doClaim(item)}
+            assignDecision={resolveQueueAssignAction(item, user, ASSIGN_ROLE_NAMES)}
+            onTakeOver={() => setTakeOverItem(item)}
             onOpenWorkspace={() => navigate(`/buyer/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
             onCorrectPo={() => navigate(buildPoCorrectionDeepLink(item.requestId, item.poCorrectionGroups?.[0]?.poGroupId))}
           />
@@ -376,6 +411,14 @@ export function BuyerQueueList() {
       )}
 
       {/* Detail drawer (existing experience — temporary until the Workspace phase) */}
+      {takeOverItem && (
+        <TakeOverRequestDialog
+          request={{ requestNumber: takeOverItem.requestNumber, title: takeOverItem.title, buyerName: takeOverItem.buyerName }}
+          busy={busy}
+          onConfirm={(justification) => void doTakeOver(takeOverItem, justification)}
+          onCancel={() => setTakeOverItem(null)}
+        />
+      )}
       <RequestDrawerPresentation isOpen={!!detailRequestId} requestId={detailRequestId} onClose={() => { setDetailRequestId(null); refreshAll(); /* §G.19.3: list rows re-read from the server after drawer actions */ }} />
 
       {/* Add-note modal */}
@@ -411,9 +454,10 @@ export function BuyerQueueList() {
 }
 
 // ── Request row (one complete Request; never a line item) ──
-function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, onOpenWorkspace, onCorrectPo }: {
+function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, onOpenWorkspace, onCorrectPo, assignDecision, onTakeOver }: {
   item: BuyerQueueItem; busy: boolean; isOwn: boolean;
   onDetails: () => void; onNote: () => void; onCancel: () => void; onClaim: () => void; onOpenWorkspace: () => void; onCorrectPo: () => void;
+  assignDecision: AssignActionDecision; onTakeOver: () => void;
 }) {
   const isPoCorrection = item.operationalState === 'PO_CORRECTION';
   const stateColor = operationalStateColor(item);
@@ -424,11 +468,11 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
   const isBlocking = item.attentionSignals.some(s => s.severity === 'BLOCKING');
   const unassigned = item.ownershipState === 'UNASSIGNED';
 
-  const kebab = [
+  const kebab = buildRequestRowKebab([
     { label: 'Ver detalhes', icon: <Eye size={15} />, onClick: onDetails },
     { label: 'Adicionar observação', icon: <MessageSquarePlus size={15} />, onClick: onNote },
     ...(item.canCancel ? [{ label: 'Cancelar pedido', icon: <XCircle size={15} />, onClick: onCancel }] : []),
-  ];
+  ], assignDecision, { onClaim, onTakeOver }, <UserPlus size={15} />);   // §8: claim / takeover with the shared policy; KebabMenu closes before the dialog opens
 
   return (
     <div className="bq-row" style={{
@@ -544,7 +588,7 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
         ) : (
           <button onClick={onOpenWorkspace} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}>Abrir Workspace <ArrowRight size={15} /></button>
         )}
-        <KebabMenu options={kebab} />
+        <span data-tour="buyer-queue-row-actions" style={{ display: 'inline-flex' }}><KebabMenu options={kebab} /></span>
       </div>
     </div>
   );

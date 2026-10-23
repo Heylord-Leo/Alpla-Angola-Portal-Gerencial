@@ -4,7 +4,222 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.247.8
+v2.248.2
+
+## [v2.248.2] - 2026-10-22 — Assignment action placement: Workspace header action group; claim/takeover in the quotation queue kebab
+
+PATCH, frontend-only (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6.1). No backend change, no EF model change, no
+migration, no configuration change.
+
+- Workspace: "Assumir pedido" / "Assumir pedido de outro comprador" moves from the "Comprador" metadata cell (which again
+  shows only the Buyer's name) into the upper-right header action group, next to "Solicitar cotação", "Importar
+  Cotação" and "Inserir Manualmente" when those are available. The group and the header both wrap, so at narrow widths
+  the buttons wrap below "Próxima ação" instead of clipping or overlapping the title. Decision helper, confirmation
+  dialog, `expectedBuyerId` submission, busy guard and post-success re-read are unchanged; the interim `BuyerOwnerField`
+  of v2.248.1 was removed.
+- Quotation queue (`/buyer/items`): each row's kebab ("Ver detalhes", "Adicionar observação", …) gains the eligible action
+  — "Assumir pedido" (unassigned → existing claim handler) or "Assumir pedido de outro comprador" (opens the shared
+  `TakeOverRequestDialog` after the kebab closes). Same `resolveAssignAction` policy through a thin queue adapter, same
+  `runAssignRequest` submission with the displayed owner, same role/scope/type/status restrictions, mandatory
+  justification and server-side concurrency protection; nothing is offered to the current owner; one submission at a
+  time. After success the queue and the summary are re-read (owner, "Meu pedido", filtered results, counts); a failed
+  re-read after a successful change is reported distinctly ("não repita a ação") because the loaders now return their
+  promises and report post-mutation failures separately. Cancelling the dialog changes nothing.
+- Guided Tour: Workspace step text updated for the new placement (anchor unchanged); queue tour gains a step on the new
+  `buyer-queue-row-actions` anchor describing the kebab actions.
+- Tests: `assignActionPlacement.test.ts` (header placement and wrapping container, Comprador cell without a button,
+  queue wiring, refresh/cancel handling, queue tour step), `buyerQueueAssignActions.test.ts` (kebab composition for
+  TAKEOVER, CLAIM and NONE), tour test back to the page source. **Browser visual verification of the wrapping is
+  pending** (no browser available to the agent); verify at 360 / 768 / 1280 px. The confirmed TEST evidence of
+  v2.248.0/v2.248.1 (REQ-271 clipping) is documented separately and unchanged.
+
+Verification: frontend tsc, Vite build, vitest 1,005/1,005 (94 files). Backend untouched.
+
+## [v2.248.1] - 2026-10-22 — Buyer Workspace: takeover/claim button was clipped out of view in the "Comprador" field
+
+PATCH, frontend-only (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6). No backend change, no EF model change, no
+migration, no configuration change.
+
+- Root cause (proven on TEST v2.248.0, REQ-20/08/2026-271, Buyer session with every eligibility condition true and mode
+  TAKEOVER): the "Assumir pedido" / "Assumir pedido de outro comprador" button was rendered inside the generic header
+  `Meta` value box, styled `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` within a
+  `minmax(150px, 1fr)` grid cell. The owner's name plus the button exceeded the cell width, so the button existed in
+  the DOM but was clipped out of view. Role, account and request-type hypotheses did not apply to that case.
+- Correction: the "Comprador" field is a dedicated `BuyerOwnerField` that renders the owner's name (ellipsis on its own
+  row) and the action on a separate row outside any overflow-hidden/nowrap container. Decision, confirmation dialog,
+  endpoint and tour anchor are unchanged.
+- Regression test: vitest runs without a DOM runtime, so `BuyerOwnerField.test.ts` renders the real component through
+  `react-dom/server` and asserts the button has no clipping ancestor (overflow hidden / nowrap / ellipsis) for the
+  TAKEOVER case built from the live inputs, plus CLAIM, NONE and busy variants, and that the header no longer nests the
+  button in `Meta`. The page tour test resolves anchors across the page and this child component.
+- Docs §6: live TEST result, root cause, a read-only browser confirmation snippet (element present, parent overflow,
+  clipped yes/no), and the corrected diagnostic route `/api/v1/buyer/requests/{id}/workspace`.
+- Not in this release: the 403 on `/api/v1/lookups/suppliers/pending-approval` observed in the same session comes from
+  the sidebar pending-approvals badge (endpoint restricted to System Administrator / Final Approver; the hook catches it
+  and shows an empty count); it is independent of the Workspace header and its permission was not changed.
+
+Verification: frontend tsc, Vite build, vitest 999/999 (93 files). Backend untouched (2,997/2,997 at v2.248.0).
+
+## [v2.248.0] - 2026-10-22 — Buyer self-takeover of another Buyer's request: justification, concurrency protection, atomic audit and participant notifications
+
+MINOR (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6, §8). No migration, no EF model change, no configuration change
+(the new history action and field-change rows use existing tables; the workflow event is not persisted).
+
+- **Takeover by any Buyer** — new endpoint `POST /api/v1/requests/{id}/take-over`: a user holding the Buyer role may take
+  over a QUOTATION request assigned to another Buyer within the existing company/plant/department access scope (404
+  outside it). Refused for PAYMENT requests (409 `TAKEOVER_NOT_APPLICABLE` — correction-group ownership and its claim /
+  coordinator-transfer rules are unchanged), for actors without the Buyer role including System Administrators and Local
+  Managers (403), and in CANCELLED, REJECTED, COMPLETED and PAYMENT_COMPLETED (409 `TAKEOVER_TERMINAL_STATUS`).
+  Third-party assignment (`assign-buyer?targetUserId`) stays coordinator-only; the unassigned-request claim is unchanged.
+- **Justification and confirmation**: a trimmed, non-empty justification of at most 500 characters is mandatory (400
+  `TAKEOVER_JUSTIFICATION_REQUIRED` / `_TOO_LONG`), recorded in the history comment and in every notification
+  (HTML-encoded in e-mails). Both UIs confirm through one shared dialog that names the request and the current Buyer,
+  states that responsibility transfers and that the previous Buyer, the requester and the request participants will be
+  notified by e-mail, and disables confirmation while the justification is invalid or a submission is in flight.
+- **Concurrency and replay protection**: the caller must state the owner it confirmed (`expectedBuyerId`); an omitted
+  field, an explicit null (an unassigned request is claimed, not taken over) and an invalid value are refused with
+  distinct 400 codes; a mismatch is 409 `TAKEOVER_STALE` with the current owner; the `Requests.RowVersion` race between
+  simultaneous takeovers yields exactly one winner and 409 `TAKEOVER_CONCURRENT` for the loser. A retried request by the
+  current owner is idempotent (200 `TAKEOVER_ALREADY_OWNER`, nothing written) and a replay can never overwrite a later
+  transfer. Both UIs send the owner they displayed and block double submission.
+- **Atomic persistence**: ownership, the `COMPRADOR_TRANSFERIDO` history row (previous/new Buyer, actor, time,
+  justification), the `BuyerId` field-change audit row, the in-app notices and the e-mail outbox rows are written in one
+  transaction; a failure to persist the notification intent — outbox or in-app — rolls everything back
+  (`EventConfig.RequireInAppPersistence`, set only for this event; every other event keeps its historical policy).
+  Delivery stays asynchronous through the outbox worker with its retry policy; TEST SMTP redirection is unchanged.
+- **Notifications (`BUYER_TRANSFERRED`)** to the previous Buyer and the new Buyer (role-specific wording), the requester,
+  and request-linked participants derived from persisted relationships only: area/final approvers on record, P.O. owners,
+  receipt completers and fiscal-receipt uploaders, payment schedulers/payers, winner selectors, rework requesters, reuse
+  authorisers, actors of explicit approval/P.O./receiving/finance history actions, pending area managers through the
+  established routing resolver (plant-specific, else global) and the pending final-approver nominee through the
+  established final-recipient resolver (request nominee, else company nominee). Never role groups; active users only;
+  dedup by user and by normalized e-mail (a second account sharing a mailbox keeps its in-app notice, delivery once).
+  Content: request, previous and new Buyer, actor, transfer time in the application timezone with an explicit label
+  ("Luanda, WAT UTC+1" plus UTC), justification, requester, plant, department and the request link.
+- **Single notification source for assignments**: the direct in-app notices the controller wrote on `assign-buyer`
+  duplicated the `BUYER_ASSIGNED` orchestration and were removed; wording now distinguishes a self-claim, a coordinator
+  assignment and a PAYMENT correction claim.
+- **Classic/Workspace parity**: both tools use the same decision helper; the classic list now hides the action whenever
+  the server would refuse it (non-Buyers, PAYMENT, terminal statuses, own request) instead of showing it and failing.
+  Workspace re-reads ownership and available actions after success with the distinct failed-refresh message. Guided
+  Tour: existing page tour `page-buyer-request-workspace` step updated.
+- **REQ-20/08/2026-271 missing button**: cause explicitly UNCONFIRMED. Local evidence (dev clone, PROD data of
+  2026-09-07) shows two accounts named Leonardo Cintra with different roles; token-free diagnostic steps (account
+  identity, role claims, workspace fields, build id) are documented for the live session. No account or permission change.
+
+Verification: `RequestTakeOverTests` (rule matrix, justification and expected-owner validation, stale, unassigned,
+idempotent, out of scope, claim/coordinator paths with no direct notices), `BuyerTransferNotificationTests` (recipient
+matrix, wording, dedup, inactive/no-e-mail rules, pending resolvers only while pending, no duplicates on re-emit,
+in-app failure policy scoped to the transfer event, BUYER_ASSIGNED wording), `RequestTakeOverRelationalTests` (SQL Server
+LocalDB: atomic success, rollback on outbox and on database-level in-app failure, simultaneous takeovers → one winner,
+stale confirmation, replay idempotence), `workspaceAssignActions.test.ts` (decision, confirmation, validation,
+orchestration, wiring of both UIs, dialog, tour). Backend 2,997/2,997; EF model has no pending changes; frontend tsc,
+Vite build, vitest 996/996. Not in this release: OCR reconciliation (REQ-578), API role/ownership hardening of the
+quotation endpoints, opening PAYMENT correction-group transfer to ordinary Buyers.
+
+## [v2.247.10] - 2026-10-22 — Buyer Workspace: "Assumir pedido"; durable quotation submission lock (ordinary Edit/Delete only for never-submitted quotations)
+
+PATCH (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md` §6–§7). **Includes one additive EF migration**
+`20261016204148_AddQuotationSubmissionMarker` (new columns on `Quotations`: `FirstSubmittedForApprovalAtUtc`,
+`FirstSubmittedBatchId` + index, no FK, `FirstSubmittedSource`, `RowVersion`; one-time idempotent backfill). No
+configuration change. **Apply TEST Migrations must precede Deploy TEST**; backend and frontend of this release go together.
+
+- "Assumir pedido" in the Buyer Workspace header (`/buyer/requests/{id}`, "Comprador" field) calls the existing
+  `assign-buyer` endpoint with the classic tool's server rules mirrored, nothing broadened: unassigned QUOTATION request
+  → claim by a user holding the Buyer role; request already assigned to another Buyer → takeover only by a System
+  Administrator or Local Manager who also holds the Buyer role, after a confirmation naming the current owner; PAYMENT
+  requests and terminal statuses never show the button (PAYMENT ownership stays per correction group). The button is
+  rendered only when the server would accept the action; a successful assignment re-reads the workspace projection.
+  Backend `AssignBuyer` is unchanged (`QuotationAssignBuyerTests`). Guided Tour: existing page tour
+  `page-buyer-request-workspace` updated with the "Assumir pedido" step (skipped when the button is not rendered).
+- Submission lock (REQ-05/10/2026-517 shape: scalar still in the quotation window while a batch was already in
+  approval and Editar/Excluir were offered): ordinary **Editar/Excluir are available only for quotations never submitted
+  for approval**. A quotation counts as submitted when its durable marker is set OR any of its lines is still referenced
+  as a selected item or approval candidate of ANY batch (rejected, cancelled, adjustment and approved batches do not
+  unlock) or as a request item's line-level award (legacy request-level approval). Decided per quotation: a
+  never-submitted sibling on the same request stays editable. Enforced server-side before any mutation in
+  `PUT …/quotations/{id}` and `DELETE …/quotations/{id}` (409, code `QUOTATION_SUBMITTED`, batch number and evidence in
+  the payload; nothing written, nothing notified) and exposed on the request detail and the Workspace projection
+  (`isSubmittedForApproval`, `submittedBatchNumber`, `submissionLockReason`). Both UIs consume the server decision: the
+  Workspace shows "Submetida (Lote #N)" with the server reason instead of the buttons; the classic list uses the server
+  flag first (legacy client-side check only as fallback). The explicit revision/rework flow (new quotation via
+  `SaveQuotation` with `reworkBatchId`) is untouched. Behaviour change: an in-place `PUT` of a submitted quotation during
+  AREA/FINAL_ADJUSTMENT, previously accepted when no referenced line was removed, is now refused — the revision is the
+  path.
+- Durable marker: `QuotationSubmissionStamper` runs inside both `SaveChanges` overrides and writes
+  `FirstSubmittedForApprovalAtUtc` / `FirstSubmittedBatchId` / `FirstSubmittedSource = SUBMISSION` in the same
+  transaction as the first persisted submission evidence on every path (batch creation, rework recomposition,
+  extra-item inclusion, approver winner stamp, legacy line-level award). Set once, never overwritten, replaced or
+  cleared through tracked writes; `FirstSubmittedBatchId` has no foreign key on purpose so batch deletion or
+  recomposition never clears it (verified on SQL Server). One change-tracker snapshot per save, keyed lookups only when
+  evidence is pending, no recursive save.
+- Concurrency (verified on SQL Server LocalDB): `Quotations.RowVersion` arbitrates a Buyer edit/delete against a
+  submission committing at the same time. `PUT` always rewrites the header row under its RowVersion; a submission
+  landing in between yields 409 `QUOTATION_CONCURRENT_CHANGE` with no partial write (document link and attachments
+  included). `DELETE` fails either on the RowVersion or on the REFERENCE constraint of the new candidate towards the
+  line (SQL 547 naming a FK to Quotations/QuotationItems), both mapped to the same 409; other database errors are not
+  mapped. The reverse race fails the submission's save and rolls back (no batch, no marker). Known residual: the legacy
+  request-level area approval has no concurrency filter, so that race rolls back safely but may surface as 500.
+- Migration backfill: from references that still exist at migration time — batch references of any status →
+  `BACKFILL_BATCH` (persisted batch evidence dated by the batch's `CreatedAtUtc`: equal to the submission instant only
+  for quotations present at batch creation; rework and extra-item inclusions joined an existing batch later, so the
+  date is a lower bound and is worded as a batch record, never as an exact submission time); legacy line-level awards →
+  `BACKFILL_LINE_AWARD_ESTIMATED` (proven submission, approximate date = line `UpdatedAtUtc`, else quotation
+  `CreatedAtUtc`, worded as approximate). Several batches: deterministic earliest by (CreatedAtUtc, BatchNumber, BatchId)
+  with the pointer taken from the same row. **Boundary: quotations whose references were all removed before the
+  migration cannot be recovered by the backfill** (the submission history row carries supplier text only; nothing is
+  inferred from supplier names) and stay unlocked unless referenced again. Validated only on a disposable LocalDB copy
+  of the local dev clone (146 quotations: 129 `BACKFILL_BATCH`, 2 `BACKFILL_LINE_AWARD_ESTIMATED`, 15 untouched; 0
+  misses, 0 false positives, 0 pointer mismatches; Up/Down/Up deterministic) — **not applied to any shared database**.
+- Rollback guidance: prefer a **code rollback that retains the additive columns** (the previous backend ignores them);
+  running `Down` destroys durable submission evidence (stamped and backfilled markers) and should not be used to roll
+  back the application.
+
+Verification: `QuotationSubmissionLockTests` (InMemory lock matrix incl. REJECTED/CANCELLED/adjustment, siblings,
+projections, stamping on every evidence type, legacy award removal/reassignment, repeated submission, immutability on
+sync and async saves, marker-only lock after reference removal and batch deletion, wording per source),
+`QuotationSubmissionMarkerRelationalTests` (LocalDB: no FK and marker survival, stale edit/delete 409 with no partial
+writes or notices, submission losing to a prior edit and rolling back, failed save leaving no marker, backfill SQL incl.
+idempotence and wording), `ReworkRevisionSaveQuotationTests.G_MarkerLockedOriginal…` (explicit revision still accepted),
+marker assertions in `BatchExtraItemDecisionServiceTests` (reversal) and `CandidateBasedApprovalBatchTests`
+(recomposition), `QuotationAssignBuyerTests`, `workspaceAssignActions.test.ts`, `quotationSubmissionLock.test.ts`.
+Backend 2,966/2,966; EF model has no pending changes; frontend tsc, Vite build, vitest 987/987. Test-seed fixes in the
+LocalDB suites (unique supplier `PortalCode`/`TaxId`, tolerant cleanup). Not in this release (tracked separately): the
+OCR reconciliation defect of REQ-15/10/2026-578 and any API role/ownership hardening of the quotation endpoints. REQ-517
+and REQ-578 data were not modified.
+
+## [v2.247.9] - 2026-10-16 — Buyer Workspace: quotation Edit/Delete actions; access-scope guard on quotation deletion
+
+PATCH (`docs/BUYER_WORKSPACE_QUOTATION_ACTIONS.md`). No migration, no EF model change, no configuration change.
+
+- "Cotações & Documentos" in the Buyer Workspace (`/buyer/requests/{id}`) offers, per quotation row identified by
+  supplier, document number and date, the classic tool's supported actions: **Editar** opens the existing quotation in
+  the shared wizard (same in-place edit as the classic list → `PUT …/quotations/{id}`: identity kept, attachment link
+  kept unless the document is changed, lines upserted, batch-referenced lines protected, `QUOTATION_UPDATED`) and
+  **Excluir** removes the structured quotation through `DELETE …/quotations/{id}` after a confirmation that states the
+  endpoint's real effects (quotation and lines removed definitively, linked document marked removed with
+  `DOCUMENTO_REMOVIDO`, refusal when referenced by an approval batch or outside the quotation window,
+  `QUOTATION_DELETED` audit). A successful edit or deletion silently re-reads the workspace projection (coverage,
+  counts, next actions, quotations, documents); a failed re-read after a successful mutation is reported distinctly and
+  never as a reason to repeat the action; server refusals are shown with the server's text; one submission at a time.
+- Visibility follows the classic rule exactly: request in the quotation window and assigned to the current user, who
+  holds the Buyer role. Unassigned requests, other Buyers, Local Managers and administrators who are not the assigned
+  Buyer see no buttons. Backend authorization is unchanged.
+- Backend: `DELETE …/quotations/{id}` now enforces the request access scope (company/plant/department; 404 outside it)
+  before loading anything, the same guard `PUT` already had. Previously a quotation of a request outside the actor's
+  scope could be deleted by id.
+- Guided Tour: new page tour `page-buyer-request-workspace` for `/buyer/requests/:id` (header, tabs, quotations table,
+  Editar/Excluir actions with their restrictions, classic-tools link), registered with stable `data-tour` anchors; the
+  actions step is skipped automatically when the buttons are not rendered.
+
+Verification: `QuotationDeleteEndpointTests` (success side effects, no-document variant, window and batch-reference
+refusals with nothing written, out-of-scope refusal for DELETE and PUT, unknown ids), `workspaceQuotationActions.test.ts`
+(window/ownership/role matrix incl. administrator, Local Manager and combined roles; confirmation text; delete
+orchestration success, server refusal and re-entry guard; wiring guards). Backend 2,931/2,931; frontend tsc, Vite build,
+vitest 972/972. Not in this release (tracked separately, not implemented): the OCR reconciliation defect of
+REQ-15/10/2026-578 (backend EXACT_MATCH records not consumed by the wizard; link-first guidance) and any API
+role/ownership hardening of the quotation endpoints. The rendered Workspace actions still require the bounded TEST
+validation of the document's §5.
 
 ## [v2.247.8] - 2026-10-15 — Finance-return notification reaches the returned group's Buyer; PAYMENT correction claims persist group ownership
 

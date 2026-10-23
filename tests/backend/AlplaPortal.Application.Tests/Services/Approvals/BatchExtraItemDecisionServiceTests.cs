@@ -302,6 +302,14 @@ public class BatchExtraItemDecisionServiceTests
         Assert.Equal(ExtraItemDecisionValues.Exclude, decisionRow.Decision);
         // Audit trail preserved — the generated line's id is not erased even though it's now soft-deleted.
         Assert.Equal(generatedLineItem.Id, decisionRow.GeneratedRequestLineItemId);
+
+        // §7 — the reversal removed the extra line's batch item (and its candidate), but the quotation's durable
+        // submission marker survives and still points to this batch; the quotation stays locked.
+        Assert.False(await s.Ctx.ApprovalBatchItemCandidates.AnyAsync(c => c.QuotationItemId == s.ExtraItem.Id));
+        var quotation = await s.Ctx.Quotations.Include(q => q.Items).SingleAsync(q => q.Id == s.ExtraItem.QuotationId);
+        Assert.NotNull(quotation.FirstSubmittedForApprovalAtUtc);
+        Assert.Equal(s.Batch.Id, quotation.FirstSubmittedBatchId);
+        Assert.True((await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(s.Ctx, quotation)).IsSubmitted);
     }
 
     [Fact]

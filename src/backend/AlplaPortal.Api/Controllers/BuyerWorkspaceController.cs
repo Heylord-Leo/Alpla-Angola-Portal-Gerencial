@@ -127,6 +127,7 @@ public class BuyerWorkspaceController : BaseController
             Title = r.Title,
             Description = r.Description,
             RequestStatusCode = r.Status.Code,
+            RequestTypeCode = r.RequestType.Code,
             RequesterId = r.RequesterId,
             RequesterName = r.Requester?.FullName,
             BuyerId = r.BuyerId,
@@ -237,7 +238,9 @@ public class BuyerWorkspaceController : BaseController
     }
 
     private static List<BuyerWorkspaceQuotationDto> BuildQuotations(Request r)
-        => r.Quotations
+    {
+        var locks = AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateLoaded(r);
+        return r.Quotations
             .OrderByDescending(q => q.CreatedAtUtc)
             .Select(q => new BuyerWorkspaceQuotationDto
             {
@@ -251,8 +254,12 @@ public class BuyerWorkspaceController : BaseController
                 TotalAmount = q.TotalAmount,
                 DocumentCount = q.ProformaAttachmentId.HasValue ? 1 : 0,
                 IsSelected = q.IsSelected,
+                IsSubmittedForApproval = locks.TryGetValue(q.Id, out var lk) && lk.IsSubmitted,
+                SubmittedBatchNumber = locks.TryGetValue(q.Id, out var lk2) ? lk2.BatchNumber : null,
+                SubmissionLockReason = locks.TryGetValue(q.Id, out var lk3) ? lk3.Reason : null,
             })
             .ToList();
+    }
 
     private static List<BuyerWorkspaceBatchDto> BuildBatches(
         Request r, IReadOnlyCollection<Guid> supersededIds,

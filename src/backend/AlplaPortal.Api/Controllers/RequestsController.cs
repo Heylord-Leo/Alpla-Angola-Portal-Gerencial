@@ -18,7 +18,9 @@ using AlplaPortal.Infrastructure.Data;
 using AlplaPortal.Infrastructure.Logging;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Services.Finance;
+using AlplaPortal.Infrastructure.Services.Purchasing;
 using AlplaPortal.Domain.Services;
+using AlplaPortal.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
@@ -1282,6 +1284,21 @@ public class RequestsController : BaseController
         _logger.LogInformation("[PERF] GetRequest(id) database query and projection took {Elapsed}ms for RequestId: {Id}", _sw.ElapsedMilliseconds, id);
 
         if (request == null) return NotFound();
+
+        // §7 — server-derived edit/delete eligibility per quotation (ever submitted for approval → locked).
+        if (request.Quotations.Count > 0)
+        {
+            var submissionLocks = await QuotationSubmissionLock.EvaluateForRequestAsync(_context, id);
+            foreach (var qDto in request.Quotations)
+            {
+                if (submissionLocks.TryGetValue(qDto.Id, out var lk) && lk.IsSubmitted)
+                {
+                    qDto.IsSubmittedForApproval = true;
+                    qDto.SubmittedBatchNumber = lk.BatchNumber;
+                    qDto.SubmissionLockReason = lk.Reason;
+                }
+            }
+        }
 
         // v2.245.9: group-scoped lifecycle rows (GROUP_COMPLETED, FISCAL_RECEIPT_UNLOCKED) persist the
         // request scalar in their status FKs (a different status domain; see
@@ -3041,6 +3058,7 @@ public class RequestsController : BaseController
         var targetUser = newBuyerId == actorId ? user : await _context.Users.FindAsync(newBuyerId);
         Guid historyId;
         string assignedScope;
+        Guid? claimedGroupId = null;
 
         if (isPaymentCorrectionClaim)
         {
@@ -3074,6 +3092,7 @@ public class RequestsController : BaseController
                     return BadRequest(new ProblemDetails { Title = "Nada a Assumir", Detail = claim.Message, Status = 400 });
             }
             historyId = claim.HistoryId!.Value; // Claimed or Transferred
+            claimedGroupId = claim.GroupId;
             assignedScope = "pela correção da P.O do seu pedido";
         }
         else
@@ -3110,42 +3129,9 @@ public class RequestsController : BaseController
             assignedScope = "pelo seu pedido";
         }
 
-        // Notifications (in-app)
-        try
-        {
-            if (request.RequesterId != actorId)
-            {
-                var msgToRequester = newBuyerId == actorId
-                    ? $"O comprador {user.FullName} assumiu a responsabilidade {assignedScope} {(request.RequestNumber ?? "S/N")}."
-                    : isPaymentCorrectionClaim
-                        ? $"A correção da P.O do seu pedido {(request.RequestNumber ?? "S/N")} foi atribuída ao comprador {targetUser?.FullName}."
-                        : $"O seu pedido {(request.RequestNumber ?? "S/N")} foi atribuído ao comprador {targetUser?.FullName}.";
-
-                await _notificationService.CreateNotificationAsync(
-                    request.RequesterId,
-                    "Comprador Atribuído",
-                    msgToRequester,
-                    NotificationTypes.Info,
-                    $"/requests/{request.Id}"
-                );
-            }
-
-            if (newBuyerId != actorId)
-            {
-                await _notificationService.CreateNotificationAsync(
-                    newBuyerId,
-                    "Nova Atribuição",
-                    $"O pedido {(request.RequestNumber ?? "S/N")} foi-lhe atribuído por {user.FullName}.",
-                    NotificationTypes.Info,
-                    $"/requests/{request.Id}"
-                );
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Falha ao enviar notificações in-app de atribuição para o Pedido {RequestNumber}.", request.RequestNumber);
-        }
-
+        // In-app notices are created by the BUYER_ASSIGNED orchestration below (Buyer + requester, dedup by
+        // correlation id). The former direct CreateNotificationAsync calls here produced duplicate notices. §8.
+        _ = assignedScope;
         // Email notification via orchestrator (Task 3 — BUYER_ASSIGNED)
         try
         {
@@ -3163,7 +3149,8 @@ public class RequestsController : BaseController
                 RequesterId = request.RequesterId,
                 BuyerId = newBuyerId,
                 DepartmentId = request.DepartmentId,
-                PlantId = request.PlantId
+                PlantId = request.PlantId,
+                PoGroupId = claimedGroupId
             });
         }
         catch (Exception ex)
@@ -3172,6 +3159,169 @@ public class RequestsController : BaseController
         }
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// §8 — Buyer self-takeover of a QUOTATION request currently assigned to ANOTHER Buyer. Rules: access scope (404);
+    /// QUOTATION only (PAYMENT ownership is per correction group — 409 TAKEOVER_NOT_APPLICABLE); Buyer role required,
+    /// also for administrators and local managers (403); non-terminal status (409 TAKEOVER_TERMINAL_STATUS);
+    /// mandatory trimmed justification ≤ BuyerTakeOverPolicy.JustificationMaxLength (400); the caller MUST state the
+    /// owner it saw — omitted (400 TAKEOVER_EXPECTED_OWNER_MISSING) and explicit null (400 TAKEOVER_EXPECTED_OWNER_NULL:
+    /// an unassigned request is claimed, not taken over) are distinguished; a mismatch is 409 TAKEOVER_STALE and the
+    /// RowVersion race is 409 TAKEOVER_CONCURRENT, so a stale confirmation never overwrites a newer owner. Idempotent
+    /// when the caller already owns the request (200, nothing written). Ownership, the COMPRADOR_TRANSFERIDO history
+    /// row, the BuyerId field-change row and the BUYER_TRANSFERRED notification intent (in-app rows + outbox rows,
+    /// delivered later by the outbox worker with its retries) are persisted in ONE transaction: a failure anywhere
+    /// rolls everything back and nothing is sent.
+    /// </summary>
+    [HttpPost("{id:guid}/take-over")]
+    public async Task<IActionResult> TakeOverRequest(Guid id, [FromBody] TakeOverRequestDto? dto)
+    {
+        var actorId = CurrentUserId;
+        var actor = await _context.Users.FindAsync(actorId);
+        if (actor == null || !actor.IsActive) return Unauthorized();
+
+        var request = await _context.Requests
+            .Include(r => r.Status)
+            .Include(r => r.RequestType)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+        if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
+            return NotFound(new ProblemDetails { Title = "Pedido não encontrado", Status = 404 });
+
+        if (request.RequestType?.Code != RequestConstants.Types.Quotation)
+            return Conflict(TakeOverProblem(BuyerTakeOverPolicy.CodeNotApplicable, "Ação Não Aplicável",
+                "Pedidos de pagamento têm a responsabilidade por grupo de correção de P.O (fila de cotações → \"Atribuir a Mim\"), não por pedido.", 409));
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer))
+            return StatusCode(403, TakeOverProblem(BuyerTakeOverPolicy.CodeRoleRequired, "Ação Bloqueada",
+                "Apenas o papel de Comprador pode assumir a responsabilidade por um pedido — também para administradores e gestores locais.", 403));
+        if (BuyerTakeOverPolicy.IsTerminal(request.Status?.Code))
+            return Conflict(TakeOverProblem(BuyerTakeOverPolicy.CodeTerminalStatus, "Pedido Encerrado",
+                $"O pedido está em {request.Status!.Code}: a atribuição de comprador já não se aplica.", 409));
+
+        var justification = dto?.Justification?.Trim();
+        if (string.IsNullOrEmpty(justification))
+            return BadRequest(TakeOverProblem(BuyerTakeOverPolicy.CodeJustificationRequired, "Justificação Obrigatória",
+                "Indique a justificação para assumir o pedido de outro comprador.", 400));
+        if (justification.Length > BuyerTakeOverPolicy.JustificationMaxLength)
+            return BadRequest(TakeOverProblem(BuyerTakeOverPolicy.CodeJustificationTooLong, "Justificação Demasiado Longa",
+                $"A justificação não pode exceder {BuyerTakeOverPolicy.JustificationMaxLength} caracteres.", 400));
+
+        var expected = dto?.ReadExpectedOwner() ?? TakeOverExpectedOwner.Missing();
+        switch (expected.Kind)
+        {
+            case TakeOverExpectedOwnerKind.Missing:
+                return BadRequest(TakeOverProblem(BuyerTakeOverPolicy.CodeExpectedOwnerMissing, "Comprador Atual Não Indicado",
+                    "Indique o comprador atual que confirmou (expectedBuyerId) para proteger contra alterações concorrentes.", 400));
+            case TakeOverExpectedOwnerKind.ExplicitNull:
+                return BadRequest(TakeOverProblem(BuyerTakeOverPolicy.CodeExpectedOwnerNull, "Não É Uma Transferência",
+                    "Um pedido sem comprador atribuído assume-se com \"Assumir pedido\" (atribuição), não por transferência.", 400));
+            case TakeOverExpectedOwnerKind.Invalid:
+                return BadRequest(TakeOverProblem(BuyerTakeOverPolicy.CodeExpectedOwnerInvalid, "Comprador Atual Inválido",
+                    "O identificador do comprador atual é inválido.", 400));
+        }
+
+        if (request.BuyerId == actorId)
+            return Ok(new TakeOverRequestResultDto { Code = BuyerTakeOverPolicy.CodeAlreadyOwner, Message = "O pedido já está atribuído a si.", NewBuyerId = actorId, NewBuyerName = actor.FullName });
+        if (!request.BuyerId.HasValue)
+            return Conflict(TakeOverProblem(BuyerTakeOverPolicy.CodeNotAssigned, "Pedido Sem Comprador",
+                "O pedido já não tem comprador atribuído: use \"Assumir pedido\" (atribuição). Atualize a página.", 409));
+        if (request.BuyerId.Value != expected.BuyerId!.Value)
+        {
+            var currentName = await _context.Users.AsNoTracking().Where(u => u.Id == request.BuyerId.Value).Select(u => u.FullName).FirstOrDefaultAsync();
+            var stale = TakeOverProblem(BuyerTakeOverPolicy.CodeStale, "Comprador Alterado Entretanto",
+                $"O pedido já está atribuído a {currentName ?? "outro comprador"}, não ao comprador que confirmou. Atualize a página e confirme novamente.", 409);
+            stale.Extensions["currentBuyerId"] = request.BuyerId; stale.Extensions["currentBuyerName"] = currentName;
+            return Conflict(stale);
+        }
+
+        var previous = await _context.Users.AsNoTracking().Where(u => u.Id == request.BuyerId.Value).Select(u => new { u.Id, u.FullName }).FirstOrDefaultAsync();
+        var previousName = previous?.FullName ?? "comprador anterior";
+        var nowUtc = DateTime.UtcNow;
+        var statusCode = request.Status?.Code ?? string.Empty;
+
+        // ONE transaction: ownership + audit + notification intent (in-app rows and outbox rows) — see summary.
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            request.BuyerId = actorId;
+            request.UpdatedAtUtc = nowUtc;
+            request.UpdatedByUserId = actorId;
+            var history = new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                ActionTaken = BuyerTakeOverPolicy.HistoryAction,
+                PreviousStatusId = request.StatusId,
+                NewStatusId = request.StatusId,
+                Comment = $"Responsabilidade transferida de {previousName} para {actor.FullName} (ação de {actor.FullName}, {AppTimeZone.FormatWithUtc(nowUtc)}). Justificação: {justification}",
+                CreatedAtUtc = nowUtc
+            };
+            _context.RequestStatusHistories.Add(history);
+            _context.RequestFieldChangeHistories.Add(new RequestFieldChangeHistory
+            {
+                Id = Guid.NewGuid(),
+                RequestId = request.Id,
+                ActorUserId = actorId,
+                FieldName = BuyerTakeOverPolicy.FieldChangeName,
+                FieldDisplayName = BuyerTakeOverPolicy.FieldChangeDisplayName,
+                PreviousValue = $"{previousName} ({previous?.Id})",
+                NewValue = $"{actor.FullName} ({actorId})",
+                StatusCodeAtChange = statusCode,
+                CreatedAtUtc = nowUtc
+            });
+            await _context.SaveChangesAsync();   // UPDATE Requests … WHERE RowVersion = @read → loser of a race throws below
+
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.BuyerTransferred,
+                RequestId = request.Id,
+                RequestNumber = request.RequestNumber ?? "S/N",
+                RequestTitle = request.Title ?? "",
+                TargetStatusCode = statusCode,
+                ActionTaken = BuyerTakeOverPolicy.HistoryAction,
+                ActorUserId = actorId,
+                ActorName = actor.FullName ?? "Sistema",
+                Comment = justification,
+                CorrelationId = history.Id,
+                RequesterId = request.RequesterId,
+                BuyerId = actorId,
+                PreviousBuyerId = previous?.Id,
+                AreaApproverId = request.AreaApproverId,
+                FinalApproverId = request.FinalApproverId,
+                DepartmentId = request.DepartmentId,
+                PlantId = request.PlantId,
+                CompanyId = request.CompanyId,
+                Justification = justification,
+                OccurredAtUtc = nowUtc
+            });
+
+            await tx.CommitAsync();
+            return Ok(new TakeOverRequestResultDto
+            {
+                Code = "TAKEOVER_DONE",
+                Message = $"Pedido assumido: a responsabilidade passou de {previousName} para si. O comprador anterior, o requisitante e os participantes do pedido serão notificados.",
+                PreviousBuyerId = previous?.Id, PreviousBuyerName = previousName, NewBuyerId = actorId, NewBuyerName = actor.FullName,
+                HistoryId = history.Id, TransferredAtUtc = nowUtc
+            });
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            await tx.RollbackAsync();
+            _logger.LogWarning(ex, "TakeOverRequest {RequestId}: lost the RowVersion race (another takeover committed first)", id);
+            return Conflict(TakeOverProblem(BuyerTakeOverPolicy.CodeConcurrent, "Comprador Alterado Entretanto",
+                "Outra ação alterou o comprador deste pedido no mesmo instante. Nada foi gravado; atualize a página e confirme novamente.", 409));
+        }
+        // Any other failure (e.g. the notification intent could not be recorded) disposes the transaction → rollback, and
+        // surfaces through the generic pipeline (500): ownership is never committed without its audit and notices.
+    }
+
+    private static ProblemDetails TakeOverProblem(string code, string title, string detail, int status)
+    {
+        var pd = new ProblemDetails { Title = title, Detail = detail, Status = status };
+        pd.Extensions["code"] = code;
+        return pd;
     }
 
     [HttpPost("{id:guid}/ocr-extract")]
@@ -4609,6 +4759,21 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
+        // §7 — a quotation ever submitted for approval (selected item or candidate of ANY batch, any status) is not
+        // edited in place: the revision/rework flow (SaveQuotation with reworkBatchId) creates a new quotation instead.
+        // Evaluated before any mutation (header, attachment link, lines).
+        var submissionLock = await QuotationSubmissionLock.EvaluateAsync(_context, quotation);
+        if (submissionLock.IsSubmitted)
+        {
+            var lockedPd = new ProblemDetails { Title = "Cotação submetida para aprovação", Detail = submissionLock.Reason, Status = 409 };
+            lockedPd.Extensions["code"] = QuotationSubmissionLock.ReasonCode; lockedPd.Extensions["batchNumber"] = submissionLock.BatchNumber; lockedPd.Extensions["evidence"] = submissionLock.Evidence;
+            return Conflict(lockedPd);
+        }
+        // The header row is always rewritten under its RowVersion, even when the payload leaves it unchanged, so a
+        // submission that commits between this check and the save (stamper bumps the row) fails this update (409
+        // below) instead of letting a stale edit slip through.
+        _context.Entry(quotation).State = EntityState.Modified;
+
         // Validation (Explicitly including Currency as per user requirement)
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
         if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
@@ -4862,13 +5027,13 @@ public class RequestsController : BaseController
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            var errLog = $"[ERROR] Concurrency error: {ex.Message}\n";
-            foreach (var entry in ex.Entries)
-            {
-                errLog += $"[ERROR] Entity: {entry.Entity.GetType().Name}, State: {entry.State}\n";
-            }
-            System.IO.File.WriteAllText("c:\\dev\\alpla-portal\\src\\backend\\error.txt", errLog);
-            throw;
+            // §7 — the quotation row changed while this edit was saving (typically: submitted for approval, which
+            // stamps the durable marker). Nothing was written (single SaveChanges = one transaction).
+            _logger.LogWarning(ex, "UpdateQuotation {QuotationId}: concurrent change on {Entities}", quotationId,
+                string.Join(",", ex.Entries.Select(e => e.Entity.GetType().Name)));
+            var concurrencyPd = new ProblemDetails { Title = "Cotação alterada entretanto", Detail = QuotationSubmissionLock.ConcurrencyDetail, Status = 409 };
+            concurrencyPd.Extensions["code"] = QuotationSubmissionLock.ConcurrencyReasonCode;
+            return Conflict(concurrencyPd);
         }
         catch (Exception ex)
         {
@@ -4959,6 +5124,10 @@ public class RequestsController : BaseController
             .FirstOrDefaultAsync(r => r.Id == id);
         
         if (request == null) return NotFound("Pedido não encontrado.");
+        // Access scope (company/plant/department; SystemAdministrator unrestricted) — same guard as UpdateQuotation.
+        // Previously missing here: a quotation of a request outside the actor's scope could be deleted by id.
+        if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
+            return NotFound("Pedido não encontrado.");
 
         // Status Rule Check
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
@@ -4977,22 +5146,19 @@ public class RequestsController : BaseController
 
         if (quotation == null) return NotFound("Cotação não encontrada.");
 
-        // Check if any quotation item is used in an approval batch (as a winner or as a
-        // submitted candidate — both anchor frozen approval evidence)
-        var quotationItemIds = quotation.Items.Select(i => i.Id).ToList();
-        var isReferencedByBatch = await _context.Set<ApprovalBatchItem>()
-            .AnyAsync(abi => abi.SelectedQuotationItemId != null && quotationItemIds.Contains(abi.SelectedQuotationItemId.Value))
-            || await _context.ApprovalBatchItemCandidates
-                .AnyAsync(c => quotationItemIds.Contains(c.QuotationItemId));
-
-        if (isReferencedByBatch)
+        // §7 — shared decision with UpdateQuotation and the detail/workspace flags: ever submitted (winner or candidate
+        // of ANY batch, any status) → never deleted; use the revision/rework flow instead.
+        var deleteLock = await QuotationSubmissionLock.EvaluateAsync(_context, quotation);
+        if (deleteLock.IsSubmitted)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Esta cotação já foi utilizada em um lote de aprovação e não pode ser excluída. Faça um reajuste ou adicione uma nova revisão/cotação.", 
-                Status = 409 
-            });
+            var lockedPd = new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Esta cotação já foi utilizada em um lote de aprovação e não pode ser excluída. " + deleteLock.Reason,
+                Status = 409
+            };
+            lockedPd.Extensions["code"] = QuotationSubmissionLock.ReasonCode; lockedPd.Extensions["batchNumber"] = deleteLock.BatchNumber; lockedPd.Extensions["evidence"] = deleteLock.Evidence;
+            return Conflict(lockedPd);
         }
 
         if (quotation.ProformaAttachmentId.HasValue)
@@ -5034,7 +5200,21 @@ public class RequestsController : BaseController
         };
         _context.RequestStatusHistories.Add(history);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex is DbUpdateConcurrencyException || IsQuotationReferenceConflict(ex))
+        {
+            // §7 — a submission committed while this delete was saving: either the quotation row changed (RowVersion,
+            // DbUpdateConcurrencyException) or a new candidate/winner reference now protects a line (REFERENCE constraint
+            // 547 naming a FK towards Quotations/QuotationItems fires on the line delete before the header row is
+            // reached). Other database errors are NOT mapped here. Nothing was written.
+            _logger.LogWarning(ex, "DeleteQuotation {QuotationId}: concurrent change ({Kind})", quotationId, ex.GetType().Name);
+            var concurrencyPd = new ProblemDetails { Title = "Cotação alterada entretanto", Detail = QuotationSubmissionLock.ConcurrencyDetail, Status = 409 };
+            concurrencyPd.Extensions["code"] = QuotationSubmissionLock.ConcurrencyReasonCode;
+            return Conflict(concurrencyPd);
+        }
 
         return NoContent();
     }
@@ -10620,6 +10800,13 @@ public class RequestsController : BaseController
     /// <para>Deliberately narrow: it recognises our own two index names rather than SQL error codes
     /// 2601/2627, so no unrelated uniqueness violation can be quietly swallowed here.</para>
     /// </summary>
+    /// <summary>§7 — SQL Server error 547 (REFERENCE constraint) raised by a FK that targets Quotations/QuotationItems:
+    /// the only kind of constraint failure a quotation delete can hit once the submission lock has passed, i.e. a
+    /// reference created concurrently. Any other constraint or error is left to the generic pipeline.</summary>
+    private static bool IsQuotationReferenceConflict(DbUpdateException ex)
+        => ex.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 547 } sql
+           && (sql.Message.Contains("_QuotationItems_", StringComparison.Ordinal) || sql.Message.Contains("_Quotations_", StringComparison.Ordinal));
+
     private async Task SaveChangesWithClassificationAuditRetryAsync()
     {
         try

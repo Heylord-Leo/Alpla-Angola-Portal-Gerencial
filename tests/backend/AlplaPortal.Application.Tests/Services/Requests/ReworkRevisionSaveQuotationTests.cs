@@ -105,7 +105,7 @@ public class ReworkRevisionSaveQuotationTests
         var typeId = await ctx.RequestTypes.Where(t => t.Code == "QUOTATION").Select(t => t.Id).FirstOrDefaultAsync();
         if (statusId == 0 || typeId == 0) return null;
 
-        var supplier = new Supplier { Name = "ZZ Fornecedor Rev " + Guid.NewGuid().ToString("N")[..8], TaxId = "5410000999", PortalCode = "ZZRV", IsActive = true };
+        var supplier = new Supplier { Name = "ZZ Fornecedor Rev " + Guid.NewGuid().ToString("N")[..8], TaxId = "54" + Random.Shared.NextInt64(10_000_000, 99_999_999).ToString() /* IX_Suppliers_TaxId is unique */, PortalCode = "ZZ" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant() /* IX_Suppliers_PortalCode is unique: one code per seeded supplier */, IsActive = true };
         ctx.Suppliers.Add(supplier);
         await ctx.SaveChangesAsync(); // realize the identity Id
         var supplierId = supplier.Id;
@@ -164,7 +164,7 @@ public class ReworkRevisionSaveQuotationTests
             "DELETE FROM RequestLineItems WHERE RequestId={0};" +
             "DELETE FROM RequestStatusHistories WHERE RequestId={0};" +
             "DELETE FROM Requests WHERE Id={0};" +
-            "DELETE FROM Suppliers WHERE PortalCode='ZZRV';" +
+            "DELETE FROM Suppliers WHERE Name LIKE 'ZZ Fornecedor Rev %' AND NOT EXISTS (SELECT 1 FROM Quotations q WHERE q.SupplierId=Suppliers.Id);" +
             "DELETE FROM Users WHERE Email LIKE 'zztest-rev-%' AND NOT EXISTS (SELECT 1 FROM Requests r WHERE r.RequesterId=Users.Id);", requestId);
     }
 
@@ -364,5 +364,43 @@ public class ReworkRevisionSaveQuotationTests
             Assert.IsType<BadRequestObjectResult>(result.Result);
         }
         finally { await CleanupAsync(s.RequestId); }
+    }
+
+    /// <summary>§7 — the original quotation is marker-locked (its candidate was submitted), yet the EXPLICIT revision
+    /// flow (POST with reworkBatchId/revisesQuotationId) still creates the new quotation; the revision starts
+    /// unlocked (no marker, no references) and the original's marker is untouched. Ordinary PUT on the original → 409.</summary>
+    [Fact]
+    public async Task G_MarkerLockedOriginal_StillAcceptsExplicitRevision_RevisionStartsUnlocked()
+    {
+        if (!IntegrationTestDatabase.CanConnect()) return;
+        var s = await SeedAsync();
+        if (s == null) return;
+
+        await using (var ctx = new ApplicationDbContext(DbOptions()))
+        {
+            var original = await ctx.Quotations.Include(q => q.Items).SingleAsync(q => q.Id == s.OriginalQuotationId);
+            Assert.NotNull(original.FirstSubmittedForApprovalAtUtc);   // stamped when the seed persisted the candidate
+            Assert.Equal(s.BatchId, original.FirstSubmittedBatchId);
+            var controller = BuildController(ctx, s.BuyerId, "Buyer");
+
+            // Ordinary in-place PUT is refused (409): here by the request-status window first (WAITING_AREA_APPROVAL),
+            // and by the submission lock whenever the window would allow it — the InMemory suite covers the lock itself.
+            var put = await controller.UpdateQuotation(s.RequestId, s.OriginalQuotationId, RevisionDto(s, s.LineItemId));
+            Assert.IsType<ConflictObjectResult>(put.Result);
+
+            var result = await controller.SaveQuotation(s.RequestId, null, RevisionDto(s, s.LineItemId), s.BatchId, s.OriginalQuotationId);
+            Assert.True(result.Result is OkObjectResult || result.Result is CreatedAtActionResult || result.Value != null, $"revision refused: {(result.Result as ObjectResult)?.Value}");
+        }
+
+        await using (var verify = new ApplicationDbContext(DbOptions()))
+        {
+            var quotations = await verify.Quotations.Include(q => q.Items).Where(q => q.RequestId == s.RequestId).ToListAsync();
+            var revision = Assert.Single(quotations, q => q.RevisesQuotationId == s.OriginalQuotationId);
+            Assert.Null(revision.FirstSubmittedForApprovalAtUtc); Assert.Null(revision.FirstSubmittedBatchId);
+            Assert.False((await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(verify, revision)).IsSubmitted);
+            var original = quotations.Single(q => q.Id == s.OriginalQuotationId);
+            Assert.NotNull(original.FirstSubmittedForApprovalAtUtc); Assert.Equal(s.BatchId, original.FirstSubmittedBatchId);
+            Assert.True((await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(verify, original)).IsSubmitted);
+        }
     }
 }

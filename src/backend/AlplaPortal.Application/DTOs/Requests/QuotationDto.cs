@@ -194,6 +194,10 @@ public class SavedQuotationDto
     public bool IsSelected { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public int ItemCount { get; set; }
+    /// <summary>§7 — true when any line of this quotation was ever submitted for approval (selected item or candidate of any batch). Locks ordinary edit/delete; the revision/rework flow remains.</summary>
+    public bool IsSubmittedForApproval { get; set; }
+    public int? SubmittedBatchNumber { get; set; }
+    public string? SubmissionLockReason { get; set; }
     
     // Additional Supplier Identity Fields for Wizard UX
     public string? SupplierPortalCode { get; set; }

@@ -2,7 +2,58 @@
 
 ## Current Version
 
-v2.247.8
+v2.248.2
+
+## [v2.248.2] - 2026-10-22
+
+### Assignment action placement: Workspace header group; queue kebab
+
+PATCH, frontend-only. The claim/takeover button moves into the Workspace header action group (the "Comprador" cell shows
+the name only) and the quotation queue offers the same eligible action in each row's kebab, sharing the eligibility
+policy, dialog and submission; the queue re-reads owner, "Meu pedido", results and counts after success and reports a
+failed re-read distinctly. Tours and tests updated. Browser visual verification pending. No backend change, no migration.
+
+## [v2.248.1] - 2026-10-22
+
+### Buyer Workspace: takeover/claim button clipped in the "Comprador" field
+
+PATCH, frontend-only. The "Assumir pedido" button was rendered inside a nowrap/overflow-hidden header cell and could be
+clipped out of view next to the owner's name (proven on TEST v2.248.0, REQ-271). The "Comprador" field now renders the
+name and the action on separate rows; a rendered regression test guards the structure. No backend change, no migration.
+
+## [v2.248.0] - 2026-10-22
+
+### Buyer self-takeover of another Buyer's request
+
+MINOR. Any Buyer within the access scope may take over a QUOTATION request assigned to another Buyer, with a mandatory
+justification and a confirmation naming the request and the current Buyer; refused for PAYMENT requests, non-Buyers and
+terminal statuses. The confirmed owner is sent with the request, so stale or concurrent confirmations are refused and
+never overwrite a newer owner. Ownership, audit (history + field change), in-app notices and e-mail outbox rows commit in
+one transaction; the previous Buyer, the new Buyer, the requester and the request-linked participants are notified.
+Classic list and Workspace share the dialog and the decision; duplicate assignment notices removed. No migration, no EF
+model change, no configuration change.
+
+## [v2.247.10] - 2026-10-22
+
+### Buyer Workspace: "Assumir pedido"; durable quotation submission lock
+
+PATCH. The Workspace header offers "Assumir pedido" with the classic tool's server rules (claim when unassigned;
+takeover only by System Administrator / Local Manager holding the Buyer role, after confirmation). Ordinary quotation
+Editar/Excluir are available only for quotations never submitted for approval, decided server-side from a durable
+marker or any remaining batch/award reference (rejected and cancelled batches keep the lock), exposed to both UIs and
+enforced in PUT/DELETE with RowVersion concurrency. **Includes additive migration
+`20261016204148_AddQuotationSubmissionMarker`** (marker columns + RowVersion on `Quotations`, idempotent backfill;
+already-removed historical references cannot be recovered). Apply TEST Migrations before Deploy TEST; prefer code
+rollback retaining the columns (Down destroys submission evidence). No configuration change.
+
+## [v2.247.9] - 2026-10-16
+
+### Buyer Workspace: quotation Edit/Delete actions; access-scope guard on quotation deletion
+
+PATCH. The Workspace tab "Cotações & Documentos" gains the classic tool's Editar/Excluir actions for the assigned
+Buyer (same wizard edit, same delete endpoint, confirmation stating the document consequence, silent refresh of
+coverage and next actions, distinct handling of a failed refresh); `DELETE …/quotations/{id}` now enforces the request
+access scope like `PUT`. No migration, no EF model change, no configuration change.
 
 ## [v2.247.8] - 2026-10-15
 

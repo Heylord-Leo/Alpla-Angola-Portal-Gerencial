@@ -298,6 +298,10 @@ export interface SavedQuotationDto {
     revisesQuotationId?: string | null;
     isSelected: boolean;
     createdAtUtc: string;
+    /** §7 — ever submitted for approval (selected or candidate line of any batch): ordinary edit/delete locked server-side. */
+    isSubmittedForApproval?: boolean;
+    submittedBatchNumber?: number | null;
+    submissionLockReason?: string | null;
     itemCount: number;
     items: SavedQuotationItemDto[];
 }
