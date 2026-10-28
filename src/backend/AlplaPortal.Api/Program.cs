@@ -119,6 +119,9 @@ builder.Services.AddScoped<IGroupBuilderService, GroupBuilderService>();
 // Cancelled-batch quotation reuse rule (Option C) — single source of truth for eligibility
 builder.Services.AddScoped<IQuotationItemEligibilityService, QuotationItemEligibilityService>();
 builder.Services.AddScoped<IStatusAggregationService, StatusAggregationService>();
+// Phase 1 P.O. group cancellation / return to quotation after final approval + D4 replacement-P.O. guard
+builder.Services.AddScoped<AlplaPortal.Application.Interfaces.Purchasing.IPoGroupCancellationService, AlplaPortal.Infrastructure.Services.Purchasing.PoGroupCancellationService>();
+builder.Services.AddScoped<AlplaPortal.Application.Interfaces.Purchasing.IPriorEcfConfirmationGuard, AlplaPortal.Infrastructure.Services.Purchasing.PriorEcfConfirmationGuard>();
 
 // Finance — single source of truth for SCHEDULE/PAY/RETURN action eligibility (listing + execution)
 builder.Services.AddScoped<IFinancePaymentEligibilityService, FinancePaymentEligibilityService>();

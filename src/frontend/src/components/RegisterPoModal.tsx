@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, X, AlertTriangle, CheckCircle, Save, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Upload, FileText, X, AlertTriangle, CheckCircle, Save, ShieldAlert, ShieldCheck } from 'lucide-react'; // ShieldAlert also marks the prior-ECF block
 import { Feedback, FeedbackType } from './ui/Feedback';
 import { DropdownPortal } from './ui/DropdownPortal';
 import { Z_INDEX } from '../constants/ui';
 import { api } from '../lib/api';
 import { formatCurrencyAO } from '../lib/utils';
 import { logger } from '../lib/logger';
+import { classifyRegisterPoError, validatePreviousPoReuse, withPreviousPoReuse, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
     resolveExpectedTotalAmount,
@@ -74,6 +76,15 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
     const [overrideDuplicateConfirmed, setOverrideDuplicateConfirmed] = useState(false);
     const [duplicateOverrideComment, setDuplicateOverrideComment] = useState('');
+    // Phase 1 P.O. cancellation: (a) 409 PRIOR_ECF_CONFIRMATION_PENDING from the upload or the register call →
+    // blocking notice, no retry; (b) 400 PREVIOUS_PO_NUMBER_REUSED → warning + mandatory explanation + explicit
+    // confirmation, then the SAME payload is resubmitted with previousPoNumberReuseConfirmed/Comment.
+    const [priorEcfBlock, setPriorEcfBlock] = useState<string | null>(null);
+    const [previousPoReuse, setPreviousPoReuse] = useState<{ message: string } | null>(null);
+    const [reuseConfirmed, setReuseConfirmed] = useState(false);
+    const [reuseComment, setReuseComment] = useState('');
+    // The file uploaded by the attempt that was refused with PREVIOUS_PO_NUMBER_REUSED (no second upload on resubmission).
+    const uploadedFileRef = useRef<File | null>(null);
 
     // Supplier Registration Guard
     const [regCheck, setRegCheck] = useState<SupplierRegistrationCheck | null>(null);
@@ -299,17 +310,28 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             return;
         }
 
+        // Phase 1 P.O. cancellation: a blocked replacement is never retried from here; a reuse needs confirmation + explanation.
+        if (priorEcfBlock) return;
+        if (previousPoReuse) {
+            const reuseError = validatePreviousPoReuse(reuseConfirmed, reuseComment);
+            if (reuseError) { setFeedback({ type: 'error', message: reuseError }); return; }
+        }
+
         setProcessing(true);
         setFeedback({ type: 'error', message: null });
         setBackendOcrMismatch(null);
         setDuplicateWarning(null);
 
         try {
-            // 1. Upload the file first
-            await api.attachments.upload(requestId, [file], 'PO', poGroupId);
+            // 1. Upload the file first (skipped only on the PREVIOUS_PO_NUMBER_REUSED resubmission of the SAME file,
+            //    which the refused attempt already uploaded).
+            if (!(previousPoReuse && uploadedFileRef.current === file)) {
+                await api.attachments.upload(requestId, [file], 'PO', poGroupId);
+                uploadedFileRef.current = file;
+            }
 
             // 2. Register PO status transition (with B2P payment condition)
-            const result = await api.requests.registerPo(requestId, {
+            const basePayload = {
                 poGroupId,
                 comment,
                 hasMismatches: ocrResult?.hasMismatches || false,
@@ -323,23 +345,34 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 extractedTotalAmount: ocrResult?.extractedTotal,
                 overrideDuplicateConfirmed,
                 duplicateOverrideComment: duplicateOverrideComment.trim()
-            });
+            };
+            const result = await api.requests.registerPo(requestId, previousPoReuse ? withPreviousPoReuse(basePayload, reuseComment) : basePayload);
 
             onSuccess(result.message || 'P.O registrada com sucesso!');
-            
+
         } catch (err: any) {
             setProcessing(false);
-            
-            if (err.title === 'DUPLICATE_PO') {
-                setDuplicateWarning(err.detail || 'Número de P.O já existente.');
+
+            // One classifier for every ProblemDetails branch (code extension first, then the legacy title contract).
+            const decision = classifyRegisterPoError(err);
+            if (decision.kind === 'PRIOR_ECF_CONFIRMATION_PENDING') {
+                setPriorEcfBlock(decision.message);
                 return;
             }
-            if (err.title === 'OCR_MISMATCH') {
-                setBackendOcrMismatch({ details: err.detail || 'Divergências validadas pelo sistema central.' });
+            if (decision.kind === 'PREVIOUS_PO_NUMBER_REUSED') {
+                setPreviousPoReuse({ message: decision.message });
+                return;
+            }
+            if (decision.kind === 'DUPLICATE_PO') {
+                setDuplicateWarning(decision.message);
+                return;
+            }
+            if (decision.kind === 'OCR_MISMATCH') {
+                setBackendOcrMismatch({ details: decision.message });
                 return;
             }
 
-            setFeedback({ type: 'error', message: err.message || 'Não foi possível registrar a P.O. Tente novamente.' });
+            setFeedback({ type: 'error', message: decision.message });
         }
     };
 
@@ -348,6 +381,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         setOcrResult(null);
         setOverrideConfirmed(false);
         setBackendOcrMismatch(null);
+        uploadedFileRef.current = null;
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -502,6 +536,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                 onChange={(e) => {
                                     setPurchaseOrderNumber(e.target.value);
                                     setDuplicateWarning(null); // clear warning if user changes PO number
+                                    setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); // a different number is no longer a reuse
                                 }}
                                 placeholder="Ex: ECF11 2026/421"
                                 style={inputStyle}
@@ -550,7 +585,55 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                     )}
                                 </motion.div>
                             )}
+                            {/* Phase 1 P.O. cancellation (D15): the number belongs to a previous CANCELLED P.O. of these items —
+                                warned, never blocked by itself; confirmation + explanation (≥ 20) are audited server-side. */}
+                            {previousPoReuse && (
+                                <motion.div data-tour="register-po-previous-number-reuse" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fffbeb', border: '2px solid #f59e0b', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />
+                                        <div>
+                                            <h4 style={{ margin: '0 0 4px 0', color: '#92400e', fontSize: '0.9rem', fontWeight: 800 }}>{REGISTER_PO_ERROR_MESSAGES.reuseWarningTitle}</h4>
+                                            <p style={{ margin: 0, color: '#92400e', fontSize: '0.8rem', fontWeight: 600 }}>{previousPoReuse.message}</p>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fef3c7', padding: '12px', borderRadius: '4px', marginBottom: '12px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="previousPoReuseConfirm"
+                                            checked={reuseConfirmed}
+                                            onChange={(e) => setReuseConfirmed(e.target.checked)}
+                                            style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }}
+                                        />
+                                        <label htmlFor="previousPoReuseConfirm" style={{ cursor: 'pointer', color: '#92400e', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                            {REGISTER_PO_ERROR_MESSAGES.reuseCheckbox}
+                                        </label>
+                                    </div>
+                                    <textarea
+                                        value={reuseComment}
+                                        onChange={(e) => setReuseComment(e.target.value)}
+                                        placeholder={`Explique porque a nova P.O. reutiliza o número da P.O. cancelada (mínimo ${MIN_JUSTIFICATION_LENGTH} caracteres)...`}
+                                        rows={2}
+                                        style={{ ...inputStyle, resize: 'none', borderColor: '#f59e0b' }}
+                                    />
+                                    <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: reuseComment.trim().length < MIN_JUSTIFICATION_LENGTH ? '#b45309' : 'var(--color-text-muted)' }}>
+                                        {reuseComment.trim().length}/{MIN_JUSTIFICATION_LENGTH} caracteres mínimos
+                                    </div>
+                                </motion.div>
+                            )}
                         </div>
+
+                        {/* Phase 1 P.O. cancellation (D4): replacement P.O. blocked until Finance confirms the previous ECF annulment.
+                            Blocking — the server detail is shown and there is nothing to retry here. */}
+                        {priorEcfBlock && (
+                            <div role="alert" data-tour="register-po-prior-ecf-block" style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                <ShieldAlert size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                <div>
+                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>Registo da nova P.O. bloqueado</h4>
+                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{priorEcfBlock}</p>
+                                    <p style={{ margin: '6px 0 0', color: '#991b1b', fontSize: '0.75rem' }}>Finanças tem de confirmar a anulação da ECF anterior antes de qualquer nova P.O. para estes itens. Feche esta janela; não é possível tentar novamente aqui.</p>
+                                </div>
+                            </div>
+                        )}
 
                         <div style={{ marginBottom: '24px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
@@ -940,12 +1023,12 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                 CANCELAR
                             </button>
                             <button
-                                disabled={isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
+                                disabled={isBlocked || !!priorEcfBlock || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
                                 onClick={handleConfirm}
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
-                                    backgroundColor: isBlocked ? '#94a3b8' : 'var(--color-primary)',
+                                    backgroundColor: (isBlocked || priorEcfBlock) ? '#94a3b8' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
                                     display: 'flex',

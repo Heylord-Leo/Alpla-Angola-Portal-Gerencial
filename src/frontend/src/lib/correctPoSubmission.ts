@@ -69,6 +69,14 @@ export interface CorrectPoSubmissionInput {
     advancePercent: number;
     paymentConditionSource: 'OCR_DETECTED' | 'USER_SELECTED' | '';
     justification: JustificationPolicy;
+    /**
+     * Phase 1 P.O. cancellation (D15): set only when the previous attempt was refused with 400
+     * PREVIOUS_PO_NUMBER_REUSED and the Buyer confirmed + explained the intentional reuse. The resubmission sends
+     * the SAME payload plus previousPoNumberReuseConfirmed=true and this comment.
+     */
+    previousPoNumberReuseComment?: string;
+    /** The file of this attempt was already uploaded by the refused attempt: do not upload it twice. */
+    skipUpload?: boolean;
 }
 
 export interface RegisterPoPayload {
@@ -82,6 +90,8 @@ export interface RegisterPoPayload {
     paymentConditionCode: string;
     advancePaymentPercent?: number;
     paymentConditionSource: string;
+    previousPoNumberReuseConfirmed?: boolean;
+    previousPoNumberReuseComment?: string;
 }
 
 export function validateCorrectPoSubmission(input: CorrectPoSubmissionInput): string | null {
@@ -114,6 +124,9 @@ export function buildRegisterPoPayload(input: CorrectPoSubmissionInput): Registe
         paymentConditionCode: input.paymentCondition,
         advancePaymentPercent: input.paymentCondition === 'ADVANCE_PARTIAL' ? input.advancePercent : undefined,
         paymentConditionSource: input.paymentConditionSource || 'USER_SELECTED',
+        ...(input.previousPoNumberReuseComment && input.previousPoNumberReuseComment.trim().length > 0
+            ? { previousPoNumberReuseConfirmed: true as const, previousPoNumberReuseComment: input.previousPoNumberReuseComment.trim() }
+            : {}),
     };
 }
 
@@ -130,7 +143,7 @@ export type CorrectPoSubmissionOutcome =
 export async function submitCorrectPo(deps: CorrectPoSubmissionDeps, input: CorrectPoSubmissionInput): Promise<CorrectPoSubmissionOutcome> {
     const error = validateCorrectPoSubmission(input);
     if (error) return { ok: false, error };
-    await deps.upload(input.requestId, [input.file as File], 'PO', input.poGroupId);
+    if (!input.skipUpload) await deps.upload(input.requestId, [input.file as File], 'PO', input.poGroupId);
     const result = await deps.registerPo(input.requestId, buildRegisterPoPayload(input));
     return { ok: true, message: result?.message || CORRECT_PO_MESSAGES.success };
 }

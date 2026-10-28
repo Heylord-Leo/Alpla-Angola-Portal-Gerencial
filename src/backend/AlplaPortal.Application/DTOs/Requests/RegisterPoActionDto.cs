@@ -4,6 +4,11 @@ public class RegisterPoActionDto
 {
     public string? Comment { get; set; }
     public Guid? PoGroupId { get; set; }
+
+    // ── Phase 1 P.O. cancellation (D15): the replacement P.O. reuses the number of a previous CANCELLED P.O. of the
+    // same lines. Warned, never blocked by itself; the Buyer confirms and explains (audited). ──
+    public bool PreviousPoNumberReuseConfirmed { get; set; }
+    public string? PreviousPoNumberReuseComment { get; set; }
     
     // OCR Validation Payload
     public bool HasMismatches { get; set; }

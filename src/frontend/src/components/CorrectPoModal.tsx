@@ -10,6 +10,8 @@ import { formatCurrencyAO } from '../lib/utils';
 import { logger } from '../lib/logger';
 import { RequestDetailsDto, RequestAttachmentDto } from '../types';
 import { resolveJustificationPolicy, submitCorrectPo, validateCorrectPoSubmission } from '../lib/correctPoSubmission';
+import { classifyRegisterPoError, validatePreviousPoReuse, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
     resolveExpectedTotalAmount,
@@ -42,6 +44,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const [comment, setComment] = useState('');
     const [processing, setProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'error', message: null });
+    // Phase 1 P.O. cancellation: 409 PRIOR_ECF_CONFIRMATION_PENDING (upload or register) → blocking notice, no retry;
+    // 400 PREVIOUS_PO_NUMBER_REUSED → warning + confirmation + explanation (≥ 20), then resubmit the SAME payload.
+    const [priorEcfBlock, setPriorEcfBlock] = useState<string | null>(null);
+    const [previousPoReuse, setPreviousPoReuse] = useState<{ message: string } | null>(null);
+    const [reuseConfirmed, setReuseConfirmed] = useState(false);
+    const [reuseComment, setReuseComment] = useState('');
+    const uploadedFileRef = useRef<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // OCR Validation State
@@ -258,6 +267,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         setFile(null);
         setOcrResult(null);
         setOverrideConfirmed(false);
+        uploadedFileRef.current = null;
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -265,9 +275,17 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         // docs §G.19.3 — validation, payload and submission live in lib/correctPoSubmission (unit-tested on the
         // real payload path). The modal never fabricates a justification: a blank comment is sent as absent, and
         // when the backend declared it mandatory the submission is refused here, before any upload.
+        // Phase 1 P.O. cancellation: a blocked replacement is never retried; a number reuse needs confirmation + explanation.
+        if (priorEcfBlock) return;
+        if (previousPoReuse) {
+            const reuseError = validatePreviousPoReuse(reuseConfirmed, reuseComment);
+            if (reuseError) { setFeedback({ type: 'error', message: reuseError }); return; }
+        }
         const submission = {
             requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult, overrideConfirmed,
-            paymentCondition, advancePercent, paymentConditionSource, justification
+            paymentCondition, advancePercent, paymentConditionSource, justification,
+            previousPoNumberReuseComment: previousPoReuse ? reuseComment : undefined,
+            skipUpload: !!previousPoReuse && uploadedFileRef.current === file,
         };
         const validationError = validateCorrectPoSubmission(submission);
         if (validationError) {
@@ -291,7 +309,14 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
             }
             onSuccess(outcome.message);
         } catch (err: any) {
-            setFeedback({ type: 'error', message: err.message || 'Não foi possível registrar a P.O. Tente novamente.' });
+            const decision = classifyRegisterPoError(err);
+            if (decision.kind === 'PRIOR_ECF_CONFIRMATION_PENDING') setPriorEcfBlock(decision.message);
+            else if (decision.kind === 'PREVIOUS_PO_NUMBER_REUSED') {
+                // Only register-po answers with this code, and the upload precedes it: this file is already stored.
+                uploadedFileRef.current = file;
+                setPreviousPoReuse({ message: decision.message });
+            }
+            else setFeedback({ type: 'error', message: decision.message });
             setProcessing(false);
         }
     };
@@ -798,6 +823,42 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                     />
                                 </div>
 
+                                {/* Phase 1 P.O. cancellation (D15): the corrected P.O. reuses the number of a previous CANCELLED P.O. */}
+                                {previousPoReuse && (
+                                    <div data-tour="correct-po-previous-number-reuse" style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fffbeb', border: '2px solid #f59e0b', borderRadius: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                            <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />
+                                            <div>
+                                                <h4 style={{ margin: '0 0 4px 0', color: '#92400e', fontSize: '0.9rem', fontWeight: 800 }}>{REGISTER_PO_ERROR_MESSAGES.reuseWarningTitle}</h4>
+                                                <p style={{ margin: 0, color: '#92400e', fontSize: '0.8rem', fontWeight: 600 }}>{previousPoReuse.message}</p>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fef3c7', padding: '12px', borderRadius: '4px', marginBottom: '12px' }}>
+                                            <input type="checkbox" id="correctPoPreviousReuseConfirm" checked={reuseConfirmed} onChange={(e) => setReuseConfirmed(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }} />
+                                            <label htmlFor="correctPoPreviousReuseConfirm" style={{ cursor: 'pointer', color: '#92400e', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                                {REGISTER_PO_ERROR_MESSAGES.reuseCheckbox}
+                                            </label>
+                                        </div>
+                                        <textarea value={reuseComment} onChange={(e) => setReuseComment(e.target.value)} rows={2}
+                                            placeholder={`Explique porque a nova P.O. reutiliza o número da P.O. cancelada (mínimo ${MIN_JUSTIFICATION_LENGTH} caracteres)...`}
+                                            style={{ ...inputStyle, resize: 'none', borderColor: '#f59e0b' }} />
+                                        <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: reuseComment.trim().length < MIN_JUSTIFICATION_LENGTH ? '#b45309' : 'var(--color-text-muted)' }}>
+                                            {reuseComment.trim().length}/{MIN_JUSTIFICATION_LENGTH} caracteres mínimos
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Phase 1 P.O. cancellation (D4): blocked until Finance confirms the previous ECF annulment — no retry. */}
+                                {priorEcfBlock && (
+                                    <div role="alert" data-tour="correct-po-prior-ecf-block" style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                        <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                        <div>
+                                            <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>Registo da nova P.O. bloqueado</h4>
+                                            <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{priorEcfBlock}</p>
+                                            <p style={{ margin: '6px 0 0', color: '#991b1b', fontSize: '0.75rem' }}>Finanças tem de confirmar a anulação da ECF anterior antes de qualquer nova P.O. para estes itens. Feche esta janela; não é possível tentar novamente aqui.</p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <Feedback
                                     type={feedback.type}
                                     message={feedback.message}
@@ -819,7 +880,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                         CANCELAR
                                     </button>
                                     <button
-                                        disabled={processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())}
+                                        disabled={!!priorEcfBlock || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())}
                                         onClick={handleConfirm}
                                         style={{
                                             height: '48px',

@@ -159,4 +159,9 @@ public class FinanceActionRequestDto
     /// rejects the call so a sibling can never be regressed implicitly.
     /// </summary>
     public Guid? RequestPoGroupId { get; set; }
+
+    // ── Phase 1 P.O. cancellation: Finance return classification (optional; absent = PO_CORRECTION for new returns) ──
+    /// <summary>PO_CORRECTION | ORDER_CANCELLATION_REQUESTED.</summary>
+    public string? ReturnKind { get; set; }
+    public string? ReturnReasonCode { get; set; }
 }

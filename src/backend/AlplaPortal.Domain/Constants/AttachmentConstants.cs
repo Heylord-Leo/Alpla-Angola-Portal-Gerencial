@@ -18,5 +18,8 @@ public static class AttachmentConstants
         public const string AdvancePaymentProof = "ADVANCE_PAYMENT_PROOF";
         public const string CreditNote = "CREDIT_NOTE";
         public const string DebitNote = "DEBIT_NOTE";
+
+        /// <summary>Phase 1 P.O. cancellation: optional evidence of the external ECF annulment (Buyer declaration).</summary>
+        public const string PoCancellation = "PO_CANCELLATION";
     }
 }

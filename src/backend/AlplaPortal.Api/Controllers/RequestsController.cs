@@ -1521,6 +1521,38 @@ public class RequestsController : BaseController
             };
         }
 
+        // ── Phase 1 P.O. cancellation: per-group cancellation record, last Finance return (never inferred), the D4
+        // replacement-P.O. block and the D5 active approved totals (historical totals untouched). ──
+        if (displayEntity != null)
+        {
+            var cancellationSvc = HttpContext?.RequestServices?.GetService(typeof(IPoGroupCancellationService)) as IPoGroupCancellationService;
+            var priorGuard = new PriorEcfConfirmationGuard(_context);
+            var groupRows = await _context.RequestPoGroups.AsNoTracking().Where(g => g.RequestId == id).Select(g => new { g.Id, g.RowVersion, g.Status }).ToListAsync();
+            foreach (var gDto in request.PoGroups)
+            {
+                var row = groupRows.FirstOrDefault(x => x.Id == gDto.Id);
+                gDto.RowVersion = row != null ? Convert.ToBase64String(row.RowVersion ?? Array.Empty<byte>()) : null;
+                if (cancellationSvc != null)
+                {
+                    var actor = new PoGroupCancellationActor(CurrentUserId, CurrentUserRoles);
+                    gDto.Cancellation = await cancellationSvc.GetAsync(gDto.Id, actor);
+                    gDto.LastFinanceReturn = await cancellationSvc.GetLastFinanceReturnAsync(gDto.Id);
+                }
+                if (gDto.Status == RequestConstants.PoGroupStatuses.WaitingPo || gDto.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                    gDto.PriorEcfConfirmation = await priorGuard.EvaluateForGroupAsync(gDto.Id, lockRows: false);
+            }
+            var activeTotals = ActiveApprovedTotals.ForRequest(displayEntity.PoGroups, displayEntity.ApprovalBatches);
+            var (activeAmount, activeCurrency) = ActiveApprovedTotals.Scalar(activeTotals);
+            request.ActiveApprovedTotals = new ActiveApprovedTotalsDto
+            {
+                ActiveByCurrency = activeTotals.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+                ActiveAmount = activeAmount, ActiveCurrency = activeCurrency,
+                HistoricalApprovedTotalAmount = displayEntity.ApprovedTotalAmount, HistoricalApprovedCurrencyCode = displayEntity.ApprovedCurrencyCode,
+                CancelledGroupCount = displayEntity.PoGroups.Count(g => g.Status == RequestConstants.PoGroupStatuses.Cancelled),
+                ReleasedItemCount = displayEntity.ApprovalBatches.SelectMany(b => b.Items).Count(bi => bi.ReleasedAtUtc.HasValue),
+            };
+        }
+
         // Enrich with Selected Quotation data if applicable to avoid redundant subqueries in the projection
         if (request.SelectedQuotationId.HasValue)
         {
@@ -7205,6 +7237,46 @@ public class RequestsController : BaseController
             });
         }
 
+        // ── Phase 1 P.O. cancellation (D15): the number of a previous CANCELLED P.O. of these same lines is reused →
+        // warn and require the Buyer's confirmation + explanation (never blocked by itself). Evaluated BEFORE the generic
+        // duplicate check so the Buyer is asked once, with the cancellation-aware wording; the confirmation also
+        // satisfies the generic duplicate confirmation (same fact, one explanation, audited below). ──
+        RequestPoGroupCancellation? reusedNumberOf = null;
+        string? reusedNumberComment = null;
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
+        {
+            var targetLineIds = await _context.RequestLineItems.AsNoTracking()
+                .Where(li => li.RequestPoGroupId == dto.PoGroupId.Value && !li.IsDeleted).Select(li => li.Id).ToListAsync();
+            if (targetLineIds.Count > 0)
+            {
+                var normalizedNumber = dto.PurchaseOrderNumber.Trim().ToUpperInvariant();
+                var priorCancellations = await _context.RequestPoGroupCancellations.AsNoTracking()
+                    .Where(c => c.PurchaseOrderNumberSnapshot != null && c.Items.Any(i => targetLineIds.Contains(i.RequestLineItemId)))
+                    .ToListAsync();
+                reusedNumberOf = priorCancellations.FirstOrDefault(c => string.Equals(c.PurchaseOrderNumberSnapshot!.Trim().ToUpperInvariant(), normalizedNumber, StringComparison.Ordinal));
+                if (reusedNumberOf != null)
+                {
+                    reusedNumberComment = dto.PreviousPoNumberReuseComment?.Trim();
+                    if (!dto.PreviousPoNumberReuseConfirmed || string.IsNullOrWhiteSpace(reusedNumberComment) || reusedNumberComment.Length < PoGroupCancellationConstants.MinJustificationLength)
+                    {
+                        var reusePd = new ProblemDetails
+                        {
+                            Title = "PREVIOUS_PO_NUMBER_REUSED",
+                            Detail = $"O número de P.O '{dto.PurchaseOrderNumber}' é o da P.O anterior cancelada em {reusedNumberOf.CancelledAtUtc:dd/MM/yyyy} para estes itens. " +
+                                     $"Confirme que a nova P.O reutiliza intencionalmente este número e explique porquê (mínimo {PoGroupCancellationConstants.MinJustificationLength} caracteres).",
+                            Status = 400
+                        };
+                        reusePd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PreviousPoNumberReused;
+                        reusePd.Extensions["cancellationId"] = reusedNumberOf.Id;
+                        reusePd.Extensions["previousPoGroupId"] = reusedNumberOf.RequestPoGroupId;
+                        return BadRequest(reusePd);
+                    }
+                    dto.OverrideDuplicateConfirmed = true;
+                    dto.DuplicateOverrideComment ??= reusedNumberComment;
+                }
+            }
+        }
+
         // ── Backend PO number validation (Primavera-aware, v2.229.12 groundwork) ──
         if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber) && targetGroupIntegrity != null)
         {
@@ -7483,9 +7555,35 @@ public class RequestsController : BaseController
         var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection || isLegacyReturnCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
+        // ── Phase 1 P.O. cancellation (D4): the registration now runs in ONE transaction. Inside it the prior-ECF guard
+        // reads the cancellation rows of this group's lines WITH (UPDLOCK, HOLDLOCK), so a Finance confirmation can
+        // neither be missed nor interleave: either it committed before (we proceed) or it waits for our commit/rollback.
+        // Returning early disposes the transaction → rollback; nothing below is written. ──
+        await using var registerTx = await _context.Database.BeginTransactionAsync();
+        var priorEcf = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(poGroup.Id, lockRows: true);
+        if (priorEcf.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Registo de P.O bloqueado — confirmação de Finanças pendente", Detail = priorEcf.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            priorPd.Extensions["cancellations"] = priorEcf.Cancellations;
+            return Conflict(priorPd);
+        }
+
+
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
         {
             finalComment = "P.O corrigida após devolução por Finanças.";
+        }
+
+        // ── Phase 1 P.O. cancellation (D15): audit of the confirmed number reuse (validated above, before any write) ──
+        if (reusedNumberOf != null)
+        {
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                RequestId = request.Id, ActorUserId = CurrentUserId, ActionTaken = PoGroupCancellationConstants.HistoryActions.PoNumberReused,
+                PreviousStatusId = request.StatusId, NewStatusId = request.StatusId, CreatedAtUtc = DateTime.UtcNow,
+                Comment = $"[Grupo P.O.: {poGroup.Supplier?.Name} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] Número de P.O '{dto.PurchaseOrderNumber}' reutilizado após o cancelamento da P.O anterior (CancellationId: {reusedNumberOf.Id}). Explicação do comprador: {reusedNumberComment}"
+            });
         }
 
         // ── B2P: Persist payment condition on RequestPoGroup ──
@@ -7659,6 +7757,7 @@ public class RequestsController : BaseController
         await EvaluateCompletionPhaseOneAsync(id, null);
 
         await _context.SaveChangesAsync();
+        await registerTx.CommitAsync();
 
         // ── Notifications ──
         // Same request context as ProcessCommonOperationalTransition: the PO_REGISTERED recipients are
@@ -7762,6 +7861,14 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+        // Phase 1 P.O. cancellation (D4, defense in depth): an advance on lines whose previous ECF annulment is unconfirmed.
+        var priorEcfAdvance = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(group.Id, lockRows: false);
+        if (priorEcfAdvance.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Bloqueado — confirmação de Finanças pendente", Detail = priorEcfAdvance.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            return Conflict(priorPd);
+        }
 
         // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
         // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
@@ -7849,6 +7956,14 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+        // Phase 1 P.O. cancellation (D4, defense in depth): an advance on lines whose previous ECF annulment is unconfirmed.
+        var priorEcfAdvance = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(group.Id, lockRows: false);
+        if (priorEcfAdvance.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Bloqueado — confirmação de Finanças pendente", Detail = priorEcfAdvance.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            return Conflict(priorPd);
+        }
 
         // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
         // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.

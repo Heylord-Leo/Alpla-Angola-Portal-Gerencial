@@ -114,6 +114,15 @@ export default function FinanceHistory() {
             case 'PAYMENT_DIVERGENCE_DETECTED': return { label: 'Divergência', bg: '#fefce8', color: '#ca8a04', border: '#fde047' };
             case 'PAYMENT_SCHEDULE_CANCELLED': return { label: 'Agendamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
             case 'ADVANCE_PAYMENT_SCHEDULE_CANCELLED': return { label: 'Adiantamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
+            // Phase 1 P.O. cancellation / return to quotation
+            case 'PO_GROUP_CANCELLED': return { label: 'P.O. cancelada', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
+            case 'PO_GROUP_ITEMS_RELEASED': return { label: 'Itens devolvidos à cotação', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };
+            case 'PO_GROUP_ITEMS_CLOSED': return { label: 'Itens encerrados após aprovação', bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
+            case 'PO_CANCELLATION_ECF_DECLARED': return { label: 'Declaração do comprador sobre a ECF', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
+            case 'PO_CANCELLATION_CONFIRMED': return { label: 'Anulação da ECF confirmada por Finanças', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
+            case 'PO_CANCELLATION_REJECTED': return { label: 'Declaração da ECF rejeitada por Finanças', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
+            case 'PO_CANCELLATION_NOTIFICATION_RESENT': return { label: 'Notificação de cancelamento reenviada', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
+            case 'PO_NUMBER_REUSED_AFTER_CANCELLATION': return { label: 'Número de P.O. reutilizado após cancelamento', bg: '#fefce8', color: '#ca8a04', border: '#fde047' };
             default: return { label: action, bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
         }
     };

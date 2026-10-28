@@ -6,7 +6,9 @@ import type { TourStep } from '../guidedTourTypes';
  * Route: /buyer/requests/:id (opened from Gestão de Cotações). Steps follow the screen layout:
  * 1. Header — request identity, operational state and next action
  * 1b. Assumir pedido — claim/takeover button in the header action group (rendered only when the server would accept it; skipped otherwise)
- * 2. Tabs — Itens · Cotações & Documentos · Lotes & Aprovações
+ * 1c. Cancelar P.O. — header action (only when the server lists CANCEL_PO_GROUP; skipped otherwise)
+ * 2. Tabs — Itens · Cotações & Documentos · Lotes & Aprovações · Grupos P.O.
+ * 2b. Grupos P.O. — the groups tab content (skipped when another tab is active)
  * 3. Quotations table — one row per quotation (supplier, document, date, total, state)
  * 4. Quotation actions — Editar / Excluir (visible only to the assigned Buyer while the request is in the
  *    quotation window; otherwise the step is skipped by filterActiveSteps)
@@ -31,10 +33,22 @@ export const BUYER_REQUEST_WORKSPACE_STEPS: TourStep[] = [
         placement: 'bottom',
     },
     {
+        target: '[data-tour="buyer-workspace-cancel-po"]',
+        title: 'Cancelar P.O.',
+        content: 'Também no grupo de ações do cabeçalho: quando uma P.O. aprovada deixa de ter efeito (fornecedor cancelou, necessidade cancelada, devolução de Finanças sem correção possível), "Cancelar P.O." devolve os itens à cotação — com NOVO lote e novas aprovações — ou encerra-os. A sua declaração sobre a ECF é registada como declaração do comprador; Finanças confirma separadamente a anulação do documento externo. O botão só aparece quando o servidor aceitaria a ação; com vários grupos canceláveis abre o separador Grupos P.O.',
+        placement: 'bottom',
+    },
+    {
         target: '[data-tour="buyer-workspace-tabs"]',
         title: 'Separadores',
-        content: 'Itens mostra a cobertura por item solicitado; Cotações & Documentos lista as cotações registadas; Lotes & Aprovações acompanha os lotes enviados.',
+        content: 'Itens mostra a cobertura por item solicitado; Cotações & Documentos lista as cotações registadas; Lotes & Aprovações acompanha os lotes enviados; Grupos P.O. mostra cada grupo P.O. com as ações Corrigir P.O. e Cancelar P.O.',
         placement: 'bottom',
+    },
+    {
+        target: '[data-tour="buyer-workspace-po-groups"]',
+        title: 'Grupos P.O.',
+        content: 'Um cartão por grupo P.O.: fornecedor, estado, valor por moeda, número da P.O., lote e itens, com as ações Corrigir P.O. (grupo devolvido por Finanças) e Cancelar P.O. quando o servidor as permite. Grupos devolvidos por Finanças mostram o tipo e o motivo da devolução; grupos cancelados mostram o histórico do cancelamento, a declaração do comprador sobre a ECF e a confirmação de Finanças. Enquanto Finanças não confirmar a anulação da ECF anterior, o registo da nova P.O. fica bloqueado.',
+        placement: 'top',
     },
     {
         target: '[data-tour="buyer-workspace-quotations"]',

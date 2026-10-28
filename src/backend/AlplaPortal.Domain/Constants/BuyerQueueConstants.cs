@@ -52,6 +52,8 @@ public static class BuyerQueueConstants
         public const string SubmitBatch = "SUBMIT_BATCH";
         public const string ResolveAdjustment = "RESOLVE_ADJUSTMENT";
         public const string CorrectPo = "CORRECT_PO";
+        /// <summary>Phase 1 P.O. cancellation: cancel the returned group instead of correcting it.</summary>
+        public const string CancelPoGroup = "CANCEL_PO_GROUP";
         public const string None = "NONE";
     }
 

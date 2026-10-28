@@ -52,6 +52,36 @@ public class BuyerWorkspaceDto
     public List<BuyerWorkspaceQuotationDto> Quotations { get; set; } = new();
     public List<BuyerWorkspaceBatchDto> Batches { get; set; } = new();
     public List<BuyerWorkspaceSupplierDto> Suppliers { get; set; } = new();
+    // ── Phase 1 P.O. cancellation / return to quotation ──
+    public List<BuyerWorkspacePoGroupDto> PoGroups { get; set; } = new();
+    public ActiveApprovedTotalsDto? ActiveApprovedTotals { get; set; }
+}
+
+/// <summary>One P.O. group of the request as the Buyer sees it, with the server-decided actions (correct / cancel) and blocks.</summary>
+public class BuyerWorkspacePoGroupDto
+{
+    public Guid Id { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int? SupplierId { get; set; }
+    public string? SupplierName { get; set; }
+    public string? CurrencyCode { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? PurchaseOrderNumber { get; set; }
+    public int? ApprovalBatchNumber { get; set; }
+    public string? PaymentConditionCode { get; set; }
+    public int? PlantId { get; set; }
+    public List<int> LineNumbers { get; set; } = new();
+    public DateTime CreatedAtUtc { get; set; }
+    public string? RowVersion { get; set; }
+    public Guid? PoResponsibleBuyerId { get; set; }
+    public LastFinanceReturnDto? LastFinanceReturn { get; set; }
+    public PoGroupCancellationDto? Cancellation { get; set; }
+    public bool CanCorrectPo { get; set; }
+    public bool CanCancel { get; set; }
+    public string? CancelBlockCode { get; set; }
+    public string? CancelBlockMessage { get; set; }
+    public bool FinanceConfirmationWouldBeRequired { get; set; }
+    public PriorEcfConfirmationDto? PriorEcfConfirmation { get; set; }
 }
 
 public class BuyerWorkspaceCoverageDto
@@ -126,6 +156,11 @@ public class BuyerWorkspaceBatchDto
     /// exists. Read-only display detail; null for batches with no open V2 cycle (legacy or never
     /// adjusted). Does NOT expose resolutions/field-changes/candidate-reviews (later phases).</summary>
     public BuyerWorkspaceBatchAdjustmentDto? Adjustment { get; set; }
+    // ── Phase 1 P.O. cancellation (D5/D7): batch stays APPROVED; released items shown explicitly ──
+    public int ReleasedItemCount { get; set; }
+    public List<int> ReleasedLineNumbers { get; set; } = new();
+    public List<CurrencyAmountDto> ActiveTotalsByCurrency { get; set; } = new();
+    public List<CurrencyAmountDto> ReleasedTotalsByCurrency { get; set; } = new();
 }
 
 /// <summary>Adjustment V2 (Phase 3) — read-only projection of one OPEN adjustment cycle for the

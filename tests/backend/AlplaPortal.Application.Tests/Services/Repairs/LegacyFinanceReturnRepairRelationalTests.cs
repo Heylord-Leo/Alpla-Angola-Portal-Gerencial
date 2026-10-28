@@ -17,6 +17,9 @@ namespace AlplaPortal.Application.Tests.Services.Repairs;
 /// seeds its own request and removes it afterwards. Races are made deterministic with the service's
 /// BeforeApplySaveHookForTests synchronization point.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class LegacyFinanceReturnRepairRelationalTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

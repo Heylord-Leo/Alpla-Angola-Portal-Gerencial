@@ -208,6 +208,9 @@ public static class RequestConstants
         public const string NotQuotedAccepted = "NOT_QUOTED_ACCEPTED";
         /// <summary>Buyer closed this item without quotation (reason + justification recorded in history). Terminal.</summary>
         public const string ClosedNotQuoted = "CLOSED_NOT_QUOTED";
+        /// <summary>Phase 1 P.O. cancellation (CANCEL_ITEMS): approved line closed because its P.O. group was cancelled.
+        /// Terminal for the quotation lifecycle; the line keeps its selected quotation item and group pointer as evidence.</summary>
+        public const string CancelledAfterApproval = "CANCELLED_AFTER_APPROVAL";
     }
 
     /// <summary>

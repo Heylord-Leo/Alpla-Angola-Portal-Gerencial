@@ -4,18 +4,21 @@ import {
   formatCurrency, formatTotalsByCurrency, metricOrAbsent, bucketLabel, batchKindLabel, supplierStatusLabel,
   lotLineNumbersLabel, lotItemCountLabel, stepStateMeta, clampIndex, formatLotAmount,
   timelineStepTimestamp,
+  GROUPS_TAB, poGroupStatusLabel, batchReleasedItemsLabel, batchTotalsLines, headerApprovedTotals, resolveCancelPoGroupTarget, groupLineNumbersLabel,
 } from './buyerWorkspaceView';
 
 describe('tab routing (refresh-safe)', () => {
-  it('exposes the three approved tabs, default = items, no History tab', () => {
-    expect(WORKSPACE_TABS.map(t => t.id)).toEqual(['items', 'quotes', 'batches']);
-    expect(WORKSPACE_TABS.map(t => t.label)).toEqual(['Itens & Cobertura', 'Cotações & Documentos', 'Lotes & Aprovações']);
+  it('exposes the four approved tabs (incl. "Grupos P.O."), default = items, no History tab', () => {
+    expect(WORKSPACE_TABS.map(t => t.id)).toEqual(['items', 'quotes', 'batches', 'groups']);
+    expect(WORKSPACE_TABS.map(t => t.label)).toEqual(['Itens & Cobertura', 'Cotações & Documentos', 'Lotes & Aprovações', 'Grupos P.O.']);
+    expect(GROUPS_TAB).toBe('groups');
     expect(DEFAULT_TAB).toBe('items');
     expect(WORKSPACE_TABS.some(t => /hist/i.test(t.id) || /hist/i.test(t.label))).toBe(false);
   });
   it('resolves a valid tab and falls back to default for unknown/absent', () => {
     expect(resolveTab('quotes')).toBe('quotes');
     expect(resolveTab('batches')).toBe('batches');
+    expect(resolveTab('groups')).toBe('groups');
     expect(resolveTab(null)).toBe('items');
     expect(resolveTab('bogus')).toBe('items');
   });
@@ -131,5 +134,55 @@ describe('timelineStepTimestamp', () => {
   it('blocked and skipped keep their own labels', () => {
     expect(timelineStepTimestamp('blocked', null)).toEqual({ text: 'Requer ação' });
     expect(timelineStepTimestamp('skipped', null)).toEqual({ text: 'Não aplicável' });
+  });
+});
+
+// ── Phase 1 P.O. cancellation: "Grupos P.O." tab helpers, batch release lines, header totals ──
+describe('P.O. group cancellation view helpers', () => {
+  it('group status label reuses the shared map and maps CANCELLED → "Cancelado"', () => {
+    expect(poGroupStatusLabel('CANCELLED')).toBe('Cancelado');
+    expect(poGroupStatusLabel('WAITING_PO')).toBe('Aguardando P.O.');
+    expect(poGroupStatusLabel('PO_ISSUED')).toBe('P.O. Emitida');
+    expect(poGroupStatusLabel('SOMETHING_NEW')).toBe('SOMETHING_NEW');
+    expect(groupLineNumbersLabel([1, 3])).toBe('Itens: #1, #3');
+    expect(groupLineNumbersLabel([])).toBe('Itens: —');
+  });
+  it('released items line only when releasedItemCount > 0, with line identifiers', () => {
+    expect(batchReleasedItemsLabel({ releasedItemCount: 0, releasedLineNumbers: [] })).toBeNull();
+    expect(batchReleasedItemsLabel({ releasedItemCount: undefined, releasedLineNumbers: undefined })).toBeNull();
+    expect(batchReleasedItemsLabel({ releasedItemCount: 2, releasedLineNumbers: [2, 5] })).toBe('Itens libertados: #2, #5');
+  });
+  it('batch totals: one line per currency, never summed across currencies; none when nothing was released', () => {
+    expect(batchTotalsLines({ approvedTotalAmount: 1000, releasedItemCount: 0, activeTotalsByCurrency: [{ currency: 'AOA', amount: 1000 }], releasedTotalsByCurrency: [] })).toEqual([]);
+    const single = batchTotalsLines({ approvedTotalAmount: 1000, releasedItemCount: 1, activeTotalsByCurrency: [{ currency: 'AOA', amount: 600 }], releasedTotalsByCurrency: [{ currency: 'AOA', amount: 400 }] });
+    expect(single).toHaveLength(1);
+    expect(single[0]).toMatch(/^Aprovado \(histórico\): .*000,00 AOA · Ativo: 600,00 AOA · Libertado: 400,00 AOA$/);
+    const multi = batchTotalsLines({ approvedTotalAmount: null, releasedItemCount: 2, activeTotalsByCurrency: [{ currency: 'AOA', amount: 100 }, { currency: 'EUR', amount: 50 }], releasedTotalsByCurrency: [{ currency: 'EUR', amount: 25 }] });
+    expect(multi).toHaveLength(2);
+    expect(multi[0]).toContain('100,00 AOA');
+    expect(multi[0]).toContain('Libertado: 0,00 AOA');
+    expect(multi[1]).toContain('Aprovado (histórico): 75,00 EUR');
+    expect(multi[1]).toContain('Libertado: 25,00 EUR');
+    expect(multi.join(' ')).not.toContain('175'); // never summed across AOA + EUR
+  });
+  it('header totals: active per currency; historical only when a cancellation/release happened', () => {
+    expect(headerApprovedTotals(null)).toBeNull();
+    const clean = headerApprovedTotals({ activeByCurrency: [{ currency: 'AOA', amount: 1500 }], activeAmount: 1500, activeCurrency: 'AOA', historicalApprovedTotalAmount: 1500, historicalApprovedCurrencyCode: 'AOA', cancelledGroupCount: 0, releasedItemCount: 0 });
+    expect(clean!.active).toMatch(/500,00 AOA$/);
+    expect(clean!.historical).toBeUndefined();
+    const afterCancel = headerApprovedTotals({ activeByCurrency: [{ currency: 'AOA', amount: 900 }, { currency: 'USD', amount: 10 }], activeAmount: null, activeCurrency: 'MULTIPLE', historicalApprovedTotalAmount: 1500, historicalApprovedCurrencyCode: 'AOA', cancelledGroupCount: 1, releasedItemCount: 0 });
+    expect(afterCancel!.active).toContain('900,00 AOA');
+    expect(afterCancel!.active).toContain('10,00 USD');
+    expect(afterCancel!.active).toContain('·');
+    expect(afterCancel!.historical).toMatch(/500,00 AOA$/);
+    expect(headerApprovedTotals({ activeByCurrency: [], activeAmount: null, activeCurrency: null, historicalApprovedTotalAmount: 300, historicalApprovedCurrencyCode: 'AOA', cancelledGroupCount: 1, releasedItemCount: 1 })!.active).toBe('Sem valor ativo');
+  });
+  it('header "Cancelar P.O." target: server code gates it; one cancellable group opens directly, several go to the tab', () => {
+    const groups = [{ id: 'a', canCancel: true }, { id: 'b', canCancel: false }];
+    expect(resolveCancelPoGroupTarget([{ code: 'CANCEL_PO_GROUP', actionable: false }], groups)).toEqual({ kind: 'NONE' });
+    expect(resolveCancelPoGroupTarget([{ code: 'SUBMIT_BATCH', actionable: true }], groups)).toEqual({ kind: 'NONE' });
+    expect(resolveCancelPoGroupTarget([{ code: 'CANCEL_PO_GROUP', actionable: true }], groups)).toEqual({ kind: 'SINGLE', groupId: 'a' });
+    expect(resolveCancelPoGroupTarget([{ code: 'CANCEL_PO_GROUP', actionable: true }], [{ id: 'a', canCancel: true }, { id: 'b', canCancel: true }])).toEqual({ kind: 'MULTIPLE' });
+    expect(resolveCancelPoGroupTarget([{ code: 'CANCEL_PO_GROUP', actionable: true }], [])).toEqual({ kind: 'MULTIPLE' });
   });
 });

@@ -2,7 +2,17 @@
 
 ## Current Version
 
-v2.248.2
+v2.249.0
+
+## [v2.249.0] - 2026-10-28
+
+### P.O. group cancellation / return to quotation after final approval (phase 1)
+
+MINOR with the additive migration `20261028082044_AddPoGroupCancellation` (apply before deploying; never run `Down`). Buyer
+cancels an approved P.O. group (restart quotation with new approvals, or close items); Buyer ECF declaration and separate Finance
+confirmation; replacement P.O. blocked until confirmation; Finance return kind; explicit recipient policy with durable outbox
+delivery (Finance users of the plant, Buyer, requester, approvers, AP mailbox); active approved amounts per currency; Workspace
+"Grupos P.O." tab and Finance "Cancelamentos a confirmar" panel. See `docs/PO_GROUP_CANCELLATION.md` and DEC-151.
 
 ## [v2.248.2] - 2026-10-22
 

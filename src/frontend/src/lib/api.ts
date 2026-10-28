@@ -12,6 +12,7 @@ import { ApprovalHistoryPage, ApprovalHistoryQuery, ApprovalTimelineEvent } from
 import { ApprovalAnalytics, ApprovalAnalyticsQuery } from '../types/approvalAnalytics';
 import { DashboardV2BuyerSectionDto, DashboardV2BuyerParams, DashboardV2FinanceSectionDto, DashboardV2ReceivingSectionDto, ReceivingQueueResponseDto, DashboardV2PersonalSectionDto, DashboardV2PipelineDto, DashboardV2FinancialDto, DashboardV2AlertsDto, DashboardV2StageAgingDto } from '../types/dashboardV2';
 import { BuyerWorkspace } from '../types/buyerWorkspace';
+import type { CancelPoGroupRequestDto, FinanceCancellationReviewDto, FinancePoCancellationListDto, PoGroupCancellationDto, PoGroupCancellationEligibilityDto, PoGroupCancellationResultDto, UpdateEcfDeclarationDto } from '../types';
 import { OcrExtractionEnvelope } from '../types/ocrExtraction';
 import { SourceDocumentDuplicateResult } from '../types/paymentSourceDocument';
 import { logger, FrontendComponentKey } from './logger';
@@ -768,7 +769,7 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no pedido (Aprovação Final).');
             return response.json();
         },
-        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string, poGroupId?: string, purchaseOrderNumber?: string, extractedSupplierName?: string, extractedTotalAmount?: number, extractedCurrencyCode?: string, overrideDuplicateConfirmed?: boolean, duplicateOverrideComment?: string }): Promise<{ message: string; statusCode: string }> => {
+        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string, poGroupId?: string, purchaseOrderNumber?: string, extractedSupplierName?: string, extractedTotalAmount?: number, extractedCurrencyCode?: string, overrideDuplicateConfirmed?: boolean, duplicateOverrideComment?: string, /** D15: the replacement P.O. intentionally reuses the number of a previous CANCELLED P.O. (400 PREVIOUS_PO_NUMBER_REUSED otherwise). */ previousPoNumberReuseConfirmed?: boolean, previousPoNumberReuseComment?: string }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/register-po`, {
                 method: 'POST',
                 headers: { 
@@ -809,6 +810,45 @@ export const api = {
                 body: JSON.stringify({ justification: payload.justification, expectedBuyerId: payload.expectedBuyerId }),
             });
             if (!response.ok) return handleApiError(response, 'Não foi possível assumir o pedido.');
+            return response.json();
+        },
+        // ── Phase 1 P.O. group cancellation / return to quotation (docs/PO_GROUP_CANCELLATION.md) ──
+        /** Buyer: cancel one P.O. group after final approval (RESTART_QUOTATION | CANCEL_ITEMS). Errors are
+         *  ProblemDetails with a `code` extension (ORDERED_LINE_REQUIRES_INVESTIGATION, PAYMENT_SCHEDULED_ACTIVE, …). */
+        cancelPoGroup: async (requestId: string, groupId: string, payload: CancelPoGroupRequestDto): Promise<PoGroupCancellationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Não foi possível cancelar a P.O.');
+            return response.json();
+        },
+        /** Read model of the group's cancellation (404 when the group was never cancelled). */
+        getPoGroupCancellation: async (requestId: string, groupId: string): Promise<PoGroupCancellationDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/cancellation`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar o cancelamento da P.O.');
+            return response.json();
+        },
+        getPoGroupCancellationEligibility: async (requestId: string, groupId: string): Promise<PoGroupCancellationEligibilityDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/cancellation/eligibility`);
+            if (!response.ok) return handleApiError(response, 'Falha ao verificar a elegibilidade do cancelamento.');
+            return response.json();
+        },
+        /** Buyer: update the ECF declaration while Finance confirmation is pending or rejected (expectedRowVersion = cancellation.rowVersion). */
+        updatePoGroupEcfDeclaration: async (requestId: string, groupId: string, payload: UpdateEcfDeclarationDto): Promise<PoGroupCancellationDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/cancellation/ecf-declaration`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Não foi possível atualizar a declaração sobre a ECF.');
+            return response.json();
+        },
+        /** Resend the cancellation notification under a NEW correlation (never repeats the cancellation). */
+        resendPoGroupCancellationNotification: async (requestId: string, groupId: string): Promise<PoGroupCancellationDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-groups/${groupId}/cancellation/resend-notification`, { method: 'POST' });
+            if (!response.ok) return handleApiError(response, 'Não foi possível reenviar a notificação de cancelamento.');
             return response.json();
         },
         /** @deprecated Use FinanceController.SchedulePayment via api.finance.schedulePayment instead. */
@@ -2289,16 +2329,51 @@ export const api = {
             });
             if (!response.ok) return handleApiError(response, 'Falha ao adicionar nota.');
         },
-        returnForAdjustment: async (id: string, notes: string, requestPoGroupId?: string): Promise<void> => {
+        returnForAdjustment: async (id: string, notes: string, requestPoGroupId?: string, returnKind?: string, returnReasonCode?: string): Promise<void> => {
             // v2.230.0: group-scoped. Pass requestPoGroupId for multi-group requests so only that
             // group is returned; omitting it is accepted only for single-group requests (backend
             // resolves the sole active group).
+            // Phase 1 P.O. cancellation: optional classification of the return (returnKind PO_CORRECTION |
+            // ORDER_CANCELLATION_REQUESTED, returnReasonCode). Omitted = PO_CORRECTION server-side; the old
+            // 3-argument call stays valid.
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/return`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ notes, requestPoGroupId })
+                body: JSON.stringify({ notes, requestPoGroupId, returnKind: returnKind || undefined, returnReasonCode: returnReasonCode || undefined })
             });
             if (!response.ok) return handleApiError(response, 'Falha ao devolver pedido.');
+        },
+        // ── Phase 1 P.O. cancellation — Finance ECF confirmation queue (D12) ──
+        /** status: OPEN (default) | PENDING | REJECTED | CONFIRMED | ALL. */
+        listPoCancellations: async (params: { status?: string; plantId?: number; search?: string } = {}): Promise<FinancePoCancellationListDto> => {
+            const p = new URLSearchParams();
+            if (params.status) p.append('status', params.status);
+            if (params.plantId != null) p.append('plantId', String(params.plantId));
+            if (params.search) p.append('search', params.search);
+            const qs = p.toString();
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/po-cancellations${qs ? `?${qs}` : ''}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os cancelamentos a confirmar.');
+            return response.json();
+        },
+        /** Finance confirms that the previous ECF was annulled (a human attestation; the Portal does not verify Primavera). */
+        confirmPoCancellation: async (cancellationId: string, payload: FinanceCancellationReviewDto = {}): Promise<PoGroupCancellationDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/po-cancellations/${cancellationId}/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Não foi possível confirmar a anulação.');
+            return response.json();
+        },
+        /** Finance rejects the Buyer's declaration (note mandatory, ≥ 20 chars). */
+        rejectPoCancellation: async (cancellationId: string, payload: FinanceCancellationReviewDto): Promise<PoGroupCancellationDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/po-cancellations/${cancellationId}/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) return handleApiError(response, 'Não foi possível rejeitar a declaração.');
+            return response.json();
         },
         cancelSchedule: async (id: string, requestPoGroupId: string, reason: string): Promise<void> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/cancel-schedule`, {

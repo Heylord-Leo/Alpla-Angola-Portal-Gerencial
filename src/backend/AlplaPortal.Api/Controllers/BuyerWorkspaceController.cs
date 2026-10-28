@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Infrastructure.Services.Purchasing;
 using AlplaPortal.Domain.Common;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -26,7 +28,14 @@ namespace AlplaPortal.Api.Controllers;
 [Route("api/v1/buyer/requests")]
 public class BuyerWorkspaceController : BaseController
 {
-    public BuyerWorkspaceController(ApplicationDbContext context) : base(context) { }
+    private readonly IPoGroupCancellationService? _cancellation;
+
+    // The cancellation service is optional so existing read-model tests that construct the controller with the context
+    // alone keep working; the DI container always supplies it.
+    public BuyerWorkspaceController(ApplicationDbContext context, IPoGroupCancellationService? cancellation = null) : base(context)
+    {
+        _cancellation = cancellation;
+    }
 
     [HttpGet("{id:guid}/workspace")]
     public async Task<ActionResult<BuyerWorkspaceDto>> GetWorkspace(Guid id)
@@ -45,7 +54,10 @@ public class BuyerWorkspaceController : BaseController
             .Include(x => x.LineItems).ThenInclude(li => li.Unit)
             .Include(x => x.LineItems).ThenInclude(li => li.ItemCatalogItem)
             .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
-            .Include(x => x.PoGroups)
+            .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.SelectedCandidate)
+            .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.SelectedQuotationItem).ThenInclude(qi => qi!.Quotation)
+            .Include(x => x.PoGroups).ThenInclude(g => g.Supplier)
+            .Include(x => x.PoGroups).ThenInclude(g => g.Cancellation)
             .Include(x => x.Quotations).ThenInclude(q => q.Items)
             .Include(x => x.Quotations).ThenInclude(q => q.Supplier)
             .Include(x => x.Attachments)
@@ -164,6 +176,8 @@ public class BuyerWorkspaceController : BaseController
             Quotations = BuildQuotations(r),
             Batches = BuildBatches(r, supersededIds, adjustmentsByBatch),
             Suppliers = await BuildSuppliersAsync(r),
+            PoGroups = await BuildPoGroupsAsync(r),
+            ActiveApprovedTotals = BuildActiveTotals(r),
         };
 
         return Ok(dto);
@@ -201,7 +215,8 @@ public class BuyerWorkspaceController : BaseController
         };
         var activeBatchLineItemIds = r.ApprovalBatches
             .Where(b => activeBatchStatuses.Contains(b.Status))
-            .SelectMany(b => b.Items.Select(bi => bi.RequestLineItemId))
+            // Phase 1 P.O. cancellation: a RELEASED item of an APPROVED batch no longer holds its line.
+            .SelectMany(b => b.Items.Where(bi => !bi.ReleasedAtUtc.HasValue).Select(bi => bi.RequestLineItemId))
             .ToHashSet();
 
         // Item eligibility (lifecycle + not-in-active-batch) AND actor authorization together — the flag
@@ -284,8 +299,66 @@ public class BuyerWorkspaceController : BaseController
                 AreaDecisionAtUtc = b.Items.Where(bi => bi.WinnerSelectedAtUtc.HasValue)
                     .Select(bi => bi.WinnerSelectedAtUtc).OrderBy(t => t).FirstOrDefault(),
                 Adjustment = adjustmentsByBatch.TryGetValue(b.Id, out var adj) ? adj : null,
+                // Phase 1 P.O. cancellation (D5/D7): historical ApprovedTotalAmount untouched; active/released split shown.
+                ReleasedItemCount = b.Items.Count(bi => bi.ReleasedAtUtc.HasValue),
+                ReleasedLineNumbers = b.Items.Where(bi => bi.ReleasedAtUtc.HasValue)
+                    .Select(bi => lineNumberById.TryGetValue(bi.RequestLineItemId, out var rln) ? rln : 0).Where(ln => ln > 0).OrderBy(ln => ln).ToList(),
+                ActiveTotalsByCurrency = ActiveApprovedTotals.ForBatch(b).Active.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+                ReleasedTotalsByCurrency = ActiveApprovedTotals.ForBatch(b).Released.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
             })
             .ToList();
+    }
+
+    // ── Phase 1 P.O. cancellation / return to quotation ──
+
+    private static ActiveApprovedTotalsDto BuildActiveTotals(Request r)
+    {
+        var totals = ActiveApprovedTotals.ForRequest(r.PoGroups, r.ApprovalBatches);
+        var (amount, currency) = ActiveApprovedTotals.Scalar(totals);
+        return new ActiveApprovedTotalsDto
+        {
+            ActiveByCurrency = totals.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+            ActiveAmount = amount, ActiveCurrency = currency,
+            HistoricalApprovedTotalAmount = r.ApprovedTotalAmount, HistoricalApprovedCurrencyCode = r.ApprovedCurrencyCode,
+            CancelledGroupCount = r.PoGroups.Count(g => g.Status == RequestConstants.PoGroupStatuses.Cancelled),
+            ReleasedItemCount = r.ApprovalBatches.SelectMany(b => b.Items).Count(bi => bi.ReleasedAtUtc.HasValue),
+        };
+    }
+
+    /// <summary>Groups with the server-decided actions: correct (existing flow) or cancel (phase 1), plus the D4 block state.</summary>
+    private async Task<List<BuyerWorkspacePoGroupDto>> BuildPoGroupsAsync(Request r)
+    {
+        var actor = new PoGroupCancellationActor(CurrentUserId, CurrentUserRoles);
+        var guard = new PriorEcfConfirmationGuard(_context);
+        var roles = CurrentUserRoles;
+        var isOwnerOrAdmin = roles.Contains(RoleConstants.SystemAdministrator) || (roles.Contains(RoleConstants.Buyer) && (r.BuyerId == null || r.BuyerId == CurrentUserId));
+        var batchNumbers = r.ApprovalBatches.ToDictionary(b => b.Id, b => b.BatchNumber);
+        var list = new List<BuyerWorkspacePoGroupDto>();
+        foreach (var g in r.PoGroups.OrderBy(g => g.CreatedAtUtc))
+        {
+            var dto = new BuyerWorkspacePoGroupDto
+            {
+                Id = g.Id, Status = g.Status, SupplierId = g.SupplierId, SupplierName = g.Supplier?.Name ?? g.SupplierNameSnapshot,
+                CurrencyCode = g.CurrencyCode, TotalAmount = g.TotalAmount, PurchaseOrderNumber = g.PurchaseOrderNumber,
+                ApprovalBatchNumber = g.ApprovalBatchId.HasValue && batchNumbers.TryGetValue(g.ApprovalBatchId.Value, out var bn) ? bn : null,
+                PaymentConditionCode = g.PaymentConditionCode, PlantId = g.PlantId, CreatedAtUtc = g.CreatedAtUtc,
+                RowVersion = Convert.ToBase64String(g.RowVersion ?? Array.Empty<byte>()), PoResponsibleBuyerId = g.PoResponsibleBuyerId,
+                LineNumbers = r.LineItems.Where(li => !li.IsDeleted && li.RequestPoGroupId == g.Id).Select(li => li.LineNumber).OrderBy(ln => ln).ToList(),
+                CanCorrectPo = isOwnerOrAdmin && (g.Status == RequestConstants.PoGroupStatuses.WaitingPo || g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection),
+            };
+            if (_cancellation != null)
+            {
+                dto.LastFinanceReturn = await _cancellation.GetLastFinanceReturnAsync(g.Id);
+                dto.Cancellation = g.Cancellation != null ? await _cancellation.GetAsync(g.Id, actor) : null;
+                var elig = await _cancellation.EvaluateEligibilityAsync(g.Id, actor);
+                dto.CanCancel = elig.CanCancel; dto.CancelBlockCode = elig.BlockCode; dto.CancelBlockMessage = elig.BlockMessage;
+                dto.FinanceConfirmationWouldBeRequired = elig.FinanceConfirmationWouldBeRequired;
+            }
+            if (g.Status == RequestConstants.PoGroupStatuses.WaitingPo || g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                dto.PriorEcfConfirmation = await guard.EvaluateForGroupAsync(g.Id, lockRows: false);
+            list.Add(dto);
+        }
+        return list;
     }
 
     private static string BatchKind(ApprovalBatch b, IReadOnlyCollection<Guid> supersededIds)

@@ -46,7 +46,8 @@ public class LegacyFinanceReturnCorrectionTests
 {
     private const int S_PO_ISSUED = 9, S_WAITING_PO_CORRECTION = 12, S_PO_PARTIAL = 13, S_PAYMENT_SCHEDULED = 14, S_PAYMENT_COMPLETED = 15, S_ADVANCE = 16;
 
-    private static ApplicationDbContext NewCtx() => new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    // Phase 1 P.O. cancellation: RegisterPo now runs inside an explicit transaction; InMemory needs this warning suppressed (as the Finance return tests do).
+    private static ApplicationDbContext NewCtx() => new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)).Options);
 
     private sealed class Seed { public Guid RequestId, GroupId, BuyerId, FinanceId, ProofId; }
 

@@ -17,6 +17,9 @@ namespace AlplaPortal.Application.Tests.Services.Purchasing;
 /// owner and one history row are persisted, the loser's attempt leaves nothing behind. Skips silently when the sandbox
 /// is unreachable; every scenario seeds and removes its own request.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class PoCorrectionClaimRelationalTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

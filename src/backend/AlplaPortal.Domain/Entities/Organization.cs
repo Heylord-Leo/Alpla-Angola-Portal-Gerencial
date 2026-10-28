@@ -234,6 +234,9 @@ public class AccountsPayableNotificationConfig
     /// </summary>
     public bool NotifyFinanceUsersByEmail { get; set; } = false;
 
+    /// <summary>Phase 1 P.O. cancellation: send the AP mailbox a notice when a P.O. group is cancelled or returned to quotation.</summary>
+    public bool NotifyOnPoCancelled { get; set; } = false;
+
     // Audit
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;

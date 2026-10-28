@@ -15,4 +15,5 @@ public interface IWorkflowNotificationOrchestrator
     /// This method is fire-and-forget safe — all internal errors are caught and logged.
     /// </summary>
     Task EmitAsync(WorkflowEvent workflowEvent);
+
 }

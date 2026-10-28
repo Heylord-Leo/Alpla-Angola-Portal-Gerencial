@@ -37,7 +37,8 @@ public static class BuyerQueueProjectionInputFactory
             b.Id, b.BatchNumber, b.Status,
             b.Items.Select(bi => new Proj.BatchItemInput(
                 bi.RequestLineItemId, bi.SelectedQuotationItemId,
-                bi.Candidates.Select(c => c.QuotationItemId).ToList())).ToList())).ToList();
+                bi.Candidates.Select(c => c.QuotationItemId).ToList(),
+                bi.ReleasedAtUtc.HasValue)).ToList())).ToList();
 
         var quotationItems = r.Quotations
             .SelectMany(qq => qq.Items)

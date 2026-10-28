@@ -34,6 +34,9 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// validation → item construction with IVA → considered-only totals → integrity gate →
 /// persistence). Skipped when LocalDB is unavailable; cleans up its own rows.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class SaveQuotationIgnoredLineIntegrationTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

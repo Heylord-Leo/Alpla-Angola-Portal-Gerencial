@@ -61,6 +61,8 @@ public class RequestAttachment
     public const string TYPE_ADVANCE_PAYMENT_PROOF = "ADVANCE_PAYMENT_PROOF";
     public const string TYPE_CREDIT_NOTE = "CREDIT_NOTE";
     public const string TYPE_DEBIT_NOTE = "DEBIT_NOTE";
+    // Phase 1 P.O. cancellation: evidence of the external ECF annulment (optional)
+    public const string TYPE_PO_CANCELLATION = "PO_CANCELLATION";
 
     public string StorageReference { get; set; } = string.Empty; // Path pointer
 

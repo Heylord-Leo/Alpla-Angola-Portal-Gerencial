@@ -49,7 +49,9 @@ public static class BuyerQueueProjectionBuilder
 
     // ── Inputs (populated by the controller from loaded entities) ──
     public sealed record QuotationItemInput(Guid Id, Guid? MappedRequestLineItemId, string? ReconciliationStatus);
-    public sealed record BatchItemInput(Guid RequestLineItemId, Guid? SelectedQuotationItemId, IReadOnlyList<Guid> CandidateQuotationItemIds);
+    public sealed record BatchItemInput(Guid RequestLineItemId, Guid? SelectedQuotationItemId, IReadOnlyList<Guid> CandidateQuotationItemIds,
+        // Phase 1 P.O. cancellation: a released item of an APPROVED batch no longer holds its line or candidates.
+        bool IsReleased = false);
     public sealed record BatchInput(Guid Id, int BatchNumber, string Status, IReadOnlyList<BatchItemInput> Items);
     public sealed record ItemInput(Guid Id, bool IsDeleted, string? QuotationLifecycleStatus, string? LineItemStatusCode, bool HasSupplier);
     public sealed record RequestInput(
@@ -243,6 +245,7 @@ public static class BuyerQueueProjectionBuilder
             .ToList();
         var heldQuotationItemIds = activeBatches
             .SelectMany(b => b.Items)
+            .Where(bi => !bi.IsReleased)
             .SelectMany(bi => (bi.SelectedQuotationItemId.HasValue ? new[] { bi.SelectedQuotationItemId.Value } : Array.Empty<Guid>())
                 .Concat(bi.CandidateQuotationItemIds))
             .ToHashSet();
@@ -267,6 +270,8 @@ public static class BuyerQueueProjectionBuilder
             RequestConstants.QuotationLifecycleStatuses.QuotationApproved => BuyerQueueConstants.CoverageBuckets.Approved,
             RequestConstants.QuotationLifecycleStatuses.BatchAssigned => BuyerQueueConstants.CoverageBuckets.InActiveBatch,
             RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted => BuyerQueueConstants.CoverageBuckets.ClosedNotQuoted,
+            // Phase 1 P.O. cancellation (CANCEL_ITEMS): closed after approval — treated like a cancelled line.
+            RequestConstants.QuotationLifecycleStatuses.CancelledAfterApproval => BuyerQueueConstants.CoverageBuckets.CancelledDeleted,
             RequestConstants.QuotationLifecycleStatuses.NotQuotedProposed => BuyerQueueConstants.CoverageBuckets.NotQuotedProposed,
             RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted => BuyerQueueConstants.CoverageBuckets.NotQuotedAccepted,
             // null or QUOTATION_PENDING: eligible pool.
@@ -291,7 +296,12 @@ public static class BuyerQueueProjectionBuilder
             case BuyerQueueConstants.OperationalStates.AdjustmentRequired:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.ResolveAdjustment, "Revisar e reenviar lote", true) };
             case BuyerQueueConstants.OperationalStates.PoCorrection:
-                return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true) };
+                return new[]
+                {
+                    new BuyerNextAction(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true),
+                    // Phase 1: the Buyer may also cancel the returned group (restart quotation / close items) instead of correcting.
+                    new BuyerNextAction(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true),
+                };
             case BuyerQueueConstants.OperationalStates.AwaitingApproval:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.None, "Aguardando aprovação", false) };
             case BuyerQueueConstants.OperationalStates.AwaitingRequesterDecision:

@@ -165,7 +165,28 @@ public class AttachmentsController : BaseController
                         isUploadable = true;
                     }
                 }
+                // Phase 1 P.O. cancellation (D4): a replacement P.O. document for lines whose previous ECF annulment is
+                // not yet confirmed by Finance is refused here too (RegisterPo is the state writer and locks; this is
+                // the defensive front door so the Buyer cannot even upload the file).
+                if (isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var prior = await new AlplaPortal.Infrastructure.Services.Purchasing.PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(poGroupId.Value, lockRows: false);
+                    if (prior.Blocked)
+                    {
+                        var priorPd = new ProblemDetails { Title = "Registo de P.O bloqueado", Detail = prior.Message, Status = 409 };
+                        priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+                        priorPd.Extensions["cancellations"] = prior.Cancellations;
+                        return Conflict(priorPd);
+                    }
+                }
                 detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação ou quando devolvido para correção.";
+                break;
+            case AttachmentConstants.Types.PoCancellation:
+                // Phase 1 P.O. cancellation: optional evidence of the external ECF annulment, attached to the group by the
+                // responsible Buyer (or an administrator) — before, during or after the cancellation.
+                isUploadable = poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation
+                    && (CurrentUserRoles.Contains(RoleConstants.Buyer) || CurrentUserRoles.Contains(RoleConstants.SystemAdministrator));
+                detail = "A evidência de anulação da ECF só pode ser carregada por um comprador num grupo P.O de um pedido de cotação.";
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(statusCode);

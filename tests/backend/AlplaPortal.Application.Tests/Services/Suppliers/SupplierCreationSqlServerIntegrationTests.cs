@@ -17,6 +17,9 @@ namespace AlplaPortal.Application.Tests.Services.Suppliers;
 /// Skipped automatically when LocalDB is unavailable (e.g. CI). Test rows are prefixed ZZTEST_ and
 /// deleted in a finally block so the dev database is left unchanged.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class SupplierCreationSqlServerIntegrationTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

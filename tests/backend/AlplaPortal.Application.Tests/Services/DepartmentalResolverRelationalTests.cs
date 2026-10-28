@@ -26,6 +26,9 @@ namespace AlplaPortal.Application.Tests.Services;
 /// when the sandbox is unreachable. Seeds a REQ-478-shaped legacy batch approval and a recorded-currency neighbour,
 /// emits PAYMENT_COMPLETED through the real orchestrator and checks the manager's outbox body; everything seeded is removed.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class AccountsPayableDepartmentalResolverRelationalTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

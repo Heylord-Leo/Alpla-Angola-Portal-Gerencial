@@ -37,6 +37,9 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// <para>Runs against SQL Server (LocalDB) like the other SaveQuotation integration tests;
 /// skipped when LocalDB is unavailable; cleans up its own rows.</para>
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class SaveQuotationAuthoritativeTotalsIntegrationTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

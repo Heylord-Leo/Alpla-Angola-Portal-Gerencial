@@ -63,6 +63,16 @@ public class RequestPoGroup
     /// </summary>
     public Guid? PoResponsibleBuyerId { get; set; }
 
+    // ── Finance return classification (phase 1 P.O. cancellation). NULL on every row returned before this
+    // version = "tipo não classificado": never inferred from history text, never treated as PO_CORRECTION. ──
+    public string? LastFinanceReturnKind { get; set; }
+    public string? LastFinanceReturnReasonCode { get; set; }
+    public DateTime? LastFinanceReturnedAtUtc { get; set; }
+    public Guid? LastFinanceReturnedByUserId { get; set; }
+
+    /// <summary>The cancellation record when this group was cancelled after final approval (phase 1); null otherwise.</summary>
+    public RequestPoGroupCancellation? Cancellation { get; set; }
+
     // ── Concurrency (Post-Payment Completion Workflow — Release 1 foundation) ──
     /// <summary>
     /// SQL Server rowversion. Guards the parallel post-payment dimensions: Operational Receipt,

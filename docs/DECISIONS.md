@@ -2436,3 +2436,22 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Decision:** Replaced the blanket check with `Test-ResponsibleUserIdSafety` (`scripts/db/migration-range.ps1`, pure/DB-independent, unit-tested): (1) a **position layer** attributes every occurrence to its owning migration (nearest preceding EF idempotent guard marker) and rejects any occurrence from a migration positioned after the column-dropping migration outright; (2) a **pattern layer** rejects only genuinely dangerous SQL shapes (`ADD`, `CREATE INDEX` on it, `ADD CONSTRAINT`/FK against it, `ALTER COLUMN`, `UPDATE`/`INSERT` writing into `Departments.ResponsibleUserId` itself) regardless of position. Added `Test-ModelSnapshotNoLegacyProperty` as a companion static check confirming the current EF model no longer defines the property, scoped to the entity's block so an unrelated same-named-substring property elsewhere (e.g. `Request.CurrentResponsibleUserId`) is never a false positive.
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
+
+## DEC-151 — P.O. Group Cancellation / Return to Quotation After Final Approval (phase 1)
+
+- **Date:** 2026-10-28
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** A P.O. group whose order was cancelled after final approval (REQ-27/09/2026-483, Finance return "PEDIDO
+  CANCELADO", ECF annulled outside the Portal) had no supported exit: `PoGroupStatuses.Cancelled` was never written, batch
+  cancel refuses APPROVED, request cancel refuses after Buyer processing, correction cannot change supplier or amount.
+- **Decision:** see `docs/PO_GROUP_CANCELLATION.md` §2 (D1–D16). Key invariants: the group becomes CANCELLED and is never
+  mutated again; the quotation, the APPROVED batch (items marked released), the voided P.O. file and the history are
+  preserved; the Buyer's ECF declaration and Finance's confirmation are separate human statements (the Portal never claims
+  to annul or verify Primavera documents); a replacement P.O. is blocked server-side (RegisterPo transaction +
+  UPDLOCK/HOLDLOCK on the cancellation rows, same check on P.O. upload and advance endpoints) until Finance confirms;
+  historical approved totals are never rewritten and active figures are per currency; legacy returns are "não classificado",
+  never inferred; PAYMENT-type requests are out of phase 1.
+- **Consequences:** additive migration `20261028082044_AddPoGroupCancellation`; new `IPoGroupCancellationService`,
+  `IPriorEcfConfirmationGuard`; events PO_GROUP_CANCELLED / PO_CANCELLATION_CONFIRMED / PO_CANCELLATION_DECLARATION_REJECTED;
+  `QuotationItemEligibilityService` treats released approved items like cancelled-batch items (DEC-147);
+  `DepartmentalAmountResolver` gains the `ActiveApproved` source. Rollback is application-only; `Down` must never run.

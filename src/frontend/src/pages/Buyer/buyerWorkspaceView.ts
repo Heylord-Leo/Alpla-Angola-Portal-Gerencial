@@ -3,13 +3,18 @@
 // resolution, back-navigation target, supplier per-currency formatting, coverage presentation and
 // empty-state text can be unit-tested without a component runner (mirrors buyerQueueView.ts).
 // ─────────────────────────────────────────────────────────────────────────────
-import type { BuyerWorkspaceSupplier, CurrencyAmount } from '../../types/buyerWorkspace';
+import type { BuyerWorkspaceBatch, BuyerWorkspacePoGroup, BuyerWorkspaceSupplier, CurrencyAmount } from '../../types/buyerWorkspace';
+import type { ActiveApprovedTotalsDto } from '../../types';
+import { resolveGroupStatusLabel } from '../../lib/requestGroupDisplayState';
+import { CANCELLED_GROUP_STATUS_LABEL } from '../../lib/poGroupCancellation';
 
 export const WORKSPACE_TABS = [
   { id: 'items', label: 'Itens & Cobertura' },
   { id: 'quotes', label: 'Cotações & Documentos' },
   { id: 'batches', label: 'Lotes & Aprovações' },
+  { id: 'groups', label: 'Grupos P.O.' },
 ];
+export const GROUPS_TAB = 'groups';
 export const DEFAULT_TAB = 'items';
 
 /** Refresh-safe tab resolution from the URL `tab` param; unknown/absent → the default tab. */
@@ -140,4 +145,67 @@ export function clampIndex(index: number, total: number): number {
 export function formatLotAmount(amount: number, currency?: string | null): string {
   const n = new Intl.NumberFormat('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
   return currency ? `${n} ${currency}` : n;
+}
+
+// ── Phase 1 P.O. cancellation — "Grupos P.O." tab, batch release lines and header approved totals ──
+
+/** Group status label: the shared Finance/Request map, plus CANCELLED → "Cancelado" (kept out of GROUP_STATUS_LABELS on purpose). */
+export function poGroupStatusLabel(status?: string | null): string {
+  if (status === 'CANCELLED') return CANCELLED_GROUP_STATUS_LABEL;
+  return resolveGroupStatusLabel(status);
+}
+
+/** "Itens libertados: #2, #5" — shown only when the batch released items after a cancellation (D5/D7). */
+export function batchReleasedItemsLabel(b: Pick<BuyerWorkspaceBatch, 'releasedItemCount' | 'releasedLineNumbers'>): string | null {
+  if (!b.releasedItemCount || b.releasedItemCount <= 0) return null;
+  const nums = (b.releasedLineNumbers || []).map(n => `#${n}`).join(', ');
+  return `Itens libertados: ${nums || b.releasedItemCount}`;
+}
+
+/**
+ * "Aprovado (histórico): X · Ativo: Y · Libertado: Z" — one line PER CURRENCY, never summed across currencies.
+ * The historical figure stays the batch's approvedTotalAmount (single currency as approved); active/released come from
+ * the per-currency lists. Returns [] when the batch released nothing (the plain "Aprovado:" line is kept by the caller).
+ */
+export function batchTotalsLines(b: Pick<BuyerWorkspaceBatch, 'approvedTotalAmount' | 'releasedItemCount' | 'activeTotalsByCurrency' | 'releasedTotalsByCurrency'>): string[] {
+  if (!b.releasedItemCount || b.releasedItemCount <= 0) return [];
+  const currencies = Array.from(new Set([...(b.activeTotalsByCurrency || []), ...(b.releasedTotalsByCurrency || [])].map(t => t.currency)));
+  if (currencies.length === 0) return [];
+  const find = (list: CurrencyAmount[] | undefined, c: string) => (list || []).find(t => t.currency === c)?.amount ?? 0;
+  return currencies.map(c => {
+    const historical = currencies.length === 1 && b.approvedTotalAmount != null ? formatCurrency(b.approvedTotalAmount, c) : formatCurrency(find(b.activeTotalsByCurrency, c) + find(b.releasedTotalsByCurrency, c), c);
+    return `Aprovado (histórico): ${historical} · Ativo: ${formatCurrency(find(b.activeTotalsByCurrency, c), c)} · Libertado: ${formatCurrency(find(b.releasedTotalsByCurrency, c), c)}`;
+  });
+}
+
+export interface HeaderApprovedTotals { active: string; historical?: string; }
+/** Header meta: "Aprovado ativo" per currency; "Aprovado histórico" only when something was cancelled/released. */
+export function headerApprovedTotals(t: ActiveApprovedTotalsDto | null | undefined): HeaderApprovedTotals | null {
+  if (!t) return null;
+  const active = t.activeByCurrency && t.activeByCurrency.length > 0 ? formatTotalsByCurrency(t.activeByCurrency) : 'Sem valor ativo';
+  const showHistorical = (t.cancelledGroupCount > 0 || t.releasedItemCount > 0) && t.historicalApprovedTotalAmount != null;
+  const historical = showHistorical ? formatCurrency(t.historicalApprovedTotalAmount as number, t.historicalApprovedCurrencyCode || '') .trim() : undefined;
+  return { active, historical };
+}
+
+export type CancelPoGroupTarget = { kind: 'NONE' } | { kind: 'SINGLE'; groupId: string } | { kind: 'MULTIPLE' };
+/**
+ * Header "Cancelar P.O." — rendered only when the server lists CANCEL_PO_GROUP as actionable. One cancellable group →
+ * open its dialog directly; several → switch to the "Grupos P.O." tab so the Buyer picks the group.
+ */
+export function resolveCancelPoGroupTarget(
+  nextActions: { code: string; actionable: boolean }[] | null | undefined,
+  poGroups: Pick<BuyerWorkspacePoGroup, 'id' | 'canCancel'>[] | null | undefined,
+): CancelPoGroupTarget {
+  const actionable = (nextActions || []).some(a => a.actionable && a.code === 'CANCEL_PO_GROUP');
+  if (!actionable) return { kind: 'NONE' };
+  const cancellable = (poGroups || []).filter(g => g.canCancel);
+  if (cancellable.length === 1) return { kind: 'SINGLE', groupId: cancellable[0].id };
+  return { kind: 'MULTIPLE' };
+}
+
+/** Group card line: "#1, #3" identifiers. */
+export function groupLineNumbersLabel(lineNumbers: number[] | null | undefined): string {
+  if (!lineNumbers || lineNumbers.length === 0) return 'Itens: —';
+  return 'Itens: ' + lineNumbers.map(n => `#${n}`).join(', ');
 }

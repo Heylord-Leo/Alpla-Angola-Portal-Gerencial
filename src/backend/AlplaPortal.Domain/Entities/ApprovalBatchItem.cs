@@ -44,6 +44,14 @@ public class ApprovalBatchItem
 
     public ICollection<ApprovalBatchItemCandidate> Candidates { get; set; } = new List<ApprovalBatchItemCandidate>();
 
+    // ── Release after a P.O. group cancellation (phase 1). The batch stays APPROVED (approval evidence is never
+    // mutated); a released item no longer HOLDS its line or its candidate quotation items. ──
+    public DateTime? ReleasedAtUtc { get; set; }
+    public Guid? ReleasedByUserId { get; set; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS.</summary>
+    public string? ReleaseKind { get; set; }
+    public Guid? PoGroupCancellationId { get; set; }
+
     // Audit fields
     public DateTime CreatedAtUtc { get; set; }
 }

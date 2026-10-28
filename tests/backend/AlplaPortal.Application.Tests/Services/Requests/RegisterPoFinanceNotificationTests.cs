@@ -44,8 +44,11 @@ public class RegisterPoFinanceNotificationTests
     private const int PlantA = 5, PlantB = 6;
     private const int S_APPROVED = 7, S_PO_ISSUED = 9, S_WAITING_PO_CORRECTION = 12, S_PO_PARTIAL = 13, S_ADVANCE = 14;
 
+    // Phase 1 P.O. cancellation: RegisterPo now runs inside an explicit transaction (D4 guard with UPDLOCK); InMemory treats it
+    // as a no-op only when this warning is suppressed (same as the Finance return tests since v2.242.0).
     private static ApplicationDbContext NewCtx() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)).Options);
 
     private sealed class Seed
     {

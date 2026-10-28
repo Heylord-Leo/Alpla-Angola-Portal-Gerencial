@@ -49,6 +49,15 @@ public class RequestPoGroupDto
     /// AvailableFinanceActions. Empty/omitted where the surface does not compute it.
     /// </summary>
     public List<string> FinanceActions { get; set; } = new();
+
+    // ── Phase 1 P.O. cancellation / return to quotation ──
+    /// <summary>Last Finance return (columns when recorded, else history with an UNCLASSIFIED kind — never inferred).</summary>
+    public LastFinanceReturnDto? LastFinanceReturn { get; set; }
+    /// <summary>Present when the group was cancelled after final approval.</summary>
+    public PoGroupCancellationDto? Cancellation { get; set; }
+    /// <summary>D4: unconfirmed prior ECF cancellations that block a replacement P.O. on this group.</summary>
+    public PriorEcfConfirmationDto? PriorEcfConfirmation { get; set; }
+    public string? RowVersion { get; set; }
 }
 
 public class RequestPaymentDto

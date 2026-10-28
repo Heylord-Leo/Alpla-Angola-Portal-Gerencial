@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import {
   ArrowLeft, Building2, User as UserIcon, CalendarClock, MapPin, ExternalLink,
   Package, FileText, Layers, Info, BadgeCheck, AlertTriangle, ShoppingCart,
-  ChevronLeft, ChevronRight, Mail, Upload, Pencil, MoreVertical, Ban, Trash2,
+  ChevronLeft, ChevronRight, Mail, Upload, Pencil, MoreVertical, Ban, Trash2, XCircle, Boxes, Edit2, Send, ShieldAlert,
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { BuyerLotTimeline } from './BuyerLotTimeline';
@@ -19,13 +19,16 @@ import { batchStatusLabel } from '../../lib/adjustmentReasons';
 import { formatDateTime } from '../../lib/utils';
 import { api } from '../../lib/api';
 import type { SavedQuotationDto } from '../../types';
-import type { BuyerWorkspace, BuyerWorkspaceItem, BuyerWorkspaceBatch } from '../../types/buyerWorkspace';
-import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL } from './buyerQueueView';
+import type { BuyerWorkspace, BuyerWorkspaceItem, BuyerWorkspaceBatch, BuyerWorkspacePoGroup } from '../../types/buyerWorkspace';
+import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL, buildPoCorrectionDeepLink } from './buyerQueueView';
 import {
   WORKSPACE_TABS, resolveTab, backToQueueTarget, coverageChips, bucketLabel,
   formatTotalsByCurrency, metricOrAbsent, batchKindLabel, supplierStatusLabel,
   lotLineNumbersLabel, lotItemCountLabel, clampIndex,
+  GROUPS_TAB, poGroupStatusLabel, batchReleasedItemsLabel, batchTotalsLines, headerApprovedTotals, resolveCancelPoGroupTarget, groupLineNumbersLabel,
 } from './buyerWorkspaceView';
+import { CancelPoGroupDialog } from '../../components/Buyer/CancelPoGroupDialog';
+import { cancellationKindLabel, ecfStatusLabel, financeStatusLabel, lastFinanceReturnLabel, priorEcfBlockMessage, describeFinanceEmailPolicy, deliveryChip, resendNeedsAttention } from '../../lib/poGroupCancellation';
 import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequestEmail';
 import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -110,6 +113,26 @@ export function BuyerRequestWorkspace() {
       },
       ws.requestId, kind, kind === 'TAKEOVER' ? { justification: justification ?? '', expectedBuyerId: ws.buyerId } : undefined);
     if (outcome !== 'INVALID') setAssignConfirm(false);   // keep the dialog open on client-side validation failure
+  };
+  // Phase 1 P.O. cancellation ("Grupos P.O." tab + header "Cancelar P.O."). Eligibility (canCancel / canCorrectPo /
+  // cancelBlockMessage / financeConfirmationWouldBeRequired) and the cancellation read model come from the server
+  // projection; the UI never recomputes them. Success → the existing silent re-read (refreshAfterMutation).
+  const [cancelDialog, setCancelDialog] = useState<{ mode: 'cancel' | 'declaration'; group: BuyerWorkspacePoGroup } | null>(null);
+  const [resendTarget, setResendTarget] = useState<BuyerWorkspacePoGroup | null>(null);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const openCancelForGroup = (group: BuyerWorkspacePoGroup) => { setActionError(null); setCancelDialog({ mode: 'cancel', group }); };
+  const resendCancellationNotification = async () => {
+    const g = resendTarget;
+    setResendTarget(null);
+    if (!g || !ws || groupBusy) return;
+    setActionError(null);
+    setGroupBusy(true);
+    try {
+      const updated = await api.requests.resendPoGroupCancellationNotification(ws.requestId, g.id);
+      afterMutation(updated.notificationWarning ? `Notificação reenviada. ${updated.notificationWarning}` : `Notificação de cancelamento reenviada (${updated.financeRecipientsResolvedCount} destinatário(s) Finanças).`);
+    } catch (e: any) {
+      setActionError(e?.details?.detail || e?.message || 'Não foi possível reenviar a notificação.');
+    } finally { setGroupBusy(false); }
   };
   const handleEditQuotation = async (q: BuyerWorkspaceQuotation) => {
     if (!ws || quotationBusyRef.current) return;   // one open/delete at a time (double click, concurrent delete)
@@ -196,6 +219,10 @@ export function BuyerRequestWorkspace() {
   const nextActionLabel = (hasSubmitBatch && hasAddQuotation)
     ? 'Enviar itens prontos ou completar cotações'
     : (nextAction?.label || 'Sem ação do comprador');
+  // Header "Cancelar P.O." — only when the server lists CANCEL_PO_GROUP as actionable (one group → dialog; several → tab).
+  const poGroups = ws.poGroups ?? [];
+  const cancelTarget = resolveCancelPoGroupTarget(ws.nextActions, poGroups);
+  const approvedTotals = headerApprovedTotals(ws.activeApprovedTotals);
 
   return (
     <PageContainer>
@@ -259,6 +286,21 @@ export function BuyerRequestWorkspace() {
                   <UserIcon size={15} /> {assignAction.label}
                 </button>
               )}
+              {cancelTarget.kind !== 'NONE' && (
+                <button
+                  type="button"
+                  data-tour="buyer-workspace-cancel-po"
+                  disabled={groupBusy}
+                  onClick={() => {
+                    const single = cancelTarget.kind === 'SINGLE' ? poGroups.find(g => g.id === cancelTarget.groupId) : undefined;
+                    if (single) openCancelForGroup(single); else setTab(GROUPS_TAB);
+                  }}
+                  title="Cancelar uma P.O. aprovada: devolver os itens à cotação ou encerrá-los"
+                  style={{ ...outlineBtn, borderColor: '#B91C1C', color: '#B91C1C' }}
+                >
+                  <XCircle size={15} /> Cancelar P.O.
+                </button>
+              )}
               {hasOpenItems && (
                 <button onClick={solicitarCotacao} style={outlineBtn}><Mail size={15} /> Solicitar cotação</button>
               )}
@@ -314,6 +356,14 @@ export function BuyerRequestWorkspace() {
           <Meta icon={<Building2 size={13} />} label="Empresa / Planta">{[ws.companyName, ws.plantName].filter(Boolean).join(' · ') || '—'}</Meta>
           <Meta icon={<MapPin size={13} />} label="Departamento">{ws.departmentName || '—'}</Meta>
           <Meta icon={<CalendarClock size={13} />} label="Necessário até">{fmtDate(ws.needByDateUtc)}</Meta>
+          {/* D5: active approved figures per currency (never summed); the historical value is shown — clearly
+              distinguished — only when a group was cancelled or items were released. */}
+          {approvedTotals && (
+            <Meta icon={<BadgeCheck size={13} />} label="Aprovado ativo"><span title={approvedTotals.active}>{approvedTotals.active}</span></Meta>
+          )}
+          {approvedTotals?.historical && (
+            <Meta icon={<Layers size={13} />} label="Aprovado histórico"><span style={{ color: 'var(--color-text-muted)', textDecoration: 'line-through' }} title="Valor aprovado originalmente, antes de cancelamentos/libertações">{approvedTotals.historical}</span></Meta>
+          )}
         </div>
       </div>
 
@@ -327,7 +377,7 @@ export function BuyerRequestWorkspace() {
           <div data-tour="buyer-workspace-tabs" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--color-border)' }}>
             {WORKSPACE_TABS.map(t => {
               const active = tab === t.id;
-              const icon = t.id === 'items' ? <Package size={15} /> : t.id === 'quotes' ? <FileText size={15} /> : <Layers size={15} />;
+              const icon = t.id === 'items' ? <Package size={15} /> : t.id === 'quotes' ? <FileText size={15} /> : t.id === GROUPS_TAB ? <Boxes size={15} /> : <Layers size={15} />;
               return (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer',
@@ -344,6 +394,16 @@ export function BuyerRequestWorkspace() {
               onEdit={handleEditQuotation} onDelete={(q) => { setActionError(null); setDeleteTarget(q); }} />
           )}
           {tab === 'batches' && <TabBatches ws={ws} />}
+          {tab === GROUPS_TAB && (
+            <TabGroups
+              ws={ws}
+              busy={groupBusy}
+              onCancel={openCancelForGroup}
+              onCorrect={(g) => navigate(buildPoCorrectionDeepLink(ws.requestId, g.id))}
+              onUpdateDeclaration={(g) => { setActionError(null); setCancelDialog({ mode: 'declaration', group: g }); }}
+              onResend={(g) => { setActionError(null); setResendTarget(g); }}
+            />
+          )}
         </div>
 
         <div style={{ flex: '1 1 300px', minWidth: 280, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -395,6 +455,44 @@ export function BuyerRequestWorkspace() {
 
       {/* In-Workspace Supplier Sheet drawer — mounts the SHARED SupplierFichaDetailContent (Stage 3D). */}
       <BuyerSupplierFichaDrawer ref={supplierDrawerRef} onSaved={() => loadWorkspace(true)} />
+
+      {/* Phase 1 P.O. cancellation — the same dialog in 'cancel' mode (POST …/cancel with expectedGroupRowVersion) and
+          'declaration' mode (PUT …/cancellation/ecf-declaration with expectedRowVersion). */}
+      {cancelDialog && ws && (
+        <CancelPoGroupDialog
+          mode={cancelDialog.mode}
+          requestId={ws.requestId}
+          requestNumber={ws.requestNumber}
+          group={cancelDialog.group}
+          onCancel={() => setCancelDialog(null)}
+          onSuccess={(outcome) => {
+            setCancelDialog(null);
+            if (outcome.mode === 'cancel') {
+              const r = outcome.result;
+              afterMutation(r.notificationWarning ? `${r.message} ${r.notificationWarning}` : r.message);
+            } else {
+              afterMutation('Declaração sobre a ECF atualizada. Finanças confirma separadamente a anulação.');
+            }
+          }}
+        />
+      )}
+      {resendTarget && (
+        <ConfirmationDialog
+          isOpen
+          title="Reenviar notificação de cancelamento"
+          variant="warning"
+          confirmText="Reenviar"
+          cancelText="Cancelar"
+          onConfirm={() => void resendCancellationNotification()}
+          onCancel={() => setResendTarget(null)}
+          message={(
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.85rem' }}>
+              <div>A notificação do cancelamento da P.O. {resendTarget.cancellation?.purchaseOrderNumberSnapshot || resendTarget.purchaseOrderNumber || ''} ({resendTarget.supplierName || 'fornecedor não definido'}) será reenviada a Finanças com uma nova correlação.</div>
+              <div style={{ color: 'var(--color-text-muted)' }}>O cancelamento em si não é repetido. O servidor recusa reenvios com menos de 2 minutos de intervalo.</div>
+            </div>
+          )}
+        />
+      )}
 
       {assignConfirm && ws && (
         <TakeOverRequestDialog
@@ -662,15 +760,181 @@ function TabBatches({ ws }: { ws: BuyerWorkspace }) {
               )}
             </div>
             <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>{lotLineNumbersLabel(b.itemLineNumbers)}</div>
+            {/* Phase 1 P.O. cancellation (D5/D7): the batch stays APPROVED; released items are stated explicitly. */}
+            {batchReleasedItemsLabel(b) && (
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#B45309' }}>{batchReleasedItemsLabel(b)}</div>
+            )}
           </div>
           <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
             <div>Criado {fmtDate(b.createdAtUtc)}</div>
             {b.areaDecisionAtUtc && <div>Decisão de área {fmtDate(b.areaDecisionAtUtc)}</div>}
-            {b.approvedTotalAmount != null && <div>Aprovado: {fmtAmount(b.approvedTotalAmount)}</div>}
+            {/* Per-currency lines (never summed across currencies) replace the plain approved figure after a release. */}
+            {batchTotalsLines(b).length > 0
+              ? batchTotalsLines(b).map((line, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>{line}</div>)
+              : (b.approvedTotalAmount != null && <div>Aprovado: {fmtAmount(b.approvedTotalAmount)}</div>)}
           </div>
         </button>
       ))}
       <BatchDetailModal batch={selected} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
+// ── Tab 4: Grupos P.O. (Phase 1 P.O. cancellation / return to quotation) ──
+// One card per P.O. group of the request. Every action/block shown here is the SERVER's decision
+// (canCorrectPo, canCancel + cancelBlockMessage, cancellation.actions, priorEcfConfirmation). The ECF part of a
+// cancelled group is rendered as the Buyer's DECLARATION and Finance's SEPARATE confirmation — never as a Portal fact.
+function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResend }: {
+  ws: BuyerWorkspace; busy: boolean;
+  onCancel: (g: BuyerWorkspacePoGroup) => void; onCorrect: (g: BuyerWorkspacePoGroup) => void;
+  onUpdateDeclaration: (g: BuyerWorkspacePoGroup) => void; onResend: (g: BuyerWorkspacePoGroup) => void;
+}) {
+  const groups = ws.poGroups ?? [];
+  if (groups.length === 0) return <Empty>Nenhum grupo P.O. criado para este pedido (os grupos surgem após a aprovação final).</Empty>;
+  const btn = (color: string, disabled: boolean): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, border: `1px solid ${color}`, background: 'transparent', color, fontSize: '0.74rem', fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, whiteSpace: 'nowrap' });
+  return (
+    <div data-tour="buyer-workspace-po-groups" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {groups.map(g => {
+        const cancelled = g.status === 'CANCELLED';
+        const c = g.cancellation ?? null;
+        const financeReturn = lastFinanceReturnLabel(g.lastFinanceReturn);
+        const priorBlock = priorEcfBlockMessage(g.priorEcfConfirmation);
+        const statusColor = cancelled ? 'var(--color-text-muted)' : g.status === 'WAITING_PO_CORRECTION' ? 'var(--color-status-orange)' : g.status === 'WAITING_PO' ? 'var(--color-status-blue)' : 'var(--color-status-green)';
+        return (
+          <div key={g.id} data-tour="buyer-workspace-po-group" style={{ background: 'var(--color-bg-surface)', border: `1px solid ${cancelled ? 'var(--color-border)' : 'var(--color-border)'}`, borderLeft: `4px solid ${statusColor}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, opacity: cancelled ? 0.92 : 1 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 800, color: 'var(--color-text-main)' }}>{g.supplierName || 'Fornecedor não definido'}</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 700, background: `color-mix(in srgb, ${statusColor} 12%, transparent)`, color: statusColor }}>{poGroupStatusLabel(g.status)}</span>
+                  {g.approvalBatchNumber != null && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Lote {g.approvalBatchNumber}</span>}
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                  {g.purchaseOrderNumber ? `P.O. ${g.purchaseOrderNumber}` : 'Sem P.O. registada'} · {groupLineNumbersLabel(g.lineNumbers)}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
+                {g.currencyCode ? `${fmtAmount(g.totalAmount)} ${g.currencyCode}` : fmtAmount(g.totalAmount)}
+              </div>
+            </div>
+
+            {priorBlock && (
+              <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 8, background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', fontSize: '0.8rem', fontWeight: 600 }}>
+                <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{priorBlock}</span>
+              </div>
+            )}
+
+            {financeReturn && (
+              <div style={{ padding: '8px 10px', borderRadius: 8, background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412', fontSize: '0.78rem' }}>
+                <div style={{ fontWeight: 700 }}>{financeReturn}</div>
+                {(g.lastFinanceReturn?.returnedByName || g.lastFinanceReturn?.returnedAtUtc) && (
+                  <div style={{ color: '#C2410C', marginTop: 2 }}>{[g.lastFinanceReturn?.returnedByName, g.lastFinanceReturn?.returnedAtUtc ? fmtDateTime(g.lastFinanceReturn.returnedAtUtc) : null].filter(Boolean).join(' · ')}</div>
+                )}
+              </div>
+            )}
+
+            {cancelled && c && (
+              <div data-tour="buyer-workspace-po-group-cancellation" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, padding: '10px 12px', borderRadius: 8, border: '1px dashed var(--color-border)', fontSize: '0.78rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={statLabel}>Cancelamento</div>
+                  <div><strong>{cancellationKindLabel(c.kind)}</strong></div>
+                  <div>Motivo: {c.reasonLabel || c.reasonCode}</div>
+                  <div style={{ whiteSpace: 'pre-wrap', color: 'var(--color-text-muted)' }}>{c.reason}</div>
+                  <div style={{ color: 'var(--color-text-muted)' }}>Por {c.cancelledByName || '—'} · {fmtDateTime(c.cancelledAtUtc)}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={statLabel}>Declaração do comprador sobre a ECF</div>
+                  <div>{ecfStatusLabel(c.ecfStatus)}</div>
+                  {c.ecfReference && <div>Referência: <strong>{c.ecfReference}</strong></div>}
+                  {c.ecfDeclarationNote && <div style={{ color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap' }}>{c.ecfDeclarationNote}</div>}
+                  {(c.ecfDeclaredByName || c.ecfDeclaredAtUtc) && <div style={{ color: 'var(--color-text-muted)' }}>Declarado por {c.ecfDeclaredByName || '—'} · {fmtDateTime(c.ecfDeclaredAtUtc)}</div>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={statLabel}>Confirmação de Finanças</div>
+                  <div style={{ fontWeight: 700, color: c.financeConfirmationStatus === 'CONFIRMED' ? 'var(--color-status-green)' : c.financeConfirmationStatus === 'REJECTED' ? 'var(--color-status-red)' : c.financeConfirmationStatus === 'PENDING' ? 'var(--color-status-orange)' : 'var(--color-text-muted)' }}>{financeStatusLabel(c.financeConfirmationStatus)}</div>
+                  {(c.financeConfirmedByName || c.financeReviewedByName) && <div style={{ color: 'var(--color-text-muted)' }}>Por {c.financeConfirmedByName || c.financeReviewedByName} · {fmtDateTime(c.financeConfirmedAtUtc || c.financeReviewedAtUtc)}</div>}
+                  {c.financeConfirmationNote && <div style={{ whiteSpace: 'pre-wrap' }}>Nota: {c.financeConfirmationNote}</div>}
+                  <div style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>
+                    Notificação: {c.financeRecipientsResolvedCount} destinatário(s) Finanças{c.notificationResendCount > 0 ? ` · ${c.notificationResendCount} reenvio(s)` : ''}{c.lastNotifiedAtUtc ? ` · ${fmtDateTime(c.lastNotifiedAtUtc)}` : ''}
+                  </div>
+                  {c.notificationWarning && <div style={{ color: '#B45309', fontWeight: 600 }}><AlertTriangle size={12} style={{ verticalAlign: '-2px' }} /> {c.notificationWarning}</div>}
+                </div>
+                {/* D13 notification visibility: what the Portal QUEUED (policy outcome) vs what the worker DELIVERED
+                    (per-recipient outbox state). Plant Finance users always get the e-mail; the AP mailbox is additional. */}
+                {(() => {
+                  const policy = describeFinanceEmailPolicy(c);
+                  const policyColor = policy.severity === 'ok' ? '#166534' : policy.severity === 'warning' ? '#92400E' : '#1E3A8A';
+                  const policyBg = policy.severity === 'ok' ? '#f0fdf4' : policy.severity === 'warning' ? '#FFFBEB' : '#EFF6FF';
+                  const delivery = c.delivery ?? [];
+                  return (
+                    <div data-tour="buyer-workspace-po-group-notification" style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ padding: '6px 10px', borderRadius: 8, background: policyBg, color: policyColor, fontSize: '0.76rem', fontWeight: 600 }}>
+                        E-mail para Finanças: {policy.text}{c.buyerEmailQueued ? ' E-mail ao comprador enfileirado.' : ''}
+                      </div>
+                      {delivery.length > 0 && (
+                        <ul data-tour="buyer-workspace-po-group-delivery" style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {delivery.map((d, i) => {
+                            const chip = deliveryChip(d.status);
+                            return (
+                              <li key={`${d.recipientEmail}-${i}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: '0.74rem' }}>
+                                <span style={{ padding: '1px 8px', borderRadius: 999, fontWeight: 700, color: chip.color, background: chip.background, border: `1px solid ${chip.border}`, whiteSpace: 'nowrap' }}>{chip.label}</span>
+                                <span style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{d.recipientName || d.recipientEmail}</span>
+                                {d.recipientName && <span style={{ color: 'var(--color-text-muted)' }}>{d.recipientEmail}</span>}
+                                {d.status === 'SENT' && d.processedAtUtc && <span style={{ color: 'var(--color-text-muted)' }}>{fmtDateTime(d.processedAtUtc)}</span>}
+                                {d.status === 'FAILED' && <span style={{ color: '#92400E' }}>tentativa {d.retryCount}{d.nextRetryAtUtc ? ` · próxima ${fmtDateTime(d.nextRetryAtUtc)}` : ''}</span>}
+                                {(d.status === 'DEAD_LETTER' || d.status === 'EXPIRED') && d.lastError && <span style={{ color: '#991B1B' }} title={d.lastError}>{d.lastError}</span>}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
+                {(c.actions?.canUpdateDeclaration || c.actions?.canResendNotification) && (
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {c.actions.canUpdateDeclaration && (
+                      <button type="button" disabled={busy} onClick={() => onUpdateDeclaration(g)} style={btn('#B45309', busy)}><Pencil size={12} /> Atualizar declaração ECF</button>
+                    )}
+                    {c.actions.canResendNotification && (resendNeedsAttention(c) ? (
+                      <button type="button" disabled={busy} onClick={() => onResend(g)} data-tour="buyer-workspace-po-group-resend" style={{ ...btn('#fff', busy), background: '#B91C1C', border: '1px solid #B91C1C' }} title="Há destinatários sem e-mail entregue ou nenhum e-mail enfileirado: reenvie a notificação com uma nova correlação">
+                        <Send size={12} /> Reenviar notificação
+                      </button>
+                    ) : (
+                      <button type="button" disabled={busy} onClick={() => onResend(g)} data-tour="buyer-workspace-po-group-resend" style={btn('var(--color-primary)', busy)}><Send size={12} /> Reenviar notificação</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!cancelled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {g.canCorrectPo && (
+                    <button type="button" disabled={busy} onClick={() => onCorrect(g)} style={btn('#EA580C', busy)} title="Corrigir a P.O. devolvida por Finanças (ferramenta de correção)"><Edit2 size={12} /> Corrigir P.O.</button>
+                  )}
+                  <button
+                    type="button"
+                    data-tour="buyer-workspace-po-group-cancel"
+                    disabled={busy || !g.canCancel}
+                    onClick={() => g.canCancel && onCancel(g)}
+                    title={g.canCancel ? 'Cancelar esta P.O.: devolver os itens à cotação ou encerrá-los' : (g.cancelBlockMessage || 'Cancelamento indisponível para este grupo')}
+                    style={btn('#B91C1C', busy || !g.canCancel)}
+                  >
+                    <XCircle size={12} /> Cancelar P.O.
+                  </button>
+                </div>
+                {!g.canCancel && g.cancelBlockMessage && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{g.cancelBlockMessage}</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: 0 }}>A declaração sobre a ECF é do comprador; a anulação do documento externo é confirmada separadamente por Finanças. O Portal não verifica o Primavera.</p>
     </div>
   );
 }

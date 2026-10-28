@@ -36,6 +36,9 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// is consumed atomically when a new batch uses the item. History and the cancelled batch are
 /// never modified. Skipped when LocalDB is unavailable; each test seeds and cleans its own data.
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class QuotationReuseAuthorizationIntegrationTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

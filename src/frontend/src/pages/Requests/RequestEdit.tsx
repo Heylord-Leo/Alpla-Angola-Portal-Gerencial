@@ -44,7 +44,7 @@ import { PaymentSourceDocumentsSection } from './components/PaymentSourceDocumen
 import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocument';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
-import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
+import { RequestGroupDisplaySummary, RequestGroupCancellationChips } from './components/RequestGroupDisplaySummary';
 import { OperationInvoiceSection } from './components/OperationInvoiceSection';
 import { RequestCompletionSection } from './components/RequestCompletionSection';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
@@ -632,6 +632,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
 
             {requestTypeCode === 'QUOTATION' && (
                 <RequestGroupDisplaySummary poGroups={poGroups || []} fallbackStatusName={statusFullName || ''} />
+            )}
+            {/* Phase 1 P.O. cancellation: "P.O. cancelada" chips + prior-ECF block notice (renders nothing otherwise). */}
+            {requestTypeCode === 'QUOTATION' && (
+                <RequestGroupCancellationChips poGroups={poGroups || []} />
             )}
 
             {/* v2.230.0 — Progresso por Grupo (multi-unit requests) + superseded-batch diagnostics.

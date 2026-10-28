@@ -206,3 +206,32 @@ describe('CorrectPoModal wiring (source-level — no DOM runtime in this suite)'
         expect(modalSrc).not.toMatch(/ocrResult\?\.hasMismatches && !comment\.trim\(\)/);
     });
 });
+
+// ── Phase 1 P.O. cancellation (D15): resubmission after 400 PREVIOUS_PO_NUMBER_REUSED ──
+describe('submitCorrectPo — previous P.O. number reuse', () => {
+    it('the ordinary payload carries NO reuse fields', () => {
+        const payload = buildRegisterPoPayload(input({ comment: 'ok' }));
+        expect(payload).not.toHaveProperty('previousPoNumberReuseConfirmed');
+        expect(payload).not.toHaveProperty('previousPoNumberReuseComment');
+    });
+    it('with a reuse comment the SAME payload is sent plus previousPoNumberReuseConfirmed=true + the trimmed comment, and the upload is skipped when the file was already uploaded', async () => {
+        const upload = vi.fn().mockResolvedValue(undefined);
+        const registerPo = vi.fn().mockResolvedValue({ message: 'ok' });
+        const base = input({ comment: 'Corrigida.' });
+        const out = await submitCorrectPo({ upload, registerPo }, { ...base, previousPoNumberReuseComment: '  Mesmo número reemitido no Primavera.  ', skipUpload: true });
+        expect(out).toEqual({ ok: true, message: 'ok' });
+        expect(upload).not.toHaveBeenCalled();
+        const sent = registerPo.mock.calls[0][1] as RegisterPoPayload;
+        expect(sent.previousPoNumberReuseConfirmed).toBe(true);
+        expect(sent.previousPoNumberReuseComment).toBe('Mesmo número reemitido no Primavera.');
+        const { previousPoNumberReuseConfirmed: _c, previousPoNumberReuseComment: _m, ...rest } = sent;
+        expect(rest).toEqual(buildRegisterPoPayload(base));
+    });
+    it('without skipUpload the upload still happens first (unchanged order)', async () => {
+        const calls: string[] = [];
+        const upload = vi.fn().mockImplementation(async () => { calls.push('upload'); });
+        const registerPo = vi.fn().mockImplementation(async () => { calls.push('register'); return { message: 'ok' }; });
+        await submitCorrectPo({ upload, registerPo }, input({ comment: 'ok' }));
+        expect(calls).toEqual(['upload', 'register']);
+    });
+});

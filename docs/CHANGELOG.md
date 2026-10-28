@@ -4,7 +4,63 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.248.2
+v2.249.0
+
+## [v2.249.0] - 2026-10-28 — P.O. group cancellation / return to quotation after final approval (phase 1)
+
+MINOR (`docs/PO_GROUP_CANCELLATION.md`, DEC-151). **Includes the additive EF migration `20261028082044_AddPoGroupCancellation`**
+(3 new tables `RequestPoGroupCancellations` / `…Items` / `…EcfEvents`; 4 nullable columns on `RequestPoGroups`, 4 on
+`ApprovalBatchItems`, 1 defaulted bit `NotifyOnPoCancelled` on `AccountsPayableNotificationConfigs`; 7 indexes; no data
+statements, no backfill). Apply the migration before deploying (TEST: Apply TEST Migrations → Deploy to TEST). No configuration
+change is required; the per-company switch `NotifyOnPoCancelled` is optional. Never run `Down` (it drops the cancellation records).
+
+- **Buyer**: a P.O. group approved at Final approval can now be cancelled by the responsible Buyer (or a System
+  Administrator) with two outcomes — *voltar a cotar* (`RESTART_QUOTATION`: lines return to the quotation pool and need a NEW
+  batch with new area and final approvals; former candidates require the explicit reuse authorization of DEC-147) or
+  *encerrar itens* (`CANCEL_ITEMS`: lines closed as `CANCELLED_AFTER_APPROVAL`; the request becomes CANCELLED when nothing
+  active remains). Reason code + mandatory explanation (20–1000 chars). The original quotation, the APPROVED batch (items marked
+  released), the P.O. document (voided, "Sem efeito", still downloadable) and the history are preserved; PLANNED advances are
+  cancelled; sibling groups are never touched. Refused for scheduled or completed payments, received lines, invoices/fiscal
+  receipts, PENDING groups, PAYMENT-type requests and lines in status ORDERED ("requer investigação"). Endpoint
+  `POST /api/v1/requests/{id}/po-groups/{groupId}/cancel`.
+- **ECF declaration and Finance confirmation (D4/D12)**: when the group ever had a registered P.O., the Buyer *declares* the
+  external ECF situation (ainda não anulada / já anulada + referência / desconhecida, optional `PO_CANCELLATION` evidence) and
+  an active Finance user with the group's plant scope *confirms* or *rejects* it (`/api/v1/finance/po-cancellations`);
+  SysAdmin alone cannot; nobody confirms their own declaration. **Registering a replacement P.O. for those lines (register-po,
+  P.O. upload, advance endpoints) is blocked server-side — 409 `PRIOR_ECF_CONFIRMATION_PENDING` — until every prior
+  cancellation is confirmed**, tracked per line across restart cycles and serialized with UPDLOCK/HOLDLOCK inside a new
+  `RegisterPo` transaction; quotation and approvals proceed meanwhile. No P.O. ever registered → no declaration, no block.
+- **Finance return**: `notes` validated server-side; optional `returnKind` (`PO_CORRECTION` | `ORDER_CANCELLATION_REQUESTED`)
+  and reason code stored on the group. Returns made before this version show "tipo não classificado" with their original reason
+  (D14, never inferred) and need no second return.
+- **Same P.O. number** as the cancelled one on a replacement: warned (400 `PREVIOUS_PO_NUMBER_REUSED`), accepted with a
+  confirmed explanation, audited as `PO_NUMBER_REUSED_AFTER_CANCELLATION` (D15).
+- **Notifications**: `PO_GROUP_CANCELLED` to the responsible Buyer(s), requester, approvers and — by explicit policy —
+  the active Finance users scoped to the group's plant, who always receive the e-mail (independent of
+  `NotifyFinanceUsersByEmail`); the AP mailbox notice (with `NotifyOnPoCancelled`) is an outbox row. In-app, per-user outbox and
+  AP outbox rows are written inside the cancellation transaction (no SMTP inside any transaction); the outbox worker delivers
+  with its retry budget. The recipient outcome (`QUEUED` / `NO_ELIGIBLE_FINANCE_USERS` / `ELIGIBLE_USERS_WITHOUT_EMAIL` /
+  `NO_PLANT_IN_APP_ONLY`) and the per-recipient delivery state are recorded and shown; "Reenviar notificação" (new correlation,
+  audited, rate-limited) is the recovery. `PO_CANCELLATION_CONFIRMED` / `_DECLARATION_REJECTED` go to the Buyer only (D16).
+  Finance-return wording distinguishes "cancelamento solicitado".
+- **Amounts (D5)**: `ApprovedTotalAmount` stays historical; active approved figures are computed per currency (never summed)
+  for the request, the Workspace header and each batch (active vs released); the departmental e-mail resolver gains the
+  `ActiveApproved` source.
+- **UI**: Workspace tab "Grupos P.O." (groups, last Finance return, cancellation card with declaration/confirmation/delivery
+  state, "Corrigir P.O." / "Cancelar P.O." decided by the server, pending-ECF banner), header action `CANCEL_PO_GROUP`,
+  `CancelPoGroupDialog`, Finance panel "Cancelamentos a confirmar" with confirm/reject, return-kind choice in the Finance
+  return modal, register/correct P.O. modals handling the two new codes, request-page "P.O. cancelada" chips, history labels.
+  The register-P.O. modal's error classification now reads the parsed API error body, which also makes the existing
+  DUPLICATE_PO / OCR_MISMATCH branches effective (they compared properties the error object never carried).
+- **Guided Tour impact: existing tour updated** (Workspace tour: new steps for the "Cancelar P.O." action and the
+  "Grupos P.O." tab).
+- Tests: backend +85 (2997 → 3082: domain, service, API-boundary D12, register-P.O. guard, notifications incl. outbox worker recovery,
+  SQL Server relational: lock serialization, refusal writes nothing, double cancel, rollback of outbox/in-app rows, atomic
+  commit + retry, RegisterPo with the completion lifecycle enabled); frontend +52 (1005 → 1057). Test isolation: the eight
+  LocalDB test classes that lacked `[Collection("IntegrationTests")]` now run serialized; two InMemory harnesses suppress the
+  provider's transaction warning because `RegisterPo` now opens a transaction.
+- **Not verified in a browser** (no UI tooling in the implementation session): the manual TEST checklist is in
+  `docs/PO_GROUP_CANCELLATION.md` §13. Rollback limitations (missing ECF guard under old code after use) in §10.
 
 ## [v2.248.2] - 2026-10-22 — Assignment action placement: Workspace header action group; claim/takeover in the quotation queue kebab
 

@@ -334,6 +334,263 @@ export interface RequestPoGroupDto {
     /** v2.230.0 — per-group Finance actions (SCHEDULE/PAY/CANCEL_SCHEDULE/RETURN) computed from
      *  this group's own status by the Finance payments list. Gates the multi-group card buttons. */
     financeActions?: string[];
+    // ── Phase 1 P.O. cancellation / return to quotation (docs/PO_GROUP_CANCELLATION.md) ──
+    /** Last Finance return (columns when recorded, else history with an UNCLASSIFIED kind — never inferred). */
+    lastFinanceReturn?: LastFinanceReturnDto | null;
+    /** Present when the group was cancelled after final approval. */
+    cancellation?: PoGroupCancellationDto | null;
+    /** D4: unconfirmed prior ECF cancellations that block a replacement P.O. on this group. */
+    priorEcfConfirmation?: PriorEcfConfirmationDto | null;
+    rowVersion?: string | null;
+}
+
+// ── Phase 1 P.O. group cancellation / return to quotation — TS mirror of PoGroupCancellationDtos.cs ──
+/** RESTART_QUOTATION | CANCEL_ITEMS */
+export type PoGroupCancellationKind = 'RESTART_QUOTATION' | 'CANCEL_ITEMS';
+/** The Buyer's HUMAN declaration about the external ECF document — never verified by the Portal. */
+export type PoGroupEcfStatus = 'NOT_APPLICABLE' | 'PENDING_EXTERNAL' | 'DECLARED_CANCELLED' | 'UNKNOWN';
+/** Finance's SEPARATE confirmation of the external annulment. */
+export type PoGroupFinanceConfirmationStatus = 'NOT_REQUIRED' | 'PENDING' | 'CONFIRMED' | 'REJECTED';
+/** PO_CORRECTION | ORDER_CANCELLATION_REQUESTED (null = legacy, not classified). */
+export type FinanceReturnKind = 'PO_CORRECTION' | 'ORDER_CANCELLATION_REQUESTED';
+
+export interface CancelPoGroupRequestDto {
+    kind?: PoGroupCancellationKind | string | null;
+    reasonCode?: string | null;
+    /** Mandatory explanation (20–1000 characters). */
+    reason?: string | null;
+    /** Required when the group ever had a P.O.: PENDING_EXTERNAL | DECLARED_CANCELLED | UNKNOWN. */
+    ecfStatus?: PoGroupEcfStatus | string | null;
+    /** Required for DECLARED_CANCELLED. */
+    ecfReference?: string | null;
+    ecfDeclarationNote?: string | null;
+    ecfEvidenceAttachmentId?: string | null;
+    /** Base64 of the group RowVersion the client displayed; a mismatch is 409 CANCELLATION_CONCURRENT_CHANGE. */
+    expectedGroupRowVersion?: string | null;
+}
+
+export interface UpdateEcfDeclarationDto {
+    ecfStatus?: PoGroupEcfStatus | string | null;
+    ecfReference?: string | null;
+    note?: string | null;
+    evidenceAttachmentId?: string | null;
+    expectedRowVersion?: string | null;
+}
+
+export interface FinanceCancellationReviewDto {
+    note?: string | null;
+    expectedRowVersion?: string | null;
+}
+
+export interface PoGroupCancellationItemDto {
+    requestLineItemId: string;
+    lineNumber: number;
+    description?: string | null;
+    outcome: string;
+    previousLineItemStatusCode?: string | null;
+}
+
+export interface PoGroupCancellationEcfEventDto {
+    eventType: string;
+    ecfStatusAfter: string;
+    financeStatusAfter: string;
+    reference?: string | null;
+    note?: string | null;
+    evidenceAttachmentId?: string | null;
+    actorUserId: string;
+    actorName?: string | null;
+    actorRoleSnapshot: string;
+    atUtc: string;
+}
+
+/** Actions the CURRENT caller may perform on a cancellation (server-decided; the UI never recomputes). */
+export interface PoGroupCancellationActionsDto {
+    canUpdateDeclaration: boolean;
+    canResendNotification: boolean;
+    canFinanceReview: boolean;
+    financeReviewBlockReason?: string | null;
+}
+
+export interface PoGroupCancellationDto {
+    id: string;
+    requestPoGroupId: string;
+    requestId: string;
+    kind: PoGroupCancellationKind | string;
+    reasonCode: string;
+    reasonLabel: string;
+    reason: string;
+    previousGroupStatus: string;
+    purchaseOrderNumberSnapshot?: string | null;
+    totalAmountSnapshot: number;
+    currencyCodeSnapshot?: string | null;
+    approvalBatchNumberSnapshot?: number | null;
+    originFinanceReturnHistoryId?: string | null;
+    cancelledByUserId: string;
+    cancelledByName?: string | null;
+    cancelledAtUtc: string;
+    // Buyer declaration
+    financeConfirmationRequired: boolean;
+    ecfStatus: PoGroupEcfStatus | string;
+    ecfReference?: string | null;
+    ecfDeclarationNote?: string | null;
+    ecfEvidenceAttachmentId?: string | null;
+    ecfDeclaredByUserId?: string | null;
+    ecfDeclaredByName?: string | null;
+    ecfDeclaredAtUtc?: string | null;
+    // Finance confirmation
+    financeConfirmationStatus: PoGroupFinanceConfirmationStatus | string;
+    financeConfirmedByUserId?: string | null;
+    financeConfirmedByName?: string | null;
+    financeConfirmedAtUtc?: string | null;
+    financeConfirmationNote?: string | null;
+    financeReviewedByName?: string | null;
+    financeReviewedAtUtc?: string | null;
+    // Notification bookkeeping (D13)
+    financeRecipientsResolvedCount: number;
+    financeRecipientsWithEmailCount: number;
+    financeEmailsQueuedCount: number;
+    /** QUEUED | NO_ELIGIBLE_FINANCE_USERS | ELIGIBLE_USERS_WITHOUT_EMAIL | NO_PLANT_IN_APP_ONLY. Plant-scoped Finance users
+     *  ALWAYS get the e-mail for this event (independent of the company AP switch); the AP mailbox is additional. */
+    financeEmailPolicyOutcome?: FinanceEmailPolicyOutcome | string | null;
+    buyerRecipientResolved: boolean;
+    buyerEmailQueued: boolean;
+    /** Outbox state per recipient of the last emission (delivery is the worker's later fact). */
+    delivery: NotificationDeliveryDto[];
+    lastNotificationCorrelationId?: string | null;
+    lastNotifiedAtUtc?: string | null;
+    notificationResendCount: number;
+    /** Human explanation when Finance could not be addressed (e.g. no Finance user scoped to the plant). */
+    notificationWarning?: string | null;
+    rowVersion?: string | null;
+    items: PoGroupCancellationItemDto[];
+    events: PoGroupCancellationEcfEventDto[];
+    actions: PoGroupCancellationActionsDto;
+}
+
+export type FinanceEmailPolicyOutcome = 'QUEUED' | 'NO_ELIGIBLE_FINANCE_USERS' | 'ELIGIBLE_USERS_WITHOUT_EMAIL' | 'NO_PLANT_IN_APP_ONLY';
+export type NotificationDeliveryStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED' | 'DEAD_LETTER' | 'EXPIRED';
+
+export interface NotificationDeliveryDto {
+    recipientEmail: string;
+    recipientName?: string | null;
+    status: NotificationDeliveryStatus | string;
+    retryCount: number;
+    lastError?: string | null;
+    processedAtUtc?: string | null;
+    nextRetryAtUtc?: string | null;
+}
+
+export interface PoGroupCancellationResultDto {
+    cancellationId: string;
+    kind: string;
+    requestStatusCode: string;
+    requestCancelled: boolean;
+    financeConfirmationRequired: boolean;
+    financeRecipientsResolvedCount: number;
+    releasedLineCount: number;
+    closedLineCount: number;
+    voidedPoAttachments: number;
+    cancelledPlannedPayments: number;
+    message: string;
+    notificationWarning?: string | null;
+}
+
+/** Read-side eligibility of the cancel action for one group and the current caller. */
+export interface PoGroupCancellationEligibilityDto {
+    canCancel: boolean;
+    blockCode?: string | null;
+    blockMessage?: string | null;
+    /** True when the group ever had a P.O.: the dialog must collect the ECF declaration. */
+    financeConfirmationWouldBeRequired: boolean;
+    actorAuthorizationBlockCode?: string | null;
+}
+
+export interface PriorEcfBlockingCancellationDto {
+    cancellationId: string;
+    previousPoGroupId: string;
+    previousPoNumber?: string | null;
+    previousSupplierName?: string | null;
+    financeConfirmationStatus: string;
+    ecfStatus: string;
+    financeConfirmationNote?: string | null;
+    lineNumbers: number[];
+}
+
+/** D4 — unconfirmed prior cancellations that block a replacement P.O. on a group (or on a set of lines). */
+export interface PriorEcfConfirmationDto {
+    blocked: boolean;
+    cancellations: PriorEcfBlockingCancellationDto[];
+    message?: string | null;
+}
+
+/** Last Finance return of a group: from the new columns when present, otherwise from history (kind unclassified). */
+export interface LastFinanceReturnDto {
+    /** PO_CORRECTION | ORDER_CANCELLATION_REQUESTED | null (legacy, not classified — never inferred). */
+    kind?: FinanceReturnKind | string | null;
+    kindLabel: string;
+    reasonCode?: string | null;
+    /** The human reason as typed by Finance. */
+    notes?: string | null;
+    returnedAtUtc?: string | null;
+    returnedByName?: string | null;
+    /** COLUMNS | HISTORY. */
+    source: string;
+}
+
+/** Finance queue row: cancellations whose ECF confirmation is pending or rejected. */
+export interface FinancePoCancellationListItemDto {
+    cancellationId: string;
+    requestId: string;
+    requestNumber: string;
+    requestTitle?: string | null;
+    requestPoGroupId: string;
+    supplierName?: string | null;
+    companyName?: string | null;
+    plantName?: string | null;
+    plantId?: number | null;
+    totalAmountSnapshot: number;
+    currencyCodeSnapshot?: string | null;
+    purchaseOrderNumberSnapshot?: string | null;
+    kind: PoGroupCancellationKind | string;
+    reasonCode: string;
+    reasonLabel: string;
+    reason: string;
+    ecfStatus: PoGroupEcfStatus | string;
+    ecfReference?: string | null;
+    ecfDeclaredByName?: string | null;
+    ecfDeclaredAtUtc?: string | null;
+    financeConfirmationStatus: PoGroupFinanceConfirmationStatus | string;
+    financeConfirmationNote?: string | null;
+    cancelledAtUtc: string;
+    cancelledByName?: string | null;
+    financeRecipientsResolvedCount: number;
+    financeEmailPolicyOutcome?: FinanceEmailPolicyOutcome | string | null;
+    rowVersion?: string | null;
+    /** Whether THIS caller may confirm/reject (Finance role + plant scope + not the declarer). */
+    canReview: boolean;
+    reviewBlockReason?: string | null;
+}
+
+export interface FinancePoCancellationListDto {
+    pendingCount: number;
+    rejectedCount: number;
+    confirmedCount: number;
+    items: FinancePoCancellationListItemDto[];
+}
+
+export interface CurrencyAmountDto { currency: string; amount: number; }
+
+/** Request-level active approved figures (D5): per currency, never summed across currencies. */
+export interface ActiveApprovedTotalsDto {
+    activeByCurrency: CurrencyAmountDto[];
+    /** Single scalar only when exactly one currency is active; otherwise null. */
+    activeAmount?: number | null;
+    /** The single active currency, or "MULTIPLE", or null when nothing is active. */
+    activeCurrency?: string | null;
+    historicalApprovedTotalAmount?: number | null;
+    historicalApprovedCurrencyCode?: string | null;
+    cancelledGroupCount: number;
+    releasedItemCount: number;
 }
 
 // ── Finance obligations projection (Phase 3/4) ──
@@ -698,6 +955,8 @@ export interface RequestDetailsDto extends RequestListItemDto {
      * corrections, whose comment stays optional. Never inferred client-side from the scalar status.
      */
     legacyReturnCorrection?: LegacyFinanceReturnCorrectionDto | null;
+    /** Phase 1 P.O. cancellation (D5): active approved figures per currency after cancellations/releases. */
+    activeApprovedTotals?: ActiveApprovedTotalsDto | null;
 }
 
 export interface LegacyFinanceReturnCorrectionDto {

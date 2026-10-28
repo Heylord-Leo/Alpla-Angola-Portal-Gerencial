@@ -384,6 +384,8 @@ public class ApprovalBatchController : BaseController
         var itemsInActiveBatches = await _context.Set<ApprovalBatchItem>()
             .Where(bi => bi.ApprovalBatch.RequestId == requestId
                          && activeBatchStatuses.Contains(bi.ApprovalBatch.Status)
+                         // Phase 1 P.O. cancellation: a RELEASED item of an APPROVED batch no longer holds its line.
+                         && bi.ReleasedAtUtc == null
                          && lineItemIds.Contains(bi.RequestLineItemId))
             .Select(bi => bi.RequestLineItemId)
             .ToListAsync();
@@ -1390,7 +1392,7 @@ public class ApprovalBatchController : BaseController
 
             foreach (var otherBatch in otherActiveBatches)
             {
-                var conflicts = otherBatch.Items.Where(bi => newItemIds.Contains(bi.RequestLineItemId)).ToList();
+                var conflicts = otherBatch.Items.Where(bi => newItemIds.Contains(bi.RequestLineItemId) && bi.ReleasedAtUtc == null).ToList();
                 if (conflicts.Any())
                     return BadRequest(new ProblemDetails { Title = "Item em Outro Lote", Detail = $"Um ou mais itens já pertencem ao lote #{otherBatch.BatchNumber}.", Status = 400 });
             }

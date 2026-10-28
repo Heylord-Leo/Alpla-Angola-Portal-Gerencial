@@ -86,7 +86,15 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             // ── Accounts Payable external notification (independent from in-app dispatch) ──
             // Payment scheduled/completed (unchanged) plus P.O. registered, the latter only when the company's
             // configuration opts in (NotifyOnPoRegistered) — see SendAccountsPayableNotificationAsync.
-            if (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted
+            if (evt.EventCode == WorkflowEventCodes.PoGroupCancelled)
+            {
+                // Phase 1 P.O. cancellation: the Accounts Payable notice is an OUTBOX row written on the caller's context (inside
+                // its transaction) — never a direct SMTP send. Durable: the intent survives a crash after commit; the outbox
+                // worker delivers with its retry budget; dedup per (correlation, AP address).
+                try { await QueueAccountsPayableOutboxAsync(evt); }
+                catch (Exception apEx) { _logger.LogWarning(apEx, "Non-critical: Accounts Payable outbox queueing failed for {EventCode} on Request {RequestId}", evt.EventCode, evt.RequestId); }
+            }
+            else if (evt.EventCode == WorkflowEventCodes.PaymentScheduled || evt.EventCode == WorkflowEventCodes.PaymentCompleted
                 || evt.EventCode == WorkflowEventCodes.PoRegistered)
             {
                 try
@@ -271,6 +279,17 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await AddUserRecipientAsync(recipients, evt.AreaApproverId);
                 break;
 
+            // --- Phase 1 P.O. group cancellation / return to quotation ---
+            case WorkflowEventCodes.PoGroupCancelled:
+                await AddPoCancellationRecipientsAsync(recipients, evt, reqRef);
+                break;
+            case WorkflowEventCodes.PoCancellationConfirmed:
+            case WorkflowEventCodes.PoCancellationDeclarationRejected:
+                // D16: the responsible Buyer(s) only — never an e-mail to the requester for the ECF confirmation.
+                await AddUserRecipientAsync(recipients, evt.BuyerId, bypassSelfNotifyRule: true);
+                await AddUserRecipientAsync(recipients, evt.PreviousBuyerId, bypassSelfNotifyRule: true);
+                break;
+
             case WorkflowEventCodes.RequestFinalized:
                 await AddUserRecipientAsync(recipients, evt.RequesterId);
                 break;
@@ -364,6 +383,233 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             var fin = await _approvalRouting.ResolveFinalNotificationRecipientsAsync(req.FinalApproverId, req.CompanyId);
             foreach (var f in fin.Recipients) recipients.Add(new NotificationRecipient(f.UserId, f.Email, f.FullName));
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //  Phase 1 P.O. group cancellation — recipients and wording (docs/PO_GROUP_CANCELLATION.md §I)
+    //  Every text describes HUMAN statements: the Buyer DECLARES, Finance CONFIRMS. The Portal never claims to have
+    //  annulled or verified an ECF in Primavera.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    private async Task AddPoCancellationRecipientsAsync(List<NotificationRecipient> recipients, WorkflowEvent evt, string reqRef)
+    {
+        var texts = BuildPoCancellationTexts(evt, reqRef);
+
+        // Responsible Buyer(s): request owner and the group's P.O. responsible (may differ), plus the actor (self-notify).
+        var before = recipients.Count;
+        await AddUserRecipientAsync(recipients, evt.BuyerId, texts.BuyerSubject, texts.BuyerBody, bypassSelfNotifyRule: true);
+        await AddUserRecipientAsync(recipients, evt.PreviousBuyerId, texts.BuyerSubject, texts.BuyerBody, bypassSelfNotifyRule: true);
+        var buyerResolved = recipients.Count > before;
+        var buyerEmailQueued = recipients.Skip(before).Any(r => !string.IsNullOrWhiteSpace(r.Email) && !r.SuppressEmail);
+
+        // Requester (D16: in-app + e-mail for the cancellation itself), area managers, final approver when persisted.
+        await AddUserRecipientAsync(recipients, evt.RequesterId, texts.ParticipantSubject, texts.ParticipantBody);
+        if (evt.DepartmentId.HasValue && evt.DepartmentId.Value != 0)
+        {
+            var routing = await _approvalRouting.ResolveAreaManagersAsync(evt.DepartmentId.Value, evt.PlantId);
+            foreach (var m in routing?.Managers ?? new())
+                await AddUserRecipientAsync(recipients, m.UserId, texts.ParticipantSubject, texts.ParticipantBody);
+        }
+        await AddUserRecipientAsync(recipients, evt.AreaApproverId, texts.ParticipantSubject, texts.ParticipantBody);
+        await AddUserRecipientAsync(recipients, evt.FinalApproverId, texts.ParticipantSubject, texts.ParticipantBody);
+        var finalApprovers = await _context.RequestStatusHistories.AsNoTracking()
+            .Where(h => h.RequestId == evt.RequestId && h.ActionTaken == "BATCH_FINAL_APPROVED")
+            .Select(h => h.ActorUserId).Distinct().ToListAsync();
+        foreach (var id in finalApprovers) await AddUserRecipientAsync(recipients, id, texts.ParticipantSubject, texts.ParticipantBody);
+
+        // Finance — EXPLICIT POLICY (docs/PO_GROUP_CANCELLATION.md §8): active users with the Finance role scoped to the group's
+        // plant get the in-app notice AND the e-mail, regardless of the company AP switch (NotifyFinanceUsersByEmail governs
+        // other events only). Never a wider set: without a plant the fallback stays in-app only. The AP mailbox is additional
+        // and keeps its own toggle (NotifyOnPoCancelled).
+        var financeStart = recipients.Count;
+        await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId, emailRegardlessOfApSwitch: true);
+        var financeEligible = 0; var financeWithEmail = 0; var financeQueued = 0;
+        for (var i = financeStart; i < recipients.Count; i++)
+        {
+            recipients[i] = recipients[i] with { EmailSubjectOverride = texts.FinanceSubject, EmailBodyOverride = texts.FinanceBody };
+            financeEligible++;
+            var hasEmail = !string.IsNullOrWhiteSpace(recipients[i].Email);
+            if (hasEmail) financeWithEmail++;
+            if (hasEmail && !recipients[i].SuppressEmail) financeQueued++;
+        }
+        var policy = !evt.PlantId.HasValue ? PoCancellationRecipientOutcome.PolicyNoPlantInAppOnly
+            : financeEligible == 0 ? PoCancellationRecipientOutcome.PolicyNoEligibleUsers
+            : financeWithEmail == 0 ? PoCancellationRecipientOutcome.PolicyUsersWithoutEmail
+            : PoCancellationRecipientOutcome.PolicyQueued;
+        if (policy != PoCancellationRecipientOutcome.PolicyQueued)
+            _logger.LogWarning("PO_GROUP_CANCELLED on Request {RequestId}: Finance e-mail policy outcome {Policy} (plant {PlantId}, eligible {Eligible}, with e-mail {WithEmail}); the Finance confirmation queue remains the durable path.", evt.RequestId, policy, evt.PlantId, financeEligible, financeWithEmail);
+
+        evt.OnRecipientsResolved?.Invoke(new PoCancellationRecipientOutcome(financeEligible, financeWithEmail, financeQueued, policy, buyerResolved, buyerEmailQueued));
+    }
+
+    private sealed record PoCancellationTexts(string InAppTitle, string InAppMessage, string BuyerSubject, string BuyerBody,
+        string ParticipantSubject, string ParticipantBody, string FinanceSubject, string FinanceBody, string FinanceAsk);
+
+    private static PoCancellationTexts BuildPoCancellationTexts(WorkflowEvent evt, string reqRef)
+    {
+        Func<string?, string> enc = x => System.Net.WebUtility.HtmlEncode(x ?? "");
+        var restart = evt.PoCancellationKind == PoGroupCancellationConstants.Kinds.RestartQuotation;
+        var outcome = restart
+            ? "Os itens afetados voltam à cotação e seguirão um NOVO ciclo de aprovação (área e final)."
+            : "Os itens afetados foram encerrados; nada será comprado para eles neste grupo.";
+        var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+        var reason = enc(evt.Comment);
+        var poRef = string.IsNullOrWhiteSpace(evt.PreviousPoNumber) ? null : enc(evt.PreviousPoNumber);
+        var ecfRef = string.IsNullOrWhiteSpace(evt.EcfReference) ? null : enc(evt.EcfReference);
+        var isResend = evt.ActionTaken == "NOTIFICATION_RESENT";
+        var isUpdate = evt.ActionTaken == "ECF_DECLARATION_UPDATED";
+        var prefix = isResend ? "[Reenvio] " : isUpdate ? "[Declaração atualizada] " : "";
+
+        var details = $"<b>Pedido:</b> {enc(reqRef)}{(string.IsNullOrWhiteSpace(evt.RequestTitle) ? "" : " — " + enc(evt.RequestTitle))}<br/>" +
+                      $"<b>Ação:</b> {(restart ? "P.O cancelada — itens voltam a cotação" : "P.O cancelada — itens encerrados")}<br/>" +
+                      $"<b>Ação de:</b> {enc(evt.ActorName)} ({when})<br/>" +
+                      $"<b>Motivo:</b> {reason}<br/>" +
+                      $"<b>P.O registada anteriormente:</b> {poRef ?? "nenhuma"}<br/>" +
+                      (evt.BatchNumber.HasValue ? $"<b>Lote de aprovação:</b> #{evt.BatchNumber}<br/>" : "");
+
+        // Buyer DECLARATION (never a Portal verification)
+        string declaration, financeAsk;
+        switch (evt.EcfStatus)
+        {
+            case PoGroupCancellationConstants.EcfStatuses.NotApplicable:
+                declaration = "Não existe ECF/P.O emitida para este grupo; não há documento externo a anular.";
+                financeAsk = "Nenhuma ação é necessária por parte de Finanças. Este aviso é apenas informativo.";
+                break;
+            case PoGroupCancellationConstants.EcfStatuses.DeclaredCancelled:
+                declaration = $"O comprador <b>declara</b> que a ECF {ecfRef ?? ""} já foi anulada fora do Portal. Esta é uma declaração do comprador; o Portal não verifica o Primavera.";
+                financeAsk = "Pedimos que verifiquem a anulação no Primavera e, em Obrigações &amp; Pagamentos → Cancelamentos a confirmar, <b>confirmem a anulação</b> ou <b>rejeitem a declaração</b> indicando o motivo. " +
+                             "Enquanto a confirmação estiver pendente, o registo de uma nova P.O para os itens afetados fica bloqueado; a nova cotação e a aprovação podem prosseguir.";
+                break;
+            case PoGroupCancellationConstants.EcfStatuses.PendingExternal:
+                declaration = $"O comprador <b>declara</b> que a ECF {ecfRef ?? "associada a esta P.O"} <b>ainda não foi anulada</b>. O Portal não anula nem verifica documentos no Primavera.";
+                financeAsk = "Pedimos que a ECF seja anulada no Primavera (ou que a anulação seja coordenada com quem a executa) e que, depois, a anulação seja <b>confirmada no Portal</b> em Obrigações &amp; Pagamentos → Cancelamentos a confirmar. " +
+                             "Enquanto a confirmação estiver pendente, o registo de uma nova P.O para os itens afetados fica bloqueado; a nova cotação e a aprovação podem prosseguir.";
+                break;
+            default:
+                declaration = "O comprador <b>declara desconhecer</b> a situação da ECF associada a esta P.O. O Portal não verifica o Primavera.";
+                financeAsk = "Pedimos que verifiquem a situação da ECF no Primavera, a anulem se ainda estiver ativa e, em seguida, <b>confirmem a anulação</b> no Portal (Obrigações &amp; Pagamentos → Cancelamentos a confirmar), ou rejeitem a declaração com o motivo. " +
+                             "Enquanto a confirmação estiver pendente, o registo de uma nova P.O para os itens afetados fica bloqueado.";
+                break;
+        }
+
+        var financeSubject = evt.EcfStatus switch
+        {
+            PoGroupCancellationConstants.EcfStatuses.NotApplicable => $"{prefix}Grupo P.O cancelado antes do registo da P.O — Pedido {reqRef}",
+            PoGroupCancellationConstants.EcfStatuses.DeclaredCancelled => $"{prefix}Cancelamento de P.O — confirmar anulação da ECF {evt.EcfReference ?? ""} — Pedido {reqRef}".Replace("  ", " "),
+            _ => $"{prefix}Cancelamento de P.O — anulação de ECF necessária — Pedido {reqRef}",
+        };
+        var financeBody = $"O comprador <b>{enc(evt.ActorName)}</b> cancelou no Portal a P.O do grupo do pedido <b>{enc(reqRef)}</b>.<br/><br/>{details}<br/>" +
+                          $"<b>Situação da ECF (declaração do comprador):</b> {declaration}<br/><br/>" +
+                          $"<p style='padding:12px; background:#fff8e1; border-left:4px solid #f39c12;'>{financeAsk}</p>" +
+                          $"<p style='font-size:12px; color:#666;'>{outcome}</p>";
+
+        var buyerSubject = $"{prefix}P.O cancelada — {(restart ? "itens voltam a cotação" : "itens encerrados")} — {reqRef}";
+        var buyerBody = $"A P.O do grupo do pedido <b>{enc(reqRef)}</b> foi cancelada no Portal.<br/><br/>{details}<br/>{outcome}" +
+                        (evt.FinanceConfirmationRequired
+                            ? $"<br/><br/><b>Situação da ECF (sua declaração):</b> {declaration}<br/>" +
+                              "<b>Importante:</b> a nova P.O para os itens afetados só poderá ser registada após Finanças confirmar a anulação da ECF anterior. A nova cotação e as aprovações podem prosseguir entretanto."
+                            : "");
+
+        var participantSubject = $"{prefix}P.O cancelada no pedido {reqRef}";
+        var participantBody = $"A P.O do grupo do pedido <b>{enc(reqRef)}</b> foi cancelada por <b>{enc(evt.ActorName)}</b>.<br/><br/>{details}<br/>{outcome}" +
+                              (evt.FinanceConfirmationRequired ? "<br/><br/>A nova P.O para os itens afetados só poderá ser registada após Finanças confirmar a anulação da ECF anterior." : "");
+
+        var inAppTitle = restart ? "P.O cancelada — itens voltam a cotação" : "P.O cancelada — itens encerrados";
+        var inAppMessage = $"{prefix}{enc(evt.ActorName)} cancelou a P.O do grupo do pedido {reqRef}{(poRef != null ? $" (P.O {poRef})" : "")}. Motivo: {evt.Comment}. " +
+                           (evt.FinanceConfirmationRequired ? $"ECF: {(evt.EcfStatus == PoGroupCancellationConstants.EcfStatuses.DeclaredCancelled ? "comprador declara anulada — confirmação de Finanças pendente" : evt.EcfStatus == PoGroupCancellationConstants.EcfStatuses.PendingExternal ? "anulação pendente (declaração do comprador)" : "situação desconhecida — Finanças deve verificar")}." : "Sem ECF emitida.");
+
+        return new PoCancellationTexts(inAppTitle, inAppMessage, buyerSubject, buyerBody, participantSubject, participantBody, financeSubject, financeBody, financeAsk);
+    }
+
+    /// <summary>
+    /// Phase 1 P.O. cancellation — Accounts Payable notice through the OUTBOX (durable, retried by EmailOutboxProcessor, redirected
+    /// in non-PROD by EmailService at send time, deduplicated per correlation + AP address). Written on the caller's context, so it
+    /// commits or rolls back with the business change. Requires an active company configuration with NotifyOnPoCancelled.
+    /// </summary>
+    private async Task QueueAccountsPayableOutboxAsync(WorkflowEvent evt)
+    {
+        if (!evt.CompanyId.HasValue) return;
+        var config = await _context.AccountsPayableNotificationConfigs.AsNoTracking().Include(c => c.Company)
+            .FirstOrDefaultAsync(c => c.CompanyId == evt.CompanyId.Value && c.IsActive);
+        if (config == null || !config.NotifyOnPoCancelled || string.IsNullOrWhiteSpace(config.Email)) return;
+
+        var alreadyQueued = await _context.EmailOutbox.AnyAsync(e => e.CorrelationId == evt.CorrelationId && e.RecipientEmail == config.Email && e.Status != "DEAD_LETTER");
+        if (alreadyQueued)
+        {
+            _logger.LogDebug("AP outbox dedup: notice already queued for {ApEmail} (CorrelationId {CorrelationId})", config.Email, evt.CorrelationId);
+            return;
+        }
+
+        var req = await _context.Requests.AsNoTracking().Where(r => r.Id == evt.RequestId).Select(r => new { r.Title }).FirstOrDefaultAsync();
+        var group = evt.PoGroupId.HasValue
+            ? await _context.RequestPoGroups.AsNoTracking()
+                .Where(g => g.Id == evt.PoGroupId.Value && g.RequestId == evt.RequestId)
+                .Select(g => new { SupplierName = g.Supplier != null ? g.Supplier.Name : g.SupplierNameSnapshot, g.TotalAmount, g.CurrencyCode })
+                .FirstOrDefaultAsync()
+            : null;
+        var companyName = config.Company?.Name ?? "Empresa";
+        var supplierName = string.IsNullOrWhiteSpace(group?.SupplierName) ? "\u2014" : group!.SupplierName!;
+        var amount = group?.TotalAmount ?? 0m;
+        var currency = string.IsNullOrWhiteSpace(group?.CurrencyCode) ? "AOA" : group!.CurrencyCode!;
+        var reqRef = evt.RequestNumber;
+        var subject = $"[Portal Gerencial] P.O. cancelada \u2014 {(evt.PoCancellationKind == PoGroupCancellationConstants.Kinds.RestartQuotation ? "itens voltam a cota\u00e7\u00e3o" : "itens encerrados")} \u2014 Pedido {reqRef}";
+        var headline = $"P.O. cancelada \u2014 {companyName}";
+        var bodyHtml = BuildApPoCancelledBody(evt, reqRef, req?.Title ?? "", supplierName, amount, currency, companyName);
+        var frontendBaseUrl = _config["AppConfig:FrontendBaseUrl"]?.TrimEnd('/') ?? "";
+
+        _context.EmailOutbox.Add(new EmailOutboxEntry
+        {
+            RecipientEmail = config.Email,
+            RecipientName = string.IsNullOrWhiteSpace(config.Label) ? "Contas a Pagar" : config.Label,
+            Subject = subject,
+            Headline = headline,
+            BodyHtml = bodyHtml,
+            ActionUrl = string.IsNullOrWhiteSpace(frontendBaseUrl) ? null : $"{frontendBaseUrl}/finance?requestId={evt.RequestId}",
+            ActionLabel = "Ver Pedido",
+            CcEmails = config.CcEmails,
+            RequestId = evt.RequestId,
+            RequestNumber = evt.RequestNumber,
+            EventCode = evt.EventCode,
+            CorrelationId = evt.CorrelationId,
+            Status = "PENDING",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+        await _adminLog.WriteAsync("Info", "WorkflowNotificationOrchestrator", "EMAIL_OUTBOX_QUEUED",
+            $"Aviso de Contas a Pagar (P.O. cancelada) enfileirado para {config.Email}. Pedido: {evt.RequestNumber}.",
+            payload: $"RequestId: {evt.RequestId}. CorrelationId: {evt.CorrelationId}. Subject: {subject}.");
+    }
+
+    private static string BuildApPoCancelledBody(WorkflowEvent evt, string reqRef, string requestTitle, string supplierName, decimal amount, string currency, string companyName)
+    {
+        Func<string?, string> enc = x => System.Net.WebUtility.HtmlEncode(x ?? "");
+        var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+        var ecf = evt.EcfStatus switch
+        {
+            PoGroupCancellationConstants.EcfStatuses.NotApplicable => "não aplicável — nenhuma P.O/ECF emitida",
+            PoGroupCancellationConstants.EcfStatuses.DeclaredCancelled => $"o comprador declara que a ECF {enc(evt.EcfReference)} já foi anulada fora do Portal (confirmação de Finanças pendente)",
+            PoGroupCancellationConstants.EcfStatuses.PendingExternal => "o comprador declara que a ECF ainda não foi anulada (anulação e confirmação de Finanças pendentes)",
+            _ => "situação desconhecida segundo o comprador (verificação de Finanças pendente)",
+        };
+        return $@"
+<p>Uma Purchase Order foi <b>cancelada</b> no Portal Gerencial. Este aviso descreve uma ação no Portal; o Portal não anula nem verifica documentos no Primavera.</p>
+<div style='background-color:#f8f9fa; border:1px solid #dee2e6; padding:15px; border-radius:6px; margin:20px 0;'>
+    <table style='width:100%; font-size:14px; color:#333; border-collapse:collapse;'>
+        <tr><td style='padding:6px 0;'><b>Empresa:</b></td><td style='padding:6px 0;'>{enc(companyName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Pedido:</b></td><td style='padding:6px 0;'>{enc(reqRef)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>T&#237;tulo:</b></td><td style='padding:6px 0;'>{enc(requestTitle)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Fornecedor:</b></td><td style='padding:6px 0;'>{enc(supplierName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Total do grupo P.O. cancelado:</b></td><td style='padding:6px 0;'>{amount:N2} {enc(currency)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>P.O. anterior:</b></td><td style='padding:6px 0;'>{enc(evt.PreviousPoNumber ?? "nenhuma registada")}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Resultado:</b></td><td style='padding:6px 0;'>{(evt.PoCancellationKind == PoGroupCancellationConstants.Kinds.RestartQuotation ? "itens voltam a cota&#231;&#227;o (novo ciclo de aprova&#231;&#227;o)" : "itens encerrados")}</td></tr>
+        <tr><td style='padding:6px 0;'><b>ECF:</b></td><td style='padding:6px 0;'>{ecf}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Motivo:</b></td><td style='padding:6px 0;'>{enc(evt.Comment)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>A&#231;&#227;o realizada por:</b></td><td style='padding:6px 0;'>{enc(evt.ActorName)}</td></tr>
+        <tr><td style='padding:6px 0;'><b>Data/hora:</b></td><td style='padding:6px 0;'>{when}</td></tr>
+    </table>
+</div>
+<p style='font-size:13px; color:#333;'><b>Nenhum pagamento deve ser efetuado para esta P.O.</b>{(evt.FinanceConfirmationRequired ? " A anula&#231;&#227;o da ECF deve ser confirmada no Portal por um utilizador Finan&#231;as da planta." : "")}</p>
+<p style='font-size:12px; color:#999;'>Esta &#233; uma mensagem autom&#225;tica do Portal Gerencial.</p>";
     }
 
     private static string BuildBuyerTransferDetailsHtml(string reqRef, string? title, string prevName, string newName, string actorName, string when, string justificationHtml)
@@ -666,6 +912,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             .Where(b => ids.Contains(b.RequestId))
             .Select(b => new { b.RequestId, b.Status, b.ApprovedTotalAmount })
             .ToListAsync();
+        // Phase 1 P.O. cancellation (D5): released items of APPROVED batches are no longer live value.
+        var releasedByRequest = await _context.ApprovalBatchItems.AsNoTracking()
+            .Where(bi => ids.Contains(bi.ApprovalBatch.RequestId) && bi.ReleasedAtUtc != null)
+            .GroupBy(bi => bi.ApprovalBatch.RequestId)
+            .Select(g => new { RequestId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.RequestId, x => x.Count);
         var histories = await _context.RequestStatusHistories.AsNoTracking()
             .Where(h => ids.Contains(h.RequestId) && h.ActionTaken == "BATCH_FINAL_APPROVED")
             .GroupBy(h => h.RequestId)
@@ -686,7 +938,8 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 groupsBy[h.Id].Count(g => g.Status == RequestConstants.PoGroupStatuses.Cancelled),
                 bs.Count, bs.Count(b => b.Status == RequestConstants.ApprovalBatchStatuses.Approved),
                 bs.Where(b => b.Status == RequestConstants.ApprovalBatchStatuses.Approved).Sum(b => b.ApprovedTotalAmount ?? 0m),
-                histBy.TryGetValue(h.Id, out var c) ? c : 0);
+                histBy.TryGetValue(h.Id, out var c) ? c : 0,
+                releasedByRequest.TryGetValue(h.Id, out var rel) ? rel : 0);
         }
         return result;
     }
@@ -1137,7 +1390,9 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
     /// Accounts Payable configuration with NotifyFinanceUsersByEmail = true; a missing company, a missing or
     /// inactive configuration, or the flag off keeps the in-app notification and suppresses the e-mail.
     /// </summary>
-    private async Task AddPlantScopedFinanceRecipientsAsync(List<NotificationRecipient> recipients, int? plantId, int? companyId)
+    /// <param name="emailRegardlessOfApSwitch">Phase 1 P.O. cancellation policy: plant-scoped Finance users ALWAYS get the e-mail
+    /// (the company AP switch NotifyFinanceUsersByEmail governs other events only). Never widens the recipient set.</param>
+    private async Task AddPlantScopedFinanceRecipientsAsync(List<NotificationRecipient> recipients, int? plantId, int? companyId, bool emailRegardlessOfApSwitch = false)
     {
         var financeEmailEnabled = companyId.HasValue && await _context.AccountsPayableNotificationConfigs
             .AsNoTracking()
@@ -1180,7 +1435,7 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             recipients.Add(new NotificationRecipient(user.Id, user.Email, user.FullName)
             {
                 // Suppress e-mail when we fell back to global (no plant) OR the company did not opt in
-                SuppressEmail = !plantId.HasValue || !financeEmailEnabled
+                SuppressEmail = !plantId.HasValue || (!financeEmailEnabled && !emailRegardlessOfApSwitch)
             });
         }
     }
@@ -1553,10 +1808,12 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
             {
                 Category = NotificationCategories.Payment,
                 NotificationType = NotificationTypes.Warning,
-                InAppTitle = "Pedido Devolvido por Finanças",
-                InAppMessage = $"O pedido {reqRef}{reqContext} foi devolvido por {actorLabel} para correção.",
+                InAppTitle = evt.FinanceReturnKind == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested ? "Pedido Devolvido por Finanças — cancelamento solicitado" : "Pedido Devolvido por Finanças",
+                InAppMessage = evt.FinanceReturnKind == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested
+                    ? $"O pedido {reqRef}{reqContext} foi devolvido por {actorLabel}: Finanças indica que a encomenda foi cancelada e NÃO deve ser corrigida. Motivo: {evt.Comment}. Utilize \"Cancelar P.O.\" no grupo devolvido."
+                    : $"O pedido {reqRef}{reqContext} foi devolvido por {actorLabel} para correção. Motivo: {evt.Comment}",
                 SendEmail = true,
-                EmailSubject = $"Pedido Devolvido para Correção — {reqRef}",
+                EmailSubject = evt.FinanceReturnKind == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested ? $"Pedido Devolvido — cancelamento solicitado — {reqRef}" : $"Pedido Devolvido para Correção — {reqRef}",
                 EmailHeadline = "Pedido Devolvido por Finanças",
                 EmailBody = BuildFinanceReturnBody(reqRef, reqContext, actorLabel, evt.Comment)
             };
@@ -1572,6 +1829,63 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailHeadline = "P.O Corrigida e Re-registrada",
                 EmailBody = $"A Purchase Order do pedido <b>{reqRef}</b>{reqContext} foi corrigida e re-registrada por <b>{actorLabel}</b> após devolução por Finanças. O pedido retorna ao status de P.O emitida para processamento financeiro."
             };
+
+            // ── Phase 1 P.O. group cancellation / return to quotation ──
+            case WorkflowEventCodes.PoGroupCancelled:
+            {
+                var t = BuildPoCancellationTexts(evt, reqRef);
+                return new EventConfig
+                {
+                    Category = NotificationCategories.Payment,
+                    NotificationType = NotificationTypes.Warning,
+                    RequireInAppPersistence = true,
+                    InAppTitle = t.InAppTitle,
+                    InAppMessage = t.InAppMessage,
+                    SendEmail = true,
+                    EmailSubject = t.ParticipantSubject,
+                    EmailHeadline = t.InAppTitle,
+                    EmailBody = t.ParticipantBody,
+                };
+            }
+            case WorkflowEventCodes.PoCancellationConfirmed:
+            {
+                var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+                var ecf = System.Net.WebUtility.HtmlEncode(evt.EcfReference ?? "(sem referência)");
+                var note = string.IsNullOrWhiteSpace(evt.Comment) ? "" : $"<br/><b>Nota de Finanças:</b> {System.Net.WebUtility.HtmlEncode(evt.Comment)}";
+                return new EventConfig
+                {
+                    Category = NotificationCategories.Payment,
+                    NotificationType = NotificationTypes.Success,
+                    RequireInAppPersistence = true,
+                    InAppTitle = "Anulação da ECF confirmada por Finanças",
+                    InAppMessage = $"Finanças ({actorLabel}) confirmou a anulação da ECF {evt.EcfReference ?? ""} da P.O {evt.PreviousPoNumber ?? "—"} do pedido {reqRef} ({when}). O registo da nova P.O para os itens afetados está desbloqueado.".Replace("  ", " "),
+                    SendEmail = true,
+                    EmailSubject = $"Anulação da ECF confirmada — {reqRef}",
+                    EmailHeadline = "Anulação da ECF confirmada por Finanças",
+                    EmailBody = $"Finanças (<b>{actorLabel}</b>) confirmou em {when} a anulação da ECF <b>{ecf}</b> da P.O <b>{System.Net.WebUtility.HtmlEncode(evt.PreviousPoNumber ?? "—")}</b> cancelada no pedido <b>{reqRef}</b>{reqContext}. " +
+                                "Esta confirmação é uma declaração de Finanças registada no Portal.{note}<br/><br/>O registo da nova P.O para os itens afetados está <b>desbloqueado</b>.",
+                };
+            }
+            case WorkflowEventCodes.PoCancellationDeclarationRejected:
+            {
+                var when = AppTimeZone.FormatWithUtc(evt.OccurredAtUtc ?? DateTime.UtcNow);
+                var ecf = System.Net.WebUtility.HtmlEncode(evt.EcfReference ?? "(sem referência)");
+                var note = System.Net.WebUtility.HtmlEncode(evt.Comment ?? "");
+                return new EventConfig
+                {
+                    Category = NotificationCategories.Payment,
+                    NotificationType = NotificationTypes.Error,
+                    RequireInAppPersistence = true,
+                    InAppTitle = "Finanças não confirmou a anulação da ECF",
+                    InAppMessage = $"Finanças ({actorLabel}) não confirmou a anulação da ECF {evt.EcfReference ?? ""} da P.O {evt.PreviousPoNumber ?? "—"} do pedido {reqRef} ({when}): \"{evt.Comment}\". A P.O anterior continua considerada ativa fora do Portal; atualize a declaração quando a anulação estiver concluída.".Replace("  ", " "),
+                    SendEmail = true,
+                    EmailSubject = $"Anulação da ECF NÃO confirmada — {reqRef}",
+                    EmailHeadline = "Finanças não confirmou a anulação da ECF",
+                    EmailBody = $"Finanças (<b>{actorLabel}</b>) não confirmou em {when} a anulação da ECF <b>{ecf}</b> da P.O <b>{System.Net.WebUtility.HtmlEncode(evt.PreviousPoNumber ?? "—")}</b> cancelada no pedido <b>{reqRef}</b>{reqContext}." +
+                                $"<p style='padding:12px; background:#fdecea; border-left:4px solid #dc3545;'><b>Motivo indicado por Finanças:</b> {note}</p>" +
+                                "A P.O anterior continua considerada ativa fora do Portal e o registo de uma P.O de substituição permanece bloqueado. Quando a anulação estiver concluída, atualize a sua declaração no grupo cancelado para nova revisão de Finanças.",
+                };
+            }
 
             case WorkflowEventCodes.RequestCancelled: return new EventConfig
             {

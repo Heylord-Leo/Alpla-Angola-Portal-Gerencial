@@ -117,6 +117,8 @@ public class RequestDetailsDto
     /// never set it: their comment stays optional.
     /// </summary>
     public LegacyFinanceReturnCorrectionDto? LegacyReturnCorrection { get; set; }
+    /// <summary>D5: active approved figures per currency (historical ApprovedTotalAmount is never rewritten).</summary>
+    public ActiveApprovedTotalsDto? ActiveApprovedTotals { get; set; }
     public List<RequestAttachmentDto> Attachments { get; set; } = new();
     public List<RequestStatusHistoryDto> StatusHistory { get; set; } = new();
     public List<SavedQuotationDto> Quotations { get; set; } = new();

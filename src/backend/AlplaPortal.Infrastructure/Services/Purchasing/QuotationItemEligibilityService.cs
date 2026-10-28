@@ -95,7 +95,32 @@ public class QuotationItemEligibilityService : IQuotationItemEligibilityService
                 abi.ApprovalBatch.CreatedAtUtc))
             .ToListAsync();
 
-        return candidateUses.Concat(winnerUses).Distinct().ToList();
+        // Phase 1 P.O. cancellation (D3): a RELEASED item of an APPROVED batch is a finished use too — its candidates
+        // (and its winner) need an explicit reuse authorization before they can enter a new batch, exactly like the
+        // candidates of a CANCELLED batch. The release stamp, not the batch creation, dates the cycle.
+        var releasedCandidateUses = await _context.ApprovalBatchItemCandidates.AsNoTracking()
+            .Where(c => c.ApprovalBatchItem.ApprovalBatch.RequestId == requestId
+                     && c.ApprovalBatchItem.ApprovalBatch.Status == RequestConstants.ApprovalBatchStatuses.Approved
+                     && c.ApprovalBatchItem.ReleasedAtUtc != null)
+            .Select(c => new CancelledUse(
+                c.QuotationItemId,
+                c.ApprovalBatchItem.ApprovalBatchId,
+                c.ApprovalBatchItem.ApprovalBatch.BatchNumber,
+                c.ApprovalBatchItem.ReleasedAtUtc!.Value))
+            .ToListAsync();
+        var releasedWinnerUses = await _context.ApprovalBatchItems.AsNoTracking()
+            .Where(abi => abi.ApprovalBatch.RequestId == requestId
+                       && abi.ApprovalBatch.Status == RequestConstants.ApprovalBatchStatuses.Approved
+                       && abi.ReleasedAtUtc != null
+                       && abi.SelectedQuotationItemId != null)
+            .Select(abi => new CancelledUse(
+                abi.SelectedQuotationItemId!.Value,
+                abi.ApprovalBatchId,
+                abi.ApprovalBatch.BatchNumber,
+                abi.ReleasedAtUtc!.Value))
+            .ToListAsync();
+
+        return candidateUses.Concat(winnerUses).Concat(releasedCandidateUses).Concat(releasedWinnerUses).Distinct().ToList();
     }
 
     private async Task<List<Domain.Entities.QuotationReuseAuthorization>> LoadAuthorizationsAsync(Guid requestId)

@@ -55,6 +55,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<bool>("NotifyOnCompleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("NotifyOnPoCancelled")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("NotifyOnPoRegistered")
                         .HasColumnType("bit");
 
@@ -580,6 +583,19 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<Guid?>("PoGroupCancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReleaseKind")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ReleasedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("RequestLineItemId")
                         .HasColumnType("uniqueidentifier");
 
@@ -603,6 +619,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.HasIndex("ApprovalBatchId")
                         .HasDatabaseName("IX_ApprovalBatchItem_BatchId");
+
+                    b.HasIndex("PoGroupCancellationId")
+                        .HasDatabaseName("IX_ApprovalBatchItem_PoGroupCancellationId");
 
                     b.HasIndex("RequestLineItemId")
                         .HasDatabaseName("IX_ApprovalBatchItem_LineItemId");
@@ -7309,6 +7328,20 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<Guid?>("FiscalReceiptUploadedByUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("LastFinanceReturnKind")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("LastFinanceReturnReasonCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime?>("LastFinanceReturnedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("LastFinanceReturnedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("OperationInvoiceStatus")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -7402,6 +7435,254 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("SupplierId");
 
                     b.ToTable("RequestPoGroups");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ApprovalBatchNumberSnapshot")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("BuyerEmailQueued")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("BuyerRecipientResolved")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("CancelledAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CancelledByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CurrencyCodeSnapshot")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("EcfDeclarationNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("EcfDeclaredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("EcfDeclaredByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EcfEvidenceAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EcfReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("EcfStatus")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("FinanceConfirmationNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("FinanceConfirmationRequired")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("FinanceConfirmationStatus")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime?>("FinanceConfirmedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FinanceConfirmedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FinanceEmailPolicyOutcome")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int>("FinanceEmailsQueuedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FinanceRecipientsResolvedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FinanceRecipientsWithEmailCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("FinanceReviewedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FinanceReviewedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("LastNotificationCorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("LastNotifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("NotificationResendCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("OriginFinanceReturnHistoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PreviousGroupStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PurchaseOrderNumberSnapshot")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<decimal>("TotalAmountSnapshot")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("IX_RequestPoGroupCancellations_Request");
+
+                    b.HasIndex("RequestPoGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RequestPoGroupCancellations_Group");
+
+                    b.HasIndex("FinanceConfirmationRequired", "FinanceConfirmationStatus")
+                        .HasDatabaseName("IX_RequestPoGroupCancellations_FinanceReview");
+
+                    b.ToTable("RequestPoGroupCancellations", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellationEcfEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorRoleSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EcfStatusAfter")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("EvidenceAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FinanceStatusAfter")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("RequestPoGroupCancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestPoGroupCancellationId")
+                        .HasDatabaseName("IX_RequestPoGroupCancellationEcfEvents_Cancellation");
+
+                    b.ToTable("RequestPoGroupCancellationEcfEvents", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellationItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ApprovalBatchItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("PreviousLineItemStatusCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("PreviousPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PreviousQuotationLifecycleStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("PreviousSelectedQuotationItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestLineItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestPoGroupCancellationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestLineItemId")
+                        .HasDatabaseName("IX_RequestPoGroupCancellationItems_Line");
+
+                    b.HasIndex("RequestPoGroupCancellationId");
+
+                    b.ToTable("RequestPoGroupCancellationItems", (string)null);
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestReconciliation", b =>
@@ -10362,6 +10643,55 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Supplier");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroup", "RequestPoGroup")
+                        .WithOne("Cancellation")
+                        .HasForeignKey("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", "RequestPoGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Request");
+
+                    b.Navigation("RequestPoGroup");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellationEcfEvent", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", "Cancellation")
+                        .WithMany("EcfEvents")
+                        .HasForeignKey("RequestPoGroupCancellationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Cancellation");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellationItem", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestLineItem", "RequestLineItem")
+                        .WithMany()
+                        .HasForeignKey("RequestLineItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", "Cancellation")
+                        .WithMany("Items")
+                        .HasForeignKey("RequestPoGroupCancellationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Cancellation");
+
+                    b.Navigation("RequestLineItem");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestReconciliation", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.User", "CompletedByUser")
@@ -10731,6 +11061,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroup", b =>
                 {
+                    b.Navigation("Cancellation");
+
                     b.Navigation("LineItems");
 
                     b.Navigation("Payments");
@@ -10738,6 +11070,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("PoAttachments");
 
                     b.Navigation("Reconciliations");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.RequestPoGroupCancellation", b =>
+                {
+                    b.Navigation("EcfEvents");
+
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.Supplier", b =>
