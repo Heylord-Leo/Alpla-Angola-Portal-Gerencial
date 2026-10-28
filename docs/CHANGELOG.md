@@ -4,7 +4,48 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.0
+v2.249.1
+
+## [v2.249.1] - 2026-10-28 — Buyer Workspace: quotation entry after a partial submission / for released items; item action menu
+
+PATCH, frontend + backend, **no migration, no configuration change**. Found during the manual acceptance of v2.249.0 in TEST
+(REQ-28/10/2026-628, AlplaSOPRO / Viana 3 / Manutenção): after sending only line 1 to approval, the Workspace header lost
+"Importar Cotação" / "Inserir Manualmente" for the still-pending line 2, and the line's "⋮" menu was clipped by the table.
+
+- **Root cause 1 (pre-existing since the Workspace/queue model, commit `542ff2b`, 2026-08-25 — not a v2.249.0 regression):**
+  `BuyerQueueProjectionBuilder` ranked `AWAITING_APPROVAL` above `PARTIAL_COVERAGE`, so any batch in approval emitted the single
+  non-actionable "Aguardando aprovação" and the header, which renders only server-listed actions, hid the quotation entries. The
+  request scalar stayed `WAITING_QUOTATION`, so the write API (`POST …/quotations`) already accepted a quotation for line 2 —
+  the block was projection/UI only.
+- **Root cause 2 (equivalent case, backend):** after a P.O.-group cancellation "voltar a cotar" while a **sibling group had
+  already crossed the P.O. gate** (PO_ISSUED or later), the scalar is PO_PARTIALLY_UPLOADED / PO_ISSUED-like by design (never
+  regressed — `RequestStatusCalculator`), so `SaveQuotation`, `ocr-extract` and the QUOTATION/PROFORMA upload refused with 409
+  and the projection reported "Concluído para Compras". With the sibling still WAITING_PO the scalar re-derives to
+  `WAITING_QUOTATION` and nothing was blocked (existing test).
+- **Fix — one item-level rule, both sides (`QuotationWindowPolicy`, Domain, pure):** a line is OPEN for a new quotation when it
+  is not deleted, its lifecycle is null/`QUOTATION_PENDING` and no active/approved batch still holds it (released items are not
+  held). The window applies only to non-terminal **batch-model** QUOTATION requests (≥ 1 `ApprovalBatch`): legacy pre-batch
+  requests with null lifecycles stay closed, exactly as before.
+  - Projection: open work (pending/ready lines not held) keeps the Buyer phase alive regardless of the scalar; a batch in approval
+    is informational only when nothing else is open. Precedence now: PO_CORRECTION → NO_BUYER_ACTION → COMPLETED (terminal /
+    past phase **without** open work) → ADJUSTMENT_REQUIRED → AWAITING_APPROVAL (**no open work**) → AWAITING_REQUESTER_DECISION →
+    READY_FOR_APPROVAL → PARTIAL_COVERAGE → NEEDS_QUOTATION → COMPLETED. `PO_CORRECTION` additionally lists `ADD_QUOTATION` /
+    `SUBMIT_BATCH` when open lines exist (QUOTATION requests only).
+  - Write side: `SaveQuotation`, `ocr-extract` and the QUOTATION/PROFORMA upload accept the scalar window **or** the item window
+    (`QuotationWindowEvaluator`, DB-backed). On the item-window path every MAPPED/SUBSTITUTE line must target an open request line
+    (409 "Item já comprometido" otherwise) and replacing an existing quotation is refused. The scalar is never changed; locks on
+    submitted quotations (§7, `QuotationSubmissionLock`), the rework-revision exception and the batch endpoints are untouched —
+    lines in an active batch remain unquotable and unsubmittable.
+- **Item menu:** the "Itens & Cobertura" row menu now uses the shared portal `KebabMenu` (position:fixed through
+  `DropdownPortal`), so the table's `overflowX: auto` wrapper cannot clip it. `KebabMenu` itself gains viewport-aware placement
+  (measured, right-aligned, flipped above the trigger near the bottom, clamped on narrow viewports/zoom, height-capped with
+  internal scroll), Escape/scroll/resize closing and `role="menu"` semantics — benefiting its other 9 screens without changing
+  their option sets. The menu holds exactly the server-authorized action (`CanCloseNotQuoted` → "Desconsiderar item");
+  quotation entry remains a header action.
+- Tests: backend +23 (`QuotationWindowPolicyTests` 11, projection +7, `OpenItemQuotationWindowSaveQuotationTests` 5 on LocalDB:
+  released line accepted with the scalar unchanged, held line 409, replace 409, legacy 409, evaluator); frontend +9
+  (`kebabMenuPlacement.test.ts`, `BuyerRequestWorkspace.itemMenu.test.ts`). **Not verified in a browser** (no UI tooling in the
+  session): exact manual checks in `docs/PO_GROUP_CANCELLATION_TEST_SCRIPT_v2.249.0.md` §2.2-bis.
 
 ## [v2.249.0] - 2026-10-28 — P.O. group cancellation / return to quotation after final approval (phase 1)
 

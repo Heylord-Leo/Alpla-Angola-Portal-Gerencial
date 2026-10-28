@@ -377,4 +377,94 @@ public class BuyerQueueProjectionBuilderTests
         Assert.False(blocked.CanCancel);
         Assert.Equal("PAYMENT_EVIDENCE", blocked.BlockCode);
     }
+
+    // ════════════════════ v2.249.1 — open quotation work vs. "awaiting approval" / past phase ════════════════════
+
+    [Fact]
+    public void PartialSubmission_BatchInApproval_PlusPendingLine_Yields_PartialCoverage_WithAddQuotation()
+    {
+        // REQ-28/10/2026-628 shape: line 1 in a WAITING_AREA_APPROVAL batch, line 2 never quoted.
+        var inBatch = Item("BATCH_ASSIGNED");
+        var pending = Item();
+        var p = Proj.Build(Req(items: new[] { inBatch, pending }, batches: new[] { Batch("WAITING_AREA_APPROVAL", inBatch.Id) }), Me, Today);
+        Assert.Equal(S.OperationalStates.PartialCoverage, p.OperationalState);
+        Assert.Equal("Cobertura Parcial", p.OperationalStateLabel);
+        Assert.Equal(1, p.CoverageCounts[S.CoverageBuckets.InActiveBatch]);
+        Assert.Equal(1, p.PendingCount);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.AddQuotation && a.Actionable);
+        Assert.DoesNotContain(p.NextBuyerActions, a => a.Code == S.ActionCodes.SubmitBatch); // nothing ready yet
+    }
+
+    [Fact]
+    public void PartialSubmission_BatchInApproval_PlusReadyLine_Yields_ReadyForApproval_SubmitBatch()
+    {
+        var inBatch = Item("BATCH_ASSIGNED");
+        var (qi, ready) = MappedCandidate();
+        var p = Proj.Build(Req(items: new[] { inBatch, ready }, quotationItems: new[] { qi }, batches: new[] { Batch("WAITING_FINAL_APPROVAL", inBatch.Id) }), Me, Today);
+        Assert.Equal(S.OperationalStates.ReadyForApproval, p.OperationalState);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.SubmitBatch && a.Actionable);
+    }
+
+    [Fact]
+    public void BatchInApproval_WithNothingElseOpen_Stays_AwaitingApproval()
+    {
+        // Unchanged: a batch in approval plus only approved/closed lines is informational.
+        var inBatch = Item("BATCH_ASSIGNED");
+        var p = Proj.Build(Req(items: new[] { inBatch, Item("QUOTATION_APPROVED"), Item("CLOSED_NOT_QUOTED") }, batches: new[] { Batch("WAITING_AREA_APPROVAL", inBatch.Id) }), Me, Today);
+        Assert.Equal(S.OperationalStates.AwaitingApproval, p.OperationalState);
+        Assert.False(p.NextBuyerActions.Single().Actionable);
+    }
+
+    [Fact]
+    public void ReleasedLine_OnPastPoGateScalar_StaysBuyerActive_PartialCoverage()
+    {
+        // Group A (line 1) PO_ISSUED; group B (line 2) cancelled "voltar a cotar": scalar PO_PARTIALLY_UPLOADED,
+        // line 2 QUOTATION_PENDING and RELEASED from the APPROVED batch.
+        var approved = Item("QUOTATION_APPROVED");
+        var released = Item("QUOTATION_PENDING");
+        var batch = new Proj.BatchInput(Guid.NewGuid(), 1, "APPROVED", new[]
+        {
+            new Proj.BatchItemInput(approved.Id, null, Array.Empty<Guid>()),
+            new Proj.BatchItemInput(released.Id, null, Array.Empty<Guid>(), IsReleased: true),
+        });
+        var p = Proj.Build(Req(status: "PO_PARTIALLY_UPLOADED", items: new[] { approved, released }, batches: new[] { batch }), Me, Today);
+        Assert.Equal(S.OperationalStates.PartialCoverage, p.OperationalState);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.AddQuotation && a.Actionable);
+        Assert.DoesNotContain(p.OperationalState, S.OperationalStates.HiddenByDefault);
+    }
+
+    [Fact]
+    public void LegacyPastPhase_WithoutBatches_NullLifecycles_Stay_CompletedForBuyer()
+    {
+        // Pre-batch requests (no ApprovalBatch) keep the historical classification: never re-opened.
+        var p = Proj.Build(Req(status: "PO_ISSUED", items: new[] { Item(), Item() }), Me, Today);
+        Assert.Equal(S.OperationalStates.CompletedForBuyer, p.OperationalState);
+        Assert.Empty(p.NextBuyerActions);
+    }
+
+    [Fact]
+    public void PoCorrection_WithReleasedPendingLine_AlsoOffers_AddQuotation()
+    {
+        var approved = Item("QUOTATION_APPROVED");
+        var released = Item("QUOTATION_PENDING");
+        var batch = new Proj.BatchInput(Guid.NewGuid(), 1, "APPROVED", new[]
+        {
+            new Proj.BatchItemInput(approved.Id, null, Array.Empty<Guid>()),
+            new Proj.BatchItemInput(released.Id, null, Array.Empty<Guid>(), IsReleased: true),
+        });
+        var p = Proj.Build(Req(status: "WAITING_PO_CORRECTION", hasPoCorrection: true, items: new[] { approved, released }, batches: new[] { batch }), Me, Today);
+        Assert.Equal(S.OperationalStates.PoCorrection, p.OperationalState);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.CorrectPo && a.Actionable);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.CancelPoGroup && a.Actionable);
+        Assert.Contains(p.NextBuyerActions, a => a.Code == S.ActionCodes.AddQuotation && a.Actionable);
+    }
+
+    [Fact]
+    public void PoCorrection_PaymentRequest_NeverOffers_AddQuotation()
+    {
+        var p = Proj.Build(Req(type: "PAYMENT", status: "WAITING_PO_CORRECTION", hasPoCorrection: true, items: new[] { Item(), Item() }), Me, Today);
+        Assert.Equal(S.OperationalStates.PoCorrection, p.OperationalState);
+        Assert.DoesNotContain(p.NextBuyerActions, a => a.Code == S.ActionCodes.AddQuotation);
+        Assert.DoesNotContain(p.NextBuyerActions, a => a.Code == S.ActionCodes.SubmitBatch);
+    }
 }

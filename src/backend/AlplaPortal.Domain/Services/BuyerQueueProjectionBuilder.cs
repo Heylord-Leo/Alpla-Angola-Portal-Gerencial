@@ -176,8 +176,27 @@ public static class BuyerQueueProjectionBuilder
         string state;
         var notBuyerPhase = r.RequestTypeCode != RequestConstants.Types.Quotation;
         var terminal = r.IsCancelled || r.RequestStatusCode is "CANCELLED" or "REJECTED" or "COMPLETED";
+        // v2.249.1 — OPEN quotation work: lines still pending (or quoted and ready) that no active/approved
+        // batch holds. Mirrors QuotationWindowPolicy (write side): such lines exist after a PARTIAL submission
+        // (another batch in approval) and after a P.O.-group cancellation "voltar a cotar" while sibling
+        // groups stay operational. They keep the Buyer phase alive regardless of the request scalar, which is
+        // never regressed below the P.O. gate (RequestStatusCalculator). Only batch-model requests qualify:
+        // legacy pre-batch requests with null lifecycles stay "completed for Buyer" exactly as before.
+        // A line still HELD by an active/approved batch (non-released batch item) is never open work, whatever
+        // its lifecycle says — the batch endpoints own it until it is approved, rejected, cancelled or released.
+        var heldLineIds = activeBatches
+            .SelectMany(b => b.Items)
+            .Where(bi => !bi.IsReleased)
+            .Select(bi => bi.RequestLineItemId)
+            .ToHashSet();
+        var openPending = itemBuckets.Count(kv => kv.Value == BuyerQueueConstants.CoverageBuckets.PendingQuotation && !heldLineIds.Contains(kv.Key));
+        var openReady = itemBuckets.Count(kv => kv.Value == BuyerQueueConstants.CoverageBuckets.QuotedReadyForBatch && !heldLineIds.Contains(kv.Key));
+        var openWork = r.RequestTypeCode == RequestConstants.Types.Quotation
+            && r.Batches.Count > 0
+            && (openPending > 0 || openReady > 0);
         var pastBuyerPhase = r.RequestTypeCode == RequestConstants.Types.Quotation
-            && !BuyerActiveRequestStatuses.Contains(r.RequestStatusCode);
+            && !BuyerActiveRequestStatuses.Contains(r.RequestStatusCode)
+            && !openWork;
 
         // v2.242.0 — a Finance-returned PO group is actionable Buyer work that WINS over every other
         // classification, including notBuyerPhase (a PAYMENT request carries RequestTypeCode != QUOTATION
@@ -188,7 +207,10 @@ public static class BuyerQueueProjectionBuilder
         else if (notBuyerPhase) state = BuyerQueueConstants.OperationalStates.NoBuyerAction;
         else if (terminal || pastBuyerPhase) state = BuyerQueueConstants.OperationalStates.CompletedForBuyer;
         else if (anyAdjustment) state = BuyerQueueConstants.OperationalStates.AdjustmentRequired;
-        else if (anyInApproval) state = BuyerQueueConstants.OperationalStates.AwaitingApproval;
+        // v2.249.1 — a batch in approval is informational ONLY when nothing else is open for the Buyer: with
+        // pending/ready lines outside that batch the request is PARTIAL_COVERAGE / READY_FOR_APPROVAL and
+        // keeps ADD_QUOTATION / SUBMIT_BATCH (the batch itself stays locked; the write endpoints refuse its lines).
+        else if (anyInApproval && !openWork) state = BuyerQueueConstants.OperationalStates.AwaitingApproval;
         else if (notQProposed > 0) state = BuyerQueueConstants.OperationalStates.AwaitingRequesterDecision;
         else if (pending == 0 && ready > 0) state = BuyerQueueConstants.OperationalStates.ReadyForApproval;
         else if (pending > 0 && (ready > 0 || approved > 0 || inBatch > 0 || closed > 0 || notQAccepted > 0))
@@ -196,7 +218,7 @@ public static class BuyerQueueProjectionBuilder
         else if (pending > 0) state = BuyerQueueConstants.OperationalStates.NeedsQuotation;
         else state = BuyerQueueConstants.OperationalStates.CompletedForBuyer;
 
-        var nextActions = NextActions(state, ready, pending);
+        var nextActions = NextActions(state, ready, pending, openWork);
 
         // ── Attention signals ──
         var signals = new List<BuyerAttentionSignal>();
@@ -281,7 +303,7 @@ public static class BuyerQueueProjectionBuilder
         };
     }
 
-    private static IReadOnlyList<BuyerNextAction> NextActions(string state, int ready, int pending)
+    private static IReadOnlyList<BuyerNextAction> NextActions(string state, int ready, int pending, bool openWork)
     {
         switch (state)
         {
@@ -296,12 +318,17 @@ public static class BuyerQueueProjectionBuilder
             case BuyerQueueConstants.OperationalStates.AdjustmentRequired:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.ResolveAdjustment, "Revisar e reenviar lote", true) };
             case BuyerQueueConstants.OperationalStates.PoCorrection:
-                return new[]
+                var poCorrection = new List<BuyerNextAction>
                 {
-                    new BuyerNextAction(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true),
+                    new(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true),
                     // Phase 1: the Buyer may also cancel the returned group (restart quotation / close items) instead of correcting.
-                    new BuyerNextAction(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true),
+                    new(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true),
                 };
+                // v2.249.1 — lines released by an earlier cancellation (or never quoted) stay actionable while a
+                // sibling group is in correction: the quotation entries are not hidden by the correction state.
+                if (openWork && pending > 0) poCorrection.Add(new(BuyerQueueConstants.ActionCodes.AddQuotation, "Completar cotações", true));
+                if (openWork && ready > 0) poCorrection.Add(new(BuyerQueueConstants.ActionCodes.SubmitBatch, "Enviar itens cobertos para aprovação", true));
+                return poCorrection;
             case BuyerQueueConstants.OperationalStates.AwaitingApproval:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.None, "Aguardando aprovação", false) };
             case BuyerQueueConstants.OperationalStates.AwaitingRequesterDecision:

@@ -77,7 +77,7 @@ Backend-derived, request-level. **State labels are professional descriptions** (
 | `NEEDS_QUOTATION` | **Cotação Pendente** | Adicionar cotação | Yes | high |
 | `PARTIAL_COVERAGE` | **Cobertura Parcial** | Completar cotações *(or, when covered items are independently eligible)* Completar cotações ou enviar itens cobertos | Yes | high |
 | `READY_FOR_APPROVAL` | **Pronto para Aprovação** | Enviar itens para aprovação | Yes | med |
-| `AWAITING_APPROVAL` | **Em Aprovação** | *(informational)* Aguardando aprovação | No | low |
+| `AWAITING_APPROVAL` | **Em Aprovação** | *(informational)* Aguardando aprovação — only when nothing else is open for the Buyer (v2.249.1) | No | low |
 | `ADJUSTMENT_REQUIRED` | **Ajuste Solicitado** | Revisar e reenviar lote | Yes | **exception (Band 1)** |
 | `AWAITING_REQUESTER_DECISION` | **Aguardando Decisão** | *(informational)* Aguardando decisão do requisitante | No | low |
 | `COMPLETED_FOR_BUYER` | **Concluído para Compras** | — | No | none (hidden by default, §8) |
@@ -88,8 +88,16 @@ Precedence order (first match wins), evaluated over the Request's **active** (no
 line items and its `ApprovalBatches`:
 
 1. **`ADJUSTMENT_REQUIRED`** — any batch in `AREA_ADJUSTMENT` or `FINAL_ADJUSTMENT` (Buyer must act).
-2. **`AWAITING_APPROVAL`** — any batch in `WAITING_AREA_APPROVAL` or `WAITING_FINAL_APPROVAL`, and no
-   adjustment batch (info only).
+2. **`AWAITING_APPROVAL`** — any batch in `WAITING_AREA_APPROVAL` or `WAITING_FINAL_APPROVAL`, no
+   adjustment batch, **and no open quotation work** (info only). *v2.249.1:* "open quotation work" = at
+   least one line in the "Pendente de cotação" or "Cotado — pronto para lote" bucket that **no active/approved
+   batch still holds** (released items are not held), on a request that ran the batch workflow. With open
+   work the request falls through to `READY_FOR_APPROVAL` / `PARTIAL_COVERAGE` / `NEEDS_QUOTATION` and keeps
+   `ADD_QUOTATION` / `SUBMIT_BATCH` while the batch in approval stays locked — a partial submission never
+   hides the quotation entries for the remaining lines. The same open-work rule keeps the Buyer phase alive
+   when the request scalar is already past the P.O. gate (sibling group issued) after a P.O.-group
+   cancellation "voltar a cotar"; legacy pre-batch requests (no `ApprovalBatch`) are never re-opened. One
+   rule, `QuotationWindowPolicy` (Domain), shared with the quotation write endpoints.
 3. **`AWAITING_REQUESTER_DECISION`** — any item `NOT_QUOTED_PROPOSED` (legacy) and nothing above.
 4. **`READY_FOR_APPROVAL`** — every not-yet-terminal item is in the "Cotado — pronto para lote" bucket
    (all coverable items have a selectable candidate), none currently in an active batch.

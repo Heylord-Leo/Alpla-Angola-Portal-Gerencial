@@ -3,9 +3,10 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import {
   ArrowLeft, Building2, User as UserIcon, CalendarClock, MapPin, ExternalLink,
   Package, FileText, Layers, Info, BadgeCheck, AlertTriangle, ShoppingCart,
-  ChevronLeft, ChevronRight, Mail, Upload, Pencil, MoreVertical, Ban, Trash2, XCircle, Boxes, Edit2, Send, ShieldAlert,
+  ChevronLeft, ChevronRight, Mail, Upload, Pencil, Ban, Trash2, XCircle, Boxes, Edit2, Send, ShieldAlert,
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
+import { KebabMenu } from '../../components/ui/KebabMenu';
 import { BuyerLotTimeline } from './BuyerLotTimeline';
 import { BuyerApprovalBatchHost, BuyerBatchReworkHost } from './BuyerBatchActionHosts';
 import { QuotationWizardModal } from './QuotationWizard/QuotationWizardModal';
@@ -583,7 +584,6 @@ export function BuyerRequestWorkspace() {
 // ── Tab 1: Itens & Cobertura ──
 function TabItems({ ws, onDisregard }: { ws: BuyerWorkspace; onDisregard: (item: BuyerWorkspaceItem) => void }) {
   const c = ws.coverage;
-  const [openKebab, setOpenKebab] = useState<string | null>(null);
   // Render the row action only for items the SERVER marks eligible.
   const anyActionable = ws.items.some(it => it.canCloseNotQuoted);
   // Secondary buckets as compact chips; legacy not-quoted states only when present.
@@ -628,30 +628,16 @@ function TabItems({ ws, onDisregard }: { ws: BuyerWorkspace; onDisregard: (item:
                   <Td><span style={bucketChip(it.coverageBucket)}>{bucketLabel(it.coverageBucket)}</span></Td>
                   <Td>{it.selectedQuotationSummary || it.supplierName || '—'}</Td>
                   {anyActionable && (
-                    <Td style={{ textAlign: 'right', position: 'relative' }}>
+                    <Td style={{ textAlign: 'right' }}>
+                      {/* v2.249.1 — the shared portal KebabMenu: the previous inline absolutely-positioned
+                          dropdown was clipped by this table's `overflowX: auto` wrapper (and by the viewport on
+                          the last rows). One server-authorized action today: "Desconsiderar item"
+                          (BuyerWorkspaceItemDto.CanCloseNotQuoted). Quotation entry stays a header action. */}
                       {it.canCloseNotQuoted && (
-                        <>
-                          <button
-                            onClick={() => setOpenKebab(prev => (prev === it.id ? null : it.id))}
-                            aria-label="Ações do item"
-                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg-surface)', color: 'var(--color-text-muted)', cursor: 'pointer' }}
-                          >
-                            <MoreVertical size={15} />
-                          </button>
-                          {openKebab === it.id && (
-                            <>
-                              <div onClick={() => setOpenKebab(null)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                              <div style={{ position: 'absolute', right: 0, top: 32, zIndex: 41, minWidth: 190, background: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: '0 8px 20px rgba(0,0,0,0.18)', padding: 4 }}>
-                                <button
-                                  onClick={() => { setOpenKebab(null); onDisregard(it); }}
-                                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6, border: 'none', background: 'none', color: 'var(--color-text-main)', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
-                                >
-                                  <Ban size={14} /> Desconsiderar item
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </>
+                        <KebabMenu
+                          ariaLabel={`Ações do item ${it.lineNumber}`}
+                          options={[{ label: 'Desconsiderar item', icon: <Ban size={14} />, onClick: () => onDisregard(it) }]}
+                        />
                       )}
                     </Td>
                   )}

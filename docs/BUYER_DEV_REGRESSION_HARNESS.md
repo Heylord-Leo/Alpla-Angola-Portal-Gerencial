@@ -62,6 +62,8 @@ Three independent gates; failing any one makes **every** endpoint return `404`:
 | **B2** | WAITING_QUOTATION | 1 pending + MAPPED quotation candidate | assigned | `READY_FOR_APPROVAL` |
 | **B3** | WAITING_QUOTATION | 1 approved + 1 pending | assigned, URGENTE | `PARTIAL_COVERAGE` |
 | **B4** | WAITING_AREA_APPROVAL | 1 BATCH_ASSIGNED | WAITING_AREA_APPROVAL batch | `AWAITING_APPROVAL` |
+| **B4b** *(v2.249.1)* | WAITING_QUOTATION | 1 BATCH_ASSIGNED + 1 pending | WAITING_AREA_APPROVAL batch holding only the first line | `PARTIAL_COVERAGE` with `ADD_QUOTATION` (partial submission keeps quotation entries) |
+| **B4c** *(v2.249.1)* | PO_PARTIALLY_UPLOADED | 1 QUOTATION_APPROVED + 1 QUOTATION_PENDING | APPROVED batch; second batch item **released** (`ReleasedAtUtc`), sibling group PO_ISSUED | `PARTIAL_COVERAGE` with `ADD_QUOTATION`; `POST …/quotations` accepts a line mapped to the released item only |
 | **B5** | AREA_ADJUSTMENT | 1 BATCH_ASSIGNED | AREA_ADJUSTMENT batch, **overdue**, CRITICO | `ADJUSTMENT_REQUIRED` (Band 1, BLOCKING) |
 | **B6** | WAITING_QUOTATION | 1 NOT_QUOTED_PROPOSED + 1 approved | assigned | `AWAITING_REQUESTER_DECISION` |
 | **B7** | WAITING_AREA_APPROVAL | 2 approved | assigned | `COMPLETED_FOR_BUYER` (hidden unless `includeCompleted=true`) |

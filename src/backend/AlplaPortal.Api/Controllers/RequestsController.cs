@@ -4388,20 +4388,45 @@ public class RequestsController : BaseController
         // candidate). The exception is scoped by an explicit reworkBatchId; the global scalar rule is
         // unchanged. See EvaluateReworkRevisionAsync.
         var isReworkRevision = false;
+        // v2.249.1 — item-level window (QuotationWindowPolicy): when the scalar is outside the quotation window
+        // but the batch-model request still has lines OPEN for quotation (pending, not held by any active or
+        // approved batch — e.g. released by a P.O.-group cancellation while a sibling group is already past the
+        // P.O. gate, or never quoted after a partial submission whose batch already produced a P.O.), a NEW
+        // quotation may be added for THOSE lines only. Lines held by a batch, approved, closed or cancelled are
+        // refused per line (409); replacing an existing quotation is not allowed on this path. The scalar is
+        // never changed here.
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? itemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
             var (reworkAllowed, reworkError) = await EvaluateReworkRevisionAsync(request, reworkBatchId, revisesQuotationId, replaceQuotationId, dto, actorId);
             if (reworkError != null) return reworkError;
-            if (!reworkAllowed)
+            if (reworkAllowed)
             {
-                return Conflict(new ProblemDetails
-                {
-                    Title = "Ação Bloqueada",
-                    Detail = "Não é possível adicionar cotações neste status do pedido.",
-                    Status = 409
-                });
+                isReworkRevision = true;
             }
-            isReworkRevision = true;
+            else
+            {
+                var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request);
+                if (!window.IsOpen)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Ação Bloqueada",
+                        Detail = "Não é possível adicionar cotações neste status do pedido.",
+                        Status = 409
+                    });
+                }
+                if (replaceQuotationId.HasValue)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Ação Bloqueada",
+                        Detail = "Neste estado do pedido só é possível adicionar cotações para os itens ainda pendentes; a substituição de uma cotação existente não é permitida.",
+                        Status = 409
+                    });
+                }
+                itemWindow = window;
+            }
         }
 
         // Basic Validation
@@ -4473,6 +4498,20 @@ public class RequestsController : BaseController
             }
 
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
+
+            // v2.249.1 — on the item-level window path every mapped line must target an OPEN request line.
+            if (itemWindow != null && item.MappedRequestLineItemId.HasValue
+                && (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
+                    || item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
+                && !itemWindow.IsLineOpen(item.MappedRequestLineItemId.Value))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Item já comprometido",
+                    Detail = $"Item {item.LineNumber}: o item do pedido associado já está num lote ativo, aprovado ou encerrado e não aceita novas cotações. Neste estado só os itens pendentes de cotação podem ser cotados.",
+                    Status = 409
+                });
+            }
 
             // Integer-unit final quantity must be a whole number (invalid-input check, before materiality).
             var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);

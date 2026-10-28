@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.249.0
+v2.249.1
+
+## [v2.249.1] - 2026-10-28
+
+### Buyer Workspace — quotation entry after a partial submission / for released items; item action menu
+
+PATCH, no migration. Item-level quotation window (`QuotationWindowPolicy`) shared by the Buyer queue projection and the quotation
+write endpoints: pending lines not held by an active/approved batch stay quotable while another batch is in approval or after a
+P.O.-group cancellation with sibling groups past the P.O. gate; the request scalar is never changed. The "Itens & Cobertura" row
+menu uses the shared portal `KebabMenu`, now viewport-aware. See CHANGELOG.
 
 ## [v2.249.0] - 2026-10-28
 

@@ -66,7 +66,11 @@ P.O. document or the history.
    Buyer, who updates the declaration (`PUT …/cancellation/ecf-declaration`) for a new review.
 5. **Re-quotation**: released lines are `QUOTATION_PENDING` with no group; their former candidates are
    `REUSE_AUTHORIZATION_REQUIRED` (D3); new quotations are unlocked; a new batch goes through area and final approval; the
-   new group activates to `WAITING_PO`.
+   new group activates to `WAITING_PO`. *v2.249.1:* when a sibling group has already crossed the P.O. gate the request scalar
+   stays PO_PARTIALLY_UPLOADED / PO_ISSUED-like by design (never regressed); the quotation entries, `SaveQuotation`,
+   `ocr-extract` and the QUOTATION/PROFORMA upload then rely on the **item-level window** (`QuotationWindowPolicy`: released or
+   never-quoted lines not held by an active/approved batch) — lines of other groups/batches are refused per line (409 "Item já
+   comprometido"). The same rule keeps "Importar Cotação" / "Inserir Manualmente" visible after a partial batch submission.
 6. **Replacement P.O.** (`register-po`, P.O. upload, `schedule-advance`, `confirm-advance`) is refused with
    `409 PRIOR_ECF_CONFIRMATION_PENDING` while any prior cancellation of the group's lines is not `CONFIRMED`.
 
