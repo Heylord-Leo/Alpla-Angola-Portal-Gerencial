@@ -61,9 +61,11 @@ export function getRequestGuidance(statusCode: string, requestTypeCode: string |
                 nextAction: 'Pagar ou agendar o pagamento'
             };
         case 'WAITING_PO_CORRECTION':
+            // v2.249.2 — scalar-only fallback (no group projection → the return kind is unknown here): neutral wording.
+            // The server projection (RequestWorkflowProjectionBuilder) names the stored kind per group.
             return {
                 responsible: 'Comprador',
-                nextAction: 'Corrigir P.O devolvida por Finanças e re-registrar'
+                nextAction: 'Rever a P.O devolvida por Finanças (corrigir ou cancelar)'
             };
         case 'PAYMENT_SCHEDULED':
             return {

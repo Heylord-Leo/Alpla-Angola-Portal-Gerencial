@@ -79,6 +79,21 @@ public class AttachmentsController : BaseController
         }
     }
 
+    /// <summary>
+    /// v2.249.2 — the quotation-document window as the quotation write endpoints see it: the request scalar window
+    /// (RequestWorkflowHelper.CanMutateQuotation) OR the item-level window (QuotationWindowPolicy via
+    /// QuotationWindowEvaluator: released / never-quoted lines not held by an active/approved batch, batch-model
+    /// requests only). v2.249.1 documented this gate for the PROFORMA / QUOTATION upload but the controller was not
+    /// changed; this is the actual implementation. Request.Status must be loaded.
+    /// </summary>
+    public static async Task<bool> QuotationDocumentWindowOpenAsync(ApplicationDbContext context, Request request)
+    {
+        if (RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code)) return true;
+        var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(
+            context, request.Id, request.RequestType?.Code, request.Status!.Code, request.IsCancelled);
+        return window.IsOpen;
+    }
+
     [HttpPost("upload/{requestId}")]
     public async Task<IActionResult> Upload(Guid requestId, [FromForm] List<IFormFile> files, [FromForm] IFormFile? file, [FromForm] string typeCode, [FromForm] Guid? poGroupId = null)
     {
@@ -146,13 +161,14 @@ public class AttachmentsController : BaseController
         switch (typeCodeStr)
         {
             case AttachmentConstants.Types.Proforma:
-                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
-                detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                // v2.249.2 — scalar window OR item-level window (lines released to quotation / partial submission).
+                isUploadable = await QuotationDocumentWindowOpenAsync(_context, request);
+                detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.Quotation:
                 // Quotation/orçamento documents follow the same window as the quotation flow itself.
-                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
-                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                isUploadable = await QuotationDocumentWindowOpenAsync(_context, request);
+                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded }.Contains(statusCode);
@@ -653,12 +669,13 @@ public class AttachmentsController : BaseController
         switch (attachment.AttachmentTypeCode)
         {
             case AttachmentConstants.Types.Proforma:
-                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
-                detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                // v2.249.2 — same window as the upload (scalar OR item-level).
+                isDeletable = await QuotationDocumentWindowOpenAsync(_context, attachment.Request);
+                detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.Quotation:
-                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
-                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                isDeletable = await QuotationDocumentWindowOpenAsync(_context, attachment.Request);
+                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
             {
@@ -715,6 +732,32 @@ public class AttachmentsController : BaseController
                 Detail = detail,
                 Status = 400
             });
+        }
+
+        // v2.249.2 — evidence protection (§7): a PROFORMA / QUOTATION document linked to a quotation that was EVER
+        // submitted for approval (candidate or winner of any batch — active, approved, cancelled or released) stays
+        // referenced by that approval evidence and is never removed, whatever the request/item window says.
+        if (attachment.AttachmentTypeCode == AttachmentConstants.Types.Proforma || attachment.AttachmentTypeCode == AttachmentConstants.Types.Quotation)
+        {
+            var linked = await _context.Quotations.AsNoTracking().Include(q => q.Items)
+                .Where(q => q.RequestId == attachment.RequestId && q.ProformaAttachmentId == attachment.Id)
+                .ToListAsync();
+            foreach (var q in linked)
+            {
+                var lockState = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(_context, q);
+                if (lockState.IsSubmitted)
+                {
+                    var pd = new ProblemDetails
+                    {
+                        Title = "Documento de cotação submetida",
+                        Detail = "Este documento pertence a uma cotação que já foi submetida para aprovação e faz parte da evidência do lote; não pode ser removido. " + lockState.Reason,
+                        Status = 409
+                    };
+                    pd.Extensions["code"] = AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.ReasonCode;
+                    pd.Extensions["quotationId"] = q.Id;
+                    return Conflict(pd);
+                }
+            }
         }
 
         attachment.IsDeleted = true;

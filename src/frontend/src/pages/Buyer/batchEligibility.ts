@@ -24,12 +24,25 @@ export function isQuotationItemSelectableForApproval(quotationItemId: string, gr
     // Candidate model: a quotation item is "held" both when it is a batch item's winner
     // (legacy pointer / Area-decided) AND when it is one of the item's submitted CANDIDATES —
     // an option under review must not be offered again elsewhere.
+    // v2.249.2 — a batch item RELEASED by a P.O.-group cancellation (releasedAtUtc set) no longer holds its
+    // candidates: the backend reuse rule (isReuseBlocked / isReuseAuthorized on the quotation item) governs them.
     return !(group?.approvalBatches ?? []).some((batch: any) =>
         ACTIVE_OR_APPROVED_BATCH_STATUSES.includes(batch.status) &&
         (batch.items ?? []).some((item: any) =>
-            item.selectedQuotationItemId === quotationItemId ||
-            (item.candidates ?? []).some((c: any) => c.quotationItemId === quotationItemId))
+            !item.releasedAtUtc &&
+            (item.selectedQuotationItemId === quotationItemId ||
+            (item.candidates ?? []).some((c: any) => c.quotationItemId === quotationItemId)))
     );
+}
+
+/**
+ * v2.249.2 — server-annotated reuse rule (DEC-147 Option C / P.O. cancellation D3): a quotation item that was a
+ * candidate/winner of a CANCELLED batch item or of a RELEASED item of an APPROVED batch is not selectable until the
+ * Buyer records an explicit reuse authorization (`isReuseBlocked` → `isReuseAuthorized`). The batch endpoint refuses
+ * such candidates (409 QUOTATION_REUSE_NOT_AUTHORIZED), so the modal must not offer them.
+ */
+export function isQuotationItemReuseBlocked(quotationItem: any): boolean {
+    return !!quotationItem?.isReuseBlocked;
 }
 
 /**

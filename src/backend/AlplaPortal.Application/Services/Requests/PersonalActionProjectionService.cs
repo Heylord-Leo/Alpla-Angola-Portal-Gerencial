@@ -100,12 +100,25 @@ public sealed class PersonalActionProjectionService
             if (owned.Count > 0)
             {
                 var primary = owned[0];
-                items.Add(NewItem(r, ctx, PersonalActionPredicates.ActionTypes.PoCorrection, "Corrigir P.O.", "WAITING_PO_CORRECTION",
+                // v2.249.2 — label by the STORED return kind(s); for a QUOTATION request the route goes to where the Buyer acts
+                // (the Workspace "Grupos P.O." tab: correction AND cancellation live there) — the previous route pointed back at
+                // this list (/requests?action=…), which only re-highlighted the card. A PAYMENT correction keeps the §G.20
+                // deep-link contract (action + requestId + poGroupId: card targeting and the single-group claim).
+                var kinds = owned.Select(g => g.LastFinanceReturnKind).ToList();
+                var anyCorrection = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection);
+                var anyCancellation = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested);
+                var label = anyCorrection && !anyCancellation ? "Corrigir P.O."
+                    : anyCancellation && !anyCorrection ? "P.O. devolvida — cancelamento solicitado"
+                    : "Rever P.O. devolvida";
+                var route = tc == RequestConstants.Types.Quotation ? $"/buyer/requests/{r.Id}?tab=groups" : null;
+                items.Add(NewItem(r, ctx, PersonalActionPredicates.ActionTypes.PoCorrection, label, "WAITING_PO_CORRECTION",
                     poGroup: primary,
                     affected: owned.Select(g => new BuyerPoCorrectionGroupDto
                     {
-                        PoGroupId = g.Id, SupplierId = g.SupplierId, SupplierName = g.SupplierNameSnapshot, PurchaseOrderNumber = g.PurchaseOrderNumber
-                    }).ToList()));
+                        PoGroupId = g.Id, SupplierId = g.SupplierId, SupplierName = g.SupplierNameSnapshot, PurchaseOrderNumber = g.PurchaseOrderNumber,
+                        ReturnKind = g.LastFinanceReturnKind, ReturnKindLabel = PoGroupCancellationConstants.FinanceReturnKinds.Label(g.LastFinanceReturnKind),
+                    }).ToList(),
+                    routeOverride: route));
             }
         }
 
@@ -117,7 +130,11 @@ public sealed class PersonalActionProjectionService
             && (sc == RequestConstants.Statuses.WaitingQuotation
                 || nonDeleted.Any(li => li.QuotationLifecycleStatus == null
                     || li.QuotationLifecycleStatus == RequestConstants.QuotationLifecycleStatuses.QuotationPending)))
-            items.Add(NewItem(r, ctx, PersonalActionPredicates.ActionTypes.QuotationRequired, "Cotar itens", sc));
+            // v2.249.2 — the card leads to where the Buyer quotes: the request's Workspace (the previous self-referential
+            // /requests?action=… route only re-highlighted the card). Covers a line released by a P.O.-group cancellation
+            // while the scalar is past the P.O. gate (REQ-28/10/2026-628).
+            items.Add(NewItem(r, ctx, PersonalActionPredicates.ActionTypes.QuotationRequired, "Cotar itens", sc,
+                routeOverride: $"/buyer/requests/{r.Id}"));
 
         // ── PO_REGISTRATION (Buyer): QUOTATION awaiting P.O. after final approval. ──
         if (ctx.IsBuyer && tc == RequestConstants.Types.Quotation && sc == RequestConstants.Statuses.FinalApproved && mineOrUnassignedBuyer)
@@ -153,13 +170,13 @@ public sealed class PersonalActionProjectionService
     }
 
     private PersonalActionItemDto NewItem(Request r, Context ctx, string actionType, string label, string actionStatus,
-        RequestPoGroup? poGroup = null, List<BuyerPoCorrectionGroupDto>? affected = null)
+        RequestPoGroup? poGroup = null, List<BuyerPoCorrectionGroupDto>? affected = null, string? routeOverride = null)
     {
         var overdue = r.NeedByDateUtc.HasValue && r.NeedByDateUtc.Value.Date < ctx.UtcNow.Date;
         var band = (overdue || actionType == PersonalActionPredicates.ActionTypes.PoCorrection)
             ? BuyerQueueConstants.PriorityBands.ExceptionOrOverdue
             : BuyerQueueConstants.PriorityBands.Standard;
-        var route = $"/requests?action={actionType}&requestId={r.Id}" + (poGroup != null ? $"&poGroupId={poGroup.Id}" : "");
+        var route = routeOverride ?? ($"/requests?action={actionType}&requestId={r.Id}" + (poGroup != null ? $"&poGroupId={poGroup.Id}" : ""));
         return new PersonalActionItemDto
         {
             ActionId = poGroup != null ? $"{actionType}:{r.Id}:{poGroup.Id}" : $"{actionType}:{r.Id}",

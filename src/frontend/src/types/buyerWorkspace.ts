@@ -45,6 +45,10 @@ export interface BuyerWorkspaceQuotation {
   isSubmittedForApproval?: boolean;
   submittedBatchNumber?: number | null;
   submissionLockReason?: string | null;
+  /** v2.249.2 — items needing an explicit reuse authorization before entering a new batch (DEC-147 / D3). */
+  reuseBlockedItemCount?: number;
+  /** v2.249.2 — items with an active reuse authorization. */
+  reuseAuthorizedItemCount?: number;
 }
 
 export interface BuyerWorkspaceBatchAdjustmentReason {
@@ -110,6 +114,9 @@ export interface BuyerWorkspacePoGroup {
   poResponsibleBuyerId?: string | null;
   lastFinanceReturn?: LastFinanceReturnDto | null;
   cancellation?: PoGroupCancellationDto | null;
+  /** v2.249.2 — WAITING_PO: the group awaits its FIRST P.O. (registration on the request page). */
+  canRegisterPo?: boolean;
+  /** WAITING_PO_CORRECTION only (returned by Finance). v2.249.2: never true for WAITING_PO. */
   canCorrectPo: boolean;
   canCancel: boolean;
   cancelBlockCode?: string | null;
@@ -177,4 +184,8 @@ export interface BuyerWorkspace {
   // ── Phase 1 P.O. cancellation / return to quotation ──
   poGroups?: BuyerWorkspacePoGroup[];
   activeApprovedTotals?: ActiveApprovedTotalsDto | null;
+  // ── v2.249.2 — quotation window as the SERVER sees it (scalar window OR item-level window) ──
+  quotationWindowOpen?: boolean;
+  quotationWindowClosedReasonCode?: string | null;
+  openLineItemIds?: string[];
 }

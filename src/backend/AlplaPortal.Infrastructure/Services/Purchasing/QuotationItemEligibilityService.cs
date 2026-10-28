@@ -1,5 +1,6 @@
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Domain.Constants;
+using AlplaPortal.Domain.Services;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -130,6 +131,8 @@ public class QuotationItemEligibilityService : IQuotationItemEligibilityService
             .ToListAsync();
     }
 
+    /// <summary>v2.249.2 — the rule itself lives in the pure Domain policy (shared with the Buyer queue/Workspace coverage
+    /// projection); this method only adapts the query rows to it and the verdict to the API DTO.</summary>
     private static QuotationItemEligibility Resolve(
         Guid quotationItemId,
         Guid quotationId,
@@ -138,94 +141,24 @@ public class QuotationItemEligibilityService : IQuotationItemEligibilityService
         List<Domain.Entities.QuotationReuseAuthorization> authorizations,
         Guid? consumingBatchId)
     {
-        // Items that never composed a quotation total are not batch candidates anyway.
-        var reconciled = RequestConstants.ReconciliationStatuses.Considered.Contains(reconciliationStatus);
-        if (!reconciled)
-        {
-            return new QuotationItemEligibility
-            {
-                QuotationItemId = quotationItemId,
-                QuotationId = quotationId,
-                IsEligible = false,
-                ReasonCode = QuotationItemEligibilityReasons.ItemNotReconciled
-            };
-        }
-
-        // Most recent cancelled use governs the reuse cycle (a new cancelled use of an already
-        // reauthorized item opens a NEW cycle requiring a NEW authorization).
-        var lastCancelledUse = cancelledUses
-            .Where(u => u.QuotationItemId == quotationItemId)
-            .OrderByDescending(u => u.BatchCreatedAtUtc)
-            .FirstOrDefault();
-
-        if (lastCancelledUse == null)
-        {
-            return new QuotationItemEligibility
-            {
-                QuotationItemId = quotationItemId,
-                QuotationId = quotationId,
-                IsEligible = true,
-                ReasonCode = QuotationItemEligibilityReasons.EligibleNormal
-            };
-        }
-
-        var auths = authorizations
-            .Where(a => a.QuotationItemId == quotationItemId && a.SourceApprovalBatchId == lastCancelledUse.BatchId)
-            .OrderByDescending(a => a.AuthorizedAtUtc)
-            .ToList();
-
-        // Re-validation of the batch that ALREADY consumed this authorization (update/resubmit):
-        // the item legitimately belongs to that batch — neither blocked nor to-consume again.
-        if (consumingBatchId.HasValue &&
-            auths.Any(a => a.ConsumedByApprovalBatchId == consumingBatchId.Value))
-        {
-            return new QuotationItemEligibility
-            {
-                QuotationItemId = quotationItemId,
-                QuotationId = quotationId,
-                IsEligible = true,
-                SourceCancelledBatchId = lastCancelledUse.BatchId,
-                SourceCancelledBatchNumber = lastCancelledUse.BatchNumber,
-                ReuseConsumedByBatchId = consumingBatchId,
-                ReasonCode = QuotationItemEligibilityReasons.EligibleNormal
-            };
-        }
-
-        var active = auths.FirstOrDefault(a => a.IsActive && a.ConsumedAtUtc == null && a.RevokedAtUtc == null);
-        if (active != null)
-        {
-            return new QuotationItemEligibility
-            {
-                QuotationItemId = quotationItemId,
-                QuotationId = quotationId,
-                IsEligible = true,
-                IsReuseAuthorized = true,
-                SourceCancelledBatchId = lastCancelledUse.BatchId,
-                SourceCancelledBatchNumber = lastCancelledUse.BatchNumber,
-                ReuseAuthorizationId = active.Id,
-                ReasonCode = QuotationItemEligibilityReasons.ReuseAuthorized
-            };
-        }
-
-        // Blocked — distinguish why for diagnostics (consumed vs revoked vs never authorized).
-        var latest = auths.FirstOrDefault();
-        var reason = latest == null
-            ? QuotationItemEligibilityReasons.ReuseAuthorizationRequired
-            : latest.ConsumedAtUtc != null
-                ? QuotationItemEligibilityReasons.AuthorizationConsumed
-                : QuotationItemEligibilityReasons.AuthorizationRevoked;
-
+        var v = QuotationReuseEligibilityPolicy.Resolve(
+            quotationItemId,
+            reconciliationStatus,
+            cancelledUses.Select(u => new QuotationReuseEligibilityPolicy.FinishedUse(u.QuotationItemId, u.BatchId, u.BatchNumber, u.BatchCreatedAtUtc)),
+            authorizations.Select(QuotationReuseEligibilityPolicy.AuthorizationFacts.From),
+            consumingBatchId);
         return new QuotationItemEligibility
         {
             QuotationItemId = quotationItemId,
             QuotationId = quotationId,
-            IsEligible = false,
-            IsReuseBlocked = true,
-            SourceCancelledBatchId = lastCancelledUse.BatchId,
-            SourceCancelledBatchNumber = lastCancelledUse.BatchNumber,
-            ReuseAuthorizationId = latest?.Id,
-            ReuseConsumedByBatchId = latest?.ConsumedByApprovalBatchId,
-            ReasonCode = reason
+            IsEligible = v.IsEligible,
+            IsReuseBlocked = v.IsReuseBlocked,
+            IsReuseAuthorized = v.IsReuseAuthorized,
+            SourceCancelledBatchId = v.SourceBatchId,
+            SourceCancelledBatchNumber = v.SourceBatchNumber,
+            ReuseAuthorizationId = v.AuthorizationId,
+            ReuseConsumedByBatchId = v.ConsumedByBatchId,
+            ReasonCode = v.ReasonCode,
         };
     }
 }

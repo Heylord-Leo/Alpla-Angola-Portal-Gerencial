@@ -98,14 +98,6 @@ public sealed class DashboardV2QueryService
         };
     }
 
-    // Mirrors BuyerQueueController's default bounding so the Dashboard sees the identical
-    // "buyer-active" population (reconciliation). Status list only — never workflow logic.
-    private static readonly string[] BuyerActiveRequestStatusCodes =
-    {
-        RequestConstants.Statuses.Draft, RequestConstants.Statuses.WaitingQuotation,
-        RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.AreaAdjustment,
-        RequestConstants.Statuses.WaitingFinalApproval, RequestConstants.Statuses.FinalAdjustment,
-    };
 
     /// <summary>
     /// Build the Buyer section. <paramref name="scoped"/> must already be RequestAccessScope-filtered.
@@ -125,9 +117,10 @@ public sealed class DashboardV2QueryService
         if (!string.IsNullOrWhiteSpace(needLevel))
             q = q.Where(r => r.NeedLevel != null && r.NeedLevel.Code == needLevel);
 
-        // Bound the working set to buyer-active statuses (residual hidden states dropped post-projection),
-        // identical to the queue's default hydration — keeps the load small at any data volume.
-        q = q.Where(r => BuyerActiveRequestStatusCodes.Contains(r.Status.Code));
+        // Bound the working set (residual hidden states dropped post-projection), identical to the queue's default
+        // hydration — keeps the load small at any data volume. v2.249.2: the shared BuyerQueueAdmission rule also admits a
+        // batch-model request with a line released to quotation while the scalar is past the P.O. gate.
+        q = q.Where(BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWork);
 
         var requests = await q
             .Include(r => r.RequestType)
@@ -138,6 +131,7 @@ public sealed class DashboardV2QueryService
             .Include(r => r.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
             .Include(r => r.PoGroups)
             .Include(r => r.Quotations).ThenInclude(qq => qq.Items)
+            .Include(r => r.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(r => r.Attachments)
             .AsSplitQuery()
             .AsNoTracking()

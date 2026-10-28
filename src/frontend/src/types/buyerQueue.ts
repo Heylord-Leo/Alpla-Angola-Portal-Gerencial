@@ -70,6 +70,9 @@ export interface BuyerPoCorrectionGroup {
   supplierId?: number | null;
   supplierName?: string | null;
   purchaseOrderNumber?: string | null;
+  /** v2.249.2 — stored Finance return kind: PO_CORRECTION | ORDER_CANCELLATION_REQUESTED | null (legacy, never inferred). */
+  returnKind?: string | null;
+  returnKindLabel?: string | null;
 }
 
 export interface BuyerQueuePage {

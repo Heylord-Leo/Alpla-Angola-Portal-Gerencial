@@ -55,6 +55,15 @@ public class BuyerWorkspaceDto
     // ── Phase 1 P.O. cancellation / return to quotation ──
     public List<BuyerWorkspacePoGroupDto> PoGroups { get; set; } = new();
     public ActiveApprovedTotalsDto? ActiveApprovedTotals { get; set; }
+
+    // ── v2.249.2 — quotation window as the SERVER sees it (scalar window OR item-level window, QuotationWindowPolicy) ──
+    /// <summary>True when a new quotation can be registered now (SaveQuotation / ocr-extract / upload would be accepted for the
+    /// open lines). The UI must not re-derive this from the request scalar.</summary>
+    public bool QuotationWindowOpen { get; set; }
+    /// <summary>Why the item-level window is closed when it is (CLOSED_*), null when open or when the scalar window applies.</summary>
+    public string? QuotationWindowClosedReasonCode { get; set; }
+    /// <summary>Request line ids that accept a new quotation right now.</summary>
+    public List<Guid> OpenLineItemIds { get; set; } = new();
 }
 
 /// <summary>One P.O. group of the request as the Buyer sees it, with the server-decided actions (correct / cancel) and blocks.</summary>
@@ -76,6 +85,9 @@ public class BuyerWorkspacePoGroupDto
     public Guid? PoResponsibleBuyerId { get; set; }
     public LastFinanceReturnDto? LastFinanceReturn { get; set; }
     public PoGroupCancellationDto? Cancellation { get; set; }
+    /// <summary>v2.249.2 — WAITING_PO only: the group awaits its FIRST P.O. (registration on the request page). Never "correction".</summary>
+    public bool CanRegisterPo { get; set; }
+    /// <summary>WAITING_PO_CORRECTION only (returned by Finance): the correction tool applies. v2.249.2: no longer true for WAITING_PO.</summary>
     public bool CanCorrectPo { get; set; }
     public bool CanCancel { get; set; }
     public string? CancelBlockCode { get; set; }
@@ -136,6 +148,11 @@ public class BuyerWorkspaceQuotationDto
     public bool IsSubmittedForApproval { get; set; }
     public int? SubmittedBatchNumber { get; set; }
     public string? SubmissionLockReason { get; set; }
+    /// <summary>v2.249.2 — items of this quotation that were candidates/winners of a released or cancelled batch item and need an
+    /// explicit reuse authorization before entering a new batch (DEC-147 / D3). Guidance only; the authorization lives in the classic tools.</summary>
+    public int ReuseBlockedItemCount { get; set; }
+    /// <summary>v2.249.2 — items with an active, unconsumed reuse authorization (selectable again).</summary>
+    public int ReuseAuthorizedItemCount { get; set; }
 }
 
 public class BuyerWorkspaceBatchDto

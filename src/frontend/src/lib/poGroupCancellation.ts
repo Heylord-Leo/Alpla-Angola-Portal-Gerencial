@@ -80,6 +80,17 @@ export function financeReturnKindLabel(kind?: string | null): string {
     return (kind && FINANCE_RETURN_KIND_LABELS[kind]) || FINANCE_RETURN_KIND_UNCLASSIFIED_LABEL;
 }
 
+/** v2.249.2 — Buyer guidance for a returned group by the STORED kind (null = legacy → neutral; nothing is inferred from the
+ * reason text). The kind is advisory: correction and cancellation both remain available whatever the kind. */
+export const FINANCE_RETURN_KIND_GUIDANCE: Record<string, string> = {
+    PO_CORRECTION: 'Finanças pede a correção da P.O.: corrija e volte a registar (Corrigir P.O.). Se a P.O. não puder ser corrigida, pode cancelá-la.',
+    ORDER_CANCELLATION_REQUESTED: 'Finanças pede o cancelamento desta P.O. — não a corrija: use Cancelar P.O. (devolver itens à cotação ou encerrá-los). A correção continua disponível apenas se a devolução for discutível.',
+};
+export const FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED = 'Devolução anterior à classificação por tipo: leia o motivo e escolha entre corrigir a P.O. ou cancelá-la.';
+export function financeReturnGuidance(kind?: string | null): string {
+    return (kind && FINANCE_RETURN_KIND_GUIDANCE[kind]) || FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED;
+}
+
 // ── Finance return reason codes (optional structured reason; free text stays mandatory) ──
 export const FINANCE_RETURN_REASON_LABELS: Record<string, string> = {
     WRONG_AMOUNT: 'Valor da P.O incorreto',

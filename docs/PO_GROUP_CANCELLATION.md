@@ -54,7 +54,15 @@ P.O. document or the history.
    `WAITING_PO_CORRECTION`; the kind is advisory (D14) and stored in `RequestPoGroups.LastFinanceReturn*`.
 2. **Buyer outcome** on a group (Workspace tab "Grupos P.O.", header action `CANCEL_PO_GROUP`, request page):
    *Corrigir P.O.* (unchanged) · *Cancelar P.O. e voltar a cotar* (`RESTART_QUOTATION`) · *Cancelar P.O. e encerrar itens*
-   (`CANCEL_ITEMS`). Reason code + explanation; when the group ever had a P.O., the Buyer **declares** the ECF situation
+   (`CANCEL_ITEMS`). *v2.249.2 — guidance and navigation by the stored kind:* the Buyer queue row of a QUOTATION request opens the
+   Workspace "Grupos P.O." tab (primary CTA "Corrigir P.O." / "Gerir P.O. devolvida" / "Rever P.O. devolvida" by kind; kebab
+   "Abrir Workspace"), the Para Minha Ação card routes there too (a PAYMENT correction keeps its §G.20 deep-link); the Workspace header state reads
+   "Correção de P.O." (correction), "P.O. devolvida — cancelamento solicitado" (next actions led by the cancellation, correction
+   still offered) or the neutral "P.O. devolvida por Finanças" (legacy/mixed); the group card adds a one-line guidance per kind;
+   the Finance obligations row, the request page / Print View "Próxima ação" and the Print View history heading use the same
+   stored kind (legacy → neutral). Nothing is inferred from the reason text. A group in `WAITING_PO` offers **Registrar P.O.**
+   (first registration, request page), never the correction tool; `PO_REGISTRATION_PENDING` ("P.O. a registar") replaces
+   "Concluído para Compras" while a first P.O. is pending (non-actionable, hidden by default in the queue). Reason code + explanation; when the group ever had a P.O., the Buyer **declares** the ECF situation
    (`PENDING_EXTERNAL` | `DECLARED_CANCELLED` + reference | `UNKNOWN`), optionally attaching evidence (`PO_CANCELLATION`).
 3. **Server, one transaction**: group → `CANCELLED`; cancellation record + items + ECF event; `PLANNED` payments →
    `CANCELLED`; P.O. files voided; batch items released; lines restored (restart) or closed as `CANCELLED_AFTER_APPROVAL`
@@ -67,10 +75,21 @@ P.O. document or the history.
 5. **Re-quotation**: released lines are `QUOTATION_PENDING` with no group; their former candidates are
    `REUSE_AUTHORIZATION_REQUIRED` (D3); new quotations are unlocked; a new batch goes through area and final approval; the
    new group activates to `WAITING_PO`. *v2.249.1:* when a sibling group has already crossed the P.O. gate the request scalar
-   stays PO_PARTIALLY_UPLOADED / PO_ISSUED-like by design (never regressed); the quotation entries, `SaveQuotation`,
-   `ocr-extract` and the QUOTATION/PROFORMA upload then rely on the **item-level window** (`QuotationWindowPolicy`: released or
-   never-quoted lines not held by an active/approved batch) — lines of other groups/batches are refused per line (409 "Item já
-   comprometido"). The same rule keeps "Importar Cotação" / "Inserir Manualmente" visible after a partial batch submission.
+   stays PO_PARTIALLY_UPLOADED / PO_ISSUED-like by design (never regressed); the quotation entries, `SaveQuotation` and
+   `ocr-extract` then rely on the **item-level window** (`QuotationWindowPolicy`: released or never-quoted lines not held by an
+   active/approved batch) — lines of other groups/batches are refused per line (409 "Item já comprometido"). The same rule keeps
+   "Importar Cotação" / "Inserir Manualmente" visible after a partial batch submission.
+   *v2.249.2 (correction of the v2.249.1 note):* the QUOTATION/PROFORMA document **upload and delete** were NOT changed in
+   v2.249.1; they now honour the item-level window (`AttachmentsController.QuotationDocumentWindowOpenAsync`), as do
+   `PUT/DELETE …/quotations/{id}` (PUT refuses per line a mapping onto a held line; the §7 submission lock is unchanged). The
+   Workspace exposes the server's window (`quotationWindowOpen`, `openLineItemIds`) and the quotation queue, the Dashboard
+   Buyer section/workload, the personal actions, the alerts and the pipeline admit a batch-model request with a
+   `QUOTATION_PENDING` line even past the P.O. gate (`BuyerQueueAdmission`, one shared bound). Evidence stays protected: the
+   submitted quotation of the cancelled P.O. and its PROFORMA/QUOTATION document cannot be edited or deleted (§7 lock, 409
+   `QUOTATION_SUBMITTED`); a mixed payload touching a committed line is refused as a whole. **Coverage follows D3:** the released line's former candidates
+   are `REUSE_AUTHORIZATION_REQUIRED` and therefore NOT "Pronto para lote" — the line is "Pendente de cotação" until the Buyer
+   authorizes the reuse (classic tools → "Reutilizar cotação") or registers a new quotation; the submission modal applies the same
+   rule and says so on the pending row (`QuotationReuseEligibilityPolicy`, one rule for the batch endpoint and the projection).
 6. **Replacement P.O.** (`register-po`, P.O. upload, `schedule-advance`, `confirm-advance`) is refused with
    `409 PRIOR_ECF_CONFIRMATION_PENDING` while any prior cancellation of the group's lines is not `CONFIRMED`.
 
@@ -124,6 +143,11 @@ P.O. document or the history.
 Read models: `RequestPoGroupDto.lastFinanceReturn / cancellation / priorEcfConfirmation / rowVersion`;
 `RequestDetailsDto.activeApprovedTotals`; `BuyerWorkspaceDto.poGroups / activeApprovedTotals`; batch DTOs
 `releasedItemCount / releasedLineNumbers / activeTotalsByCurrency / releasedTotalsByCurrency`; queue next action `CANCEL_PO_GROUP`.
+*v2.249.2:* `BuyerWorkspaceDto.quotationWindowOpen / quotationWindowClosedReasonCode / openLineItemIds`;
+`BuyerWorkspacePoGroupDto.canRegisterPo` (WAITING_PO) vs `canCorrectPo` (WAITING_PO_CORRECTION only);
+`BuyerWorkspaceQuotationDto.reuseBlockedItemCount / reuseAuthorizedItemCount`; `BuyerPoCorrectionGroupDto.returnKind /
+returnKindLabel` (queue rows and personal actions); `RequestApprovalBatchItemDto.releasedAtUtc / releaseKind`; personal-action
+`route` = Workspace groups tab for QUOTATION (PAYMENT unchanged); queue operational state `PO_REGISTRATION_PENDING`.
 
 ## 8. Notifications — explicit recipient policy
 
@@ -150,7 +174,7 @@ Each emission (initial, declaration update, resend) records on `RequestPoGroupCa
 | `ELIGIBLE_USERS_WITHOUT_EMAIL` | users exist but have no address (in-app only) | warning naming the count; fix the addresses, then resend |
 | `NO_PLANT_IN_APP_ONLY` | the group/request has no plant; fallback is in-app only | warning; set the plant or confirm from the Finance queue |
 
-Delivery is the outbox worker's later fact: the read model (`PoGroupCancellationDto.delivery`) lists, for the last correlation, each recipient's outbox status (`PENDING`, `PROCESSING`, `SENT`, `FAILED` with next retry, `DEAD_LETTER` with the last error, `EXPIRED`). `FAILED`/`DEAD_LETTER` produce an actionable warning and the admin log entries `EMAIL_OUTBOX_RETRY_SCHEDULED` / `EMAIL_OUTBOX_DEAD_LETTER` (Administração → Logs do Sistema). Recovery = "Reenviar notificação" (responsible Buyer or SysAdmin): a new history row = a new correlation, so outbox and in-app dedup do not suppress it, the cancellation itself is never repeated, the resend is audited (`PO_CANCELLATION_NOTIFICATION_RESENT` + ECF event) and rate-limited (2 minutes). The Finance confirmation queue is pull-based and never depends on e-mail.
+Delivery is the outbox worker's later fact (`EmailOutboxProcessor` polls every 10 s, batch 10, 20 s start-up delay in DEV; a list read right after the cancellation legitimately shows every recipient as `PENDING`): the read model (`PoGroupCancellationDto.delivery`) is read LIVE on every Workspace load and lists, for the last correlation, each recipient's outbox status (`PENDING`, `PROCESSING`, `SENT`, `FAILED` with next retry, `DEAD_LETTER` with the last error, `EXPIRED`). `FAILED`/`DEAD_LETTER` produce an actionable warning and the admin log entries `EMAIL_OUTBOX_RETRY_SCHEDULED` / `EMAIL_OUTBOX_DEAD_LETTER` (Administração → Logs do Sistema). *v2.249.2:* the card shows when the state was read, notes the background processing and offers **"Atualizar estado"** (re-read of the projection only — never a resend; no polling is added, consistent with the other Workspace surfaces). Recovery = "Reenviar notificação" (responsible Buyer or SysAdmin): a new history row = a new correlation, so outbox and in-app dedup do not suppress it, the cancellation itself is never repeated, the resend is audited (`PO_CANCELLATION_NOTIFICATION_RESENT` + ECF event) and rate-limited (2 minutes). The Finance confirmation queue is pull-based and never depends on e-mail.
 
 ## 9. Legacy Finance returns — REQ-27/09/2026-483
 

@@ -36,6 +36,8 @@ describe('page-buyer-request-workspace tour', () => {
         const groups = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target) === '[data-tour="buyer-workspace-po-groups"]');
         expect(groups).toBeDefined();
         expect(String(groups!.content)).toContain('Corrigir P.O.');
+        expect(String(groups!.content)).toContain('Registrar P.O.');   // v2.249.2 — first registration vs correction
+        expect(String(groups!.content)).toContain('Atualizar estado'); // v2.249.2 — delivery re-read
         expect(String(groups!.content)).toContain('bloqueado');
         const tabs = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target) === '[data-tour="buyer-workspace-tabs"]');
         expect(String(tabs!.content)).toContain('Grupos P.O.');

@@ -133,4 +133,19 @@ public class QuotationWindowPolicyTests
         Assert.True(e.IsOpen);
         Assert.Single(e.OpenLineItemIds, line2.Id);
     }
+
+    // v2.249.2 — committed lifecycles: never a MAPPED/SUBSTITUTE target, in the scalar window too (mixed payloads fail as a whole).
+    [Theory]
+    [InlineData("QUOTATION_APPROVED", true)]
+    [InlineData("CLOSED_NOT_QUOTED", true)]
+    [InlineData("CANCELLED_AFTER_APPROVAL", true)]
+    [InlineData("NOT_QUOTED_ACCEPTED", true)]
+    [InlineData("BATCH_ASSIGNED", false)]   // rework revisions map onto items of a batch under adjustment
+    [InlineData("QUOTATION_PENDING", false)]
+    [InlineData("NOT_QUOTED_PROPOSED", false)]
+    [InlineData(null, false)]
+    public void Committed_lifecycles_are_exactly_the_post_approval_terminal_ones(string? lifecycle, bool committed)
+    {
+        Assert.Equal(committed, P.IsCommittedLifecycle(lifecycle));
+    }
 }

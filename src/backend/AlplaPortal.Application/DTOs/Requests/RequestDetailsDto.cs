@@ -215,6 +215,11 @@ public class RequestApprovalBatchItemDto
     /// (zero candidate rows, winner already populated).</summary>
     public bool IsLegacyBuyerSelectedWinner { get; set; }
 
+    /// <summary>v2.249.2 — set when a P.O.-group cancellation released this item from its APPROVED batch
+    /// (RESTART_QUOTATION | CANCEL_ITEMS). A released item holds neither its line nor its candidates.</summary>
+    public DateTime? ReleasedAtUtc { get; set; }
+    public string? ReleaseKind { get; set; }
+
     /// <summary>Frozen candidate snapshots (empty for legacy items — never synthesized).</summary>
     public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
 }

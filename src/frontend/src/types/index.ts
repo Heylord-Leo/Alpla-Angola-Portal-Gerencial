@@ -729,6 +729,10 @@ export interface ApprovalBatchItemSummary {
     winnerSelectionJustification?: string | null;
     /** True for items decided by the Buyer under the pre-candidate model (zero candidate rows). */
     isLegacyBuyerSelectedWinner?: boolean;
+    /** v2.249.2 — set when a P.O.-group cancellation released this item from its APPROVED batch; a released item holds
+     * neither its line nor its candidates (the reuse rule governs them instead). */
+    releasedAtUtc?: string | null;
+    releaseKind?: string | null;
     /** Frozen candidate snapshots submitted by the Buyer (empty for legacy items). */
     candidates?: ApprovalBatchItemCandidate[];
 }

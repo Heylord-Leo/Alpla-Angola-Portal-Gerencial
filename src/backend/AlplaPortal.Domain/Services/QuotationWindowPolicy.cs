@@ -51,6 +51,23 @@ public static class QuotationWindowPolicy
         RequestConstants.Statuses.Completed,
     };
 
+    /// <summary>
+    /// v2.249.2 — line lifecycles that are COMMITTED: approved and bought (or closed) after approval. Whatever the window
+    /// (scalar or item-level), a MAPPED/SUBSTITUTE quotation line may never target such a request line: the write
+    /// endpoints refuse the whole payload (409 "Item já comprometido") so a mixed payload persists nothing. BATCH_ASSIGNED is
+    /// deliberately NOT here: the rework-revision flow maps revised lines onto items of a batch under adjustment.
+    /// </summary>
+    public static readonly string[] CommittedLifecycleStatuses =
+    {
+        RequestConstants.QuotationLifecycleStatuses.QuotationApproved,
+        RequestConstants.QuotationLifecycleStatuses.ClosedNotQuoted,
+        RequestConstants.QuotationLifecycleStatuses.CancelledAfterApproval,
+        RequestConstants.QuotationLifecycleStatuses.NotQuotedAccepted,
+    };
+
+    public static bool IsCommittedLifecycle(string? quotationLifecycleStatus) =>
+        quotationLifecycleStatus != null && CommittedLifecycleStatuses.Contains(quotationLifecycleStatus);
+
     public sealed record LineFacts(Guid LineItemId, bool IsDeleted, string? QuotationLifecycleStatus, bool HeldByActiveBatch);
 
     public sealed record Evaluation(bool IsOpen, IReadOnlyCollection<Guid> OpenLineItemIds, string? ClosedReasonCode)

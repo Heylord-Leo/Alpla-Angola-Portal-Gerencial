@@ -1247,6 +1247,10 @@ public class RequestsController : BaseController
                         WinnerSelectedAtUtc = bi.WinnerSelectedAtUtc,
                         WinnerSelectionJustification = bi.WinnerSelectionJustification,
                         IsLegacyBuyerSelectedWinner = !bi.Candidates.Any() && bi.SelectedQuotationItemId != null,
+                        // v2.249.2 — P.O.-group cancellation release stamp: a released item no longer holds its line nor its
+                        // candidates (the submission modal must not treat them as "held"; the reuse rule governs them instead).
+                        ReleasedAtUtc = bi.ReleasedAtUtc,
+                        ReleaseKind = bi.ReleaseKind,
                         Candidates = bi.Candidates.Select(c => new ApprovalBatchItemCandidateDto
                         {
                             Id = c.Id,
@@ -3742,6 +3746,50 @@ public class RequestsController : BaseController
     }
 
     /// <summary>
+    /// v2.249.2 — resolution of every request-line reference carried by a quotation payload, evaluated BEFORE any tracked
+    /// mutation of SaveQuotation / UpdateQuotation:
+    ///  • <c>Invalid</c>: payload lines whose <c>MappedRequestLineItemId</c> is not a non-deleted line of THIS request
+    ///    (foreign request, unknown id, deleted line). The whole operation is refused; nothing is remapped or dropped, and the
+    ///    message never says whether the id exists elsewhere.
+    ///  • <c>Committed</c>: this request's referenced lines whose lifecycle is COMMITTED
+    ///    (QuotationWindowPolicy.CommittedLifecycleStatuses) — refused per line by the callers in the scalar window.
+    /// Any reconciliation status counts: a reference is a reference.
+    /// </summary>
+    private sealed record MappedLineResolution(HashSet<Guid> Committed, List<SaveQuotationItemDto> Invalid);
+
+    private async Task<MappedLineResolution> ResolveMappedLinesAsync(Guid requestId, IEnumerable<SaveQuotationItemDto>? items)
+    {
+        var list = (items ?? Enumerable.Empty<SaveQuotationItemDto>()).ToList();
+        var mapped = list.Where(i => i.MappedRequestLineItemId.HasValue).Select(i => i.MappedRequestLineItemId!.Value).Distinct().ToList();
+        if (mapped.Count == 0) return new MappedLineResolution(new HashSet<Guid>(), new List<SaveQuotationItemDto>());
+        var owned = await _context.RequestLineItems.AsNoTracking()
+            .Where(li => li.RequestId == requestId && mapped.Contains(li.Id) && !li.IsDeleted)
+            .Select(li => new { li.Id, li.QuotationLifecycleStatus })
+            .ToListAsync();
+        var ownedIds = owned.Select(o => o.Id).ToHashSet();
+        var committed = owned
+            .Where(o => AlplaPortal.Domain.Services.QuotationWindowPolicy.IsCommittedLifecycle(o.QuotationLifecycleStatus))
+            .Select(o => o.Id).ToHashSet();
+        var invalid = list.Where(i => i.MappedRequestLineItemId.HasValue && !ownedIds.Contains(i.MappedRequestLineItemId!.Value)).ToList();
+        return new MappedLineResolution(committed, invalid);
+    }
+
+    /// <summary>400 for foreign / unknown / deleted request-line references (existing "Validação de Item" convention; no
+    /// information about other requests is disclosed).</summary>
+    private static BadRequestObjectResult InvalidLineReference(IReadOnlyList<SaveQuotationItemDto> invalid)
+    {
+        var numbers = string.Join(", ", invalid.Select(i => i.LineNumber).Distinct().OrderBy(n => n));
+        var pd = new ProblemDetails
+        {
+            Title = "Validação de Item",
+            Detail = $"Item(ns) {numbers}: o item do pedido referenciado não pertence a este pedido ou já não existe. Nenhuma alteração foi guardada.",
+            Status = 400
+        };
+        pd.Extensions["code"] = "REQUEST_LINE_REFERENCE_INVALID";
+        return new BadRequestObjectResult(pd);
+    }
+
+    /// <summary>
     /// Option C — explicit Buyer authorization to reuse quotation items previously used in a
     /// CANCELLED approval batch. One authorization record per item (partial reuse/revocation,
     /// exact audit). All-or-nothing: any invalid item aborts the whole call. The cancelled batch
@@ -4429,6 +4477,14 @@ public class RequestsController : BaseController
             }
         }
 
+        // v2.249.2 — every request-line reference must be a non-deleted line of THIS request (foreign / unknown / deleted →
+        // 400, whole payload refused, nothing tracked or persisted yet at this point). Committed lines (approved/bought or
+        // closed after approval) never receive a MAPPED/SUBSTITUTE quotation line, in the scalar window too (the sibling
+        // group may keep the scalar at WAITING_QUOTATION); a mixed payload is refused as a whole below.
+        var mappedLines = await ResolveMappedLinesAsync(id, dto.Items);
+        if (mappedLines.Invalid.Count > 0) return InvalidLineReference(mappedLines.Invalid);
+        var committedLineIds = mappedLines.Committed;
+
         // Basic Validation
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
         if (string.IsNullOrWhiteSpace(dto.Currency)) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "A moeda é obrigatória.", Status = 400 });
@@ -4499,11 +4555,12 @@ public class RequestsController : BaseController
 
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
 
-            // v2.249.1 — on the item-level window path every mapped line must target an OPEN request line.
-            if (itemWindow != null && item.MappedRequestLineItemId.HasValue
+            // v2.249.1 — on the item-level window path every mapped line must target an OPEN request line;
+            // v2.249.2 — in the scalar window a COMMITTED line (approved/bought, closed after approval) is refused the same way.
+            if (item.MappedRequestLineItemId.HasValue
                 && (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
                     || item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
-                && !itemWindow.IsLineOpen(item.MappedRequestLineItemId.Value))
+                && (itemWindow != null ? !itemWindow.IsLineOpen(item.MappedRequestLineItemId.Value) : committedLineIds.Contains(item.MappedRequestLineItemId.Value)))
             {
                 return Conflict(new ProblemDetails
                 {
@@ -4813,16 +4870,30 @@ public class RequestsController : BaseController
         
         if (request == null) return NotFound("Pedido não encontrado.");
 
-        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes
+        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes.
+        // v2.249.2 — OR the item-level window (QuotationWindowPolicy): a quotation registered for lines released to
+        // quotation / still pending after a partial submission can be edited while it is not submitted (§7 lock below);
+        // on that path every MAPPED/SUBSTITUTE line of the payload must target an OPEN request line (409 per line).
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? updateItemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível alterar cotações neste status do pedido.", 
-                Status = 409 
-            });
+            var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request);
+            if (!window.IsOpen)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Não é possível alterar cotações neste status do pedido.",
+                    Status = 409
+                });
+            }
+            updateItemWindow = window;
         }
+        // v2.249.2 — request-line ownership (foreign / unknown / deleted → 400, whole payload refused before any tracked
+        // mutation) and committed lines (refused in the scalar window too) — see SaveQuotation.
+        var mappedLines = await ResolveMappedLinesAsync(requestId, dto.Items);
+        if (mappedLines.Invalid.Count > 0) return InvalidLineReference(mappedLines.Invalid);
+        var committedLineIds = mappedLines.Committed;
 
         var quotation = await _context.Quotations
             .Include(q => q.Items)
@@ -4935,6 +5006,21 @@ public class RequestsController : BaseController
             }
 
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
+
+            // v2.249.2 — item-level window: every mapped line must target an OPEN request line; scalar window: a COMMITTED
+            // line is refused the same way (same rule as SaveQuotation).
+            if (item.MappedRequestLineItemId.HasValue
+                && (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
+                    || item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
+                && (updateItemWindow != null ? !updateItemWindow.IsLineOpen(item.MappedRequestLineItemId.Value) : committedLineIds.Contains(item.MappedRequestLineItemId.Value)))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Item já comprometido",
+                    Detail = $"Item {item.LineNumber}: o item do pedido associado já está num lote ativo, aprovado ou encerrado e não aceita alterações de cotação. Neste estado só os itens pendentes de cotação podem ser cotados.",
+                    Status = 409
+                });
+            }
 
             var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);
             if (precisionError != null) return precisionError;
@@ -5200,14 +5286,16 @@ public class RequestsController : BaseController
         if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
             return NotFound("Pedido não encontrado.");
 
-        // Status Rule Check
-        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
+        // Status Rule Check — v2.249.2: scalar window OR item-level window (QuotationWindowPolicy). A quotation ever
+        // submitted for approval stays protected by the §7 lock evaluated below, whatever the window.
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code)
+            && !(await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request)).IsOpen)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível excluir cotações neste status do pedido.", 
-                Status = 409 
+            return Conflict(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Não é possível excluir cotações neste status do pedido.",
+                Status = 409
             });
         }
 

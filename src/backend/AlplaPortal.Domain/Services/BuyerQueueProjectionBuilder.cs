@@ -48,7 +48,10 @@ public static class BuyerQueueProjectionBuilder
     };
 
     // ── Inputs (populated by the controller from loaded entities) ──
-    public sealed record QuotationItemInput(Guid Id, Guid? MappedRequestLineItemId, string? ReconciliationStatus);
+    // v2.249.2 — IsReuseBlocked: the item was a candidate/winner of a CANCELLED batch item or of a RELEASED item of an
+    // APPROVED batch and has no active reuse authorization (QuotationReuseEligibilityPolicy, DEC-147 / D3). Such an item
+    // is NOT a selectable candidate — the batch endpoint refuses it — so the line it maps to stays "Pendente de cotação".
+    public sealed record QuotationItemInput(Guid Id, Guid? MappedRequestLineItemId, string? ReconciliationStatus, bool IsReuseBlocked = false);
     public sealed record BatchItemInput(Guid RequestLineItemId, Guid? SelectedQuotationItemId, IReadOnlyList<Guid> CandidateQuotationItemIds,
         // Phase 1 P.O. cancellation: a released item of an APPROVED batch no longer holds its line or candidates.
         bool IsReleased = false);
@@ -64,7 +67,13 @@ public static class BuyerQueueProjectionBuilder
         IReadOnlyCollection<Guid> SupersededBatchIds,
         // v2.242.0 — true when any PO group of this request is WAITING_PO_CORRECTION (returned by
         // Finance). Group-derived; drives the PO_CORRECTION operational state.
-        bool HasPoCorrection = false);
+        bool HasPoCorrection = false,
+        // v2.249.2 — stored Finance return kinds of the WAITING_PO_CORRECTION groups (null entry = legacy, unclassified);
+        // drives the PO_CORRECTION label and the order/wording of its next actions. Never inferred from reason text.
+        IReadOnlyList<string?>? PoCorrectionReturnKinds = null,
+        // v2.249.2 — any PO group in WAITING_PO (first registration pending) → PO_REGISTRATION_PENDING instead of
+        // COMPLETED_FOR_BUYER when nothing else is open for the Buyer.
+        bool HasPoRegistrationPending = false);
 
     // ── Outputs ──
     public sealed record BuyerNextAction(string Code, string Label, bool Actionable);
@@ -203,9 +212,13 @@ public static class BuyerQueueProjectionBuilder
         // yet a WAITING_PO_CORRECTION group is genuine Buyer/Purchasing work) and past-buyer-phase /
         // terminal. It occurs only after the quotation phase, so it cannot conflict with the
         // active-quotation states evaluated below. This is why it is evaluated FIRST.
+        // v2.249.2 — the quotation phase is over but a group still awaits its FIRST P.O.: say so instead of "Concluído".
+        var completedOrRegistration = !terminal && r.HasPoRegistrationPending
+            ? BuyerQueueConstants.OperationalStates.PoRegistrationPending
+            : BuyerQueueConstants.OperationalStates.CompletedForBuyer;
         if (r.HasPoCorrection) state = BuyerQueueConstants.OperationalStates.PoCorrection;
         else if (notBuyerPhase) state = BuyerQueueConstants.OperationalStates.NoBuyerAction;
-        else if (terminal || pastBuyerPhase) state = BuyerQueueConstants.OperationalStates.CompletedForBuyer;
+        else if (terminal || pastBuyerPhase) state = completedOrRegistration;
         else if (anyAdjustment) state = BuyerQueueConstants.OperationalStates.AdjustmentRequired;
         // v2.249.1 — a batch in approval is informational ONLY when nothing else is open for the Buyer: with
         // pending/ready lines outside that batch the request is PARTIAL_COVERAGE / READY_FOR_APPROVAL and
@@ -216,9 +229,12 @@ public static class BuyerQueueProjectionBuilder
         else if (pending > 0 && (ready > 0 || approved > 0 || inBatch > 0 || closed > 0 || notQAccepted > 0))
             state = BuyerQueueConstants.OperationalStates.PartialCoverage;
         else if (pending > 0) state = BuyerQueueConstants.OperationalStates.NeedsQuotation;
-        else state = BuyerQueueConstants.OperationalStates.CompletedForBuyer;
+        else state = completedOrRegistration;
 
-        var nextActions = NextActions(state, ready, pending, openWork);
+        var nextActions = NextActions(state, ready, pending, openWork, r.PoCorrectionReturnKinds);
+        var stateLabel = state == BuyerQueueConstants.OperationalStates.PoCorrection
+            ? BuyerQueueConstants.OperationalStates.PoCorrectionLabel(r.PoCorrectionReturnKinds)
+            : BuyerQueueConstants.OperationalStates.Label(state);
 
         // ── Attention signals ──
         var signals = new List<BuyerAttentionSignal>();
@@ -234,7 +250,9 @@ public static class BuyerQueueProjectionBuilder
             signals.Add(new(BuyerQueueConstants.AttentionCodes.UnassignedNearDeadline, BuyerQueueConstants.AttentionSeverities.Warning));
 
         // ── Priority band (only for buyer-active states; completed/no-action never Band 1) ──
-        var isBuyerActive = state is not (BuyerQueueConstants.OperationalStates.CompletedForBuyer or BuyerQueueConstants.OperationalStates.NoBuyerAction);
+        var isBuyerActive = state is not (BuyerQueueConstants.OperationalStates.CompletedForBuyer
+            or BuyerQueueConstants.OperationalStates.NoBuyerAction
+            or BuyerQueueConstants.OperationalStates.PoRegistrationPending);
         var band = isBuyerActive && (state == BuyerQueueConstants.OperationalStates.AdjustmentRequired
                     || state == BuyerQueueConstants.OperationalStates.PoCorrection
                     || deadline == BuyerQueueConstants.DeadlineConditions.Overdue)
@@ -248,7 +266,7 @@ public static class BuyerQueueProjectionBuilder
              || hasSuperseded);
 
         return new BuyerQueueProjection(
-            state, BuyerQueueConstants.OperationalStates.Label(state),
+            state, stateLabel,
             nextActions, coverageStatus,
             activeItemCount, covered, pending, quotationCount, activeBatchCount,
             counts, band, deadline, signals, ownership, requiresAttention,
@@ -272,11 +290,15 @@ public static class BuyerQueueProjectionBuilder
                 .Concat(bi.CandidateQuotationItemIds))
             .ToHashSet();
 
+        // v2.249.2 — a reuse-blocked candidate (released/cancelled use without an active authorization) is NOT selectable:
+        // CreateBatch refuses it (REUSE_AUTHORIZATION_REQUIRED), so counting it as "ready" produced a false "Pronto para
+        // lote" / "Enviar itens para aprovação" with an empty submission modal (TEST, REQ-28/10/2026-628).
         bool HasSelectableCandidate(Guid itemId) => r.QuotationItems.Any(qi =>
             qi.MappedRequestLineItemId == itemId
             && (qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
                 || qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
-            && !heldQuotationItemIds.Contains(qi.Id));
+            && !heldQuotationItemIds.Contains(qi.Id)
+            && !qi.IsReuseBlocked);
 
         var result = new Dictionary<Guid, string>(r.Items.Count);
         foreach (var it in r.Items) result[it.Id] = Bucket(it, HasSelectableCandidate);
@@ -303,10 +325,14 @@ public static class BuyerQueueProjectionBuilder
         };
     }
 
-    private static IReadOnlyList<BuyerNextAction> NextActions(string state, int ready, int pending, bool openWork)
+    private static IReadOnlyList<BuyerNextAction> NextActions(string state, int ready, int pending, bool openWork, IReadOnlyList<string?>? poCorrectionReturnKinds)
     {
         switch (state)
         {
+            case BuyerQueueConstants.OperationalStates.PoRegistrationPending:
+                // Informational: the first registration is done on the request page (Para Minha Ação "Registrar P.O.");
+                // not actionable here so the personal actions / alerts / workload counters are unchanged.
+                return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.RegisterPo, "Registar a P.O. na página do pedido", false) };
             case BuyerQueueConstants.OperationalStates.NeedsQuotation:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.AddQuotation, "Adicionar cotação", true) };
             case BuyerQueueConstants.OperationalStates.PartialCoverage:
@@ -318,12 +344,29 @@ public static class BuyerQueueProjectionBuilder
             case BuyerQueueConstants.OperationalStates.AdjustmentRequired:
                 return new[] { new BuyerNextAction(BuyerQueueConstants.ActionCodes.ResolveAdjustment, "Revisar e reenviar lote", true) };
             case BuyerQueueConstants.OperationalStates.PoCorrection:
-                var poCorrection = new List<BuyerNextAction>
+                // v2.249.2 — wording and order follow the STORED return kind(s). Both capabilities stay available whatever
+                // the kind (the kind is advisory): correction-only keeps the historical order; cancellation-requested leads
+                // with the cancellation and names Finance's advisory; legacy/unclassified or mixed stay neutral.
+                var kinds = poCorrectionReturnKinds ?? Array.Empty<string?>();
+                var anyCorrectionKind = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection);
+                var anyCancellationKind = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested);
+                var poCorrection = new List<BuyerNextAction>();
+                if (anyCancellationKind && !anyCorrectionKind)
                 {
-                    new(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true),
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O. (cancelamento solicitado por Finanças)", true));
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O. (se a devolução for discutível)", true));
+                }
+                else if (anyCorrectionKind && !anyCancellationKind)
+                {
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CorrectPo, "Corrigir P.O.", true));
                     // Phase 1: the Buyer may also cancel the returned group (restart quotation / close items) instead of correcting.
-                    new(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true),
-                };
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true));
+                }
+                else
+                {
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CorrectPo, "Rever a P.O. devolvida (corrigir ou cancelar)", true));
+                    poCorrection.Add(new(BuyerQueueConstants.ActionCodes.CancelPoGroup, "Cancelar P.O.", true));
+                }
                 // v2.249.1 — lines released by an earlier cancellation (or never quoted) stay actionable while a
                 // sibling group is in correction: the quotation entries are not hidden by the correction state.
                 if (openWork && pending > 0) poCorrection.Add(new(BuyerQueueConstants.ActionCodes.AddQuotation, "Completar cotações", true));

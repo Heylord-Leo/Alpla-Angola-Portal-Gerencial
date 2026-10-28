@@ -80,6 +80,8 @@ Backend-derived, request-level. **State labels are professional descriptions** (
 | `AWAITING_APPROVAL` | **Em Aprovação** | *(informational)* Aguardando aprovação — only when nothing else is open for the Buyer (v2.249.1) | No | low |
 | `ADJUSTMENT_REQUIRED` | **Ajuste Solicitado** | Revisar e reenviar lote | Yes | **exception (Band 1)** |
 | `AWAITING_REQUESTER_DECISION` | **Aguardando Decisão** | *(informational)* Aguardando decisão do requisitante | No | low |
+| `PO_CORRECTION` | **Correção de P.O.** *(stored kind PO_CORRECTION)* / **P.O. devolvida — cancelamento solicitado** / **P.O. devolvida por Finanças** *(legacy null, mixed)* — v2.249.2 | Corrigir P.O. + Cancelar P.O. (order and wording by the stored `LastFinanceReturnKind`; both always available; `ADD_QUOTATION`/`SUBMIT_BATCH` when open lines exist) | Yes | **exception (Band 1)** |
+| `PO_REGISTRATION_PENDING` | **P.O. a registar** — v2.249.2 | *(informational)* Registar a P.O. na página do pedido (`REGISTER_PO`, never actionable here) | No | none (hidden by default, §8) |
 | `COMPLETED_FOR_BUYER` | **Concluído para Compras** | — | No | none (hidden by default, §8) |
 | `NO_BUYER_ACTION` | **Sem Ação do Comprador** | — | No | none (hidden by default, §8) |
 
@@ -106,6 +108,8 @@ line items and its `ApprovalBatches`:
 6. **`NEEDS_QUOTATION`** — one or more items and none are covered/ready (all pending).
 7. **`COMPLETED_FOR_BUYER`** — all active items terminal (`QUOTATION_APPROVED` / `CLOSED_NOT_QUOTED` /
    `NOT_QUOTED_ACCEPTED`) or the Request has advanced past the Buyer quotation phase (PO/payment/…).
+   *v2.249.2:* when that Request still has a P.O. group in `WAITING_PO` (first registration pending) and is not terminal, the
+   state is **`PO_REGISTRATION_PENDING`** instead — same visibility (hidden by default), non-actionable, truthful label.
 8. **`NO_BUYER_ACTION`** — not a Buyer-phase Request (e.g. non-QUOTATION, or Buyer scope N/A).
 
 > The exact predicates must be implemented **once** in `BuyerQueueProjectionBuilder` and validated
@@ -141,7 +145,11 @@ operational `lineItemStatusCode`, and cross-reference to `ApprovalBatches` + `Qu
 - **Active batch detection** = batch status ∈ `{WAITING_AREA_APPROVAL, AREA_ADJUSTMENT,
   WAITING_FINAL_APPROVAL, FINAL_ADJUSTMENT, APPROVED}` (CANCELLED/REJECTED do **not** hold items).
 - **Selectable quotation candidate** = a `QuotationItem` not referenced (as `selectedQuotationItemId`
-  or a submitted candidate) by any active/approved batch.
+  or a submitted candidate) by any active/approved batch **item that still holds it** (a batch item RELEASED by a
+  P.O.-group cancellation holds nothing) **and not reuse-blocked** (v2.249.2): a candidate/winner of a CANCELLED batch
+  item or of a RELEASED item of an APPROVED batch needs an active `QuotationReuseAuthorization` for that exact pair
+  (`QuotationReuseEligibilityPolicy`, the same pure rule `CreateBatch` enforces). Otherwise its line stays "Pendente de
+  cotação" and the submission modal offers nothing for it — coverage counts, line state, next actions and the modal agree.
 
 Current fleet distribution (QUOTATION, non-deleted): `null 240, QUOTATION_APPROVED 166,
 BATCH_ASSIGNED 29, CLOSED_NOT_QUOTED 5`; batches `APPROVED 72, REJECTED 7, WAITING_FINAL 7,
@@ -203,7 +211,12 @@ Approx. fleet: `WAITING_QUOTATION` 36 (Sem Cotação ~30 + Cobertura Parcial ~5)
 
 ## 8. Completed-request visibility — approved
 
-`COMPLETED_FOR_BUYER` and `NO_BUYER_ACTION` Requests are **hidden from the default active queue**.
+`COMPLETED_FOR_BUYER`, `NO_BUYER_ACTION` and (v2.249.2) `PO_REGISTRATION_PENDING` Requests are **hidden from the default active queue**.
+*v2.249.2 admission:* a batch-model request whose scalar is already past the P.O. gate but which has a line released to
+quotation (`QUOTATION_PENDING`) is admitted to the active queue (it projects to `PARTIAL_COVERAGE` / `NEEDS_QUOTATION`). The
+rule is ONE EF expression (`BuyerQueueAdmission`, Domain) applied by the queue (list + summary), the Dashboard V2 Buyer
+section/workload, the personal "Minha Operação" actions, the canonical alerts and the operational pipeline, so the released
+line is discoverable and counted once everywhere; legacy pre-batch requests are never admitted by it.
 They remain **queryable via an explicit filter/history scope** (e.g. an "Incluir concluídos" toggle or
 a History view). **No data is deleted or archived.**
 

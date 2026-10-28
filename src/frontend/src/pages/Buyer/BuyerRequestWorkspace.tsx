@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import {
   ArrowLeft, Building2, User as UserIcon, CalendarClock, MapPin, ExternalLink,
   Package, FileText, Layers, Info, BadgeCheck, AlertTriangle, ShoppingCart,
-  ChevronLeft, ChevronRight, Mail, Upload, Pencil, Ban, Trash2, XCircle, Boxes, Edit2, Send, ShieldAlert,
+  ChevronLeft, ChevronRight, Mail, Upload, Pencil, Ban, Trash2, XCircle, Boxes, Edit2, Send, ShieldAlert, RefreshCw,
 } from 'lucide-react';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { KebabMenu } from '../../components/ui/KebabMenu';
@@ -21,7 +21,7 @@ import { formatDateTime } from '../../lib/utils';
 import { api } from '../../lib/api';
 import type { SavedQuotationDto } from '../../types';
 import type { BuyerWorkspace, BuyerWorkspaceItem, BuyerWorkspaceBatch, BuyerWorkspacePoGroup } from '../../types/buyerWorkspace';
-import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL, buildPoCorrectionDeepLink } from './buyerQueueView';
+import { operationalStateColor, deadlineChip, NEED_LEVEL_LABEL } from './buyerQueueView';
 import {
   WORKSPACE_TABS, resolveTab, backToQueueTarget, coverageChips, bucketLabel,
   formatTotalsByCurrency, metricOrAbsent, batchKindLabel, supplierStatusLabel,
@@ -29,7 +29,7 @@ import {
   GROUPS_TAB, poGroupStatusLabel, batchReleasedItemsLabel, batchTotalsLines, headerApprovedTotals, resolveCancelPoGroupTarget, groupLineNumbersLabel,
 } from './buyerWorkspaceView';
 import { CancelPoGroupDialog } from '../../components/Buyer/CancelPoGroupDialog';
-import { cancellationKindLabel, ecfStatusLabel, financeStatusLabel, lastFinanceReturnLabel, priorEcfBlockMessage, describeFinanceEmailPolicy, deliveryChip, resendNeedsAttention } from '../../lib/poGroupCancellation';
+import { financeReturnGuidance, cancellationKindLabel, ecfStatusLabel, financeStatusLabel, lastFinanceReturnLabel, priorEcfBlockMessage, describeFinanceEmailPolicy, deliveryChip, resendNeedsAttention } from '../../lib/poGroupCancellation';
 import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequestEmail';
 import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -49,13 +49,15 @@ export function BuyerRequestWorkspace() {
   const [ws, setWs] = useState<BuyerWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // v2.249.2 — when the projection was last read (delivery states are the outbox worker's later fact; see TabGroups).
+  const [wsReadAt, setWsReadAt] = useState<Date | null>(null);
 
   const loadWorkspace = useCallback((silent = false) => {
     if (!requestId) return;
     if (!silent) setLoading(true);
     setError(null);
     api.buyerQueue.getWorkspace(requestId)
-      .then(setWs)
+      .then(w => { setWs(w); setWsReadAt(new Date()); })
       .catch(e => setError(e?.message || 'Falha ao carregar o workspace.'))
       .finally(() => setLoading(false));
   }, [requestId]);
@@ -63,7 +65,7 @@ export function BuyerRequestWorkspace() {
   // (the mutation already happened) — it is reported as a refresh problem, distinct from a mutation failure.
   const refreshAfterMutation = useCallback(async () => {
     if (!requestId) return;
-    try { setWs(await api.buyerQueue.getWorkspace(requestId)); setActionError(null); }
+    try { setWs(await api.buyerQueue.getWorkspace(requestId)); setWsReadAt(new Date()); setActionError(null); }
     catch { setActionError(REFRESH_AFTER_MUTATION_FAILED); }
   }, [requestId]);
   useEffect(() => { loadWorkspace(); }, [loadWorkspace]);
@@ -87,7 +89,8 @@ export function BuyerRequestWorkspace() {
   // The backend stays the authority (status window, access scope, batch references); the UI only mirrors the
   // quotation window and the Buyer role to decide whether to show the buttons.
   const { user } = useAuth();
-  const canManageQuotations = canManageWorkspaceQuotations(ws?.requestStatusCode, user?.roles, ROLES.BUYER, ws?.buyerId, user?.id);
+  // v2.249.2 — the server's quotation window (scalar OR item-level) decides; the scalar mirror is only the fallback.
+  const canManageQuotations = canManageWorkspaceQuotations(ws?.requestStatusCode, user?.roles, ROLES.BUYER, ws?.buyerId, user?.id, ws?.quotationWindowOpen);
   const [deleteTarget, setDeleteTarget] = useState<BuyerWorkspaceQuotation | null>(null);
   const [quotationBusy, setQuotationBusy] = useState(false);
   const quotationBusyRef = useRef(false);
@@ -399,10 +402,16 @@ export function BuyerRequestWorkspace() {
             <TabGroups
               ws={ws}
               busy={groupBusy}
+              readAt={wsReadAt}
               onCancel={openCancelForGroup}
-              onCorrect={(g) => navigate(buildPoCorrectionDeepLink(ws.requestId, g.id))}
+              // v2.249.2 — first registration ("Registrar P.O.") and correction ("Corrigir P.O.") both run on the request
+              // page, whose P.O. section offers the per-group REGISTRAR / CORRIGIR actions; the Workspace carries request
+              // and group identity there (no more detour through the Para Minha Ação list).
+              onRegister={() => navigate(`/requests/${ws.requestId}`, { state: { from: location.pathname + location.search } })}
+              onCorrect={() => navigate(`/requests/${ws.requestId}`, { state: { from: location.pathname + location.search } })}
               onUpdateDeclaration={(g) => { setActionError(null); setCancelDialog({ mode: 'declaration', group: g }); }}
               onResend={(g) => { setActionError(null); setResendTarget(g); }}
+              onRefresh={() => void refreshAfterMutation()}
             />
           )}
         </div>
@@ -707,7 +716,21 @@ function TabQuotes({ ws, canManage, busy, onEdit, onDelete }: {
                   </Td>
                 );
               })()}
-              <Td style={nowrap}>{q.isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-status-green)', fontWeight: 700, fontSize: '0.76rem' }}><BadgeCheck size={13} /> Selecionada</span> : <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>—</span>}</Td>
+              <Td style={nowrap}>
+                {q.isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-status-green)', fontWeight: 700, fontSize: '0.76rem' }}><BadgeCheck size={13} /> Selecionada</span> : <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>—</span>}
+                {/* v2.249.2 — DEC-147 / D3: candidates of a released or cancelled batch item need an explicit reuse authorization
+                    (classic tools → "Reutilizar cotação") before they can enter a new batch; nothing is reused silently. */}
+                {(q.reuseBlockedItemCount ?? 0) > 0 && (
+                  <div data-testid="quotation-reuse-blocked" title="Cotação de um lote cancelado ou de um item devolvido à cotação: só volta a ser elegível após autorização explícita de reutilização (Abrir ferramentas clássicas → Reutilizar cotação)." style={{ marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#92400E', whiteSpace: 'normal' }}>
+                    Reutilização requer autorização ({q.reuseBlockedItemCount})
+                  </div>
+                )}
+                {(q.reuseAuthorizedItemCount ?? 0) > 0 && (
+                  <div data-testid="quotation-reuse-authorized" style={{ marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#166534', whiteSpace: 'normal' }}>
+                    Reutilização autorizada ({q.reuseAuthorizedItemCount})
+                  </div>
+                )}
+              </Td>
             </tr>
           ))}
         </tbody>
@@ -770,10 +793,11 @@ function TabBatches({ ws }: { ws: BuyerWorkspace }) {
 // One card per P.O. group of the request. Every action/block shown here is the SERVER's decision
 // (canCorrectPo, canCancel + cancelBlockMessage, cancellation.actions, priorEcfConfirmation). The ECF part of a
 // cancelled group is rendered as the Buyer's DECLARATION and Finance's SEPARATE confirmation — never as a Portal fact.
-function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResend }: {
-  ws: BuyerWorkspace; busy: boolean;
-  onCancel: (g: BuyerWorkspacePoGroup) => void; onCorrect: (g: BuyerWorkspacePoGroup) => void;
+function TabGroups({ ws, busy, readAt, onCancel, onRegister, onCorrect, onUpdateDeclaration, onResend, onRefresh }: {
+  ws: BuyerWorkspace; busy: boolean; readAt?: Date | null;
+  onCancel: (g: BuyerWorkspacePoGroup) => void; onRegister: (g: BuyerWorkspacePoGroup) => void; onCorrect: (g: BuyerWorkspacePoGroup) => void;
   onUpdateDeclaration: (g: BuyerWorkspacePoGroup) => void; onResend: (g: BuyerWorkspacePoGroup) => void;
+  onRefresh: () => void;
 }) {
   const groups = ws.poGroups ?? [];
   if (groups.length === 0) return <Empty>Nenhum grupo P.O. criado para este pedido (os grupos surgem após a aprovação final).</Empty>;
@@ -814,6 +838,8 @@ function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResen
             {financeReturn && (
               <div style={{ padding: '8px 10px', borderRadius: 8, background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412', fontSize: '0.78rem' }}>
                 <div style={{ fontWeight: 700 }}>{financeReturn}</div>
+                {/* v2.249.2 — guidance by the STORED kind (null = legacy, neutral). The kind is advisory: both outcomes stay available. */}
+                {!cancelled && <div data-testid="finance-return-guidance" style={{ marginTop: 2 }}>{financeReturnGuidance(g.lastFinanceReturn?.kind)}</div>}
                 {(g.lastFinanceReturn?.returnedByName || g.lastFinanceReturn?.returnedAtUtc) && (
                   <div style={{ color: '#C2410C', marginTop: 2 }}>{[g.lastFinanceReturn?.returnedByName, g.lastFinanceReturn?.returnedAtUtc ? fmtDateTime(g.lastFinanceReturn.returnedAtUtc) : null].filter(Boolean).join(' · ')}</div>
                 )}
@@ -858,6 +884,15 @@ function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResen
                       <div style={{ padding: '6px 10px', borderRadius: 8, background: policyBg, color: policyColor, fontSize: '0.76rem', fontWeight: 600 }}>
                         E-mail para Finanças: {policy.text}{c.buyerEmailQueued ? ' E-mail ao comprador enfileirado.' : ''}
                       </div>
+                      {/* v2.249.2 — delivery is the outbox worker's LATER fact (polls every ~10 s): right after the cancellation every
+                          recipient is legitimately "Pendente". The list is re-read from the server on every load/refresh; this
+                          button re-reads it without a page reload and never re-sends anything. */}
+                      <div data-testid="delivery-refresh" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                        <span>Estado de entrega consultado {readAt ? `às ${readAt.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'ao abrir'} · o envio é processado em segundo plano (≈ 10 s por ciclo); “Pendente” logo após o cancelamento é normal.</span>
+                        <button type="button" disabled={busy} onClick={onRefresh} style={btn('var(--color-primary)', busy)} title="Voltar a ler o estado de entrega no servidor (não reenvia e-mails)">
+                          <RefreshCw size={12} /> Atualizar estado
+                        </button>
+                      </div>
                       {delivery.length > 0 && (
                         <ul data-tour="buyer-workspace-po-group-delivery" style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
                           {delivery.map((d, i) => {
@@ -898,8 +933,15 @@ function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResen
             {!cancelled && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {/* v2.249.2 — WAITING_PO offers the FIRST registration ("Registrar P.O.", request page), never the correction tool;
+                      the correction action appears only for a group returned by Finance (WAITING_PO_CORRECTION). A replacement
+                      P.O. blocked by a prior unconfirmed cancellation shows the block as readable text (priorBlock above) and
+                      keeps the button disabled with the same reason. */}
+                  {g.canRegisterPo && (
+                    <button type="button" data-testid="group-register-po" disabled={busy || !!priorBlock} onClick={() => !priorBlock && onRegister(g)} style={btn('var(--color-primary)', busy || !!priorBlock)} title={priorBlock || 'Registar a P.O. deste grupo na página do pedido (secção P.O.)'}><FileText size={12} /> Registrar P.O.</button>
+                  )}
                   {g.canCorrectPo && (
-                    <button type="button" disabled={busy} onClick={() => onCorrect(g)} style={btn('#EA580C', busy)} title="Corrigir a P.O. devolvida por Finanças (ferramenta de correção)"><Edit2 size={12} /> Corrigir P.O.</button>
+                    <button type="button" disabled={busy} onClick={() => onCorrect(g)} style={btn('#EA580C', busy)} title="Corrigir a P.O. devolvida por Finanças na página do pedido (ferramenta de correção)"><Edit2 size={12} /> Corrigir P.O.</button>
                   )}
                   <button
                     type="button"
@@ -914,6 +956,9 @@ function TabGroups({ ws, busy, onCancel, onCorrect, onUpdateDeclaration, onResen
                 </div>
                 {!g.canCancel && g.cancelBlockMessage && (
                   <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{g.cancelBlockMessage}</div>
+                )}
+                {g.canRegisterPo && priorBlock && (
+                  <div data-testid="group-register-blocked" style={{ fontSize: '0.72rem', color: '#991B1B' }}>Registo da P.O. indisponível: {priorBlock}</div>
                 )}
               </div>
             )}

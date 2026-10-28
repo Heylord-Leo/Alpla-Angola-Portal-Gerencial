@@ -41,13 +41,13 @@ export const BUYER_REQUEST_WORKSPACE_STEPS: TourStep[] = [
     {
         target: '[data-tour="buyer-workspace-tabs"]',
         title: 'Separadores',
-        content: 'Itens mostra a cobertura por item solicitado; Cotações & Documentos lista as cotações registadas; Lotes & Aprovações acompanha os lotes enviados; Grupos P.O. mostra cada grupo P.O. com as ações Corrigir P.O. e Cancelar P.O.',
+        content: 'Itens mostra a cobertura por item solicitado; Cotações & Documentos lista as cotações registadas; Lotes & Aprovações acompanha os lotes enviados; Grupos P.O. mostra cada grupo P.O. com as ações Registrar P.O., Corrigir P.O. e Cancelar P.O.',
         placement: 'bottom',
     },
     {
         target: '[data-tour="buyer-workspace-po-groups"]',
         title: 'Grupos P.O.',
-        content: 'Um cartão por grupo P.O.: fornecedor, estado, valor por moeda, número da P.O., lote e itens, com as ações Corrigir P.O. (grupo devolvido por Finanças) e Cancelar P.O. quando o servidor as permite. Grupos devolvidos por Finanças mostram o tipo e o motivo da devolução; grupos cancelados mostram o histórico do cancelamento, a declaração do comprador sobre a ECF e a confirmação de Finanças. Enquanto Finanças não confirmar a anulação da ECF anterior, o registo da nova P.O. fica bloqueado.',
+        content: 'Um cartão por grupo P.O.: fornecedor, estado, valor por moeda, número da P.O., lote e itens, com as ações Registrar P.O. (grupo em Aguardando P.O. — primeira P.O., registada na página do pedido), Corrigir P.O. (grupo devolvido por Finanças) e Cancelar P.O. quando o servidor as permite. Grupos devolvidos por Finanças mostram o tipo, o motivo e a orientação da devolução (corrigir ou cancelar); grupos cancelados mostram o histórico do cancelamento, a declaração do comprador sobre a ECF, a confirmação de Finanças e o estado de entrega dos e-mails (consulte “Atualizar estado” — o envio corre em segundo plano). Enquanto Finanças não confirmar a anulação da ECF anterior, o registo da nova P.O. fica bloqueado.',
         placement: 'top',
     },
     {

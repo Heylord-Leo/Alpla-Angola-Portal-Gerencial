@@ -125,7 +125,8 @@ public sealed class FinanceObligationSummaryProjection
                     _eligibility.EvaluateGroupActions(r.RequestType.Code, r.Status!.Code, g.Status),
                     g.Payments.Select(p => new FinanceObligationProjectionBuilder.PaymentInput(
                         p.Id, p.PaymentType, p.PaymentStatus, p.PlannedAmount, p.ActualPaidAmount,
-                        p.ScheduledDateUtc, p.PaidDateUtc, p.PaymentProofAttachmentId.HasValue, p.CurrencyCode)).ToList());
+                        p.ScheduledDateUtc, p.PaidDateUtc, p.PaymentProofAttachmentId.HasValue, p.CurrencyCode)).ToList(),
+                    g.LastFinanceReturnKind); // v2.249.2 — stored return kind drives the "Devolvido…" wording
 
                 var o = FinanceObligationProjectionBuilder.Build(reqInput, groupInput, today);
                 var dto = new FinanceObligationDto

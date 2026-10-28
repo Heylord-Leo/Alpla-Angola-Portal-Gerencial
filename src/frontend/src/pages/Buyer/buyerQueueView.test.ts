@@ -6,6 +6,7 @@ import {
   coverageProgress, pctOfTotal, resolvePlantOnCompanyChange,
   resolveNeedLevel, needLevelApiValue, isOwnRequest, NEED_LEVEL_DEFAULT, NEED_LEVEL_ALL,
   buildPoCorrectionDeepLink,
+  resolvePoCorrectionNavigation, poCorrectionCtaLabel, summarizePoReturnKinds, poCorrectionGroupChipLabel, WORKSPACE_GROUPS_TAB_PATH,
 } from './buyerQueueView';
 import listSrc from './BuyerQueueList.tsx?raw';
 
@@ -231,11 +232,17 @@ describe('buildPoCorrectionDeepLink + BuyerQueue "Corrigir P.O." navigation (v2.
     expect(buildPoCorrectionDeepLink('req-1')).toBe('/requests?action=PO_CORRECTION&requestId=req-1');
     expect(buildPoCorrectionDeepLink('req-1', null)).toBe('/requests?action=PO_CORRECTION&requestId=req-1');
   });
-  it('BuyerQueueList "Corrigir P.O." navigates via the deep-link using the REAL correction group id', () => {
-    // Uses the backend-projected PoCorrectionGroups[0] (always a WAITING_PO_CORRECTION group),
-    // never a request scalar or an arbitrary sibling group, and no longer the old request-detail nav.
-    expect(listSrc).toMatch(/onCorrectPo=\{\(\) => navigate\(buildPoCorrectionDeepLink\(item\.requestId, item\.poCorrectionGroups\?\.\[0\]\?\.poGroupId\)\)\}/);
+  it('BuyerQueueList routes a Finance-returned row through resolvePoCorrectionNavigation (v2.249.2)', () => {
+    // QUOTATION → the Workspace "Grupos P.O." tab (with the back-state); PAYMENT → the Para Minha Ação deep-link built
+    // from the backend-projected PoCorrectionGroups[0] (always a WAITING_PO_CORRECTION group), never a sibling group.
+    expect(listSrc).toMatch(/onCorrectPo=\{\(\) => \{ const nav = resolvePoCorrectionNavigation\(item\); navigate\(nav\.to, nav\.kind === 'WORKSPACE_GROUPS' \? \{ state: \{ from: location\.pathname \+ location\.search \} \} : undefined\); \}\}/);
     expect(listSrc).not.toMatch(/onCorrectPo=\{\(\) => navigate\(`\/requests\/\$\{item\.requestId\}`/);
+    expect(listSrc).not.toMatch(/buildPoCorrectionDeepLink/);
+  });
+  it('the primary CTA label of a returned row comes from poCorrectionCtaLabel and the kebab keeps a plain Workspace entry', () => {
+    expect(listSrc).toMatch(/<button onClick=\{onCorrectPo\}[^>]*>\{poCorrectionCtaLabel\(item\)\} <ArrowRight size=\{15\} \/><\/button>/);
+    expect(listSrc).toMatch(/isPoCorrection && \(!item\.requestTypeCode \|\| item\.requestTypeCode === 'QUOTATION'\) \? \[\{ label: 'Abrir Workspace'/);
+    expect(listSrc).toMatch(/\{poCorrectionGroupChipLabel\(g\)\}/);
   });
   it('does not alter non-correction CTAs (claim / open workspace still present)', () => {
     expect(listSrc).toMatch(/Atribuir a Mim/);
@@ -256,5 +263,46 @@ describe('BuyerQueueList claim passes the single correction group (§G.20 D2)', 
   it('the API forwards poGroupId as a query parameter and omits it otherwise', () => {
     expect(apiSrc).toMatch(/assignBuyer: async \(id: string, poGroupId\?: string \| null\)/);
     expect(apiSrc).toMatch(/const qs = poGroupId \? `\?poGroupId=\$\{encodeURIComponent\(poGroupId\)\}` : '';/);
+  });
+});
+
+// v2.249.2 — Finance-returned rows: navigation target + wording from the STORED return kind (never the reason text).
+describe('resolvePoCorrectionNavigation / poCorrectionCtaLabel / summarizePoReturnKinds (v2.249.2)', () => {
+  const REQ = 'a0eba2c8-1155-425a-b5a6-d86f0f8fee04';
+  const GRP = 'f09a07a9-1396-447b-bc25-79e445f1c34a';
+  it('a QUOTATION request opens its Workspace "Grupos P.O." tab (request identity preserved)', () => {
+    const nav = resolvePoCorrectionNavigation({ requestId: REQ, requestTypeCode: 'QUOTATION', poCorrectionGroups: [{ poGroupId: GRP, returnKind: 'ORDER_CANCELLATION_REQUESTED' }] });
+    expect(nav).toEqual({ kind: 'WORKSPACE_GROUPS', to: `/buyer/requests/${REQ}?tab=groups` });
+    expect(WORKSPACE_GROUPS_TAB_PATH(REQ)).toBe(`/buyer/requests/${REQ}?tab=groups`);
+    // Missing type → treated as QUOTATION (the queue is the quotation queue).
+    expect(resolvePoCorrectionNavigation({ requestId: REQ, requestTypeCode: undefined as any, poCorrectionGroups: [] }).kind).toBe('WORKSPACE_GROUPS');
+  });
+  it('a PAYMENT correction keeps the Para Minha Ação deep-link with the real group id', () => {
+    const nav = resolvePoCorrectionNavigation({ requestId: REQ, requestTypeCode: 'PAYMENT', poCorrectionGroups: [{ poGroupId: GRP }] });
+    expect(nav).toEqual({ kind: 'DEEP_LINK', to: buildPoCorrectionDeepLink(REQ, GRP) });
+  });
+  it('summarizes the stored kinds without inferring anything', () => {
+    expect(summarizePoReturnKinds([{ returnKind: 'PO_CORRECTION' }])).toBe('CORRECTION');
+    expect(summarizePoReturnKinds([{ returnKind: 'ORDER_CANCELLATION_REQUESTED' }])).toBe('CANCELLATION_REQUESTED');
+    expect(summarizePoReturnKinds([{ returnKind: 'PO_CORRECTION' }, { returnKind: 'ORDER_CANCELLATION_REQUESTED' }])).toBe('MIXED');
+    expect(summarizePoReturnKinds([{ returnKind: null }])).toBe('UNCLASSIFIED');
+    expect(summarizePoReturnKinds([])).toBe('UNCLASSIFIED');
+    expect(summarizePoReturnKinds(undefined)).toBe('UNCLASSIFIED');
+  });
+  it('CTA label: correction → "Corrigir P.O."; cancellation requested → "Gerir P.O. devolvida"; legacy/mixed → neutral; PAYMENT → correction', () => {
+    expect(poCorrectionCtaLabel({ requestTypeCode: 'QUOTATION', poCorrectionGroups: [{ poGroupId: GRP, returnKind: 'PO_CORRECTION' }] })).toBe('Corrigir P.O.');
+    expect(poCorrectionCtaLabel({ requestTypeCode: 'QUOTATION', poCorrectionGroups: [{ poGroupId: GRP, returnKind: 'ORDER_CANCELLATION_REQUESTED' }] })).toBe('Gerir P.O. devolvida');
+    expect(poCorrectionCtaLabel({ requestTypeCode: 'QUOTATION', poCorrectionGroups: [{ poGroupId: GRP, returnKind: null }] })).toBe('Rever P.O. devolvida');
+    expect(poCorrectionCtaLabel({ requestTypeCode: 'QUOTATION', poCorrectionGroups: [{ poGroupId: GRP, returnKind: 'PO_CORRECTION' }, { poGroupId: 'x', returnKind: 'ORDER_CANCELLATION_REQUESTED' }] })).toBe('Rever P.O. devolvida');
+    expect(poCorrectionCtaLabel({ requestTypeCode: 'PAYMENT', poCorrectionGroups: [{ poGroupId: GRP, returnKind: 'ORDER_CANCELLATION_REQUESTED' }] })).toBe('Corrigir P.O.');
+  });
+  it('group chip names the supplier and the stored kind', () => {
+    expect(poCorrectionGroupChipLabel({ supplierName: 'TREVOTECH LDA', returnKind: 'ORDER_CANCELLATION_REQUESTED' })).toBe('TREVOTECH LDA · cancelamento solicitado');
+    expect(poCorrectionGroupChipLabel({ supplierName: 'TREVOTECH LDA', returnKind: 'PO_CORRECTION' })).toBe('TREVOTECH LDA · corrigir');
+    expect(poCorrectionGroupChipLabel({ supplierName: null, returnKind: null })).toBe('Fornecedor · devolução não classificada');
+  });
+  it('PO_REGISTRATION_PENDING is a known (neutral-coloured) state code', () => {
+    expect(OP.PoRegistrationPending).toBe('PO_REGISTRATION_PENDING');
+    expect(operationalStateColor({ operationalState: OP.PoRegistrationPending, requiresAttention: false })).toBe('var(--color-status-gray)');
   });
 });

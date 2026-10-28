@@ -4,7 +4,112 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.1
+v2.249.2
+
+## [v2.249.2] - 2026-10-28 — Restart-quotation flow after a P.O.-group cancellation: reuse rule in the coverage projection, quotation entry, return-kind guidance, group actions, delivery state
+
+PATCH, frontend + backend, **no migration** (the only model change is an inverse EF navigation, `Request.QuotationReuseAuthorizations`,
+on the existing FK — `dotnet ef migrations has-pending-model-changes` reports no changes), **no configuration change**. Found during
+the manual acceptance of v2.249.1 in TEST on REQ-28/10/2026-628 (AlplaSOPRO / Viana 3 / Manutenção) after Finance returned the
+TREVOTECH group as "Pedido cancelado — não corrigir" and the Buyer cancelled it with "Devolver itens à cotação".
+
+- **Issue 1 — released item shown as "Pronto para lote" / "Pronto para Aprovação" with an empty submission modal (root cause,
+  confirmed).** `BuyerQueueProjectionBuilder.ClassifyItemCoverage` counted the released line's historical candidate (the TREVOTECH
+  quotation item, winner of the released batch item) as selectable because a released batch item no longer *holds* its
+  candidates, while the batch endpoint (`QuotationItemEligibilityService`, DEC-147 / D3) refuses exactly that candidate with
+  `REUSE_AUTHORIZATION_REQUIRED` and the modal (`isQuotationItemSelectableForApproval`) still treated it as held → "2 tratados /
+  1 pronto para lote" vs "ITENS COM COTAÇÃO (0)". Fix: the reuse rule is now ONE pure Domain policy
+  (`QuotationReuseEligibilityPolicy`: finished uses = candidates/winners of CANCELLED batch items and of RELEASED items of APPROVED
+  batches; eligible again only with an active, unconsumed authorization for that exact pair) used by the service **and** by
+  `BuyerQueueProjectionInputFactory` (`QuotationItemInput.IsReuseBlocked`; the factory reads `Request.QuotationReuseAuthorizations`,
+  loaded by all six projection hydration sites). A reuse-blocked candidate is not selectable → the released line is "Pendente de
+  cotação", the request is `PARTIAL_COVERAGE` with `ADD_QUOTATION`, and the modal excludes the candidate (`isQuotationItemReuseBlocked`),
+  ignores released batch items (`releasedAtUtc` now exposed on `RequestApprovalBatchItemDto`) and explains the two ways out on the
+  pending row (explicit reuse authorization in the classic tools, or a new quotation). "Cotações & Documentos" flags such quotations
+  ("Reutilização requer autorização (n)" / "Reutilização autorizada (n)"). Old quotation records stay historical; nothing is reused silently.
+- **Issue 2 — no quotation entry after the restart (root causes, confirmed).** (a) The header renders "Importar Cotação" /
+  "Inserir Manualmente" only when the server lists `ADD_QUOTATION`; the mis-bucketing above produced `READY_FOR_APPROVAL`
+  (submit only) — fixed by Issue 1. (b) **The v2.249.1 note claiming that the QUOTATION/PROFORMA upload accepted the item-level
+  window was inaccurate: `AttachmentsController` had not been changed.** It now is (`QuotationDocumentWindowOpenAsync`: scalar window
+  OR `QuotationWindowEvaluator`), for the upload and the delete of PROFORMA/QUOTATION documents. (c) `PUT …/quotations/{id}` and
+  `DELETE …/quotations/{id}` accept the item-level window too (PUT refuses per line any MAPPED/SUBSTITUTE mapping onto a held line,
+  409 "Item já comprometido"; the §7 submission lock is untouched). (d) The Workspace "Editar/Excluir" visibility and the new
+  `BuyerWorkspaceDto.quotationWindowOpen / quotationWindowClosedReasonCode / openLineItemIds` come from the server (scalar OR
+  item window), no longer from the scalar mirror alone. (e) The Buyer queue SQL admission now includes a batch-model request with a
+  `QUOTATION_PENDING` line even when its scalar is past the P.O. gate, so REQ-628 reaches "Gestão de Cotações". Pending Finance
+  confirmation never gates any of this; the replacement P.O. stays blocked (`PRIOR_ECF_CONFIRMATION_PENDING`, unchanged).
+- **Issue 3 — Finance return routed the Buyer away from the Workspace (root cause, confirmed).** The queue row replaced "Abrir
+  Workspace" with "Corrigir P.O." → `/requests?action=PO_CORRECTION…`, which only highlights the Para Minha Ação card, whose own CTA
+  pointed back at the same list. Now: a QUOTATION row's primary CTA opens the Workspace "Grupos P.O." tab (`resolvePoCorrectionNavigation`;
+  the kebab also keeps "Abrir Workspace"); PAYMENT rows keep the deep-link. The personal-action route of a QUOTATION request goes to the
+  Workspace groups tab (a PAYMENT correction keeps the §G.20 deep-link with `poGroupId`). Queue text, personal-action label and the Workspace header follow the
+  **stored** `LastFinanceReturnKind` (`BuyerPoCorrectionGroupDto.returnKind/returnKindLabel`; `BuyerQueueProjectionBuilder` input
+  `PoCorrectionReturnKinds`): correction → "Correção de P.O." / "Corrigir P.O." (unchanged); cancellation requested → "P.O. devolvida —
+  cancelamento solicitado", next actions led by "Cancelar P.O. (cancelamento solicitado por Finanças)" with the correction still
+  available; legacy null / mixed → neutral "P.O. devolvida por Finanças" / "Rever a P.O. devolvida (corrigir ou cancelar)". Nothing is
+  inferred from the reason text; no capability is removed.
+- **Issue 4 — "Corrigir P.O." offered for a group awaiting its first P.O. (root cause, confirmed).** `BuyerWorkspaceController`
+  set `CanCorrectPo` for `WAITING_PO` **or** `WAITING_PO_CORRECTION`. Now `CanRegisterPo` (WAITING_PO → "Registrar P.O.", request
+  page) and `CanCorrectPo` (WAITING_PO_CORRECTION → "Corrigir P.O.", request page) are separate; a replacement P.O. blocked by an
+  unconfirmed prior cancellation keeps the button disabled with the reason as readable text under the actions. New operational state
+  `PO_REGISTRATION_PENDING` ("P.O. a registar", non-actionable `REGISTER_PO` pointer, hidden by default like COMPLETED_FOR_BUYER so
+  queue counts, alerts, personal actions and workload are unchanged) replaces the untruthful "Concluído para Compras" when a QUOTATION
+  request still has a WAITING_PO group.
+- **Issue 5 — return-kind wording inconsistent across screens and the PDF.** `FinanceObligationProjectionBuilder` (Finance row
+  next action), `RequestWorkflowProjectionBuilder.GroupGuidance` (request page and Print View "Próxima ação", action type stays
+  `CORRECT_PO`) and the personal-action label now take the stored kind; the Print View history heading for `FINANCE_RETURN_ADJUSTMENT`
+  is the neutral "Devolvido por Finanças" (the row text carries the kind); the scalar-only fallback in `lib/utils.ts` is neutral.
+  Historical facts are untouched.
+- **Issue 6 — delivery list "Pendente" (verified, not a transport failure).** `PoGroupCancellationDto.delivery` is read live from the
+  outbox for the last correlation on every Workspace load; `EmailOutboxProcessor` polls every 10 s (20 s start-up delay in DEV). A
+  screenshot taken right after the cancellation legitimately shows "Pendente"; the operator received the e-mails. Product gap fixed:
+  the card now shows when the state was read, says the sending runs in the background, and offers "Atualizar estado" (re-read only,
+  never a resend). No SMTP or configuration change.
+- **Discoverability across the Buyer work surfaces (review round 2).** The Buyer queue, the Dashboard V2 Buyer
+  section/workload, the personal "Minha Operação" actions, the canonical near-deadline alerts and the operational pipeline each
+  carried their own copy of the buyer-active status list, so the REQ-628 shape (scalar past the P.O. gate, line released to
+  quotation) was invisible there even after the queue fix. One shared SQL bound now feeds all of them
+  (`BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWork[OrPoCorrection]`: buyer-active scalar, or a batch-model request
+  with a non-deleted `QUOTATION_PENDING` line; the queue variant also admits Finance-returned groups). Admission is a bound,
+  not a classification — the pure projection still decides and hidden-by-default states are still dropped — so the released
+  line is counted ONCE per request (workload: 1 actionable request, 1 pending item; personal actions: one `ADD_QUOTATION`;
+  alerts: one overdue/due-soon alert; pipeline: "Cobertura parcial"), legacy pre-batch requests stay out, and navigation goes
+  through the queue, which opens the Workspace. The Para Minha Ação card "Cotar itens" of a QUOTATION request now routes to the
+  request's Workspace instead of back to the list. Unchanged by design (reported, not redesigned): the dashboard personal list
+  emits one entry per actionable next action, so a `PARTIAL_COVERAGE` request with both pending and ready lines still yields
+  `ADD_QUOTATION` + `SUBMIT_BATCH` as before.
+- **Mutation-gate boundaries (review round 2).** On the item-level window: a quotation ever submitted for approval (candidate
+  or winner of any batch, including the released one) is still refused by `PUT`/`DELETE …/quotations/{id}` with the §7 lock
+  (`QUOTATION_SUBMITTED`); a mixed payload (released line + committed line) is refused as a whole by `SaveQuotation` and
+  `UpdateQuotation` (409 "Item já comprometido") and persists nothing — **in the scalar window too** (new: when the sibling
+  group is still WAITING_PO the scalar re-derives to WAITING_QUOTATION and no per-line check existed; a line with a COMMITTED
+  lifecycle — `QuotationWindowPolicy.CommittedLifecycleStatuses`: QUOTATION_APPROVED, CLOSED_NOT_QUOTED, CANCELLED_AFTER_APPROVAL,
+  NOT_QUOTED_ACCEPTED — can no longer receive a MAPPED/SUBSTITUTE quotation line; BATCH_ASSIGNED stays mappable for rework revisions); **new evidence guard**: the deletion of a PROFORMA /
+  QUOTATION document linked to a submitted quotation is refused (409 `QUOTATION_SUBMITTED`) whatever the window says — this
+  also closes a pre-existing gap inside the scalar window — while a fresh unsubmitted quotation's document stays deletable; the
+  pending Finance confirmation never gates `SaveQuotation`, `CreateBatch` or the approvals (only `register-po`, the P.O. upload
+  and the advance endpoints consult `PriorEcfConfirmationGuard`), and the replacement-P.O. block is unchanged.
+- **Request-line ownership in quotation payloads (review round 3).** `SaveQuotation` and `UpdateQuotation` (the only
+  persisting paths of the import/manual/rework flows) now resolve every `MappedRequestLineItemId` of the payload — whatever the
+  reconciliation status — against the non-deleted lines of THIS request before any tracked mutation: a foreign, unknown or
+  deleted reference refuses the whole operation with 400 "Validação de Item" / `REQUEST_LINE_REFERENCE_INVALID` ("não pertence a
+  este pedido ou já não existe"), nothing is remapped or dropped, no quotation, line, attachment link or history row is written,
+  and the message never discloses whether the id exists on another request. Rework revisions (`reworkBatchId`) are unaffected:
+  their lines belong to the same request. Previously only the item-level window checked the reference, and only for openness.
+- Tests: backend +8 classes — `QuotationLineOwnershipValidationTests` (foreign reference, mixed valid/foreign, unknown id,
+  deleted line, same-request valid Save/Update, nothing persisted on refusal), `QuotationReuseEligibilityPolicyTests` (pure rule), `BuyerQueueProjectionReuseAndReturnKindTests`,
+  `BuyerOpenQuotationWorkAdmissionTests` (shared bound against EF; Dashboard Buyer section, personal actions, alerts, pipeline and
+  the Para Minha Ação card on the REQ-628 shape + legacy exclusion), `PoCancellationRestartWriteBoundaryTests` (on the REAL
+  cancellation service output: projection agrees with CreateBatch; historical candidate 409 reuse vs new quotation accepted into
+  a new batch while the confirmation is PENDING; PUT/DELETE of the submitted quotation 409 lock; mixed payload 409 with nothing
+  persisted; proforma evidence delete 409 vs fresh document deletable),
+  `BuyerWorkspaceReuseAndPoActionsEndpointTests` (REQ-628 shape in-memory: pending vs ready, window, reuse flags, register vs correct,
+  kind labels, legacy closed), `FinanceReturnKindGuidanceTests` (Finance row, workflow guidance, personal-action label/route),
+  `OpenItemQuotationWindowUpdateDeleteUploadTests` (LocalDB PUT/DELETE accepted / 409 held / legacy 409; in-memory PROFORMA/QUOTATION
+  upload accepted / legacy blocked) + 2 adjusted expectations; frontend +2 files (`batchEligibility.test.ts`,
+  `partialApprovalBatchModal.reuse.test.ts`) and extended queue-view, wiring, quotation-actions, print-model, cancellation-helper and
+  tour tests. **Not verified in a browser** (no UI tooling in the session): manual checks in
+  `docs/PO_GROUP_CANCELLATION_TEST_SCRIPT_v2.249.0.md` §3.3, §3.4-bis and §3.5.
 
 ## [v2.249.1] - 2026-10-28 — Buyer Workspace: quotation entry after a partial submission / for released items; item action menu
 

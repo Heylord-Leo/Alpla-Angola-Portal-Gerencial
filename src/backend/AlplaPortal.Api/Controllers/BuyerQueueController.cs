@@ -211,9 +211,12 @@ public class BuyerQueueController : BaseController
         // (WAITING_PO_CORRECTION), because its Request scalar aggregates to PO_PARTIALLY_UPLOADED /
         // WAITING_PO_CORRECTION (outside the quotation-active set) yet the Buyer has actionable work.
         // Strictly WAITING_PO_CORRECTION — no other post-approval PO status is admitted.
+        // v2.249.2 — ONE shared admission bound (BuyerQueueAdmission): buyer-active scalar, a Finance-returned group, or a
+        // batch-model request with a line RELEASED to quotation (QUOTATION_PENDING) while the scalar is already past the
+        // P.O. gate because a sibling group was issued (REQ-28/10/2026-628). Dashboard, personal actions, alerts and the
+        // pipeline apply the same rule, so the released line is discoverable everywhere the Buyer looks for work.
         if (!includeCompleted)
-            q = q.Where(r => BuyerActiveRequestStatusCodes.Contains(r.Status.Code)
-                || r.PoGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection));
+            q = q.Where(BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWorkOrPoCorrection);
 
         var requests = await q
             .Include(r => r.RequestType)
@@ -228,6 +231,7 @@ public class BuyerQueueController : BaseController
             .Include(r => r.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
             .Include(r => r.PoGroups)
             .Include(r => r.Quotations).ThenInclude(qq => qq.Items)
+            .Include(r => r.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(r => r.Attachments)
             .AsSplitQuery()
             .AsNoTracking()
@@ -245,12 +249,6 @@ public class BuyerQueueController : BaseController
         return rows;
     }
 
-    private static readonly string[] BuyerActiveRequestStatusCodes =
-    {
-        RequestConstants.Statuses.Draft, RequestConstants.Statuses.WaitingQuotation,
-        RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.AreaAdjustment,
-        RequestConstants.Statuses.WaitingFinalApproval, RequestConstants.Statuses.FinalAdjustment,
-    };
 
     private static Proj.BuyerQueueProjection Project(Request r, Guid currentUserId, DateTime today)
         // Entity→input mapping lives in the shared Domain factory (BuyerQueueProjectionInputFactory) so
@@ -348,7 +346,11 @@ public class BuyerQueueController : BaseController
                     PoGroupId = g.Id,
                     SupplierId = g.SupplierId,
                     SupplierName = g.SupplierNameSnapshot,
-                    PurchaseOrderNumber = g.PurchaseOrderNumber
+                    PurchaseOrderNumber = g.PurchaseOrderNumber,
+                    // v2.249.2 — the STORED return kind (null = legacy, unclassified) so the row can tell
+                    // "corrigir" from "cancelamento solicitado" without inferring anything from reason text.
+                    ReturnKind = g.LastFinanceReturnKind,
+                    ReturnKindLabel = PoGroupCancellationConstants.FinanceReturnKinds.Label(g.LastFinanceReturnKind),
                 }).ToList(),
             HasNotes = note != null && note.Count > 0,
             NoteCount = note?.Count ?? 0,

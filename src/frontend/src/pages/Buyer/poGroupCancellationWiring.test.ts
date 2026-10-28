@@ -40,7 +40,11 @@ describe('Buyer Workspace — "Grupos P.O." tab + header "Cancelar P.O."', () =>
         expect(workspaceSrc).toMatch(/lastFinanceReturnLabel\(g\.lastFinanceReturn\)/);
         expect(workspaceSrc).toMatch(/c\.actions\.canUpdateDeclaration &&/);
         expect(workspaceSrc).toMatch(/c\.actions\.canResendNotification &&/);
-        expect(workspaceSrc).toMatch(/buildPoCorrectionDeepLink\(ws\.requestId, g\.id\)/);
+        // v2.249.2 — registration and correction both run on the request page (per-group REGISTRAR / CORRIGIR actions);
+        // no detour through the Para Minha Ação list any more.
+        expect(workspaceSrc).not.toMatch(/buildPoCorrectionDeepLink/);
+        expect(workspaceSrc).toMatch(/onRegister=\{\(\) => navigate\(`\/requests\/\$\{ws\.requestId\}`/);
+        expect(workspaceSrc).toMatch(/onCorrect=\{\(\) => navigate\(`\/requests\/\$\{ws\.requestId\}`/);
         // Declaration vs Finance confirmation are separate blocks with the approved headings.
         expect(workspaceSrc).toContain('Declaração do comprador sobre a ECF');
         expect(workspaceSrc).toContain('Confirmação de Finanças');
@@ -200,5 +204,40 @@ describe('Request page + history labels', () => {
         }
         expect(printModelSrc).toContain("PO_GROUP_CANCELLED: 'P.O. cancelada'");
         expect(financeHistorySrc).toContain("label: 'Anulação da ECF confirmada por Finanças'");
+    });
+});
+
+// v2.249.2 — Workspace "Grupos P.O." tab: first registration vs correction, kind-aware guidance, delivery refresh.
+describe('Workspace group cards — v2.249.2 (register vs correct, return-kind guidance, delivery refresh)', () => {
+    it('"Registrar P.O." is driven by canRegisterPo (WAITING_PO) and "Corrigir P.O." by canCorrectPo (WAITING_PO_CORRECTION) — separate flags', () => {
+        expect(workspaceSrc).toMatch(/\{g\.canRegisterPo && \(/);
+        expect(workspaceSrc).toMatch(/data-testid="group-register-po"/);
+        expect(workspaceSrc).toMatch(/<FileText size=\{12\} \/> Registrar P\.O\./);
+        expect(workspaceSrc).toMatch(/\{g\.canCorrectPo && \(/);
+        expect(workspaceSrc).toMatch(/<Edit2 size=\{12\} \/> Corrigir P\.O\./);
+    });
+    it('a blocked replacement P.O. disables "Registrar P.O." and shows the reason as readable text (not a transient message)', () => {
+        expect(workspaceSrc).toMatch(/disabled=\{busy \|\| !!priorBlock\} onClick=\{\(\) => !priorBlock && onRegister\(g\)\}/);
+        expect(workspaceSrc).toMatch(/data-testid="group-register-blocked"/);
+        expect(workspaceSrc).toContain('Registo da P.O. indisponível: {priorBlock}');
+    });
+    it('the Finance-return banner adds guidance from the STORED kind (financeReturnGuidance), only for live groups', () => {
+        expect(workspaceSrc).toMatch(/\{!cancelled && <div data-testid="finance-return-guidance"[^>]*>\{financeReturnGuidance\(g\.lastFinanceReturn\?\.kind\)\}<\/div>\}/);
+    });
+    it('the delivery list carries a read timestamp, the background-processing note and an "Atualizar estado" re-read that never re-sends', () => {
+        expect(workspaceSrc).toMatch(/data-testid="delivery-refresh"/);
+        expect(workspaceSrc).toContain('o envio é processado em segundo plano (≈ 10 s por ciclo); “Pendente” logo após o cancelamento é normal.');
+        expect(workspaceSrc).toMatch(/onClick=\{onRefresh\}[^>]*title="Voltar a ler o estado de entrega no servidor \(não reenvia e-mails\)"/);
+        expect(workspaceSrc).toMatch(/onRefresh=\{\(\) => void refreshAfterMutation\(\)\}/);
+        expect(workspaceSrc).toMatch(/readAt=\{wsReadAt\}/);
+        expect(workspaceSrc).toMatch(/setWs\(w\); setWsReadAt\(new Date\(\)\);/);
+    });
+    it('"Cotações & Documentos" flags quotations whose items need an explicit reuse authorization (nothing reused silently)', () => {
+        expect(workspaceSrc).toMatch(/data-testid="quotation-reuse-blocked"/);
+        expect(workspaceSrc).toContain('Reutilização requer autorização ({q.reuseBlockedItemCount})');
+        expect(workspaceSrc).toMatch(/data-testid="quotation-reuse-authorized"/);
+    });
+    it('Editar/Excluir visibility uses the SERVER quotation window (scalar OR item-level), not only the scalar mirror', () => {
+        expect(workspaceSrc).toMatch(/canManageWorkspaceQuotations\(ws\?\.requestStatusCode, user\?\.roles, ROLES\.BUYER, ws\?\.buyerId, user\?\.id, ws\?\.quotationWindowOpen\)/);
     });
 });

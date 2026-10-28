@@ -3,13 +3,15 @@ namespace AlplaPortal.Application.Interfaces.Purchasing;
 /// <summary>Eligibility reason codes for a quotation item as a batch/approval candidate.</summary>
 public static class QuotationItemEligibilityReasons
 {
-    public const string EligibleNormal = "ELIGIBLE_NORMAL";
-    public const string ReuseAuthorizationRequired = "REUSE_AUTHORIZATION_REQUIRED";
-    public const string ReuseAuthorized = "REUSE_AUTHORIZED";
+    // v2.249.2 — values are owned by the pure Domain rule (QuotationReuseEligibilityPolicy.Reasons); kept here as the
+    // API-facing names so controllers keep compiling unchanged.
+    public const string EligibleNormal = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.EligibleNormal;
+    public const string ReuseAuthorizationRequired = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.ReuseAuthorizationRequired;
+    public const string ReuseAuthorized = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.ReuseAuthorized;
     public const string QuotationDeleted = "QUOTATION_DELETED";
-    public const string ItemNotReconciled = "ITEM_NOT_RECONCILED";
-    public const string AuthorizationConsumed = "AUTHORIZATION_CONSUMED";
-    public const string AuthorizationRevoked = "AUTHORIZATION_REVOKED";
+    public const string ItemNotReconciled = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.ItemNotReconciled;
+    public const string AuthorizationConsumed = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.AuthorizationConsumed;
+    public const string AuthorizationRevoked = AlplaPortal.Domain.Services.QuotationReuseEligibilityPolicy.Reasons.AuthorizationRevoked;
 }
 
 /// <summary>Eligibility + provenance of one quotation item for selection in a NEW approval batch.</summary>

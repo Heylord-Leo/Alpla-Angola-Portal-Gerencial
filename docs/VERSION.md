@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.249.1
+v2.249.2
+
+## [v2.249.2] - 2026-10-28
+
+### Restart-quotation flow after a P.O.-group cancellation — reuse rule, quotation entry, return-kind guidance, group actions, delivery state
+
+PATCH, no migration (inverse navigation only; EF reports no pending model changes). The DEC-147 / D3 reuse rule becomes one pure
+Domain policy shared by the batch endpoint and the Buyer queue/Workspace coverage, so a released line with only historical
+candidates is "Pendente de cotação" and keeps the quotation entries; the QUOTATION/PROFORMA upload (actually implemented now),
+PUT/DELETE quotation and the queue admission honour the item-level window; Finance-return wording and navigation follow the
+stored return kind (queue, Workspace, Para Minha Ação, Finance row, request page, Print View); "Registrar P.O." vs "Corrigir P.O."
+are separate group actions and `PO_REGISTRATION_PENDING` replaces "Concluído para Compras" while a first P.O. is pending; the
+cancellation card re-reads the outbox delivery state on demand. See CHANGELOG.
 
 ## [v2.249.1] - 2026-10-28
 

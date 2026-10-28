@@ -106,7 +106,8 @@ describe('workspace wiring (source-level — no DOM runtime in this suite)', () 
         expect(hostSrc).toMatch(/openEditQuotation,\n\s+openReviseQuotation,/);
     });
     it('the tab shows Editar/Excluir only when the window+role allow, routes delete through the orchestration and refreshes the projection', () => {
-        expect(workspaceSrc).toMatch(/canManageWorkspaceQuotations\(ws\?\.requestStatusCode, user\?\.roles, ROLES\.BUYER, ws\?\.buyerId, user\?\.id\)/);
+        // v2.249.2 — the server window (scalar OR item-level) is passed as the last argument.
+        expect(workspaceSrc).toMatch(/canManageWorkspaceQuotations\(ws\?\.requestStatusCode, user\?\.roles, ROLES\.BUYER, ws\?\.buyerId, user\?\.id, ws\?\.quotationWindowOpen\)/);
         expect(workspaceSrc).toMatch(/wizardHost\.openEditQuotation\(ws\.requestId, q\.id\)/);
         expect(workspaceSrc).toMatch(/runDeleteQuotation\(/);
         expect(workspaceSrc).toMatch(/onSuccess: \(msg\) => afterMutation\(msg\)/);           // flash + refreshAfterMutation: coverage, counts, next actions
@@ -121,5 +122,23 @@ describe('workspace wiring (source-level — no DOM runtime in this suite)', () 
         expect(workspaceSrc).toMatch(/buildDeleteQuotationConfirmation\(deleteTarget\)/);
         expect(workspaceSrc).toMatch(/disabled=\{busy \|\| !st\.editable\} onClick=\{\(\) => onEdit\(q\)\}/); // §7: per-quotation server lock
         expect(workspaceSrc).toMatch(/disabled=\{busy \|\| !st\.deletable\} onClick=\{\(\) => onDelete\(q\)\}/);
+    });
+});
+
+// v2.249.2 — the server's quotation window (scalar OR item-level) replaces the scalar mirror when provided.
+describe('canManageWorkspaceQuotations — server quotationWindowOpen (v2.249.2)', () => {
+    const ME = 'u-samuel';
+    it('an open item-level window enables Editar/Excluir even when the scalar is past the P.O. gate', () => {
+        expect(canManageWorkspaceQuotations('PO_PARTIALLY_UPLOADED', ['Buyer'], 'Buyer', ME, ME, true)).toBe(true);
+        expect(canManageWorkspaceQuotations('PO_ISSUED', ['Buyer'], 'Buyer', ME, ME, true)).toBe(true);
+    });
+    it('a closed server window disables them even inside the scalar window; undefined keeps the scalar mirror', () => {
+        expect(canManageWorkspaceQuotations('WAITING_QUOTATION', ['Buyer'], 'Buyer', ME, ME, false)).toBe(false);
+        expect(canManageWorkspaceQuotations('WAITING_QUOTATION', ['Buyer'], 'Buyer', ME, ME, undefined)).toBe(true);
+        expect(canManageWorkspaceQuotations('PO_ISSUED', ['Buyer'], 'Buyer', ME, ME, null)).toBe(false);
+    });
+    it('the window never overrides role/ownership', () => {
+        expect(canManageWorkspaceQuotations('PO_PARTIALLY_UPLOADED', ['Buyer'], 'Buyer', 'u-other', ME, true)).toBe(false);
+        expect(canManageWorkspaceQuotations('PO_PARTIALLY_UPLOADED', ['Finance'], 'Buyer', ME, ME, true)).toBe(false);
     });
 });

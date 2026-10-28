@@ -1,8 +1,12 @@
 # Guião de testes manuais em TEST — v2.249.0 (cancelamento de grupo P.O. / devolução à cotação)
 
-> Versão alvo: **v2.249.1** (correção da v2.249.0 encontrada neste guião: ações de cotação após envio parcial + menu ⋮ do item),
-> build esperado **2.249.1+<sha do commit da v2.249.1>** (a confirmar após publicação; a v2.249.0 era 2.249.0+c40ebb3), ramo `Portal-Gerencial-rev1`.
-> O pedido **REQ-28/10/2026-628** já criado em TEST (linha 1 no Lote 1 em aprovação de área, linha 2 pendente) **é reaproveitado**: ver §2.2-bis.
+> Versão alvo: **v2.249.2** (correções da v2.249.1 encontradas neste guião após o cancelamento do grupo S1: item libertado
+> mostrado como “pronto para lote”, sem entrada de cotação, navegação da devolução, “Corrigir P.O.” antes do primeiro registo,
+> textos do tipo de devolução, estado de entrega dos e-mails), build esperado **2.249.2+<sha do commit da v2.249.2>**
+> (a confirmar após publicação; a v2.249.1 era 2.249.1+9de44f1, a v2.249.0 era 2.249.0+c40ebb3), ramo `Portal-Gerencial-rev1`.
+> O pedido **REQ-28/10/2026-628** já criado em TEST **é reaproveitado** no estado em que ficou (grupo S1 TREVOTECH cancelado — voltar a
+> cotar, confirmação de Finanças pendente; grupo S2 MULTIBIZ com P.O. emitida; nenhuma nova cotação): ver **§3.4-bis** e §3.5. Não
+> recriar nem “reparar” o pedido.
 > Preparado a partir do código implementado (ecrãs, rótulos, permissões) e de `docs/PO_GROUP_CANCELLATION.md`.
 > Executado manualmente pelo proprietário. O agente **não** acedeu a TEST/PROD, não executou workflows, não alterou dados.
 > **Nunca** usar REQ-27/09/2026-483 nem qualquer pedido operacional real. Só pedidos sintéticos com título a começar por **`TEST v2.249.0`**.
@@ -235,7 +239,12 @@ Evidência: captura do diálogo preenchido + mensagem de sucesso. `Resultado: __
    Cartão S2: **inalterado** (P.O. Emitida, Cancelar P.O. ativo).
 2. **Lotes & Aprovações**: Lote 1 continua **Aprovado**; linha laranja **“Itens libertados: #1”**; à direita **“Aprovado (histórico): 370 000,00 AOA · Ativo: 120 000,00 AOA · Libertado: 250 000,00 AOA”** (valores conforme as suas cotações).
 3. **Cotações & Documentos**: a cotação de S1 continua listada (histórico); o PDF da P.O. continua listado e **descarregável**, marcado **“Sem efeito”** com o motivo.
-4. **Itens & Cobertura**: linha 1 volta a **pendente de cotação**; linha 2 mantém-se coberta.
+4. **Itens & Cobertura**: linha 1 volta a **pendente de cotação**; linha 2 mantém-se coberta. *v2.249.2:* a linha 1 **não** pode
+   aparecer como “Pronto para lote” (a cotação antiga de S1 exige autorização de reutilização — D3); contadores **2 tratados? não: 1
+   tratado (aprovado) · 1 pendente · 0 prontos para lote**; cabeçalho **Cobertura Parcial** com **Importar Cotação** e **Inserir
+   Manualmente** visíveis e **sem** botão “Enviar itens para aprovação”; painel de detalhes: estado do pedido continua
+   `PO_PARTIALLY_UPLOADED` (o escalar não foi alterado). **Cotações & Documentos**: a cotação de S1 mostra **“Reutilização requer
+   autorização (1)”**.
 5. Cabeçalho: **Aprovado ativo** = 120 000,00 AOA; **Aprovado histórico** = 370 000,00 AOA (rasurado).
 6. **Pedidos → pedido A**: chip vermelho **“P.O. cancelada — S1 · ECF99 2026/9001”**; estado do pedido re-derivado (volta a refletir cotação pendente). Painel **Histórico do Pedido**: linhas **“P.O. cancelada”**, **“Itens devolvidos à cotação”**, **“Declaração do comprador sobre a ECF”**.
 7. Sino de notificações (canto superior): aviso **“P.O cancelada — itens voltam a cotação”**.
@@ -253,13 +262,68 @@ Na caixa do destinatário de teste devem existir (todos com o prefixo/banner de 
 
 Evidência: lista dos assuntos recebidos. `Resultado: ____`
 
+### 3.4-bis Retoma após o deploy da v2.249.2 (BUYER / FIN1) — verificações das correções no pedido **A**, sem alterar dados — 20 min
+
+Pré-condição: TEST com build **2.249.2+<sha>** (§1.1); o pedido A exatamente como ficou (S1 cancelado, confirmação pendente,
+S2 PO_ISSUED, sem nova cotação). Nada a recriar; **não** executar reparações.
+
+1. **[BUYER] Gestão de Cotações** (`/buyer/items`): o pedido A **aparece** na fila (estava escondido pelo filtro de admissão) com
+   estado **Cobertura Parcial**, “1/2 tratados · 1 pendente”, ação **Completar cotações**; CTA **Abrir Workspace**. Esperado: nenhuma
+   fila/cartão mostra “Pronto para Aprovação”.
+2. **[BUYER] Workspace do A** (`/buyer/requests/<id>`): cabeçalho **Cobertura Parcial**, “Próxima ação: Completar cotações”, botões
+   **Importar Cotação** / **Inserir Manualmente** visíveis; **sem** “Enviar itens para aprovação”. **Itens & Cobertura**: linha 1
+   **Pendente de cotação** (nunca “Pronto para lote”); linha 2 **Aprovado**; contadores 1 tratado · 1 pendente · 1 aprovado · 0 prontos.
+   **Cotações & Documentos**: cotação S1 com **“Reutilização requer autorização (1)”**; os botões Editar/Excluir dessa cotação **não**
+   aparecem (está submetida — Lote 1).
+3. **[BUYER]** Abrir o modal de envio **só se** existir um botão de envio (não deve existir). Se o abrir por outra via (ferramentas
+   clássicas → enviar para aprovação): **ITENS COM COTAÇÃO (0)**, linha 1 em “Itens restantes” com a nota **“1 cotação(ões)
+   anterior(es) exige(m) autorização de reutilização (ferramentas clássicas → Reutilizar cotação) ou registe uma nova cotação.”** e
+   o botão de submissão desativado — coerente com o cabeçalho (nada pronto). Fechar sem submeter.
+4. **[BUYER] Grupos P.O.**: cartão S1 (Cancelado) — lista de entrega com a linha **“Estado de entrega consultado às HH:MM:SS · o envio é
+   processado em segundo plano (≈ 10 s por ciclo); ‘Pendente’ logo após o cancelamento é normal.”** e o botão **Atualizar estado**;
+   os chips devem estar **Enviado** com data/hora (os e-mails foram recebidos). Clicar **Atualizar estado**: a hora atualiza, **nenhum**
+   e-mail novo é enviado, “reenvio(s)” **não** aumenta. Cartão S2 (P.O. Emitida): **sem** “Registrar P.O.” e **sem** “Corrigir P.O.”;
+   “Cancelar P.O.” conforme elegibilidade.
+5. **[BUYER] Pedidos → Para Minha Ação**: se existir um cartão de devolução para o pedido A (não deve — o grupo S1 já foi cancelado),
+   o seu CTA abre o Workspace (`/buyer/requests/<id>?tab=groups`). Verificação equivalente no pedido **B** (devolvido por FIN1 em §2.5,
+   ainda não cancelado): na fila, a linha do B mostra **“P.O. devolvida — cancelamento solicitado”** se FIN1 escolheu “Pedido cancelado —
+   não corrigir”, ou **“Correção de P.O.”** se escolheu “Corrigir P.O.”, chip “FORNECEDOR · cancelamento solicitado/corrigir”, CTA
+   **Gerir P.O. devolvida** / **Corrigir P.O.** → abre o Workspace, separador **Grupos P.O.** (não a página geral de Pedidos); menu ⋮
+   com **Abrir Workspace**. No cartão do grupo: linha de orientação por tipo (“Finanças pede o cancelamento desta P.O. — não a corrija…”
+   ou “Finanças pede a correção da P.O.…”); botão **Corrigir P.O.** (abre a página do pedido) e **Cancelar P.O.** ambos presentes.
+6. **[FIN1] Obrigações & Pagamentos** (pedido B, grupo devolvido): coluna “Próxima ação” = **“Devolvido — cancelamento solicitado (não
+   corrigir)”** ou **“Devolvido para correção da P.O.”** conforme o tipo escolhido; estado = “Devolvido para Compras”.
+7. **[BUYER] Página do pedido B → Imprimir / Vista de impressão**: “Próxima ação” = **“P.O devolvida por Finanças — cancelamento
+   solicitado: cancelar a P.O (voltar a cotar ou encerrar itens) ou, se discutível, corrigir”** (ou o texto de correção); no histórico,
+   o cabeçalho da linha é **“Devolvido por Finanças”** e o texto da linha indica o tipo.
+8. **[BUYER] Pedido D** (aprovado, grupo em **Aguardando P.O.**, §6.1): Workspace → cabeçalho **“P.O. a registar”** (não “Concluído para
+   Compras”), “Próxima ação: Registar a P.O. na página do pedido” (sem botão); **Grupos P.O.** → botão **Registrar P.O.** (abre a página
+   do pedido, secção P.O.) e **nenhum** “Corrigir P.O.”. Na página do pedido, **REGISTRAR P.O (fornecedor)** continua a ser o fluxo de
+   registo; **não** registar ainda a P.O. do pedido D se o §6.1 ainda não foi executado.
+
+9. **[BUYER] Dashboard (Visão Geral)**: secção do Comprador / “Minha Operação” — o pedido A conta **uma** vez (1 pedido
+   acionável, 1 item pendente, 0 prontos) e aparece **uma** ação “Adicionar/Completar cotação” para ele; se a data necessária já
+   passou, **um** alerta “Cotação vencida”; o clique leva à fila (Gestão de Cotações) onde “Abrir Workspace” abre o pedido.
+   **Pedidos → Para Minha Ação → Cotar itens** no pedido A: o botão **Cotar itens** abre diretamente o Workspace do pedido.
+10. **[BUYER] Cotações & Documentos / Documentos do pedido A**: tentar **remover** o documento (proforma/cotação) da cotação
+    antiga de S1 → recusado com **“Documento de cotação submetida”**; tentar **Editar/Excluir** essa cotação → não oferecido
+    (submetida). Depois de registar a nova cotação (§3.5), o documento **dela** pode ser removido e ela pode ser editada
+    enquanto não for enviada para aprovação.
+
+Evidência: `v2249-3.4bis-01.png` (fila), `-02.png` (cabeçalho + Itens), `-03.png` (Cotações com o aviso), `-04.png` (entrega +
+Atualizar estado), `-05.png` (pedido B na fila e cartão), `-06.png` (Obrigações), `-07.png` (impressão), `-08.png` (pedido D),
+`-09.png` (Dashboard / Para Minha Ação), `-10.png` (recusa de remoção do documento).
+
+`Resultado: ____`
+
 ### 3.5 Nova cotação, novo lote, novas aprovações com a confirmação pendente
 
 1. **[BUYER]** Workspace do A → **Inserir Manualmente**: fornecedor S1 (ou outro), linha 1, **230 000,00 AOA**. Se preferir reutilizar a cotação antiga: **Abrir ferramentas clássicas** → encontre a cotação de S1 → **Reutilizar cotação** → modal “Reutilizar cotação em novo lote” → **AUTORIZAR REUSO (1)** (autorização explícita exigida por D3). Qualquer das vias deve funcionar.
    *v2.249.1:* os botões **Importar Cotação** / **Inserir Manualmente** têm de estar visíveis mesmo que o estado do pedido no painel de detalhes já não seja `WAITING_QUOTATION` (grupo irmão S2 com P.O. emitida → estado escalar `PO_PARTIALLY_UPLOADED`); o cabeçalho mostra **Cobertura Parcial**. A cotação só pode ser mapeada à **linha 1** (libertada); a linha 2 (grupo S2 operacional) não é oferecida e, se forçada pela API, devolve 409 “Item já comprometido”.
+   *v2.249.2:* testar **Importar Cotação** com um PDF fictício (o upload do documento de cotação/proforma era recusado com “Upload Bloqueado” na v2.249.1 — agora é aceite) **e/ou** Inserir Manualmente. Depois de guardar, a linha 1 passa a **Cotado — pronto para lote** só com a **nova** cotação; a cotação antiga de S1 continua com “Reutilização requer autorização (1)” e **não** entra no lote sem autorização explícita. Com a nova cotação **não submetida**, em Cotações & Documentos aparecem **Editar/Excluir** para ela (janela por item); testar **Editar** (alterar o preço e guardar) — aceite; o escalar do pedido não muda. Se preferir a reutilização: ferramentas clássicas → **Reutilizar cotação** → **AUTORIZAR REUSO (1)** → o Workspace passa a mostrar “Reutilização autorizada (1)” e a linha 1 fica pronta com a cotação antiga.
 2. Enviar para aprovação (**Enviar itens para aprovação** → **Submeter para Aprovação**). Esperado: **Lote 2** criado só com a linha 1; o Lote 1 permanece Aprovado com “Itens libertados: #1”.
 3. **[Sair → AREA]** aprovar o Lote 2. **[Sair → FINAL]** aprovar o Lote 2. Esperado: aprovações **não** são bloqueadas pela confirmação pendente.
-4. **[Sair → BUYER]** **Grupos P.O.**: novo cartão S1 (Lote 2) em **Aguardando P.O.** com faixa vermelha **“Registo da nova P.O. bloqueado até Finanças confirmar a anulação da ECF anterior (ECF99 2026/9001). …”**. Página do pedido: a mesma faixa por baixo dos chips.
+4. **[Sair → BUYER]** **Grupos P.O.**: novo cartão S1 (Lote 2) em **Aguardando P.O.** com faixa vermelha **“Registo da nova P.O. bloqueado até Finanças confirmar a anulação da ECF anterior (ECF99 2026/9001). …”**. Página do pedido: a mesma faixa por baixo dos chips. *v2.249.2:* o cartão mostra **Registrar P.O.** **desativado** (título com o motivo) e a linha **“Registo da P.O. indisponível: Registo da nova P.O. bloqueado até…”**; **nenhum** “Corrigir P.O.” neste cartão; cabeçalho do Workspace **“P.O. a registar”**.
 5. Cabeçalho: **Aprovado ativo** = 350 000,00 AOA (120 000 + 230 000); **Aprovado histórico** = 600 000,00 AOA (370 000 + 230 000) — valores por moeda, nunca somados entre moedas.
 
 `Resultado: ____`

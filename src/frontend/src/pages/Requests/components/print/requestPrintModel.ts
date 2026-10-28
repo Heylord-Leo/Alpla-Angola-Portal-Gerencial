@@ -54,7 +54,9 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   APPROVE: 'Aprovação realizada',
   REJECT: 'Rejeição',
   REQUEST_ADJUSTMENT: 'Devolvido para reajuste',
-  FINANCE_RETURN_ADJUSTMENT: 'Devolvido por Finanças para correção',
+  // v2.249.2 — neutral heading: the row's own text carries the stored return kind ("Corrigir P.O." / "Cancelamento
+  // solicitado — não corrigir" / unclassified). Never assume correction or cancellation from the action code alone.
+  FINANCE_RETURN_ADJUSTMENT: 'Devolvido por Finanças',
   REGISTER_PO: 'P.O. registrada',
   REREGISTER_PO: 'P.O. corrigida e registrada',
   // Phase 1 P.O. cancellation / return to quotation (PoGroupCancellationConstants.HistoryActions)

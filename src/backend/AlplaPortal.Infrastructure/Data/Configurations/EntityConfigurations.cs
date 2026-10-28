@@ -712,8 +712,9 @@ public class QuotationReuseAuthorizationConfiguration : IEntityTypeConfiguration
         builder.Property(a => a.Reason).IsRequired().HasMaxLength(1000);
         builder.Property(a => a.RevocationReason).HasMaxLength(1000);
 
+        // v2.249.2 — inverse navigation Request.QuotationReuseAuthorizations (same FK/column; no schema change).
         builder.HasOne(a => a.Request)
-               .WithMany()
+               .WithMany(r => r.QuotationReuseAuthorizations)
                .HasForeignKey(a => a.RequestId)
                .OnDelete(DeleteBehavior.NoAction);
 

@@ -16,7 +16,7 @@ namespace AlplaPortal.Domain.Services;
 /// reusing it created a service→controller dependency, so it now lives here (correct layering).
 ///
 /// Requires the same includes as the queue hydration: LineItems(.LineItemStatus),
-/// ApprovalBatches.Items.Candidates, PoGroups, Quotations.Items, Attachments.
+/// ApprovalBatches.Items.Candidates, PoGroups, Quotations.Items, Attachments and (v2.249.2) QuotationReuseAuthorizations.
 /// </summary>
 public static class BuyerQueueProjectionInputFactory
 {
@@ -40,9 +40,12 @@ public static class BuyerQueueProjectionInputFactory
                 bi.Candidates.Select(c => c.QuotationItemId).ToList(),
                 bi.ReleasedAtUtc.HasValue)).ToList())).ToList();
 
+        // v2.249.2 — the SAME reuse rule the batch endpoint enforces (QuotationReuseEligibilityPolicy): candidates/winners of
+        // a released or cancelled batch item without an active authorization are not selectable → their line stays pending.
+        var reuseBlocked = QuotationReuseEligibilityPolicy.ReuseBlockedQuotationItemIds(r);
         var quotationItems = r.Quotations
             .SelectMany(qq => qq.Items)
-            .Select(qi => new Proj.QuotationItemInput(qi.Id, qi.MappedRequestLineItemId, qi.ReconciliationStatus))
+            .Select(qi => new Proj.QuotationItemInput(qi.Id, qi.MappedRequestLineItemId, qi.ReconciliationStatus, reuseBlocked.Contains(qi.Id)))
             .ToList();
 
         var hasProformaOrQuotation = r.Attachments.Any(a =>
@@ -50,7 +53,11 @@ public static class BuyerQueueProjectionInputFactory
              || a.AttachmentTypeCode == AttachmentConstants.Types.Quotation) && !a.IsDeleted);
 
         // v2.242.0 — any PO group returned by Finance for correction.
-        var hasPoCorrection = poGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection);
+        var correctionGroups = poGroups.Where(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection).ToList();
+        var hasPoCorrection = correctionGroups.Count > 0;
+        // v2.249.2 — stored return kinds (null = legacy) and the first-registration pending flag.
+        var poCorrectionReturnKinds = correctionGroups.Select(g => g.LastFinanceReturnKind).ToList();
+        var hasPoRegistrationPending = poGroups.Any(g => g.Status == RequestConstants.PoGroupStatuses.WaitingPo);
 
         return new Proj.RequestInput(
             r.Id, r.RequestNumber ?? string.Empty, r.Title,
@@ -58,6 +65,6 @@ public static class BuyerQueueProjectionInputFactory
             r.BuyerId, r.NeedLevel?.Code, r.NeedByDateUtc, r.CreatedAtUtc,
             r.SupplierId.HasValue, hasProformaOrQuotation,
             items, batches, quotationItems, supersededIds,
-            hasPoCorrection);
+            hasPoCorrection, poCorrectionReturnKinds, hasPoRegistrationPending);
     }
 }

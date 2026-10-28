@@ -120,7 +120,8 @@ describe('buildRequestPrintModel (§27)', () => {
   // ── Phase 2 §18: human-readable labels ──
   it('A: known history action maps to a PT label', () => {
     expect(humanizeActionLabel('SUBMIT')).toBe('Pedido submetido');
-    expect(humanizeActionLabel('FINANCE_RETURN_ADJUSTMENT')).toBe('Devolvido por Finanças para correção');
+    // v2.249.2 — neutral heading; the row text carries the stored return kind.
+    expect(humanizeActionLabel('FINANCE_RETURN_ADJUSTMENT')).toBe('Devolvido por Finanças');
     expect(humanizeActionLabel('REREGISTER_PO')).toBe('P.O. corrigida e registrada');
   });
   it('B: unknown action is preserved safely (normalized, never hidden)', () => {

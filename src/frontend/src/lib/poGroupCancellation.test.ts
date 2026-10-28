@@ -184,3 +184,21 @@ describe('deliveryChip / resend attention', () => {
         expect(resendNeedsAttention(null)).toBe(false);
     });
 });
+
+// v2.249.2 — Buyer guidance by the STORED return kind (legacy null → neutral; nothing inferred from reason text).
+import { financeReturnGuidance, FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED } from './poGroupCancellation';
+describe('financeReturnGuidance (v2.249.2)', () => {
+    it('names the correction for PO_CORRECTION and the cancellation advisory for ORDER_CANCELLATION_REQUESTED, keeping both outcomes available', () => {
+        expect(financeReturnGuidance('PO_CORRECTION')).toContain('Corrigir P.O.');
+        expect(financeReturnGuidance('PO_CORRECTION')).toContain('pode cancelá-la');
+        expect(financeReturnGuidance('ORDER_CANCELLATION_REQUESTED')).toContain('não a corrija');
+        expect(financeReturnGuidance('ORDER_CANCELLATION_REQUESTED')).toContain('Cancelar P.O.');
+        expect(financeReturnGuidance('ORDER_CANCELLATION_REQUESTED')).toContain('A correção continua disponível');
+    });
+    it('legacy / unknown kinds stay neutral', () => {
+        expect(financeReturnGuidance(null)).toBe(FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED);
+        expect(financeReturnGuidance(undefined)).toBe(FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED);
+        expect(financeReturnGuidance('SOMETHING_ELSE')).toBe(FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED);
+        expect(FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED).not.toMatch(/cancelamento solicitado|Corrigir P\.O\. e volte/);
+    });
+});

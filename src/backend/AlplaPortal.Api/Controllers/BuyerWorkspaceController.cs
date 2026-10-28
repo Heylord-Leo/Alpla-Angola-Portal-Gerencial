@@ -60,6 +60,7 @@ public class BuyerWorkspaceController : BaseController
             .Include(x => x.PoGroups).ThenInclude(g => g.Cancellation)
             .Include(x => x.Quotations).ThenInclude(q => q.Items)
             .Include(x => x.Quotations).ThenInclude(q => q.Supplier)
+            .Include(x => x.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(x => x.Attachments)
             .AsSplitQuery()
             .AsNoTracking()
@@ -173,6 +174,9 @@ public class BuyerWorkspaceController : BaseController
                 CancelledDeleted = Bkt(BuyerQueueConstants.CoverageBuckets.CancelledDeleted),
             },
             Items = BuildItems(r, buckets, ActorCanCloseNotQuoted(r)),
+            QuotationWindowOpen = QuotationWindow(r).IsOpen,
+            QuotationWindowClosedReasonCode = QuotationWindow(r).ClosedReasonCode,
+            OpenLineItemIds = QuotationWindow(r).OpenLineItemIds,
             Quotations = BuildQuotations(r),
             Batches = BuildBatches(r, supersededIds, adjustmentsByBatch),
             Suppliers = await BuildSuppliersAsync(r),
@@ -255,6 +259,11 @@ public class BuyerWorkspaceController : BaseController
     private static List<BuyerWorkspaceQuotationDto> BuildQuotations(Request r)
     {
         var locks = AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateLoaded(r);
+        // v2.249.2 — reuse verdicts per quotation item (DEC-147 / D3), the same pure rule the batch endpoint applies.
+        var finishedUses = QuotationReuseEligibilityPolicy.FinishedUsesFromLoaded(r.ApprovalBatches);
+        var authFacts = r.QuotationReuseAuthorizations.Select(QuotationReuseEligibilityPolicy.AuthorizationFacts.From).ToList();
+        QuotationReuseEligibilityPolicy.Verdict Reuse(QuotationItem qi) =>
+            QuotationReuseEligibilityPolicy.Resolve(qi.Id, qi.ReconciliationStatus, finishedUses, authFacts);
         return r.Quotations
             .OrderByDescending(q => q.CreatedAtUtc)
             .Select(q => new BuyerWorkspaceQuotationDto
@@ -272,8 +281,30 @@ public class BuyerWorkspaceController : BaseController
                 IsSubmittedForApproval = locks.TryGetValue(q.Id, out var lk) && lk.IsSubmitted,
                 SubmittedBatchNumber = locks.TryGetValue(q.Id, out var lk2) ? lk2.BatchNumber : null,
                 SubmissionLockReason = locks.TryGetValue(q.Id, out var lk3) ? lk3.Reason : null,
+                ReuseBlockedItemCount = finishedUses.Count == 0 ? 0 : q.Items.Count(qi => Reuse(qi).IsReuseBlocked),
+                ReuseAuthorizedItemCount = finishedUses.Count == 0 ? 0 : q.Items.Count(qi => Reuse(qi).IsReuseAuthorized),
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// v2.249.2 — the quotation window as the write endpoints see it: the request scalar window
+    /// (RequestWorkflowHelper.CanMutateQuotation) OR the item-level window (QuotationWindowPolicy: released / never-quoted
+    /// lines not held by an active/approved batch, batch-model requests only). Pure over the loaded aggregate.
+    /// </summary>
+    private static (bool IsOpen, string? ClosedReasonCode, List<Guid> OpenLineItemIds) QuotationWindow(Request r)
+    {
+        var window = QuotationWindowPolicy.EvaluateLoaded(r);
+        if (window.IsOpen) return (true, null, window.OpenLineItemIds.ToList());
+        if (RequestWorkflowHelper.CanMutateQuotation(r.Status.Code))
+        {
+            var held = QuotationWindowPolicy.HeldLineItemIds(r.ApprovalBatches);
+            var open = r.LineItems
+                .Where(li => QuotationWindowPolicy.IsLineOpen(li.QuotationLifecycleStatus, li.IsDeleted, held.Contains(li.Id)))
+                .Select(li => li.Id).ToList();
+            return (true, null, open);
+        }
+        return (false, window.ClosedReasonCode, new List<Guid>());
     }
 
     private static List<BuyerWorkspaceBatchDto> BuildBatches(
@@ -344,7 +375,10 @@ public class BuyerWorkspaceController : BaseController
                 PaymentConditionCode = g.PaymentConditionCode, PlantId = g.PlantId, CreatedAtUtc = g.CreatedAtUtc,
                 RowVersion = Convert.ToBase64String(g.RowVersion ?? Array.Empty<byte>()), PoResponsibleBuyerId = g.PoResponsibleBuyerId,
                 LineNumbers = r.LineItems.Where(li => !li.IsDeleted && li.RequestPoGroupId == g.Id).Select(li => li.LineNumber).OrderBy(ln => ln).ToList(),
-                CanCorrectPo = isOwnerOrAdmin && (g.Status == RequestConstants.PoGroupStatuses.WaitingPo || g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection),
+                // v2.249.2 — "Registrar P.O." (first registration, WAITING_PO) and "Corrigir P.O." (Finance return,
+                // WAITING_PO_CORRECTION) are different actions with different flows; WAITING_PO no longer offers the correction tool.
+                CanRegisterPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPo,
+                CanCorrectPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection,
             };
             if (_cancellation != null)
             {

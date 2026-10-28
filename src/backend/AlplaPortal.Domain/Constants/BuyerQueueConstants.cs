@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 namespace AlplaPortal.Domain.Constants;
 
 /// <summary>
@@ -24,8 +28,27 @@ public static class BuyerQueueConstants
         // correct and re-register the P.O. Post-approval, group-derived — NOT part of the quotation
         // phase and NEVER HiddenByDefault.
         public const string PoCorrection = "PO_CORRECTION";
+        // v2.249.2 — a QUOTATION request whose quotation phase is over but which still has a P.O. group in
+        // WAITING_PO (first registration pending). Truthful Workspace label instead of "Concluído para Compras";
+        // informational (the registration itself lives on the request page / Para Minha Ação) and hidden by
+        // default in the quotation queue exactly like COMPLETED_FOR_BUYER, so no queue/alert/workload drift.
+        public const string PoRegistrationPending = "PO_REGISTRATION_PENDING";
         public const string CompletedForBuyer = "COMPLETED_FOR_BUYER";
         public const string NoBuyerAction = "NO_BUYER_ACTION";
+
+        /// <summary>v2.249.2 — PO_CORRECTION label by the stored Finance return kinds of the returned groups
+        /// (RequestPoGroup.LastFinanceReturnKind; null = legacy, never inferred). Correction-only keeps the
+        /// historical "Correção de P.O."; cancellation-requested names the advisory; legacy stays neutral.</summary>
+        public static string PoCorrectionLabel(IEnumerable<string?>? returnKinds)
+        {
+            var kinds = (returnKinds ?? Array.Empty<string?>()).ToList();
+            var anyCorrection = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection);
+            var anyCancellation = kinds.Any(k => k == PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested);
+            if (anyCorrection && !anyCancellation) return "Correção de P.O.";
+            if (anyCancellation && !anyCorrection) return "P.O. devolvida — cancelamento solicitado";
+            if (anyCorrection && anyCancellation) return "P.O. devolvidas por Finanças";
+            return "P.O. devolvida por Finanças";
+        }
 
         public static string Label(string code) => code switch
         {
@@ -36,13 +59,14 @@ public static class BuyerQueueConstants
             AdjustmentRequired => "Ajuste Solicitado",
             AwaitingRequesterDecision => "Aguardando Decisão",
             PoCorrection => "Correção de P.O.",
+            PoRegistrationPending => "P.O. a registar",
             CompletedForBuyer => "Concluído para Compras",
             NoBuyerAction => "Sem Ação do Comprador",
             _ => code
         };
 
         /// <summary>States hidden from the default active queue (still queryable via includeCompleted).</summary>
-        public static readonly string[] HiddenByDefault = { CompletedForBuyer, NoBuyerAction };
+        public static readonly string[] HiddenByDefault = { CompletedForBuyer, NoBuyerAction, PoRegistrationPending };
     }
 
     /// <summary>Server-derived next Buyer action codes.</summary>
@@ -52,6 +76,8 @@ public static class BuyerQueueConstants
         public const string SubmitBatch = "SUBMIT_BATCH";
         public const string ResolveAdjustment = "RESOLVE_ADJUSTMENT";
         public const string CorrectPo = "CORRECT_PO";
+        /// <summary>v2.249.2 — informational pointer to the first P.O. registration (request page); never actionable here.</summary>
+        public const string RegisterPo = "REGISTER_PO";
         /// <summary>Phase 1 P.O. cancellation: cancel the returned group instead of correcting it.</summary>
         public const string CancelPoGroup = "CANCEL_PO_GROUP";
         public const string None = "NONE";

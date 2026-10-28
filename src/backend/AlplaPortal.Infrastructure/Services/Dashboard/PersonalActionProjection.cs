@@ -39,14 +39,6 @@ public sealed class PersonalActionProjection
 
     public PersonalActionProjection(ApplicationDbContext context) => _context = context;
 
-    // Mirrors the Buyer queue / Dashboard Buyer section hydration bound — status list only, never logic.
-    private static readonly string[] BuyerActiveRequestStatusCodes =
-    {
-        RequestConstants.Statuses.Draft, RequestConstants.Statuses.WaitingQuotation,
-        RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.AreaAdjustment,
-        RequestConstants.Statuses.WaitingFinalApproval, RequestConstants.Statuses.FinalAdjustment,
-    };
-
     // Canonical Area-approval statuses (mirror GetPendingApprovals).
     private static readonly string[] AreaApprovalStatusCodes =
     {
@@ -100,9 +92,8 @@ public sealed class PersonalActionProjection
         IQueryable<Request> scoped, Guid userId, DateTime today)
     {
         var requests = await scoped
-            .Where(r => r.RequestType!.Code == RequestConstants.Types.Quotation
-                        && r.BuyerId == userId
-                        && BuyerActiveRequestStatusCodes.Contains(r.Status!.Code))
+            .Where(r => r.RequestType!.Code == RequestConstants.Types.Quotation && r.BuyerId == userId)
+            .Where(BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWork) // v2.249.2 — shared bound (released lines admitted)
             .Include(r => r.RequestType)
             .Include(r => r.Status)
             .Include(r => r.NeedLevel)
@@ -111,6 +102,7 @@ public sealed class PersonalActionProjection
             .Include(r => r.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
             .Include(r => r.PoGroups)
             .Include(r => r.Quotations).ThenInclude(qq => qq.Items)
+            .Include(r => r.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(r => r.Attachments)
             .AsSplitQuery()
             .AsNoTracking()

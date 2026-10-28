@@ -37,7 +37,8 @@ public class BuyerQueueProjectionBuilderTests
         DateTime? needBy = null,
         bool requestHasSupplier = false,
         bool hasProforma = false,
-        bool hasPoCorrection = false)
+        bool hasPoCorrection = false,
+        IReadOnlyList<string?>? poCorrectionReturnKinds = null)
         => new(
             Guid.NewGuid(), "REQ-001", "Test", type, status, isCancelled,
             buyerId, needLevel, needBy, Today.AddDays(-10),
@@ -46,14 +47,15 @@ public class BuyerQueueProjectionBuilderTests
             (batches ?? Array.Empty<Proj.BatchInput>()).ToList(),
             (quotationItems ?? Array.Empty<Proj.QuotationItemInput>()).ToList(),
             (superseded ?? Array.Empty<Guid>()).ToList(),
-            hasPoCorrection);
+            hasPoCorrection, poCorrectionReturnKinds);
 
     [Fact]
     public void PoCorrection_wins_over_pastBuyerPhase_and_is_attention()
     {
         // Request scalar past the quotation phase (would normally be CompletedForBuyer) but a PO group
         // was returned by Finance → PO_CORRECTION, actionable, attention.
-        var p = Proj.Build(Req(status: "PO_PARTIALLY_UPLOADED", hasPoCorrection: true), Me, Today);
+        // v2.249.2 — the label follows the STORED return kind; "Correção de P.O." is the correction kind's wording.
+        var p = Proj.Build(Req(status: "PO_PARTIALLY_UPLOADED", hasPoCorrection: true, poCorrectionReturnKinds: new string?[] { "PO_CORRECTION" }), Me, Today);
         Assert.Equal(S.OperationalStates.PoCorrection, p.OperationalState);
         Assert.Equal("Correção de P.O.", p.OperationalStateLabel);
         Assert.True(p.RequiresAttention);

@@ -23,7 +23,9 @@ import {
   OWNERSHIP_TABS, DEFAULT_OWNERSHIP, countAdvancedFilters, resolveNoteTooltip,
   operationalStateColor, deadlineChip, NEED_LEVEL_LABEL, coverageProgress, pctOfTotal,
   resolvePlantOnCompanyChange, resolveNeedLevel, needLevelApiValue, NEED_LEVEL_ALL, isOwnRequest,
-  buildPoCorrectionDeepLink,
+  resolvePoCorrectionNavigation,
+  poCorrectionCtaLabel,
+  poCorrectionGroupChipLabel,
 } from './buyerQueueView';
 import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
@@ -387,7 +389,9 @@ export function BuyerQueueList() {
             assignDecision={resolveQueueAssignAction(item, user, ASSIGN_ROLE_NAMES)}
             onTakeOver={() => setTakeOverItem(item)}
             onOpenWorkspace={() => navigate(`/buyer/requests/${item.requestId}`, { state: { from: location.pathname + location.search } })}
-            onCorrectPo={() => navigate(buildPoCorrectionDeepLink(item.requestId, item.poCorrectionGroups?.[0]?.poGroupId))}
+            // v2.249.2 — QUOTATION: the Workspace "Grupos P.O." tab (correction and cancellation, with the stored return kind);
+            // PAYMENT: the Para Minha Ação correction deep-link, as before. The Workspace stays reachable from the kebab too.
+            onCorrectPo={() => { const nav = resolvePoCorrectionNavigation(item); navigate(nav.to, nav.kind === 'WORKSPACE_GROUPS' ? { state: { from: location.pathname + location.search } } : undefined); }}
           />
         ))}
       </div>
@@ -470,6 +474,8 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
 
   const kebab = buildRequestRowKebab([
     { label: 'Ver detalhes', icon: <Eye size={15} />, onClick: onDetails },
+    // v2.249.2 — a Finance-returned QUOTATION row keeps a plain Workspace entry independent of the primary action.
+    ...(isPoCorrection && (!item.requestTypeCode || item.requestTypeCode === 'QUOTATION') ? [{ label: 'Abrir Workspace', icon: <ArrowRight size={15} />, onClick: onOpenWorkspace }] : []),
     { label: 'Adicionar observação', icon: <MessageSquarePlus size={15} />, onClick: onNote },
     ...(item.canCancel ? [{ label: 'Cancelar pedido', icon: <XCircle size={15} />, onClick: onCancel }] : []),
   ], assignDecision, { onClaim, onTakeOver }, <UserPlus size={15} />);   // §8: claim / takeover with the shared policy; KebabMenu closes before the dialog opens
@@ -556,8 +562,8 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
         {isPoCorrection && (item.poCorrectionGroups?.length ?? 0) > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {item.poCorrectionGroups!.map(g => (
-              <span key={g.poGroupId} title={g.purchaseOrderNumber ?? undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-status-red) 12%, transparent)', color: 'var(--color-status-red)', fontWeight: 700, fontSize: '0.68rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {g.supplierName || 'Fornecedor'}
+              <span key={g.poGroupId} title={[g.purchaseOrderNumber, g.returnKindLabel].filter(Boolean).join(' · ') || undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-status-red) 12%, transparent)', color: 'var(--color-status-red)', fontWeight: 700, fontSize: '0.68rem', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {poCorrectionGroupChipLabel(g)}
               </span>
             ))}
           </div>
@@ -582,7 +588,7 @@ function RequestRow({ item, busy, isOwn, onDetails, onNote, onCancel, onClaim, o
       {/* AÇÕES */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
         {isPoCorrection ? (
-          <button onClick={onCorrectPo} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}>Corrigir P.O. <ArrowRight size={15} /></button>
+          <button onClick={onCorrectPo} style={{ ...primaryBtn, minWidth: 156, justifyContent: 'center' }}>{poCorrectionCtaLabel(item)} <ArrowRight size={15} /></button>
         ) : unassigned && item.canClaim ? (
           <button onClick={onClaim} disabled={busy} style={{ ...primaryBtn, width: 156, justifyContent: 'center' }}><UserPlus size={15} /> Atribuir a Mim</button>
         ) : (
