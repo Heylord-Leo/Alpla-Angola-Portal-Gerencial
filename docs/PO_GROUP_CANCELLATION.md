@@ -79,8 +79,10 @@ P.O. document or the history.
    `ocr-extract` then rely on the **item-level window** (`QuotationWindowPolicy`: released or never-quoted lines not held by an
    active/approved batch) — lines of other groups/batches are refused per line (409 "Item já comprometido"). The same rule keeps
    "Importar Cotação" / "Inserir Manualmente" visible after a partial batch submission.
-   *v2.249.2 (correction of the v2.249.1 note):* the QUOTATION/PROFORMA document **upload and delete** were NOT changed in
-   v2.249.1; they now honour the item-level window (`AttachmentsController.QuotationDocumentWindowOpenAsync`), as do
+   *v2.249.2 / v2.249.3 (corrections of the v2.249.1 note):* the QUOTATION/PROFORMA document **upload and delete** (v2.249.2)
+   and **`ocr-extract`** (v2.249.3, now Buyer/SysAdmin only, reconciliation suggestions among the open lines only) were NOT
+   changed in v2.249.1; they now honour the item-level window (`AttachmentsController.QuotationDocumentWindowOpenAsync`,
+   `QuotationWindowEvaluator`), as do
    `PUT/DELETE …/quotations/{id}` (PUT refuses per line a mapping onto a held line; the §7 submission lock is unchanged). The
    Workspace exposes the server's window (`quotationWindowOpen`, `openLineItemIds`) and the quotation queue, the Dashboard
    Buyer section/workload, the personal actions, the alerts and the pipeline admit a batch-model request with a

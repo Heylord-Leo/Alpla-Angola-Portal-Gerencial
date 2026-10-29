@@ -1,3 +1,4 @@
+import type { WizardOcrError } from './wizardOcrError';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronRight, ChevronLeft, Save, AlertCircle, ShieldAlert } from 'lucide-react';
@@ -45,6 +46,10 @@ interface QuotationWizardModalProps {
     onReconcilePreview: (draft: any) => Promise<QuotationReconciliationDto>;
     isProcessingOcr: boolean;
     onUploadFile: (file: File) => void;
+    /** v2.249.2 — inline failure of the document step (owned by the host); retry re-runs OCR without a duplicate upload. */
+    ocrError?: WizardOcrError | null;
+    onRetryOcr?: () => void;
+    onDismissOcrError?: () => void;
     onCancelWizard: () => Promise<void>;
     onReplaceDocument: (attachmentId: string) => Promise<boolean>;
     ivaRates: any[];
@@ -69,6 +74,9 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
     onReconcilePreview,
     isProcessingOcr,
     onUploadFile,
+    ocrError = null,
+    onRetryOcr,
+    onDismissOcrError,
     onCancelWizard,
     onReplaceDocument,
     ivaRates,
@@ -310,7 +318,10 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            onUploadFile(e.target.files[0]);
+            const file = e.target.files[0];
+            // v2.249.2 — reset the input so choosing the SAME file again after a failure fires onChange again.
+            e.target.value = '';
+            onUploadFile(file);
         }
     };
 
@@ -435,6 +446,9 @@ export const QuotationWizardModal: React.FC<QuotationWizardModalProps> = ({
                     <WizardStepDocumentsOcr
                         draft={draft}
                         isProcessingOcr={isProcessingOcr}
+                        ocrError={ocrError}
+                        onRetryOcr={onRetryOcr}
+                        onDismissOcrError={onDismissOcrError}
                         onUpload={handleFileChange}
                         onReplaceConfirm={handleReplaceConfirm}
                         wizardState={wizardState}

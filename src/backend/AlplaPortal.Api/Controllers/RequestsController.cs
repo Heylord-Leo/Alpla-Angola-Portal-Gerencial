@@ -3380,15 +3380,31 @@ public class RequestsController : BaseController
         
         if (request == null) return NotFound("Pedido não encontrado.");
 
-        // Rule: OCR extraction is only allowed during the quotation phase
+        // v2.249.2 — OCR extraction is Buyer work (classic Buyer tools and the Workspace wizard are its only callers); the
+        // same actors as the explicit reuse authorization. Scope is already enforced by GetScopedRequestsQuery above.
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem extrair cotações por OCR.", Status = 403 });
+
+        // Rule: OCR extraction is allowed in the quotation phase (request scalar window) OR — v2.249.2, the gate v2.249.1
+        // documented but did not implement — on the item-level window (QuotationWindowPolicy: released / never-quoted lines
+        // not held by an active/approved batch, batch-model requests only), e.g. a line released by a P.O.-group cancellation
+        // while a sibling group keeps the scalar past the P.O. gate. The scalar is never changed; a pending Finance
+        // confirmation never gates this (it gates the replacement P.O. only).
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? ocrItemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível realizar extração OCR neste status do pedido.", 
-                Status = 409 
-            });
+            var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(
+                _context, request.Id, null, request.Status!.Code, request.IsCancelled);
+            if (!window.IsOpen)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Não é possível realizar extração OCR neste status do pedido.",
+                    Status = 409
+                });
+            }
+            ocrItemWindow = window;
         }
 
         try
@@ -3455,9 +3471,14 @@ public class RequestsController : BaseController
 
             _context.OcrExtractedItems.AddRange(ocrItems);
 
-            // Generate reconciliation records against requester items
+            // Generate reconciliation records against requester items.
+            // v2.249.2 — never against a COMMITTED line (approved/bought or closed after approval) and, on the item-level
+            // window, only against the OPEN lines: the suggestions can only target lines a new quotation may actually map to
+            // (SaveQuotation refuses the rest), so a historical sibling line is never proposed, let alone overwritten.
             var requesterItems = request.LineItems
                 .Where(li => !li.IsDeleted)
+                .Where(li => !AlplaPortal.Domain.Services.QuotationWindowPolicy.IsCommittedLifecycle(li.QuotationLifecycleStatus))
+                .Where(li => ocrItemWindow == null || ocrItemWindow.IsLineOpen(li.Id))
                 .OrderBy(li => li.LineNumber)
                 .ToList();
 

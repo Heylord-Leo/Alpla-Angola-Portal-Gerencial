@@ -6,6 +6,7 @@ import { computeFileHash } from '../../../../lib/utils';
 import { useOcrProcessor } from '../../../../hooks/useOcrProcessor';
 import { useQuotationWizardState, QuotationWizardSource } from './useQuotationWizardState';
 import { createBuyerQuotationWizardController, WizardFeedback } from '../buyerQuotationWizardController';
+import type { WizardOcrError } from '../wizardOcrError';
 import { toWizardActiveRequest } from '../workspaceWizardRequest';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +55,9 @@ export function useWorkspaceWizardHost(opts: {
     const [isProcessingOcr, setIsProcessingOcr] = useState<Record<string, boolean>>({});
     const preAttemptSnapshotRef = useRef<AmbiguousSavePreAttemptSnapshot | 'unavailable' | null>(null);
     const [dupWarning, setDupWarning] = useState<WorkspaceDupWarning | null>(null);
+    // v2.249.2 — inline document-step failure + the document already uploaded in the current attempt (retry without duplicate).
+    const [ocrError, setOcrError] = useState<WizardOcrError | null>(null);
+    const pendingUploadRef = useRef<{ file: File; attachmentId: string } | null>(null);
 
     const controller = createBuyerQuotationWizardController({
         quotationWizardState,
@@ -67,6 +71,8 @@ export function useWorkspaceWizardHost(opts: {
         mapOcrResultToDraft,
         onSaved: opts.onSaved,
         onFeedback: opts.onFeedback,
+        setOcrError,
+        pendingUploadRef,
     });
 
     /**
@@ -152,5 +158,8 @@ export function useWorkspaceWizardHost(opts: {
         openReviseQuotation,
         onUploadFile,
         dupWarning, confirmDupUpload, dismissDup,
+        ocrError,
+        retryOcr: () => void controller.retryWizardUpload(),
+        dismissOcrError: controller.dismissOcrError,
     };
 }

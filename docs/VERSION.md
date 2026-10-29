@@ -2,7 +2,16 @@
 
 ## Current Version
 
-v2.249.2
+v2.249.3
+
+## [v2.249.3] - 2026-10-29
+
+### Import wizard: OCR extraction on the item-level quotation window; failures shown inside the wizard
+
+PATCH, no migration. `POST …/ocr-extract` now honours the item-level window (scalar window OR released/pending lines of a
+batch-model request), is Buyer/SysAdmin only, and suggests reconciliation targets among the OPEN lines only; the document
+step of the import wizard reports upload/OCR failures inline (business rule vs provider vs network), resets its loading
+state, builds no draft from a failed/empty extraction and retries OCR without uploading the document again. See CHANGELOG.
 
 ## [v2.249.2] - 2026-10-28
 

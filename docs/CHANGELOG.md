@@ -4,7 +4,51 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.2
+v2.249.3
+
+## [v2.249.3] - 2026-10-29 — Import wizard: OCR extraction on the item-level quotation window; failures shown inside the wizard
+
+PATCH, frontend + backend, **no migration, no configuration change**. Found during the manual TEST validation of v2.249.2 on
+REQ-28/10/2026-628: with "Importar Cotação" available, the OCR step answered `409 Ação Bloqueada — Não é possível realizar
+extração OCR neste status do pedido.` (log 25940, correlation d90703146a3b) and the only message appeared on the Workspace
+behind the wizard. This was a status-based refusal by the Portal, not a PDF or OCR-provider failure.
+
+- **Root cause 1 (confirmed): `POST /api/v1/requests/{id}/ocr-extract` still gated on the request scalar only.** The v2.249.1
+  note listed `ocr-extract` among the endpoints honouring the item-level window, but the committed code never changed (the
+  same inaccuracy already corrected for the upload in v2.249.2). The scalar of REQ-628 is PO_PARTIALLY_UPLOADED because the
+  MULTIBIZ group is PO_ISSUED, so `RequestWorkflowHelper.CanMutateQuotation` refused. Fix: scalar window OR
+  `QuotationWindowEvaluator` (released / never-quoted lines not held by an active/approved batch, batch-model requests only);
+  the scalar is never changed; the pending Finance confirmation never gates extraction (it gates the replacement P.O. only).
+  Added: the endpoint is now Buyer / SysAdmin only (its callers are the Buyer tools; scope was already enforced).
+  **Side effects reviewed:** extraction persists `OcrExtractedItems` + `ReconciliationRecords` + one history row and never
+  touches request lines, quotations or batches; the reconciliation suggestions are now generated against the OPEN lines only
+  (never a committed lifecycle, and on the item-level window only `OpenLineItemIds`), so a committed sibling line is never
+  proposed; `SaveQuotation` keeps refusing it anyway. A provider exception returns 500 `PORTAL_ERROR` with nothing persisted.
+  Remaining scalar-only gates in the import flow: none (`SaveQuotation`, `UpdateQuotation`, `DeleteQuotation`, upload/delete
+  of QUOTATION/PROFORMA documents and now `ocr-extract` all share the window; `reconcile-preview` and supplier matching have
+  no status gate).
+- **Root cause 2 (confirmed): the wizard reported the failure on the host page.** `startWizardUpload` caught every error and
+  called the host's `onFeedback` ("Erro ao processar documento via OCR."), invisible behind the modal, and a `200` envelope
+  with `success:false` built an empty draft. Fix: a pure classifier (`wizardOcrError.ts`) maps the failure of each stage
+  (UPLOAD / OCR) to BUSINESS (400/404/409/422 ProblemDetails — title/detail shown verbatim, not retryable), AUTH (401/403),
+  PROVIDER (5xx, `PORTAL_ERROR`, `success:false`; `OCR_MODULE_BLOCKED` not retryable) or NETWORK (no status); the document
+  step renders it inline (`role="alert"`, `aria-live="assertive"`, sticky at the top of the scroll area) with the guidance,
+  the file name and a sanitized technical line (stage · HTTP status · code · short correlation id), plus "Tentar novamente"
+  (retryable only) and "Escolher outro ficheiro"; the loading state always resets; no draft is created from a failed or empty
+  extraction; a retry with the same file re-runs OCR only — the document already uploaded in the attempt is reused
+  (`pendingUploadRef`), so no duplicate attachment or extraction record; the file input is reset so the same file can be
+  re-selected; the wizard never closes by itself; the classic Buyer list gets the same wiring. The API layer keeps logging
+  `API_REQUEST_FAILED` with status and correlation id.
+- **Partial state of the failed TEST attempt:** the wizard uploads the document (type QUOTATION) before calling OCR, so the
+  refused attempt left `Cotacao_TEST_MAQSIS_9003_REQ628.pdf` as an unlinked QUOTATION document on REQ-628 unless the wizard
+  was closed with "Cancelar" (which deletes the attempt's temporary documents). Nothing else was written (the 409 happened
+  before extraction). Resume: no reset; see the test script §3.4-bis item 11.
+- Tests: backend `OcrExtractWindowAndSideEffectsTests` (REQ-628 shape with PENDING confirmation → OK, suggestions only for the
+  released line, committed line / historical quotation / scalar / confirmation untouched; no window → 409; Finance/Requester
+  → 403; SysAdmin allowed; provider exception → 500 PORTAL_ERROR with no partial state; `success:false` envelope → no
+  suggestions). Frontend `wizardOcrError.test.ts` (classification, retryability, no stack traces) and `wizardOcrInline.test.ts`
+  (controller behaviour with a mocked API: 409 inline + loading reset + no draft + no host banner; retry without re-upload;
+  `success:false`; refused upload; new file after a failure; wiring guards). **Not verified in a browser.**
 
 ## [v2.249.2] - 2026-10-28 — Restart-quotation flow after a P.O.-group cancellation: reuse rule in the coverage projection, quotation entry, return-kind guidance, group actions, delivery state
 

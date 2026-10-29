@@ -2,6 +2,7 @@ import React from 'react';
 import { Trash2, AlertCircle, CheckCircle2, AlertTriangle, Hash, Calendar, Info } from 'lucide-react';
 import { OcrDraft, OcrDraftItem, RequestDetailsDto } from '../../../types';
 import { useQuotationWizardState } from './hooks/useQuotationWizardState';
+import { ocrErrorTechnicalLine, type WizardOcrError } from './wizardOcrError';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
@@ -76,6 +77,10 @@ interface WizardStepDocumentsOcrProps {
     draft: OcrDraft | null;
     isProcessingOcr: boolean;
     onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    /** v2.249.2 — failure of the current upload/OCR attempt, shown inline in this step. */
+    ocrError?: WizardOcrError | null;
+    onRetryOcr?: () => void;
+    onDismissOcrError?: () => void;
     onReplaceConfirm: () => void;
     wizardState: ReturnType<typeof useQuotationWizardState>;
     ivaRates: any[];
@@ -89,6 +94,9 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
     draft,
     isProcessingOcr,
     onUpload,
+    ocrError = null,
+    onRetryOcr,
+    onDismissOcrError,
     onReplaceConfirm,
     wizardState,
     ivaRates,
@@ -158,6 +166,49 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                 </p>
             </div>
             
+            {/* v2.249.2 — the failure of the current attempt lives HERE, in the active step (not on the page behind the wizard):
+                business rule vs provider vs network, what to do, a retry that never duplicates the upload, and a sanitized
+                technical line. Rendered before the drop zone so it is the first thing in the scroll area on narrow layouts. */}
+            {!draft && ocrError && (
+                <div
+                    role="alert"
+                    aria-live="assertive"
+                    data-testid="wizard-ocr-error"
+                    data-error-kind={ocrError.kind}
+                    style={{
+                        position: 'sticky', top: 0, zIndex: 1,
+                        display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 8,
+                        background: ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#FFF7ED' : '#FEF2F2',
+                        border: `1px solid ${ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#FED7AA' : '#FECACA'}`,
+                        color: ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#9A3412' : '#991B1B',
+                    }}
+                >
+                    <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: '0.9rem' }}>{ocrError.title}</div>
+                        <div style={{ fontSize: '0.84rem', overflowWrap: 'anywhere' }}>{ocrError.message}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'inherit', opacity: 0.9 }}>{ocrError.guidance}</div>
+                        <div style={{ fontSize: '0.72rem', opacity: 0.75, overflowWrap: 'anywhere' }}>
+                            Ficheiro: {ocrError.fileName} · {ocrErrorTechnicalLine(ocrError)}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                            {ocrError.retryable && onRetryOcr && (
+                                <button type="button" onClick={onRetryOcr} disabled={isProcessingOcr}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid currentColor', background: 'transparent', color: 'inherit', fontWeight: 700, fontSize: '0.8rem', cursor: isProcessingOcr ? 'not-allowed' : 'pointer' }}>
+                                    {isProcessingOcr ? 'A tentar novamente…' : 'Tentar novamente'}
+                                </button>
+                            )}
+                            {onDismissOcrError && (
+                                <button type="button" onClick={onDismissOcrError} disabled={isProcessingOcr}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid transparent', background: 'transparent', color: 'inherit', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'underline', cursor: isProcessingOcr ? 'not-allowed' : 'pointer' }}>
+                                    Escolher outro ficheiro
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {!draft ? (
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
                     <p style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '16px' }}>Faça upload da cotação (PDF ou Imagem) para iniciar a extração OCR automática.</p>

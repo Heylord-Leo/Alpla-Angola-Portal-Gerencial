@@ -559,6 +559,9 @@ export function BuyerRequestWorkspace() {
         onReconcilePreview={wizardHost.controller.handleReconcilePreview}
         isProcessingOcr={!!(wizardHost.wizardActiveRequest && wizardHost.isProcessingOcr[wizardHost.wizardActiveRequest.requestId])}
         onUploadFile={wizardHost.onUploadFile}
+        ocrError={wizardHost.ocrError}
+        onRetryOcr={wizardHost.retryOcr}
+        onDismissOcrError={wizardHost.dismissOcrError}
         onCancelWizard={wizardHost.controller.onCancelWizard}
         onReplaceDocument={wizardHost.controller.handleReplaceDocumentForWizard}
         ivaRates={wizardHost.ivaRates}

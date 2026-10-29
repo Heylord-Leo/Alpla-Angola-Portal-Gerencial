@@ -8,6 +8,7 @@ import { OcrDocumentClassification } from '../../../lib/documentClassificationDe
 import type { UseQuotationWizardStateReturn } from './hooks/useQuotationWizardState';
 import { buildQuotationPayload, tryReconcileAmbiguousSave } from './quotationSaveLogic';
 import { buildManualQuotationDraftItems } from './manualQuotationDraft';
+import { classifyOcrFailure, describeOcrResultFailure, type WizardOcrError } from './wizardOcrError';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reusable Quotation Wizard ORCHESTRATION FACADE (Phase 3C.1 / Stage 2A-R). A STATELESS factory: it
@@ -50,14 +51,19 @@ export interface BuyerQuotationWizardControllerDeps {
     onSaved: () => void | Promise<void>;
     /** Host feedback surface (no browser alerts). */
     onFeedback: (feedback: WizardFeedback) => void;
+    /** v2.249.2 — inline failure of the document step (business vs provider vs network); owned by the host. */
+    setOcrError?: (error: WizardOcrError | null) => void;
+    /** v2.249.2 — the document already uploaded for the current attempt, so a retry re-runs OCR only (no duplicate upload). */
+    pendingUploadRef?: React.MutableRefObject<{ file: File; attachmentId: string } | null>;
 }
 
 export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardControllerDeps) {
     const {
         quotationWizardState, wizardActiveRequest, setWizardActiveRequest, setIsSaving, setIsProcessingOcr,
         temporaryWizardAttachmentIds, setTemporaryWizardAttachmentIds, preAttemptSnapshotRef,
-        mapOcrResultToDraft, onSaved, onFeedback,
+        mapOcrResultToDraft, onSaved, onFeedback, setOcrError, pendingUploadRef,
     } = deps;
+    const reportOcrError = (e: WizardOcrError | null) => { if (setOcrError) setOcrError(e); };
 
     const handleWizardSaveQuotation = async (
         draft: OcrDraft,
@@ -175,25 +181,55 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
         }
     };
 
-    // The actual upload + OCR sequence, unchanged. The host's dup-check wrapper calls this to proceed.
+    // The upload + OCR sequence. The host's dup-check wrapper calls this to proceed.
+    // v2.249.2 — failures are reported INSIDE the wizard (setOcrError) with their stage and kind; the loading state always
+    // resets; no draft is created from a failed or empty extraction; a retry with the SAME file reuses the document already
+    // uploaded in this attempt (pendingUploadRef) instead of uploading a duplicate.
     const startWizardUpload = async (file: File) => {
         if (!wizardActiveRequest) return;
-        setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: true }));
+        const requestId = wizardActiveRequest.requestId;
+        reportOcrError(null);
+        setIsProcessingOcr(prev => ({ ...prev, [requestId]: true }));
+        let stage: 'UPLOAD' | 'OCR' = 'UPLOAD';
         try {
-            const uploadData = await api.attachments.upload(wizardActiveRequest.requestId, [file], 'QUOTATION');
-            const attachmentId = uploadData[0].id;
-            setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
-            const result = await api.requests.ocrExtract(wizardActiveRequest.requestId, file);
+            let attachmentId: string;
+            const pending = pendingUploadRef?.current;
+            if (pending && pending.file === file) {
+                attachmentId = pending.attachmentId;              // retry: document already stored for this attempt
+            } else {
+                const uploadData = await api.attachments.upload(requestId, [file], 'QUOTATION');
+                attachmentId = uploadData[0].id;
+                setTemporaryWizardAttachmentIds(prev => [...prev, attachmentId]);
+                if (pendingUploadRef) pendingUploadRef.current = { file, attachmentId };
+            }
+            stage = 'OCR';
+            const result = await api.requests.ocrExtract(requestId, file);
+            const resultFailure = describeOcrResultFailure(result, file.name);
+            if (resultFailure) {
+                reportOcrError(resultFailure);                      // 200 with success:false → no empty draft, retry allowed
+                return;
+            }
             const initialDraft = await mapOcrResultToDraft(result, attachmentId);
-
             quotationWizardState.setDraft(initialDraft);
+            if (pendingUploadRef) pendingUploadRef.current = null;
         } catch (error: any) {
-            console.error('Wizard OCR Error:', error);
-            onFeedback({ type: 'error', message: 'Erro ao processar documento via OCR.' });
+            // Sanitized technical log (the API layer already logs API_REQUEST_FAILED with status + correlation id).
+            console.error(`Wizard ${stage} failure`, { status: error?.status, code: error?.errorCode, correlationId: error?.correlationId });
+            reportOcrError(classifyOcrFailure(stage, error, file.name));
         } finally {
-            setIsProcessingOcr(prev => ({ ...prev, [wizardActiveRequest.requestId]: false }));
+            setIsProcessingOcr(prev => ({ ...prev, [requestId]: false }));
         }
     };
+
+    /** v2.249.2 — retry the current attempt with the same file (OCR only when the document is already uploaded). */
+    const retryWizardUpload = async () => {
+        const pending = pendingUploadRef?.current;
+        if (pending) await startWizardUpload(pending.file);
+    };
+
+    /** v2.249.2 — clear the inline failure so the operator can choose another file. The attempt's document, if any, stays
+     * listed as temporary and is removed by onCancelWizard like before. */
+    const dismissOcrError = () => reportOcrError(null);
 
     const handleReconcilePreview = async (draft: OcrDraft): Promise<any> => {
         if (!wizardActiveRequest) throw new Error('No active request');
@@ -247,6 +283,8 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
         quotationWizardState.closeWizard();
         setWizardActiveRequest(null);
         preAttemptSnapshotRef.current = null;
+        reportOcrError(null);
+        if (pendingUploadRef) pendingUploadRef.current = null;
         if (temporaryWizardAttachmentIds.length > 0) {
             try {
                 await Promise.all(temporaryWizardAttachmentIds.map(id => api.attachments.delete(id)));
@@ -259,6 +297,8 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
 
     const handleOpenWizard = (group: any, mode: 'MANUAL' | 'UPLOAD', editQuotation?: SavedQuotationDto, reworkBatchId?: string) => {
         preAttemptSnapshotRef.current = null;
+        reportOcrError(null);
+        if (pendingUploadRef) pendingUploadRef.current = null;
         setWizardActiveRequest(group);
         if (editQuotation) {
             const draft: OcrDraft = {
@@ -337,6 +377,8 @@ export function createBuyerQuotationWizardController(deps: BuyerQuotationWizardC
     return {
         handleWizardSaveQuotation,
         startWizardUpload,
+        retryWizardUpload,
+        dismissOcrError,
         handleReconcilePreview,
         handleReplaceDocumentForWizard,
         handleWizardLineItemUpserted,

@@ -1,6 +1,9 @@
 # Guião de testes manuais em TEST — v2.249.0 (cancelamento de grupo P.O. / devolução à cotação)
 
-> Versão alvo: **v2.249.2** (correções da v2.249.1 encontradas neste guião após o cancelamento do grupo S1: item libertado
+> Versão alvo: **v2.249.3** (v2.249.2 + extração OCR na janela por item e erros do assistente de importação apresentados dentro
+> do assistente — encontrado na validação da v2.249.2: “Importar Cotação” aceitava o ficheiro mas o OCR respondia 409).
+> Build esperado **2.249.3+<sha do commit da v2.249.3>**; a v2.249.2 era 2.249.2+6b3dbc5.
+> Versão anterior: **v2.249.2** (correções da v2.249.1 encontradas neste guião após o cancelamento do grupo S1: item libertado
 > mostrado como “pronto para lote”, sem entrada de cotação, navegação da devolução, “Corrigir P.O.” antes do primeiro registo,
 > textos do tipo de devolução, estado de entrega dos e-mails), build esperado **2.249.2+<sha do commit da v2.249.2>**
 > (a confirmar após publicação; a v2.249.1 era 2.249.1+9de44f1, a v2.249.0 era 2.249.0+c40ebb3), ramo `Portal-Gerencial-rev1`.
@@ -309,6 +312,16 @@ S2 PO_ISSUED, sem nova cotação). Nada a recriar; **não** executar reparaçõe
     antiga de S1 → recusado com **“Documento de cotação submetida”**; tentar **Editar/Excluir** essa cotação → não oferecido
     (submetida). Depois de registar a nova cotação (§3.5), o documento **dela** pode ser removido e ela pode ser editada
     enquanto não for enviada para aprovação.
+11. **[BUYER] v2.249.3 — retoma da importação OCR (pedido A)**: antes de importar, abra **Documentos** do pedido: se a tentativa
+    falhada da v2.249.2 deixou `Cotacao_TEST_MAQSIS_9003_REQ628.pdf` como documento de **Cotação sem cotação associada** (o
+    assistente carrega o ficheiro antes do OCR; só o “Cancelar” do assistente o apaga), **remova-o** (permitido: não está ligado a
+    nenhuma cotação submetida) **ou** deixe-o — é inofensivo; não crie reparações nem reinicie o pedido. Depois, Workspace →
+    **Importar Cotação** → o mesmo PDF. Esperado: extração aceite (sem 409), fornecedor MAQSIS / NIF 5417093050 sugeridos, **só a
+    linha 1** oferecida como destino da reconciliação (a linha 2 nunca aparece), rascunho com 10 UN × 23 000,00 = 230 000,00 AOA.
+    Teste de erro em linha (B): com o assistente aberto, desligue a rede e clique “Selecionar Arquivo” com o PDF → o passo mostra
+    uma caixa vermelha **“Sem resposta do servidor”** com “Tentar novamente”; religue a rede e clique **Tentar novamente** → sem
+    novo documento duplicado em Documentos (um único ficheiro para a tentativa). Nunca deve aparecer apenas a mensagem “Erro ao
+    processar documento via OCR.” na página por trás do assistente.
 
 Evidência: `v2249-3.4bis-01.png` (fila), `-02.png` (cabeçalho + Itens), `-03.png` (Cotações com o aviso), `-04.png` (entrega +
 Atualizar estado), `-05.png` (pedido B na fila e cartão), `-06.png` (Obrigações), `-07.png` (impressão), `-08.png` (pedido D),
@@ -320,7 +333,7 @@ Atualizar estado), `-05.png` (pedido B na fila e cartão), `-06.png` (Obrigaçõ
 
 1. **[BUYER]** Workspace do A → **Inserir Manualmente**: fornecedor S1 (ou outro), linha 1, **230 000,00 AOA**. Se preferir reutilizar a cotação antiga: **Abrir ferramentas clássicas** → encontre a cotação de S1 → **Reutilizar cotação** → modal “Reutilizar cotação em novo lote” → **AUTORIZAR REUSO (1)** (autorização explícita exigida por D3). Qualquer das vias deve funcionar.
    *v2.249.1:* os botões **Importar Cotação** / **Inserir Manualmente** têm de estar visíveis mesmo que o estado do pedido no painel de detalhes já não seja `WAITING_QUOTATION` (grupo irmão S2 com P.O. emitida → estado escalar `PO_PARTIALLY_UPLOADED`); o cabeçalho mostra **Cobertura Parcial**. A cotação só pode ser mapeada à **linha 1** (libertada); a linha 2 (grupo S2 operacional) não é oferecida e, se forçada pela API, devolve 409 “Item já comprometido”.
-   *v2.249.2:* testar **Importar Cotação** com um PDF fictício (o upload do documento de cotação/proforma era recusado com “Upload Bloqueado” na v2.249.1 — agora é aceite) **e/ou** Inserir Manualmente. Depois de guardar, a linha 1 passa a **Cotado — pronto para lote** só com a **nova** cotação; a cotação antiga de S1 continua com “Reutilização requer autorização (1)” e **não** entra no lote sem autorização explícita. Com a nova cotação **não submetida**, em Cotações & Documentos aparecem **Editar/Excluir** para ela (janela por item); testar **Editar** (alterar o preço e guardar) — aceite; o escalar do pedido não muda. Se preferir a reutilização: ferramentas clássicas → **Reutilizar cotação** → **AUTORIZAR REUSO (1)** → o Workspace passa a mostrar “Reutilização autorizada (1)” e a linha 1 fica pronta com a cotação antiga.
+   *v2.249.2:* testar **Importar Cotação** com um PDF fictício (o upload do documento de cotação/proforma era recusado com “Upload Bloqueado” na v2.249.1 — agora é aceite) **e/ou** Inserir Manualmente. *v2.249.3:* a extração OCR deixa de responder 409 neste estado; qualquer falha é mostrada **dentro** do passo “Documento e Extração”. Depois de guardar, a linha 1 passa a **Cotado — pronto para lote** só com a **nova** cotação; a cotação antiga de S1 continua com “Reutilização requer autorização (1)” e **não** entra no lote sem autorização explícita. Com a nova cotação **não submetida**, em Cotações & Documentos aparecem **Editar/Excluir** para ela (janela por item); testar **Editar** (alterar o preço e guardar) — aceite; o escalar do pedido não muda. Se preferir a reutilização: ferramentas clássicas → **Reutilizar cotação** → **AUTORIZAR REUSO (1)** → o Workspace passa a mostrar “Reutilização autorizada (1)” e a linha 1 fica pronta com a cotação antiga.
 2. Enviar para aprovação (**Enviar itens para aprovação** → **Submeter para Aprovação**). Esperado: **Lote 2** criado só com a linha 1; o Lote 1 permanece Aprovado com “Itens libertados: #1”.
 3. **[Sair → AREA]** aprovar o Lote 2. **[Sair → FINAL]** aprovar o Lote 2. Esperado: aprovações **não** são bloqueadas pela confirmação pendente.
 4. **[Sair → BUYER]** **Grupos P.O.**: novo cartão S1 (Lote 2) em **Aguardando P.O.** com faixa vermelha **“Registo da nova P.O. bloqueado até Finanças confirmar a anulação da ECF anterior (ECF99 2026/9001). …”**. Página do pedido: a mesma faixa por baixo dos chips. *v2.249.2:* o cartão mostra **Registrar P.O.** **desativado** (título com o motivo) e a linha **“Registo da P.O. indisponível: Registo da nova P.O. bloqueado até…”**; **nenhum** “Corrigir P.O.” neste cartão; cabeçalho do Workspace **“P.O. a registar”**.

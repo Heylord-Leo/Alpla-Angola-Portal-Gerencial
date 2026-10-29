@@ -50,6 +50,7 @@ import { buildManualQuotationDraftItems } from './QuotationWizard/manualQuotatio
 // Stage 2A-R: reusable stateless wizard-handler facade (single-source orchestration). It also owns the
 // edit-draft rehydration (incl. parseClassificationEvidence) and the manual/OCR open logic.
 import { createBuyerQuotationWizardController } from './QuotationWizard/buyerQuotationWizardController';
+import type { WizardOcrError } from './QuotationWizard/wizardOcrError';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -207,6 +208,9 @@ export function BuyerItemsList() {
     const [draftProformaFiles, setDraftProformaFiles] = useState<Record<string, File>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingOcr, setIsProcessingOcr] = useState<Record<string, boolean>>({});
+    // v2.249.2 — inline document-step failure + current-attempt document (same contract as the Workspace host).
+    const [wizardOcrError, setWizardOcrError] = useState<WizardOcrError | null>(null);
+    const wizardPendingUploadRef = useRef<{ file: File; attachmentId: string } | null>(null);
     const [ocrErrors, setOcrErrors] = useState<Record<string, string | null>>({});
         const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
@@ -421,6 +425,8 @@ export function BuyerItemsList() {
         mapOcrResultToDraft,
         onSaved: () => loadData(),
         onFeedback: setFeedback,
+        setOcrError: setWizardOcrError,
+        pendingUploadRef: wizardPendingUploadRef,
     });
 
     // Exact-file duplicate check (reconnects the existing, already-proven fileDuplicateWarning
@@ -2732,6 +2738,9 @@ export function BuyerItemsList() {
                 onReconcilePreview={wizardController.handleReconcilePreview}
                 isProcessingOcr={!!(wizardActiveRequest && isProcessingOcr[wizardActiveRequest.requestId])}
                 onUploadFile={handleUploadFileForWizard}
+                ocrError={wizardOcrError}
+                onRetryOcr={() => void wizardController.retryWizardUpload()}
+                onDismissOcrError={wizardController.dismissOcrError}
                 onCancelWizard={wizardController.onCancelWizard}
                 onReplaceDocument={wizardController.handleReplaceDocumentForWizard}
                 ivaRates={ivaRates}
