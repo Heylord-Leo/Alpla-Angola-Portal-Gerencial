@@ -80,6 +80,14 @@ public class OperationInvoiceObligationDto
     // ── Explanation ──
     public string ReasonCode { get; set; } = string.Empty;
     public string Explanation { get; set; } = string.Empty;
+
+    /// <summary>v2.249.4 — the P.O. group is CANCELLED (DEC-151): history only, no active obligation, no actions.</summary>
+    public bool GroupCancelled { get; set; }
+    public string? GroupStatus { get; set; }
+    /// <summary>Expected total captured before the cancellation (historical evidence; absent from the rollup).</summary>
+    public decimal? HistoricalExpectedAmount { get; set; }
+    /// <summary>Lines covered before the cancellation released them.</summary>
+    public int HistoricalLineItemCount { get; set; }
 }
 
 /// <summary>
@@ -120,6 +128,8 @@ public class OperationInvoiceObligationRollupDto
     public int UnclassifiedCount { get; set; }
     public int DriftCount { get; set; }
     public bool HasStatusDrift { get; set; }
+    /// <summary>v2.249.4 — cancelled groups listed as history (counted in TotalGroups only).</summary>
+    public int CancelledGroupCount { get; set; }
 
     /// <summary>Groups requiring an invoice whose expected total is unrecorded, across all currencies.</summary>
     public int GroupsWithUnknownExpectedTotal { get; set; }

@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.249.3
+v2.249.4
+
+## [v2.249.4] - 2026-10-29
+
+### P.O. document validation, correction number, superseded P.O. files, cancelled-group invoice obligations, Print View dates
+
+PATCH, backend + frontend, **additive migration `20261029140552_AddPoDocumentSupersessionAndExtraction`** (Apply TEST Migrations
+before Deploy to TEST). Nine findings of the v2.249.3 TEST validation on REQ-28/10/2026-628: the correction wizard can now change
+the P.O. number (explicit decision when the document reads another number); both P.O. wizards identify the document from
+server-held extraction evidence (`POST …/po-document-extract`, `PoDocumentExtractions`) — a quotation/proforma/invoice is refused,
+an uncertain document needs the Buyer's explicit confirmation + justification; replaced P.O. files are marked superseded and the
+group points at its current document; a CANCELLED group carries no active final-invoice obligation; date-only fields keep their
+calendar day in the Print View; quoted vs not-quoted item counts; previous Finance review labelled; `NotifyOnPoCancelled`
+configurable. See CHANGELOG and `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`.
 
 ## [v2.249.3] - 2026-10-29
 

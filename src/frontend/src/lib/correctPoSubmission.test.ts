@@ -36,6 +36,9 @@ function input(overrides: Partial<CorrectPoSubmissionInput> = {}): CorrectPoSubm
         advancePercent: 50,
         paymentConditionSource: 'USER_SELECTED',
         justification: { required: false, source: 'NONE' },
+        // v2.249.4 — a correction always states the number it confirms (CURRENT) or replaces
+        purchaseOrderNumber: 'ECF11 2026/156',
+        purchaseOrderNumberSource: 'CURRENT',
         ...overrides,
     };
 }
@@ -126,6 +129,9 @@ describe('submitCorrectPo — mandatory justification (legacy Finance return)', 
             paymentConditionCode: 'ADVANCE_FULL',
             advancePaymentPercent: undefined,
             paymentConditionSource: 'OCR_DETECTED',
+            purchaseOrderNumber: 'ECF11 2026/156',
+            purchaseOrderNumberSource: 'CURRENT',
+            documentTypeConfirmed: false,
         });
     });
 });
@@ -188,7 +194,7 @@ describe('validateCorrectPoSubmission — pre-existing guards unchanged, in the 
 describe('CorrectPoModal wiring (source-level — no DOM runtime in this suite)', () => {
     it('submits through submitCorrectPo with the real api functions and validates first', () => {
         expect(modalSrc).toMatch(/validateCorrectPoSubmission\(submission\)/);
-        expect(modalSrc).toMatch(/submitCorrectPo\(\s*\{ upload: api\.attachments\.upload, registerPo: api\.requests\.registerPo \},\s*submission\s*\)/);
+        expect(modalSrc).toMatch(/submitCorrectPo\(\s*\{ upload: api\.attachments\.upload, registerPo: api\.requests\.registerPo, onUploaded: /);
     });
     it('contains no generated justification fallback', () => {
         expect(modalSrc).not.toContain(GENERATED_FALLBACK);
@@ -200,9 +206,11 @@ describe('CorrectPoModal wiring (source-level — no DOM runtime in this suite)'
         expect(modalSrc).toMatch(/requestId, poGroupId, detailsUnavailable, groupMissing, file, comment/);
     });
     it('derives the requirement from the server decision and labels/disables accordingly', () => {
-        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches\)/);
+        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation\)/);
         expect(modalSrc).toMatch(/Comentário \{justification\.required \? '\(Obrigatório\)' : '\(opcional\)'\}/);
-        expect((modalSrc.match(/\(justification\.required && !comment\.trim\(\)\)/g) || []).length).toBeGreaterThanOrEqual(3);
+        // v2.249.4 — one submit gate (submitDisabled) carries the requirement; the button reads it.
+        expect((modalSrc.match(/\(justification\.required && !comment\.trim\(\)\)/g) || []).length).toBeGreaterThanOrEqual(1);
+        expect(modalSrc).toMatch(/disabled=\{submitDisabled\}/);
         expect(modalSrc).not.toMatch(/ocrResult\?\.hasMismatches && !comment\.trim\(\)/);
     });
 });
@@ -233,5 +241,95 @@ describe('submitCorrectPo — previous P.O. number reuse', () => {
         const registerPo = vi.fn().mockImplementation(async () => { calls.push('register'); return { message: 'ok' }; });
         await submitCorrectPo({ upload, registerPo }, input({ comment: 'ok' }));
         expect(calls).toEqual(['upload', 'register']);
+    });
+});
+
+// ── v2.249.4 — P.O. number on the correction + document identification + upload reuse ──
+import { NO_EXTRACTION_IDENTIFICATION, readPoDocumentIdentification } from './poDocumentIdentification';
+const OTHER_TYPE = readPoDocumentIdentification({ integration: { headerSuggestions: { purchaseOrderIdentification: { verdict: 'IDENTIFIED_OTHER_TYPE', reasonCode: 'OTHER_DOCUMENT_TYPE', reason: 'Cotação', otherTypeLabel: 'Cotação / Factura pró-forma', identityCandidates: [], bodyReferences: [] } } } });
+const IDENTIFIED = readPoDocumentIdentification({ integration: { headerSuggestions: { documentNumber: { value: 'ECF11 2026/421' }, currencyCode: { value: 'AOA' }, documentTitle: { value: 'PO Serviços ECF11 2026/421' }, purchaseOrderIdentification: { verdict: 'IDENTIFIED_PO', reasonCode: 'PO_IDENTIFIED', reason: 'ok', family: 'ECF11', familyLabel: 'Serviços', reference: 'ECF11 2026/421', canonical: 'ECF11-2026-421', identityCandidates: [], bodyReferences: [] } } } });
+
+describe('submitCorrectPo — v2.249.4 number and document rules, all BEFORE the upload', () => {
+    it('a blank number is refused (the old modal sent none and the stale number survived the correction)', async () => {
+        const d = deps();
+        expect(await submitCorrectPo(d, input({ purchaseOrderNumber: '   ' }))).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.numberRequired });
+        expect(d.upload).not.toHaveBeenCalled();
+    });
+    it('a document identified as another type never reaches the upload, whatever the overrides', async () => {
+        const d = deps();
+        const out = await submitCorrectPo(d, input({ identification: OTHER_TYPE, overrideConfirmed: true, documentTypeConfirmed: true, comment: 'valores coincidem' }));
+        expect(out).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.documentBlocked });
+        expect(d.upload).not.toHaveBeenCalled();
+    });
+    it('an UNCERTAIN document needs the explicit confirmation, then a justification', async () => {
+        const d = deps();
+        const policy = resolveJustificationPolicy(null, GROUP, false, true);
+        expect(policy).toEqual({ required: true, source: 'DOCUMENT_TYPE' });
+        expect(await submitCorrectPo(d, input({ identification: NO_EXTRACTION_IDENTIFICATION, justification: policy, comment: 'x' }))).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.typeConfirmationRequired });
+        expect(await submitCorrectPo(d, input({ identification: NO_EXTRACTION_IDENTIFICATION, justification: policy, documentTypeConfirmed: true, comment: ' ' }))).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.typeJustification });
+        expect(d.upload).not.toHaveBeenCalled();
+        const ok = await submitCorrectPo(d, input({ identification: NO_EXTRACTION_IDENTIFICATION, justification: policy, documentTypeConfirmed: true, comment: 'OCR indisponível; conferido com o documento impresso', purchaseOrderNumber: 'ECF10 2026/9003', purchaseOrderNumberSource: 'MANUAL' }));
+        expect(ok.ok).toBe(true);
+        const sent = d.registerPo.mock.calls[0][1];
+        expect(sent).toMatchObject({ purchaseOrderNumber: 'ECF10 2026/9003', purchaseOrderNumberSource: 'MANUAL', documentTypeConfirmed: true });
+    });
+    it('the payload carries NO extraction facts: the server identifies the document from its own evidence (po-document-extract) by file hash', async () => {
+        const d = deps();
+        await submitCorrectPo(d, input({ identification: IDENTIFIED, purchaseOrderNumber: 'ECF11 2026/421', purchaseOrderNumberSource: 'EXTRACTED' }));
+        const sent = d.registerPo.mock.calls[0][1] as unknown as Record<string, unknown>;
+        expect(sent).toMatchObject({ purchaseOrderNumber: 'ECF11 2026/421', purchaseOrderNumberSource: 'EXTRACTED', documentTypeConfirmed: false });
+        for (const k of ['extractionOutcome', 'extractedDocumentNumber', 'extractedDocumentTitle', 'extractedDocumentClassification', 'extractedDocumentClassificationConfidence', 'extractedReferencedDocumentNumbers', 'extractedCurrencyCode']) {
+            expect(sent).not.toHaveProperty(k);
+        }
+    });
+    it('a pending number decision (document reads another number, field still holds the current one) is refused before the upload', async () => {
+        const d = deps();
+        expect(await submitCorrectPo(d, input({ numberDecisionPending: true }))).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.numberDecisionRequired });
+        expect(d.upload).not.toHaveBeenCalled();
+    });
+    it('the uploaded attachment id is captured (onUploaded) and sent as poAttachmentId; a retry skips the upload and names the same file', async () => {
+        const uploaded: Array<string | null> = [];
+        const upload = vi.fn(async () => [{ id: 'att-9', fileName: 'po.pdf' }]);
+        const registerPo = vi.fn(async (_id: string, _p: RegisterPoPayload) => { throw Object.assign(new Error('dup'), { status: 400, details: { title: 'DUPLICATE_PO' } }); });
+        await expect(submitCorrectPo({ upload, registerPo, onUploaded: id => uploaded.push(id) }, input())).rejects.toBeTruthy();
+        expect(uploaded).toEqual(['att-9']);
+        expect(registerPo.mock.calls[0][1]).toMatchObject({ poAttachmentId: 'att-9' });
+
+        const registerOk = vi.fn(async (_id: string, _p: RegisterPoPayload) => ({ message: 'ok' }));
+        const out = await submitCorrectPo({ upload, registerPo: registerOk }, input({ skipUpload: true, uploadedAttachmentId: 'att-9', overrideDuplicateConfirmed: true, duplicateOverrideComment: ' número confirmado no ERP ' }));
+        expect(out.ok).toBe(true);
+        expect(upload).toHaveBeenCalledTimes(1);                                     // no second upload
+        expect(registerOk.mock.calls[0][1]).toMatchObject({ poAttachmentId: 'att-9', overrideDuplicateConfirmed: true, duplicateOverrideComment: 'número confirmado no ERP' });
+    });
+    it('a confirmed duplicate without a justification is refused before the upload', async () => {
+        const d = deps();
+        expect(await submitCorrectPo(d, input({ overrideDuplicateConfirmed: true, duplicateOverrideComment: '  ' }))).toEqual({ ok: false, error: CORRECT_PO_MESSAGES.duplicateJustification });
+        expect(d.upload).not.toHaveBeenCalled();
+    });
+});
+
+describe('CorrectPoModal wiring — v2.249.4 (source-level)', () => {
+    it('shows the current number next to the editable proposed one, with provenance and the extracted suggestion', () => {
+        expect(modalSrc).toMatch(/<PoNumberFieldBlock[^]*?currentNumber=\{selectedGroup\?\.purchaseOrderNumber\}/);
+        expect(modalSrc).toMatch(/onKeepCurrent=\{\(\) => \{ setPoNumber\(f => keepCurrentPoNumber\(f, selectedGroup\?\.purchaseOrderNumber\)\)/);
+        expect(modalSrc).toMatch(/numberDecisionPending: numberDecisionPending\(poNumber, selectedGroup\?\.purchaseOrderNumber\)/);
+        expect(modalSrc).toMatch(/api\.requests\.poDocumentExtract\(requestId, selectedFile\)/);
+        expect(modalSrc).not.toMatch(/api\.requests\.directOcrExtract\(/);
+        expect(modalSrc).toMatch(/setPoNumber\(initialPoNumberField\(group\?\.purchaseOrderNumber\)\)/);
+        expect(modalSrc).toMatch(/applyExtractedNumber\(f, id, extractedPoReference \|\| extractedPoNumber, \[extractedSupplierNif\]\)/);
+        expect(modalSrc).toMatch(/purchaseOrderNumber: poNumber\.value, purchaseOrderNumberSource: poNumber\.source/);
+    });
+    it('renders the document verdict instead of the unconditional "Documento Validado" and clears stale extraction on a new file', () => {
+        expect(modalSrc).toMatch(/<PoDocumentVerdictBlock identification=\{identification\}/);
+        expect(modalSrc).not.toMatch(/>Documento Validado</);
+        expect(modalSrc).toMatch(/setIdentification\(null\); setDetectedDocumentNumber\(null\); setDocumentTypeConfirmed\(false\);/);
+        expect(modalSrc).toMatch(/setIdentification\(NO_EXTRACTION_IDENTIFICATION\)/);
+    });
+    it('handles DUPLICATE_PO, OCR_MISMATCH and the document blocks that used to be generic errors, and resolves the current P.O. file from the server pointer', () => {
+        expect(modalSrc).toMatch(/decision\.kind === 'DUPLICATE_PO'\) setDuplicateWarning/);
+        expect(modalSrc).toMatch(/decision\.kind === 'OCR_MISMATCH'\) setBackendOcrMismatch/);
+        expect(modalSrc).toMatch(/isDocumentBlockingKind\(decision\.kind\)\) setDocumentBlock/);
+        expect(modalSrc).toMatch(/group\?\.currentPoAttachmentId && groupPoFiles\.find/);
+        expect(modalSrc).toMatch(/skipUpload: reuseUpload/);
     });
 });

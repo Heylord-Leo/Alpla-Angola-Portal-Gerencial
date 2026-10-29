@@ -70,6 +70,39 @@ export function financeStatusLabel(status?: string | null): string {
     return (status && FINANCE_CONFIRMATION_STATUS_LABELS[status]) || status || '—';
 }
 
+/**
+ * v2.249.4 — what the "Confirmação de Finanças" block shows for the reviewer/note lines. After a rejection the Buyer
+ * re-declares and the status is PENDING again; the reviewer and note on the row belong to the PREVIOUS review and must
+ * be labelled as such, never rendered under the pending state as if the new declaration were already reviewed.
+ */
+export interface FinanceReviewDisplay {
+    /** Reviewer/note lines for the CURRENT decision (null while a new decision is awaited). */
+    current: { byName: string | null; atUtc: string | null; note: string | null } | null;
+    /** The previous review, labelled. */
+    previous: { label: string; byName: string | null; atUtc: string | null; note: string | null } | null;
+}
+export function describeFinanceReview(c: {
+    financeConfirmationStatus?: string | null;
+    financeConfirmedByName?: string | null; financeConfirmedAtUtc?: string | null;
+    financeReviewedByName?: string | null; financeReviewedAtUtc?: string | null;
+    financeConfirmationNote?: string | null;
+    financeReviewAppliesToCurrentDeclaration?: boolean;
+    previousFinanceReview?: { status: string; byName?: string | null; atUtc?: string | null; note?: string | null } | null;
+}): FinanceReviewDisplay {
+    const reviewed = !!(c.financeReviewedAtUtc || c.financeConfirmedAtUtc);
+    const appliesToCurrent = c.financeReviewAppliesToCurrentDeclaration ?? (reviewed && c.financeConfirmationStatus !== 'PENDING');
+    const current = reviewed && appliesToCurrent
+        ? { byName: c.financeConfirmedByName || c.financeReviewedByName || null, atUtc: c.financeConfirmedAtUtc || c.financeReviewedAtUtc || null, note: c.financeConfirmationNote || null }
+        : null;
+    const prev = c.previousFinanceReview ?? (reviewed && !appliesToCurrent
+        ? { status: 'REJECTED', byName: c.financeReviewedByName, atUtc: c.financeReviewedAtUtc, note: c.financeConfirmationNote }
+        : null);
+    const previous = prev
+        ? { label: prev.status === 'CONFIRMED' ? 'Revisão anterior (confirmada) — declaração entretanto atualizada' : 'Revisão anterior (rejeitada) — declaração entretanto atualizada', byName: prev.byName ?? null, atUtc: prev.atUtc ?? null, note: prev.note ?? null }
+        : null;
+    return { current, previous };
+}
+
 // ── Finance return kinds (RequestPoGroup.LastFinanceReturnKind; NULL = legacy, never inferred) ──
 export const FINANCE_RETURN_KIND_LABELS: Record<string, string> = {
     PO_CORRECTION: 'Corrigir P.O.',

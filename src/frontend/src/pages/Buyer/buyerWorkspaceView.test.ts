@@ -186,3 +186,15 @@ describe('P.O. group cancellation view helpers', () => {
     expect(resolveCancelPoGroupTarget([{ code: 'CANCEL_PO_GROUP', actionable: true }], [])).toEqual({ kind: 'MULTIPLE' });
   });
 });
+
+// ── v2.249.4 — cancelled group card: historical lines instead of "Itens: —" ──
+import { groupLineNumbersLabel as _lines } from './buyerWorkspaceView';
+describe('groupLineNumbersLabel (v2.249.4)', () => {
+    it('live lines as before; a cancelled RESTART group names the released lines as history; CANCEL_ITEMS keeps live lines labelled as history', () => {
+        expect(_lines([1, 3])).toBe('Itens: #1, #3');
+        expect(_lines([], [1], true)).toBe('Itens (histórico, libertados): #1');
+        expect(_lines([2], [], true)).toBe('Itens (histórico): #2');
+        expect(_lines([], [], true)).toBe('Itens: —');
+        expect(_lines([], [1], false)).toBe('Itens: —');
+    });
+});

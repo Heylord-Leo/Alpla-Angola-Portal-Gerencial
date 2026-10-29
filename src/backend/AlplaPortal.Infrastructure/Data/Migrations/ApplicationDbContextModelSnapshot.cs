@@ -6174,6 +6174,97 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.PoDocumentExtraction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("ClassificationConfidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("ClassificationType")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("DocumentTitle")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid>("ExtractedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Family")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("FileHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<decimal?>("GrandTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ProviderStatusCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ReferencedDocumentNumbersJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SupplierName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("SupplierTaxId")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Verdict")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId", "FileHash", "CreatedAtUtc")
+                        .HasDatabaseName("IX_PoDocumentExtractions_Request_Hash_Created");
+
+                    b.ToTable("PoDocumentExtractions", (string)null);
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.ProformaDeadlineAlert", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6876,6 +6967,15 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<DateTime?>("SupersededAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SupersededByAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SupersededByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("UploadedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -7301,6 +7401,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<int?>("CurrencyId")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("CurrentPoAttachmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ExpectedOperationInvoiceCurrency")
                         .HasMaxLength(10)
@@ -10112,6 +10215,17 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Company");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.PoDocumentExtraction", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Request");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.ProformaDeadlineAlert", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.EmailOutboxEntry", "OutboxEntry")
@@ -10228,7 +10342,7 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.HasOne("AlplaPortal.Domain.Entities.Request", "Request")
-                        .WithMany()
+                        .WithMany("QuotationReuseAuthorizations")
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
@@ -11046,6 +11160,8 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Payments");
 
                     b.Navigation("PoGroups");
+
+                    b.Navigation("QuotationReuseAuthorizations");
 
                     b.Navigation("Quotations");
 

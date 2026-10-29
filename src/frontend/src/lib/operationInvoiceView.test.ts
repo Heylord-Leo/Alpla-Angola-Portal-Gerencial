@@ -176,3 +176,27 @@ describe('backend error mapping for the classification endpoint', () => {
     expect(mapped.isConcurrency).toBe(true);
   });
 });
+
+// ── v2.249.4 — a CANCELLED P.O. group (DEC-151) is history: no obligation, no action, no "classification pending" ──
+// (the module is loaded in beforeAll after the storage shim — see the top of this file; `view` is used here)
+describe('cancelled group obligations (v2.249.4)', () => {
+    const cancelled: any = {
+        groupId: 'g-trevotech', supplierName: 'TREVOTECH', currency: 'AOA', requiresOperationInvoice: false, derivedStatus: 'CANCELLED', persistedStatus: 'PENDING_UPLOAD',
+        groupCancelled: true, groupStatus: 'CANCELLED', expectedAmount: null, remainingAmount: null, historicalExpectedAmount: 250000, historicalLineItemCount: 1,
+        validatedCoveredAmount: 0, pendingCoveredAmount: 0, appliedTolerance: 0, statusDrift: false, closedShort: false, sourceDocumentType: 'PROFORMA', allocations: [], paymentSourceDocumentIds: [], lineItemCount: 0, reasonCode: 'GROUP_CANCELLED', explanation: 'x',
+    };
+    it('is recognised by the flag or by the derived status', () => {
+        expect(view.isCancelledGroupObligation(cancelled)).toBe(true);
+        expect(view.isCancelledGroupObligation({ ...cancelled, groupCancelled: undefined })).toBe(true);
+        expect(view.isCancelledGroupObligation({ ...cancelled, groupCancelled: false, derivedStatus: 'PENDING_UPLOAD' })).toBe(false);
+    });
+    it('is never allocatable, never short-close proposable, never classification pending and never makes the register button appear', () => {
+        expect(view.isGroupAllocatable(cancelled)).toBe(false);
+        expect(view.isShortCloseProposable({ ...cancelled, expectedAmount: 250000, remainingAmount: 250000, requiresOperationInvoice: true })).toBe(false);   // even with stale figures
+        expect(view.isClassificationPending({ ...cancelled, sourceDocumentType: null, derivedStatus: 'CANCELLED' })).toBe(false);
+        expect(view.hasRegistrableObligation([cancelled])).toBe(false);
+    });
+    it('has its own muted label', () => {
+        expect(view.aggregateStatusPresentation('CANCELLED', false)).toEqual({ label: 'Grupo Cancelado — sem obrigação', severity: 'muted' });
+    });
+});

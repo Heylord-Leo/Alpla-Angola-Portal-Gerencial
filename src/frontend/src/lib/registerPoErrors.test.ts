@@ -59,3 +59,21 @@ describe('PREVIOUS_PO_NUMBER_REUSED resubmission', () => {
         expect(REGISTER_PO_ERROR_MESSAGES.reuseCheckbox).toBe('Confirmo que a nova P.O. reutiliza intencionalmente o número da P.O. cancelada');
     });
 });
+
+// ── v2.249.4 — document identification answers from register-po / upload ──
+import { isDocumentBlockingKind } from './registerPoErrors';
+describe('classifyRegisterPoError — v2.249.4 document identification codes', () => {
+    it('classifies the new codes by the code extension and marks the file-level blocks', () => {
+        const err = (code: string, detail = 'd') => ({ status: 400, errorCode: code, details: { title: 't', detail, code } });
+        expect(classifyRegisterPoError(err('DOCUMENT_NOT_PURCHASE_ORDER', 'cotação')).kind).toBe('DOCUMENT_NOT_PURCHASE_ORDER');
+        expect(classifyRegisterPoError(err('DOCUMENT_IS_QUOTATION_EVIDENCE')).kind).toBe('DOCUMENT_IS_QUOTATION_EVIDENCE');
+        expect(classifyRegisterPoError(err('DOCUMENT_TYPE_CONFIRMATION_REQUIRED')).kind).toBe('DOCUMENT_TYPE_CONFIRMATION_REQUIRED');
+        expect(classifyRegisterPoError(err('PO_NUMBER_REQUIRED')).kind).toBe('PO_NUMBER_REQUIRED');
+        expect(classifyRegisterPoError(err('PO_ATTACHMENT_INVALID')).kind).toBe('PO_ATTACHMENT_INVALID');
+        expect(classifyRegisterPoError(err('DOCUMENT_NOT_PURCHASE_ORDER', 'cotação')).message).toBe('cotação');
+        expect(isDocumentBlockingKind('DOCUMENT_NOT_PURCHASE_ORDER')).toBe(true);
+        expect(isDocumentBlockingKind('DOCUMENT_IS_QUOTATION_EVIDENCE')).toBe(true);
+        expect(isDocumentBlockingKind('DOCUMENT_TYPE_CONFIRMATION_REQUIRED')).toBe(false);
+        expect(isDocumentBlockingKind('DUPLICATE_PO')).toBe(false);
+    });
+});

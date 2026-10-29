@@ -135,7 +135,7 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                         <span style={{ fontSize: '0.75rem', opacity: 0.7, marginRight: '4px' }}>{q.currency}</span>
                                         {formatCurrencyAO(q.totalAmount)}
                                     </div>
-                                    <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.itemCount} ITENS</div>
+                                    <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }} title="Itens cotados pelo fornecedor; itens não cotados são registos de reconciliação, não compras">{q.quotedItemCount ?? q.itemCount} ITENS COTADOS{(q.notQuotedItemCount ?? 0) > 0 ? ` · ${q.notQuotedItemCount} NÃO COTADO(S)` : ''}</div>
                                 </div>
                                 <div style={{ color: 'var(--color-text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
                                     <ChevronDown size={20} />

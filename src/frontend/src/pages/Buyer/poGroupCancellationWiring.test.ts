@@ -170,22 +170,26 @@ describe('Register / correct P.O. — PRIOR_ECF_CONFIRMATION_PENDING and PREVIOU
         expect(registerPoSrc).toContain('data-tour="register-po-prior-ecf-block"');
         expect(registerPoSrc).toContain('data-tour="register-po-previous-number-reuse"');
         expect(registerPoSrc).toContain('REGISTER_PO_ERROR_MESSAGES.reuseCheckbox');
-        expect(registerPoSrc).toMatch(/disabled=\{isBlocked \|\| !!priorEcfBlock \|\| processing/);
+        expect(registerPoSrc).toMatch(/const submitDisabled = isBlocked \|\| !!priorEcfBlock \|\| !!documentBlock \|\| processing/);   // v2.249.4: one gate
+        expect(registerPoSrc).toMatch(/disabled=\{submitDisabled\}/);
         // Legacy branches preserved (now read through the classifier).
         expect(registerPoSrc).toMatch(/decision\.kind === 'DUPLICATE_PO'/);
         expect(registerPoSrc).toMatch(/decision\.kind === 'OCR_MISMATCH'/);
         // Upload happens once (the refused attempt already uploaded the same file).
-        expect(registerPoSrc).toMatch(/if \(!\(previousPoReuse && uploadedFileRef\.current === file\)\) \{/);
+        // v2.249.4: ANY refused resubmission of the same file reuses the upload (reuse, duplicate, mismatch, type confirmation).
+        expect(registerPoSrc).toMatch(/if \(!\(uploadedAttachmentIdRef\.current && uploadedFileRef\.current === file\)\) \{/);
     });
     it('CorrectPoModal does the same via lib/correctPoSubmission (previousPoNumberReuseComment + skipUpload)', () => {
         expect(correctPoSrc).toMatch(/const decision = classifyRegisterPoError\(err\);/);
         expect(correctPoSrc).toMatch(/if \(decision\.kind === 'PRIOR_ECF_CONFIRMATION_PENDING'\) setPriorEcfBlock\(decision\.message\);/);
         expect(correctPoSrc).toMatch(/else if \(decision\.kind === 'PREVIOUS_PO_NUMBER_REUSED'\) \{[^]*?uploadedFileRef\.current = file;[^]*?setPreviousPoReuse\(\{ message: decision\.message \}\);/);
         expect(correctPoSrc).toMatch(/previousPoNumberReuseComment: previousPoReuse \? reuseComment : undefined,/);
-        expect(correctPoSrc).toMatch(/skipUpload: !!previousPoReuse && uploadedFileRef\.current === file,/);
+        expect(correctPoSrc).toMatch(/const reuseUpload = uploadedAttachmentIdRef\.current != null && uploadedFileRef\.current === file;/);   // v2.249.4
+        expect(correctPoSrc).toMatch(/skipUpload: reuseUpload,/);
         expect(correctPoSrc).toContain('data-tour="correct-po-prior-ecf-block"');
         expect(correctPoSrc).toContain('data-tour="correct-po-previous-number-reuse"');
-        expect(correctPoSrc).toMatch(/disabled=\{!!priorEcfBlock \|\| processing/);
+        expect(correctPoSrc).toMatch(/const submitDisabled = !!priorEcfBlock \|\| !!documentBlock \|\| processing/);   // v2.249.4: one gate
+        expect(correctPoSrc).toMatch(/disabled=\{submitDisabled\}/);
     });
 });
 
@@ -239,5 +243,58 @@ describe('Workspace group cards — v2.249.2 (register vs correct, return-kind g
     });
     it('Editar/Excluir visibility uses the SERVER quotation window (scalar OR item-level), not only the scalar mirror', () => {
         expect(workspaceSrc).toMatch(/canManageWorkspaceQuotations\(ws\?\.requestStatusCode, user\?\.roles, ROLES\.BUYER, ws\?\.buyerId, user\?\.id, ws\?\.quotationWindowOpen\)/);
+    });
+});
+
+// ── v2.249.4 — TEST findings on REQ-28/10/2026-628 (source-level wiring) ──
+import attachmentsSrc from '../../components/RequestAttachments.tsx?raw';
+import coverageSrc from '../Requests/components/OperationInvoiceSection.tsx?raw';
+import reviewBlocksSrc from '../../components/po/PoDocumentReviewBlocks.tsx?raw';
+import financePanelSrc from '../../components/Finance/PoCancellationReviewPanel.tsx?raw';
+
+describe('v2.249.4 wiring', () => {
+    it('"Corrigir P.O." never mounts the registration modal underneath the correction modal', () => {
+        expect(requestEditSrc).toMatch(/\{poGroupIdForUpload && !showCorrectPoModal && \(/);
+        expect(requestEditSrc).toMatch(/\{poGroupIdForUpload && showCorrectPoModal && \(/);
+    });
+    it('both modals render the shared verdict block and the number block with provenance; the registration keeps its number source', () => {
+        expect(registerPoSrc).toMatch(/<PoDocumentVerdictBlock identification=\{identification\}/);
+        expect(registerPoSrc).toMatch(/<PoNumberFieldBlock[^]*?inputId="registerPoNumber"/);
+        expect(registerPoSrc).toMatch(/purchaseOrderNumberSource: poNumber\.source,/);
+        expect(registerPoSrc).not.toMatch(/>Documento Validado</);
+        expect(correctPoSrc).toMatch(/<PoNumberFieldBlock[^]*?inputId="correctPoNumber"/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-type-confirm"/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-number-decision"/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-number-keep-current"/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-number-use-detected"/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-document-detected-number"/);
+        expect(registerPoSrc).toMatch(/api\.requests\.poDocumentExtract\(requestId, selectedFile\)/);
+        expect(registerPoSrc).not.toMatch(/extractedDocumentNumber|extractionOutcome/);
+        expect(reviewBlocksSrc).toMatch(/data-testid="po-number-current"/);
+        expect(reviewBlocksSrc).toMatch(/Usar número extraído/);
+        expect(reviewBlocksSrc).toMatch(/Tipo detetado:/);
+    });
+    it('a superseded P.O. file is labelled "Substituído" (never "Sem efeito") and the current one "P.O. atual"', () => {
+        expect(attachmentsSrc).toMatch(/a\.supersededAtUtc \? \([^]*?Substituído/);
+        expect(attachmentsSrc).toMatch(/a\.isCurrentPo \? \([^]*?P\.O\. atual/);
+        expect(attachmentsSrc).toMatch(/Substituído pela correção da P\.O\./);
+    });
+    it('the Fatura Final section lists cancelled groups as history, outside the active cards and actions', () => {
+        expect(coverageSrc).toMatch(/filter\(o => o\.requiresOperationInvoice && !isCancelledGroupObligation\(o\)\)/);
+        expect(coverageSrc).toMatch(/const cancelledObligations = useMemo/);
+        expect(coverageSrc).toMatch(/data-testid="cancelled-groups-history"/);
+        expect(coverageSrc).toMatch(/function CancelledGroupHistoryCard/);
+        const historyCard = coverageSrc.slice(coverageSrc.indexOf('function CancelledGroupHistoryCard'), coverageSrc.indexOf('function CoverageCell'));
+        expect(historyCard.length).toBeGreaterThan(100);
+        expect(historyCard).not.toContain('Propor Encerramento');
+        expect(historyCard).not.toContain('onClick');
+    });
+    it('the Workspace and the Finance queue label a review older than the current declaration as the previous review', () => {
+        expect(workspaceSrc).toMatch(/describeFinanceReview\(c\)/);
+        expect(workspaceSrc).toMatch(/data-testid="finance-review-previous"/);
+        expect(workspaceSrc).toMatch(/data-testid="finance-review-awaiting"/);
+        expect(workspaceSrc).not.toMatch(/Por \{c\.financeConfirmedByName \|\| c\.financeReviewedByName\}/);
+        expect(financePanelSrc).toMatch(/data-testid="finance-queue-previous-review"/);
+        expect(workspaceSrc).toMatch(/groupLineNumbersLabel\(g\.lineNumbers, g\.historicalLineNumbers, cancelled\)/);
     });
 });

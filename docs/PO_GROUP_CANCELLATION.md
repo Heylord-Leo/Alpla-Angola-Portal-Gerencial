@@ -128,6 +128,10 @@ P.O. document or the history.
 - Constants: lifecycle `CANCELLED_AFTER_APPROVAL`; attachment type `PO_CANCELLATION`; events `PO_GROUP_CANCELLED`,
   `PO_CANCELLATION_CONFIRMED`, `PO_CANCELLATION_DECLARATION_REJECTED`; history actions in `PoGroupCancellationConstants.HistoryActions`.
 - No backfill. Existing data is untouched.
+- *v2.249.4* — additive migration `20261029140552_AddPoDocumentSupersessionAndExtraction`: `RequestPoGroups.CurrentPoAttachmentId`,
+  `RequestAttachments.SupersededAtUtc / SupersededByAttachmentId / SupersededByUserId` (P.O. document supersession on correction —
+  distinct from voiding) and the table `PoDocumentExtractions` (server-held P.O. extraction evidence, bound to request + file hash).
+  See `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md` §3–§4 and §7.
 
 ## 7. API
 
@@ -150,6 +154,20 @@ Read models: `RequestPoGroupDto.lastFinanceReturn / cancellation / priorEcfConfi
 `BuyerWorkspaceQuotationDto.reuseBlockedItemCount / reuseAuthorizedItemCount`; `BuyerPoCorrectionGroupDto.returnKind /
 returnKindLabel` (queue rows and personal actions); `RequestApprovalBatchItemDto.releasedAtUtc / releaseKind`; personal-action
 `route` = Workspace groups tab for QUOTATION (PAYMENT unchanged); queue operational state `PO_REGISTRATION_PENDING`.
+*v2.249.4 (findings of the v2.249.3 TEST validation — `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`):* `POST /api/v1/requests/{id}/po-document-extract`
+(scope, Buyer/SysAdmin) persists the server's reading of a P.O. document (`PoDocumentExtractions`, bound to request + SHA-256) and
+returns the `direct-ocr` envelope plus `headerSuggestions.purchaseOrderIdentification`; `register-po` requires the number on a
+correction (`400 PO_NUMBER_REQUIRED`), identifies the document from that server-held evidence only (looked up by the registered file's
+own hash; the DTO carries no extraction facts): `400 DOCUMENT_NOT_PURCHASE_ORDER` (no override), `400 DOCUMENT_TYPE_CONFIRMATION_REQUIRED`
+unless `documentTypeConfirmed` + Comment (no evidence / failed / uncertain), a kept number that differs from the document → `OCR_MISMATCH`
+override policy; refuses a P.O. file byte-identical to a quotation document of the request (`400 DOCUMENT_IS_QUOTATION_EVIDENCE`, also at
+the upload); audits a changed number (`PO_NUMBER_CORRECTED`) and stamps the current / superseded P.O. files; the obligations read model reports a
+CANCELLED group as history (`groupCancelled`, `derivedStatus=CANCELLED`, excluded from the rollup) and the short-close / invoice
+write endpoints refuse it (`409 OI_GROUP_CANCELLED`); `PoGroupCancellationDto` / Finance queue rows carry
+`financeReviewAppliesToCurrentDeclaration` + `previousFinanceReview`; `RequestPoGroupDto.currentPoAttachmentId /
+historicalLineItemCount`, `RequestAttachmentDto.requestPoGroupId / supersededAtUtc / supersededByAttachmentId / isCurrentPo`,
+`SavedQuotationDto.quotedItemCount / notQuotedItemCount`, `BuyerWorkspacePoGroupDto.historicalLineNumbers`,
+`BuyerWorkspaceQuotationDto.itemsNotQuotedCount`; `NotifyOnPoCancelled` configurable on `/api/v1/ap-notification-configs`.
 
 ## 8. Notifications — explicit recipient policy
 

@@ -7,7 +7,14 @@ import { Z_INDEX } from '../constants/ui';
 import { api } from '../lib/api';
 import { formatCurrencyAO } from '../lib/utils';
 import { logger } from '../lib/logger';
-import { classifyRegisterPoError, validatePreviousPoReuse, withPreviousPoReuse, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import { classifyRegisterPoError, validatePreviousPoReuse, withPreviousPoReuse, isDocumentBlockingKind, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import {
+    PoDocumentIdentification, PoNumberField, NO_EXTRACTION_IDENTIFICATION,
+    readPoDocumentIdentification, readDetectedDocumentNumber, initialPoNumberField, applyExtractedNumber, userEditsPoNumber,
+    useSuggestedPoNumber, clearExtractedNumber,
+} from '../lib/poDocumentIdentification';
+import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
+import { readUploadedAttachmentId } from '../lib/correctPoSubmission';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
@@ -66,8 +73,15 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     } | null>(null);
     const [overrideConfirmed, setOverrideConfirmed] = useState(false);
 
-    // PO Number State
-    const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+    // PO Number State — v2.249.4: value + provenance (EXTRACTED / MANUAL), extraction never overwrites a typed value.
+    const [poNumber, setPoNumber] = useState<PoNumberField>(initialPoNumberField(null));
+    const purchaseOrderNumber = poNumber.value;
+    // v2.249.4 — document identification (server verdict re-enforced by register-po) + explicit type confirmation.
+    const [identification, setIdentification] = useState<PoDocumentIdentification | null>(null);
+    const [detectedDocumentNumber, setDetectedDocumentNumber] = useState<string | null>(null);
+    const [documentTypeConfirmed, setDocumentTypeConfirmed] = useState(false);
+    const [documentBlock, setDocumentBlock] = useState<string | null>(null);
+    const uploadedAttachmentIdRef = useRef<string | null>(null);
 
     // Backend Overrides State
     const [backendOcrMismatch, setBackendOcrMismatch] = useState<{ details: string } | null>(null);
@@ -103,7 +117,9 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             setComment('');
             setOcrResult(null);
             setOverrideConfirmed(false);
-            setPurchaseOrderNumber('');
+            setPoNumber(initialPoNumberField(null));
+            setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false); setDocumentBlock(null);
+            uploadedAttachmentIdRef.current = null;
             setBackendOcrMismatch(null);
             setDuplicateWarning(null);
             setOverrideDuplicateConfirmed(false);
@@ -149,6 +165,10 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         setOcrResult(null);
         setOverrideConfirmed(false);
         setFeedback({ type: 'error', message: null });
+        // v2.249.4 — a new file: stale verdict, suggested number, confirmations and server answers are cleared.
+        setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false); setDocumentBlock(null);
+        setBackendOcrMismatch(null); setDuplicateWarning(null);
+        setPoNumber(f => clearExtractedNumber(f));
 
         // Step 1: the API call itself. Failures here are transport/network/backend errors —
         // distinct from a client-side exception while processing a successful response.
@@ -156,9 +176,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         try {
             // directOcrExtract handles generic layout detection & extraction
             // Response shape: { integration: { headerSuggestions: { supplierName: { value }, grandTotal: { value } } } }
-            ocrData = await api.requests.directOcrExtract(selectedFile);
+            // v2.249.4 — request-scoped, server-persisted extraction: the evidence register-po will read for this file's bytes.
+            ocrData = await api.requests.poDocumentExtract(requestId, selectedFile);
         } catch (err: any) {
             setOcrResult({ hasMismatches: true, details: resolveTransportErrorDetails(err) });
+            // v2.249.4 — no extraction: UNCERTAIN (explicit confirmation + manual number), never "validated".
+            setIdentification(NO_EXTRACTION_IDENTIFICATION);
+            setDetectedDocumentNumber(null);
             logger.log({
                 level: 'Error',
                 eventType: 'API_REQUEST_FAILED',
@@ -188,9 +212,12 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             const detectedParse = autoFill?.parse
                 ?? parsePrimaveraPoReference(extractedPoReference || extractedPoNumber);
 
-            if (autoFill && !purchaseOrderNumber) {
-                setPurchaseOrderNumber(autoFill.value);
-            }
+            // v2.249.4 — the server verdict (identity = the document's own number + heading) and the facts register-po
+            // re-evaluates; the number is filled only into an EMPTY field and otherwise offered as a suggestion.
+            const id = readPoDocumentIdentification(ocrData);
+            setIdentification(id);
+            setDetectedDocumentNumber(readDetectedDocumentNumber(ocrData));
+            setPoNumber(f => applyExtractedNumber(f, id, extractedPoReference || extractedPoNumber, knownNifs));
             setDetectedPoReference(detectedParse);
 
             const poWarnings: string[] = [];
@@ -316,6 +343,20 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             const reuseError = validatePreviousPoReuse(reuseConfirmed, reuseComment);
             if (reuseError) { setFeedback({ type: 'error', message: reuseError }); return; }
         }
+        // v2.249.4 — the document: a positively identified quotation / invoice never goes further; an UNCERTAIN one needs
+        // the explicit confirmation and a justification (the server repeats both checks).
+        if (documentBlock || identification?.isBlocked) {
+            setFeedback({ type: 'error', message: 'O documento foi identificado como cotação / proforma / factura e não pode ser registado como P.O. Escolha outro ficheiro.' });
+            return;
+        }
+        if (identification?.requiresExplicitConfirmation && !documentTypeConfirmed) {
+            setFeedback({ type: 'error', message: 'O documento não foi identificado como Ordem de Compra. Confirme explicitamente que é uma P.O. antes de registrar.' });
+            return;
+        }
+        if (identification?.requiresExplicitConfirmation && !comment.trim()) {
+            setFeedback({ type: 'error', message: 'A justificativa é obrigatória quando o documento não foi identificado automaticamente como P.O.' });
+            return;
+        }
 
         setProcessing(true);
         setFeedback({ type: 'error', message: null });
@@ -323,10 +364,11 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         setDuplicateWarning(null);
 
         try {
-            // 1. Upload the file first (skipped only on the PREVIOUS_PO_NUMBER_REUSED resubmission of the SAME file,
-            //    which the refused attempt already uploaded).
-            if (!(previousPoReuse && uploadedFileRef.current === file)) {
-                await api.attachments.upload(requestId, [file], 'PO', poGroupId);
+            // 1. Upload the file first — skipped on ANY resubmission of the SAME file after a server refusal (reuse,
+            //    duplicate, OCR mismatch, type confirmation): the refused attempt already stored it (v2.249.4).
+            if (!(uploadedAttachmentIdRef.current && uploadedFileRef.current === file)) {
+                const uploaded = await api.attachments.upload(requestId, [file], 'PO', poGroupId);
+                uploadedAttachmentIdRef.current = readUploadedAttachmentId(uploaded);
                 uploadedFileRef.current = file;
             }
 
@@ -341,10 +383,15 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
                 paymentConditionSource: paymentConditionSource || 'USER_SELECTED',
                 purchaseOrderNumber: purchaseOrderNumber.trim(),
+                purchaseOrderNumberSource: poNumber.source,
                 extractedSupplierName: ocrResult?.extractedSupplier,
                 extractedTotalAmount: ocrResult?.extractedTotal,
                 overrideDuplicateConfirmed,
-                duplicateOverrideComment: duplicateOverrideComment.trim()
+                duplicateOverrideComment: duplicateOverrideComment.trim(),
+                // v2.249.4 — the explicit type confirmation and the uploaded file id. The identification itself is never sent:
+                // the server reads the evidence it persisted for this file's bytes (po-document-extract).
+                documentTypeConfirmed,
+                ...(uploadedAttachmentIdRef.current ? { poAttachmentId: uploadedAttachmentIdRef.current } : {}),
             };
             const result = await api.requests.registerPo(requestId, previousPoReuse ? withPreviousPoReuse(basePayload, reuseComment) : basePayload);
 
@@ -371,6 +418,9 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 setBackendOcrMismatch({ details: decision.message });
                 return;
             }
+            // v2.249.4 — document identification answers.
+            if (isDocumentBlockingKind(decision.kind)) { setDocumentBlock(decision.message); return; }
+            if (decision.kind === 'DOCUMENT_TYPE_CONFIRMATION_REQUIRED') { setIdentification(prev => prev ?? NO_EXTRACTION_IDENTIFICATION); setFeedback({ type: 'error', message: decision.message }); return; }
 
             setFeedback({ type: 'error', message: decision.message });
         }
@@ -382,6 +432,9 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         setOverrideConfirmed(false);
         setBackendOcrMismatch(null);
         uploadedFileRef.current = null;
+        uploadedAttachmentIdRef.current = null;
+        setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false); setDocumentBlock(null); setDetectedPoReference(null);
+        setPoNumber(f => clearExtractedNumber(f));
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -399,6 +452,15 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         transition: 'all 0.2s ease',
         fontFamily: 'inherit'
     };
+
+    // v2.249.4 — one gate for the submit button (server rules mirrored for UX; the server stays authoritative).
+    const submitDisabled = isBlocked || !!priorEcfBlock || !!documentBlock || processing || !file || ocrLoading || !paymentCondition
+        || !purchaseOrderNumber.trim()
+        || !!identification?.isBlocked
+        || (!!identification?.requiresExplicitConfirmation && (!documentTypeConfirmed || !comment.trim()))
+        || (!!ocrResult?.hasMismatches && (!overrideConfirmed || !comment.trim()))
+        || (!!backendOcrMismatch && (!overrideConfirmed || !comment.trim()))
+        || (!!duplicateWarning && (!overrideDuplicateConfirmed || !duplicateOverrideComment.trim()));
 
     return (
         <DropdownPortal>
@@ -527,19 +589,12 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                         </div>
 
                         <div style={{ marginBottom: '20px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                Número da P.O <span style={{ color: '#ef4444' }}>*</span>
-                            </label>
-                            <input
-                                type="text"
-                                value={purchaseOrderNumber}
-                                onChange={(e) => {
-                                    setPurchaseOrderNumber(e.target.value);
-                                    setDuplicateWarning(null); // clear warning if user changes PO number
-                                    setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); // a different number is no longer a reuse
-                                }}
-                                placeholder="Ex: ECF11 2026/421"
-                                style={inputStyle}
+                            {/* v2.249.4 — number with provenance (extracted / manual); extraction never overwrites a typed value */}
+                            <PoNumberFieldBlock
+                                field={poNumber}
+                                inputId="registerPoNumber"
+                                onChange={v => { setPoNumber(f => userEditsPoNumber(f, v)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
+                                onUseSuggestion={() => { setPoNumber(f => useSuggestedPoNumber(f)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
                             />
                             {detectedPoReference && (
                                 <p style={{
@@ -635,6 +690,18 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                             </div>
                         )}
 
+                        {/* v2.249.4 — the server refused the FILE as a P.O. (quotation evidence / other document type): choose another. */}
+                        {documentBlock && (
+                            <div role="alert" data-testid="register-po-document-block" style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                <ShieldAlert size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                <div>
+                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>Documento recusado como P.O.</h4>
+                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{documentBlock}</p>
+                                    <p style={{ margin: '6px 0 0', color: '#991b1b', fontSize: '0.75rem' }}>Remova este ficheiro e carregue a Ordem de Compra emitida pelo ERP. O ficheiro recusado não é registado como P.O.</p>
+                                </div>
+                            </div>
+                        )}
+
                         <div style={{ marginBottom: '24px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                 Documento da P.O (Apenas PDF)
@@ -691,6 +758,10 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                         </button>
                                     </div>
 
+                                    {/* v2.249.4 — document verdict (identified / uncertain + confirmation / other type = blocked) */}
+                                    {!ocrLoading && (ocrResult || identification) && (
+                                        <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="register" detectedNumber={detectedDocumentNumber} />
+                                    )}
                                     {/* OCR Block */}
                                     {ocrLoading ? (
                                         <motion.div
@@ -891,15 +962,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                                     </label>
                                                 </div>
                                             </motion.div>
-                                        ) : (
-                                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '20px', backgroundColor: '#f0fdf4', border: '2px solid #22c55e', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                                <CheckCircle size={24} color="#16a34a" />
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.95rem' }}>Documento Validado</span>
-                                                    <span style={{ fontWeight: 600, color: '#15803d', fontSize: '0.8rem' }}>Os valores do PDF correspondem à cotação aprovada.</span>
-                                                </div>
-                                            </motion.div>
-                                        )
+                                        ) : null /* v2.249.4 — the verdict block above replaces the unconditional "Documento Validado" */
                                     ) : null}
                                 </div>
                             )}
@@ -987,7 +1050,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
                         <div style={{ marginBottom: '32px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                Comentário {!ocrResult?.hasMismatches ? '(opcional)' : '(Obrigatório)'}
+                                Comentário {(ocrResult?.hasMismatches || identification?.requiresExplicitConfirmation) ? '(Obrigatório)' : '(opcional)'}
                             </label>
                             <textarea
                                 value={comment}
@@ -1023,7 +1086,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                 CANCELAR
                             </button>
                             <button
-                                disabled={isBlocked || !!priorEcfBlock || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())}
+                                disabled={submitDisabled}
                                 onClick={handleConfirm}
                                 style={{
                                     height: '48px',
@@ -1034,13 +1097,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '8px',
-                                    cursor: (isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 'not-allowed' : 'pointer',
+                                    cursor: submitDisabled ? 'not-allowed' : 'pointer',
                                     fontWeight: 800,
                                     borderRadius: 'var(--radius-sm)',
                                     boxShadow: isBlocked ? 'none' : 'var(--shadow-md)',
                                     fontFamily: 'var(--font-family-display)',
                                     fontSize: '0.875rem',
-                                    opacity: (isBlocked || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (ocrResult?.hasMismatches && !comment.trim())) ? 0.7 : 1
+                                    opacity: submitDisabled ? 0.7 : 1
                                 }}
                             >
                                 <Save size={18} />

@@ -1013,6 +1013,21 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao verificar duplicidade do documento.');
             return response.json();
         },
+        /**
+         * v2.249.4 — P.O. document extraction for the registration / correction wizards. Request-scoped, Buyer/SysAdmin only;
+         * the server PERSISTS what it read, bound to the request and to the SHA-256 it computes over the bytes, and
+         * register-po identifies the document from that evidence alone (looked up by the uploaded file's own hash).
+         */
+        poDocumentExtract: async (requestId: string, file: File): Promise<OcrExtractionEnvelope> => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${requestId}/po-document-extract`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao validar o documento de P.O.', 'PoDocumentExtract');
+            return response.json();
+        },
         directOcrExtract: async (file: File, sourceContext?: string): Promise<OcrExtractionEnvelope> => {
             const formData = new FormData();
             formData.append('file', file);

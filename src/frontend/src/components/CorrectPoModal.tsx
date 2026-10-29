@@ -10,7 +10,13 @@ import { formatCurrencyAO } from '../lib/utils';
 import { logger } from '../lib/logger';
 import { RequestDetailsDto, RequestAttachmentDto } from '../types';
 import { resolveJustificationPolicy, submitCorrectPo, validateCorrectPoSubmission } from '../lib/correctPoSubmission';
-import { classifyRegisterPoError, validatePreviousPoReuse, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import { classifyRegisterPoError, validatePreviousPoReuse, isDocumentBlockingKind, REGISTER_PO_ERROR_MESSAGES } from '../lib/registerPoErrors';
+import {
+    PoDocumentIdentification, PoNumberField, NO_EXTRACTION_IDENTIFICATION,
+    readPoDocumentIdentification, readDetectedDocumentNumber, initialPoNumberField, applyExtractedNumber, userEditsPoNumber,
+    useSuggestedPoNumber, clearExtractedNumber, numberDecisionPending, keepCurrentPoNumber,
+} from '../lib/poDocumentIdentification';
+import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
@@ -63,6 +69,21 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     } | null>(null);
     const [overrideConfirmed, setOverrideConfirmed] = useState(false);
 
+    // v2.249.4 — the P.O. NUMBER the correction confirms or replaces (current vs proposed, never silently retained), the
+    // DOCUMENT verdict (server rule, re-enforced by register-po), the explicit type confirmation, and the server branches
+    // the old modal never handled (DUPLICATE_PO, OCR_MISMATCH, document blocks). The uploaded file id lets a refused
+    // register-po be retried without a second upload.
+    const [poNumber, setPoNumber] = useState<PoNumberField>(initialPoNumberField(null));
+    const [identification, setIdentification] = useState<PoDocumentIdentification | null>(null);
+    const [detectedDocumentNumber, setDetectedDocumentNumber] = useState<string | null>(null);
+    const [documentTypeConfirmed, setDocumentTypeConfirmed] = useState(false);
+    const [backendOcrMismatch, setBackendOcrMismatch] = useState<{ details: string } | null>(null);
+    const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+    const [overrideDuplicateConfirmed, setOverrideDuplicateConfirmed] = useState(false);
+    const [duplicateOverrideComment, setDuplicateOverrideComment] = useState('');
+    const [documentBlock, setDocumentBlock] = useState<string | null>(null);
+    const uploadedAttachmentIdRef = useRef<string | null>(null);
+
     // B2P: Payment Condition State
     const [paymentCondition, setPaymentCondition] = useState<string>('');
     const [advancePercent, setAdvancePercent] = useState<number>(50);
@@ -84,6 +105,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
             setOcrResult(null);
             setOverrideConfirmed(false);
             setFeedback({ type: 'error', message: null });
+            setPoNumber(initialPoNumberField(null));
+            setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false);
+            setBackendOcrMismatch(null); setDuplicateWarning(null); setOverrideDuplicateConfirmed(false); setDuplicateOverrideComment('');
+            setDocumentBlock(null); uploadedAttachmentIdRef.current = null;
             setPaymentCondition('');
             setAdvancePercent(50);
             setPaymentConditionSource('');
@@ -112,13 +137,18 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                     setReturnDate(returnEvent.createdAtUtc || '');
                 }
 
-                // Find the existing PO attachment for this group
-                const poAttachment = details.attachments
-                    ?.filter((a: RequestAttachmentDto) => a.attachmentTypeCode === 'PO' && a.requestPoGroupId === poGroupId)
-                    .sort((a: RequestAttachmentDto, b: RequestAttachmentDto) => 
-                        new Date(b.uploadedAtUtc).getTime() - new Date(a.uploadedAtUtc).getTime()
-                    )[0] || null;
+                // v2.249.4 — the CURRENT P.O. document of the group is the server's choice (currentPoAttachmentId: the file
+                // registered last; earlier files are superseded). Fallback for pre-version data: newest live P.O. file.
+                const group = details.poGroups?.find(g => g.id === poGroupId) ?? null;
+                const groupPoFiles = (details.attachments ?? [])
+                    .filter((a: RequestAttachmentDto) => a.attachmentTypeCode === 'PO' && a.requestPoGroupId === poGroupId && !a.voidedAtUtc);
+                const poAttachment = (group?.currentPoAttachmentId && groupPoFiles.find((a: RequestAttachmentDto) => a.id === group.currentPoAttachmentId))
+                    || groupPoFiles.filter((a: RequestAttachmentDto) => !a.supersededAtUtc)
+                        .sort((a: RequestAttachmentDto, b: RequestAttachmentDto) => new Date(b.uploadedAtUtc).getTime() - new Date(a.uploadedAtUtc).getTime())[0]
+                    || null;
                 setExistingPo(poAttachment);
+                // The number the group has today is the starting point of the proposed number (source CURRENT).
+                setPoNumber(initialPoNumberField(group?.purchaseOrderNumber));
 
                 // Load existing payment condition
                 if (details.paymentConditionCode) {
@@ -152,7 +182,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     // docs §G.19.3 — whether the Buyer's justification is mandatory is the BACKEND's decision for the legacy
     // request-level Finance return (requestData.legacyReturnCorrection, same predicate RegisterPo enforces) and,
     // as before, an unresolved OCR divergence. Current-code corrections keep the comment optional.
-    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches);
+    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches, !!identification?.requiresExplicitConfirmation);
     const totalAmount = resolveExpectedTotalAmount(selectedGroup?.totalAmount);
     const expectedSupplierName = resolveExpectedSupplierName(selectedGroup?.supplierNameSnapshot);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
@@ -164,14 +194,22 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         setOcrResult(null);
         setOverrideConfirmed(false);
         setFeedback({ type: 'error', message: null });
+        // v2.249.4 — a new file: the previous extraction (verdict, suggested number, confirmations, server answers) is stale.
+        setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false);
+        setBackendOcrMismatch(null); setDuplicateWarning(null); setDocumentBlock(null);
+        setPoNumber(f => clearExtractedNumber(f, selectedGroup?.purchaseOrderNumber));
 
         // Step 1: the API call itself. Failures here are transport/network/backend errors —
         // distinct from a client-side exception while processing a successful response.
         let ocrData: any;
         try {
-            ocrData = await api.requests.directOcrExtract(selectedFile);
+            // v2.249.4 — request-scoped, server-persisted extraction: the evidence register-po will read for this file's bytes.
+            ocrData = await api.requests.poDocumentExtract(requestId, selectedFile);
         } catch (err: any) {
             setOcrResult({ hasMismatches: true, details: resolveTransportErrorDetails(err) });
+            // v2.249.4 — no extraction: the document is UNCERTAIN (explicit confirmation + manual number), never "validated".
+            setIdentification(NO_EXTRACTION_IDENTIFICATION);
+            setDetectedDocumentNumber(null);
             logger.log({
                 level: 'Error',
                 eventType: 'API_REQUEST_FAILED',
@@ -187,8 +225,16 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         // Step 2: processing a successful (HTTP 200) response. Any exception here means the
         // extraction itself worked — it must never be reported as an unreadable/unsupported document.
         try {
-            const { extractedTotal, extractedSupplier, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
+            const { extractedTotal, extractedSupplier, extractedSupplierNif, extractedPoNumber, extractedPoReference,
+                paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
                 extractOcrHeaderSuggestions(ocrData);
+
+            // v2.249.4 — document identity first: the server verdict and the facts it will re-evaluate; then the number the
+            // document carries, offered next to the current number (filled only into an empty field, never over it).
+            const id = readPoDocumentIdentification(ocrData);
+            setIdentification(id);
+            setDetectedDocumentNumber(readDetectedDocumentNumber(ocrData));
+            setPoNumber(f => applyExtractedNumber(f, id, extractedPoReference || extractedPoNumber, [extractedSupplierNif]));
 
             const { hasMismatches, details } = buildOcrMismatchResult(extractedTotal, totalAmount, extractedSupplier, expectedSupplierName);
 
@@ -268,6 +314,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         setOcrResult(null);
         setOverrideConfirmed(false);
         uploadedFileRef.current = null;
+        uploadedAttachmentIdRef.current = null;
+        setIdentification(null); setDetectedDocumentNumber(null); setDocumentTypeConfirmed(false);
+        setBackendOcrMismatch(null); setDuplicateWarning(null); setOverrideDuplicateConfirmed(false); setDuplicateOverrideComment(''); setDocumentBlock(null);
+        setPoNumber(f => clearExtractedNumber(f, selectedGroup?.purchaseOrderNumber));
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -281,11 +331,18 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
             const reuseError = validatePreviousPoReuse(reuseConfirmed, reuseComment);
             if (reuseError) { setFeedback({ type: 'error', message: reuseError }); return; }
         }
+        // v2.249.4 — any refusal AFTER the upload (reuse, duplicate, OCR mismatch, type confirmation) keeps the uploaded file:
+        // the resubmission skips the upload and names it (poAttachmentId), so no duplicate P.O. file is ever created.
+        const reuseUpload = uploadedAttachmentIdRef.current != null && uploadedFileRef.current === file;
         const submission = {
             requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult, overrideConfirmed,
             paymentCondition, advancePercent, paymentConditionSource, justification,
             previousPoNumberReuseComment: previousPoReuse ? reuseComment : undefined,
-            skipUpload: !!previousPoReuse && uploadedFileRef.current === file,
+            skipUpload: reuseUpload,
+            uploadedAttachmentId: reuseUpload ? uploadedAttachmentIdRef.current : null,
+            purchaseOrderNumber: poNumber.value, purchaseOrderNumberSource: poNumber.source,
+            identification, documentTypeConfirmed, numberDecisionPending: numberDecisionPending(poNumber, selectedGroup?.purchaseOrderNumber),
+            overrideDuplicateConfirmed: !!duplicateWarning && overrideDuplicateConfirmed, duplicateOverrideComment,
         };
         const validationError = validateCorrectPoSubmission(submission);
         if (validationError) {
@@ -299,7 +356,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         try {
             // 1. Upload the new PO file, 2. register the P.O. (correction) — same order as before.
             const outcome = await submitCorrectPo(
-                { upload: api.attachments.upload, registerPo: api.requests.registerPo },
+                { upload: api.attachments.upload, registerPo: api.requests.registerPo, onUploaded: id => { uploadedAttachmentIdRef.current = id; uploadedFileRef.current = file; } },
                 submission
             );
             if (!outcome.ok) {
@@ -316,6 +373,11 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                 uploadedFileRef.current = file;
                 setPreviousPoReuse({ message: decision.message });
             }
+            // v2.249.4 — the server branches the old modal silently turned into a generic error.
+            else if (decision.kind === 'DUPLICATE_PO') setDuplicateWarning(decision.message);
+            else if (decision.kind === 'OCR_MISMATCH') setBackendOcrMismatch({ details: decision.message });
+            else if (isDocumentBlockingKind(decision.kind)) setDocumentBlock(decision.message);
+            else if (decision.kind === 'DOCUMENT_TYPE_CONFIRMATION_REQUIRED') { setIdentification(prev => prev ?? NO_EXTRACTION_IDENTIFICATION); setFeedback({ type: 'error', message: decision.message }); }
             else setFeedback({ type: 'error', message: decision.message });
             setProcessing(false);
         }
@@ -333,6 +395,17 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         transition: 'all 0.2s ease',
         fontFamily: 'inherit'
     };
+
+    // v2.249.4 — one gate for the submit button: the server rules mirrored for UX (the server stays authoritative).
+    const submitDisabled = !!priorEcfBlock || !!documentBlock || processing || !file || ocrLoading || !paymentCondition
+        || !poNumber.value.trim()
+        || numberDecisionPending(poNumber, selectedGroup?.purchaseOrderNumber)
+        || !!identification?.isBlocked
+        || (!!identification?.requiresExplicitConfirmation && !documentTypeConfirmed)
+        || (!!ocrResult?.hasMismatches && !overrideConfirmed)
+        || (!!backendOcrMismatch && !overrideConfirmed)
+        || (!!duplicateWarning && (!overrideDuplicateConfirmed || !duplicateOverrideComment.trim()))
+        || (justification.required && !comment.trim());
 
     return (
         <DropdownPortal>
@@ -476,7 +549,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 {existingPo && !poRemoved && (
                                     <div style={{ marginBottom: '24px' }}>
                                         <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                            P.O Atual (devolvida)
+                                            P.O atual (devolvida){selectedGroup?.purchaseOrderNumber ? ` — nº ${selectedGroup.purchaseOrderNumber}` : ''} · será substituída pelo novo documento
                                         </label>
                                         <div style={{
                                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -577,6 +650,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                 </button>
                                             </div>
 
+                                            {/* v2.249.4 — document verdict (identified / uncertain + confirmation / other type = blocked) */}
+                                            {!ocrLoading && (ocrResult || identification) && (
+                                                <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="correct" detectedNumber={detectedDocumentNumber} />
+                                            )}
                                             {/* OCR Block */}
                                             {ocrLoading ? (
                                                 <motion.div
@@ -700,21 +777,70 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                             </label>
                                                         </div>
                                                     </motion.div>
-                                                ) : (
-                                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '20px', backgroundColor: '#f0fdf4', border: '2px solid #22c55e', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                                        <CheckCircle size={24} color="#16a34a" />
-                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.95rem' }}>Documento Validado</span>
-                                                            <span style={{ fontWeight: 600, color: '#15803d', fontSize: '0.8rem' }}>Os valores do PDF correspondem à cotação aprovada.</span>
-                                                        </div>
-                                                    </motion.div>
-                                                )
+                                                ) : null /* v2.249.4 — the verdict block above replaces the unconditional "Documento Validado" */
                                             ) : null}
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Comment */}
+                                {/* ── v2.249.4: the P.O. number — current vs proposed; extracted / manual provenance; server branches ── */}
+                                <PoNumberFieldBlock
+                                    field={poNumber}
+                                    currentNumber={selectedGroup?.purchaseOrderNumber}
+                                    inputId="correctPoNumber"
+                                    onChange={v => { setPoNumber(f => userEditsPoNumber(f, v, selectedGroup?.purchaseOrderNumber)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
+                                    onUseSuggestion={() => { setPoNumber(f => useSuggestedPoNumber(f)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
+                                    onKeepCurrent={() => { setPoNumber(f => keepCurrentPoNumber(f, selectedGroup?.purchaseOrderNumber)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
+                                >
+                                    {duplicateWarning && (
+                                        <div data-testid="correct-po-duplicate" style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px' }}>
+                                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                                <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                                <div>
+                                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>P.O Duplicada (SISTEMA CENTRAL)</h4>
+                                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{duplicateWarning}</p>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fee2e2', padding: '12px', borderRadius: '4px', marginBottom: '12px' }}>
+                                                <input type="checkbox" id="correctPoOverrideDuplicate" checked={overrideDuplicateConfirmed} onChange={(e) => setOverrideDuplicateConfirmed(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }} />
+                                                <label htmlFor="correctPoOverrideDuplicate" style={{ cursor: 'pointer', color: '#991b1b', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                                    Confirmar uso do número de P.O duplicado sob minha responsabilidade.
+                                                </label>
+                                            </div>
+                                            {overrideDuplicateConfirmed && (
+                                                <textarea value={duplicateOverrideComment} onChange={(e) => setDuplicateOverrideComment(e.target.value)} placeholder="Justificativa obrigatória para P.O duplicada..." rows={2} style={{ ...inputStyle, resize: 'none', borderColor: '#ef4444' }} />
+                                            )}
+                                        </div>
+                                    )}
+                                    {backendOcrMismatch && (
+                                        <div data-testid="correct-po-backend-mismatch" style={{ marginTop: '12px', padding: '16px', backgroundColor: '#fff7ed', border: '2px solid #ef4444', borderRadius: '8px' }}>
+                                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                                <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                                <div>
+                                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>Divergência Detectada (SISTEMA CENTRAL)</h4>
+                                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{backendOcrMismatch.details}</p>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fee2e2', padding: '12px', borderRadius: '4px' }}>
+                                                <input type="checkbox" id="correctPoOverrideBackend" checked={overrideConfirmed} onChange={(e) => setOverrideConfirmed(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer', width: '16px', height: '16px' }} />
+                                                <label htmlFor="correctPoOverrideBackend" style={{ cursor: 'pointer', color: '#991b1b', fontSize: '0.8rem', fontWeight: 700, lineHeight: 1.4 }}>
+                                                    Estou ciente das divergências reportadas pelo sistema central e confirmo a correção sob minha responsabilidade (justificativa obrigatória no comentário).
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </PoNumberFieldBlock>
+
+                                {documentBlock && (
+                                    <div role="alert" data-testid="correct-po-document-block" style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fef2f2', border: '2px solid #ef4444', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                        <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+                                        <div>
+                                            <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>Documento recusado como P.O.</h4>
+                                            <p style={{ margin: 0, color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>{documentBlock}</p>
+                                            <p style={{ margin: '6px 0 0', color: '#991b1b', fontSize: '0.75rem' }}>Remova este ficheiro e carregue a Ordem de Compra emitida pelo ERP. O ficheiro recusado não é registado como P.O.</p>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* ── B2P: Payment Condition Selector (required) ── */}
                                 <div style={{ marginBottom: '24px', padding: '20px', backgroundColor: 'var(--color-bg-page)', border: !paymentCondition ? '2px solid #f97316' : '2px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
@@ -810,6 +936,8 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                         onChange={(e) => setComment(e.target.value)}
                                         placeholder={justification.source === 'OCR_MISMATCH'
                                             ? 'Justifique o motivo de ignorar a divergência...'
+                                            : justification.source === 'DOCUMENT_TYPE'
+                                                ? 'Justifique porque este documento é uma Ordem de Compra apesar de não ter sido identificado automaticamente...'
                                             : justification.source === 'LEGACY_RETURN'
                                                 ? 'Descreva a correção realizada na P.O devolvida por Finanças...'
                                                 : 'Descreva a correção realizada na P.O, se necessário...'}
@@ -880,7 +1008,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                         CANCELAR
                                     </button>
                                     <button
-                                        disabled={!!priorEcfBlock || processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())}
+                                        disabled={submitDisabled}
                                         onClick={handleConfirm}
                                         style={{
                                             height: '48px',
@@ -891,13 +1019,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '8px',
-                                            cursor: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())) ? 'not-allowed' : 'pointer',
+                                            cursor: submitDisabled ? 'not-allowed' : 'pointer',
                                             fontWeight: 800,
                                             borderRadius: 'var(--radius-sm)',
                                             boxShadow: 'var(--shadow-md)',
                                             fontFamily: 'var(--font-family-display)',
                                             fontSize: '0.875rem',
-                                            opacity: (processing || !file || ocrLoading || !paymentCondition || (ocrResult?.hasMismatches && !overrideConfirmed) || (justification.required && !comment.trim())) ? 0.7 : 1
+                                            opacity: submitDisabled ? 0.7 : 1
                                         }}
                                     >
                                         <Save size={18} />

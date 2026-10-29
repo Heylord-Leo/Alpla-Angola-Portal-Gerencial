@@ -19,6 +19,10 @@ public class ExtractionHeaderDto
     /// </remarks>
     public string? BilledCompanyTaxId { get; set; }
     public string? DocumentNumber { get; set; }
+    /// <summary>v2.249.4 — the main heading of the document as printed ("Encomenda a Fornecedor ECF 2026/107", "Cotação", …). Identity evidence for the P.O. identifier.</summary>
+    public string? DocumentTitle { get; set; }
+    /// <summary>v2.249.4 — other document numbers mentioned in the body (quotations, previous / cancelled P.O.s, invoices). Never the document's own number.</summary>
+    public List<string>? ReferencedDocumentNumbers { get; set; }
     public string? DocumentDate { get; set; }
 
     /// <summary>

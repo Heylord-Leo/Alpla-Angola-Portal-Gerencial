@@ -80,6 +80,8 @@ public class BuyerWorkspacePoGroupDto
     public string? PaymentConditionCode { get; set; }
     public int? PlantId { get; set; }
     public List<int> LineNumbers { get; set; } = new();
+    /// <summary>v2.249.4 — lines the group covered BEFORE a cancellation released them (empty unless cancelled with RESTART_QUOTATION).</summary>
+    public List<int> HistoricalLineNumbers { get; set; } = new();
     public DateTime CreatedAtUtc { get; set; }
     public string? RowVersion { get; set; }
     public Guid? PoResponsibleBuyerId { get; set; }
@@ -139,7 +141,10 @@ public class BuyerWorkspaceQuotationDto
     public string? SupplierName { get; set; }
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+    /// <summary>v2.249.4 — lines the supplier actually quoted (NOT_QUOTED / IGNORED placeholders excluded).</summary>
     public int ItemsQuotedCount { get; set; }
+    /// <summary>v2.249.4 — requested lines recorded as not quoted / ignored on this document.</summary>
+    public int ItemsNotQuotedCount { get; set; }
     public string? Currency { get; set; }
     public decimal TotalAmount { get; set; }
     public int DocumentCount { get; set; }   // proforma attachment presence (0/1)

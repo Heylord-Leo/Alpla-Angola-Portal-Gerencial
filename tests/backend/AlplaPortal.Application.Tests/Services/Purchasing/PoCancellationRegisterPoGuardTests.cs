@@ -79,7 +79,8 @@ public class PoCancellationRegisterPoGuardTests : IDisposable
 
     private static IFormFile Pdf(string name = "po.pdf") { var bytes = Encoding.UTF8.GetBytes("%PDF-1.4 test"); return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "files", name) { Headers = new HeaderDictionary(), ContentType = "application/pdf" }; }
 
-    private static RegisterPoActionDto Dto(Guid groupId, string number = "ECF10 2026/500") => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = number };
+    // v2.249.4 — no server-held extraction evidence in these seeds → the document is UNCERTAIN and the Buyer's explicit confirmation + justification is required (audited).
+    private static RegisterPoActionDto Dto(Guid groupId, string number = "ECF10 2026/500") => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = number, DocumentTypeConfirmed = true, Comment = "ZZTEST tipo de documento confirmado manualmente (sem extração registada no teste)" };
 
     /// <summary>Cancel group A (restart) then approve a new batch #2 whose group C covers line 1 again (WAITING_PO, P.O. file attached).</summary>
     private static async Task<(S.Seed Seed, Guid CancellationId, Guid GroupC)> RestartedAsync(ApplicationDbContext ctx, string? reuseNumber = null)

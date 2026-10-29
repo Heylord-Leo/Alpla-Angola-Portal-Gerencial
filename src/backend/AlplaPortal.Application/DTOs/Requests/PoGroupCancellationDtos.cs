@@ -110,6 +110,14 @@ public class PoGroupCancellationDto
     public string? FinanceConfirmationNote { get; set; }
     public string? FinanceReviewedByName { get; set; }
     public DateTime? FinanceReviewedAtUtc { get; set; }
+    /// <summary>
+    /// v2.249.4 — true when the last Finance review (confirmation OR rejection) was made on the CURRENT declaration
+    /// (reviewed after the last declaration update). False while a re-declared cancellation awaits a new decision:
+    /// the reviewer/note columns then describe the PREVIOUS review, surfaced as <see cref="PreviousFinanceReview"/>.
+    /// </summary>
+    public bool FinanceReviewAppliesToCurrentDeclaration { get; set; }
+    /// <summary>The review that preceded the current declaration (null when none, or when the review is current).</summary>
+    public PoGroupCancellationPreviousReviewDto? PreviousFinanceReview { get; set; }
 
     // Notification bookkeeping (D13) — last emission
     public int FinanceRecipientsResolvedCount { get; set; }
@@ -131,6 +139,16 @@ public class PoGroupCancellationDto
     public List<PoGroupCancellationItemDto> Items { get; set; } = new();
     public List<PoGroupCancellationEcfEventDto> Events { get; set; } = new();
     public PoGroupCancellationActionsDto Actions { get; set; } = new();
+}
+
+/// <summary>v2.249.4 — a Finance review that was superseded by a later Buyer declaration (history, labelled as such).</summary>
+public class PoGroupCancellationPreviousReviewDto
+{
+    /// <summary>CONFIRMED | REJECTED.</summary>
+    public string Status { get; set; } = string.Empty;
+    public string? ByName { get; set; }
+    public DateTime? AtUtc { get; set; }
+    public string? Note { get; set; }
 }
 
 public class NotificationDeliveryDto
@@ -231,6 +249,10 @@ public class FinancePoCancellationListItemDto
     public DateTime? EcfDeclaredAtUtc { get; set; }
     public string FinanceConfirmationStatus { get; set; } = string.Empty;
     public string? FinanceConfirmationNote { get; set; }
+    /// <summary>v2.249.4 — see PoGroupCancellationDto.FinanceReviewAppliesToCurrentDeclaration.</summary>
+    public bool FinanceReviewAppliesToCurrentDeclaration { get; set; }
+    /// <summary>v2.249.4 — the Buyer re-declared after this review; shown to the reviewer as context, never as the current decision.</summary>
+    public PoGroupCancellationPreviousReviewDto? PreviousFinanceReview { get; set; }
     public DateTime CancelledAtUtc { get; set; }
     public string? CancelledByName { get; set; }
     public int FinanceRecipientsResolvedCount { get; set; }

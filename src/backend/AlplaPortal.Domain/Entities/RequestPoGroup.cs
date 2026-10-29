@@ -46,6 +46,14 @@ public class RequestPoGroup
 
     public string? PurchaseOrderNumber { get; set; }
 
+    /// <summary>
+    /// v2.249.4 — the P.O. document that is CURRENT for this group: the file registered by the last REGISTER_PO /
+    /// REREGISTER_PO. Earlier P.O. files of the group are stamped superseded in the same transaction. Null for groups
+    /// registered before this version: readers fall back to the newest live P.O. file (<c>PoDocumentSelection</c>).
+    /// No FK (the attachment may be soft-deleted later; the pointer remains an audit fact).
+    /// </summary>
+    public Guid? CurrentPoAttachmentId { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
     public Guid CreatedByUserId { get; set; }
 

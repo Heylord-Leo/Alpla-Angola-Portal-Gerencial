@@ -303,6 +303,10 @@ export interface SavedQuotationDto {
     submittedBatchNumber?: number | null;
     submissionLockReason?: string | null;
     itemCount: number;
+    /** v2.249.4 — lines the supplier actually quoted (NOT_QUOTED / IGNORED placeholders excluded). */
+    quotedItemCount?: number;
+    /** v2.249.4 — requested lines recorded as not quoted / ignored on this document. */
+    notQuotedItemCount?: number;
     items: SavedQuotationItemDto[];
 }
 
@@ -330,6 +334,10 @@ export interface RequestPoGroupDto {
     createdByUserId: string;
     lineItemCount: number;
     attachmentCount: number;
+    /** v2.249.4 — lines the group covered before a cancellation released them (0 unless cancelled with RESTART_QUOTATION). */
+    historicalLineItemCount?: number;
+    /** v2.249.4 — the group's current P.O. document (pointer stamped by the registration, or the newest live file). */
+    currentPoAttachmentId?: string | null;
     payments?: RequestPaymentDto[];
     /** v2.230.0 — per-group Finance actions (SCHEDULE/PAY/CANCEL_SCHEDULE/RETURN) computed from
      *  this group's own status by the Finance payments list. Gates the multi-group card buttons. */
@@ -445,6 +453,9 @@ export interface PoGroupCancellationDto {
     financeConfirmationNote?: string | null;
     financeReviewedByName?: string | null;
     financeReviewedAtUtc?: string | null;
+    /** v2.249.4 — false while a re-declared cancellation awaits a NEW decision: the reviewer/note then belong to previousFinanceReview. */
+    financeReviewAppliesToCurrentDeclaration?: boolean;
+    previousFinanceReview?: PoGroupCancellationPreviousReviewDto | null;
     // Notification bookkeeping (D13)
     financeRecipientsResolvedCount: number;
     financeRecipientsWithEmailCount: number;
@@ -465,6 +476,14 @@ export interface PoGroupCancellationDto {
     items: PoGroupCancellationItemDto[];
     events: PoGroupCancellationEcfEventDto[];
     actions: PoGroupCancellationActionsDto;
+}
+
+/** v2.249.4 — a Finance review superseded by a later Buyer declaration (history, labelled as such). */
+export interface PoGroupCancellationPreviousReviewDto {
+    status: 'CONFIRMED' | 'REJECTED' | string;
+    byName?: string | null;
+    atUtc?: string | null;
+    note?: string | null;
 }
 
 export type FinanceEmailPolicyOutcome = 'QUEUED' | 'NO_ELIGIBLE_FINANCE_USERS' | 'ELIGIBLE_USERS_WITHOUT_EMAIL' | 'NO_PLANT_IN_APP_ONLY';
@@ -567,6 +586,9 @@ export interface FinancePoCancellationListItemDto {
     financeEmailPolicyOutcome?: FinanceEmailPolicyOutcome | string | null;
     rowVersion?: string | null;
     /** Whether THIS caller may confirm/reject (Finance role + plant scope + not the declarer). */
+    /** v2.249.4 */
+    financeReviewAppliesToCurrentDeclaration?: boolean;
+    previousFinanceReview?: PoGroupCancellationPreviousReviewDto | null;
     canReview: boolean;
     reviewBlockReason?: string | null;
 }
@@ -707,6 +729,11 @@ export interface RequestAttachmentDto {
     uploadedByName: string;
     voidedAtUtc?: string | null;
     voidReason?: string | null;
+    /** v2.249.4 — replaced by a later P.O. file of the same group (correction). History, never the current document. */
+    supersededAtUtc?: string | null;
+    supersededByAttachmentId?: string | null;
+    /** v2.249.4 — the ONE current P.O. document of its group (server-resolved). */
+    isCurrentPo?: boolean;
 }
 
 // ── ApprovalBatch (partial/batch approval) — focused interfaces for the buyer batch-composition

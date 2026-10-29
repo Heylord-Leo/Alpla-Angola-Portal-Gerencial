@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace AlplaPortal.Application.DTOs.Requests;
 
 public class RegisterPoActionDto
@@ -42,4 +45,16 @@ public class RegisterPoActionDto
     // Duplicate Validation Payload
     public bool OverrideDuplicateConfirmed { get; set; }
     public string? DuplicateOverrideComment { get; set; }
+
+    // ── v2.249.4 — P.O. document identification + document supersession ──
+    /// <summary>The P.O. attachment this registration/correction refers to (the upload response id). Null = newest live P.O. file of the group.</summary>
+    public Guid? PoAttachmentId { get; set; }
+    /// <summary>
+    /// The Buyer explicitly confirmed that a document the server could not identify as a P.O. is one (audited with the Comment).
+    /// The identification itself never comes from the client: it is derived from the server-held extraction evidence bound to
+    /// the registered file's hash (<c>PoDocumentExtraction</c>); no evidence for that exact file = UNCERTAIN.
+    /// </summary>
+    public bool DocumentTypeConfirmed { get; set; }
+    /// <summary>EXTRACTED | MANUAL | CURRENT — audit only (how the submitted number was obtained).</summary>
+    public string? PurchaseOrderNumberSource { get; set; }
 }

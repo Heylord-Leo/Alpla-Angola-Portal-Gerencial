@@ -567,7 +567,7 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
                                      || (c.EcfReference ?? "").Contains(s, StringComparison.OrdinalIgnoreCase));
         }
         var list = items.OrderBy(c => c.FinanceConfirmationStatus == C.FinanceConfirmationStatuses.Confirmed ? 1 : 0).ThenBy(c => c.CancelledAtUtc).ToList();
-        var userIds = list.SelectMany(c => new[] { c.CancelledByUserId, c.EcfDeclaredByUserId ?? Guid.Empty }).Where(id => id != Guid.Empty).Distinct().ToList();
+        var userIds = list.SelectMany(c => new[] { c.CancelledByUserId, c.EcfDeclaredByUserId ?? Guid.Empty, c.FinanceReviewedByUserId ?? Guid.Empty }).Where(id => id != Guid.Empty).Distinct().ToList();
         var names = await _context.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
         foreach (var c in list)
         {
@@ -582,6 +582,8 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
                 EcfStatus = c.EcfStatus, EcfReference = c.EcfReference,
                 EcfDeclaredByName = c.EcfDeclaredByUserId.HasValue && names.TryGetValue(c.EcfDeclaredByUserId.Value, out var dn) ? dn : null, EcfDeclaredAtUtc = c.EcfDeclaredAtUtc,
                 FinanceConfirmationStatus = c.FinanceConfirmationStatus, FinanceConfirmationNote = c.FinanceConfirmationNote,
+                FinanceReviewAppliesToCurrentDeclaration = ResolveReviewChronology(c, c.FinanceReviewedByUserId.HasValue && names.TryGetValue(c.FinanceReviewedByUserId.Value, out var rn) ? rn : null).IsCurrent,
+                PreviousFinanceReview = ResolveReviewChronology(c, c.FinanceReviewedByUserId.HasValue && names.TryGetValue(c.FinanceReviewedByUserId.Value, out var rn2) ? rn2 : null).Previous,
                 CancelledAtUtc = c.CancelledAtUtc, CancelledByName = names.TryGetValue(c.CancelledByUserId, out var cn) ? cn : null,
                 FinanceRecipientsResolvedCount = c.FinanceRecipientsResolvedCount, FinanceEmailPolicyOutcome = c.FinanceEmailPolicyOutcome, RowVersion = Convert.ToBase64String(c.RowVersion ?? Array.Empty<byte>()),
                 CanReview = block == null && c.FinanceConfirmationStatus != C.FinanceConfirmationStatuses.Confirmed, ReviewBlockReason = block?.Detail,
@@ -799,6 +801,27 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
         $"Finanças não foi notificada por e-mail/aviso: nenhum utilizador ativo com o perfil Finanças tem acesso à planta deste grupo ({r.Plant?.Name ?? r.PlantId?.ToString() ?? "sem planta"}). " +
         "A confirmação da ECF continua disponível a qualquer utilizador Finanças da planta em Obrigações & Pagamentos → Cancelamentos a confirmar. Corrija o âmbito de planta dos utilizadores Finanças e use \"Reenviar notificação\".";
 
+    /// <summary>
+    /// v2.249.4 — the Finance review columns hold the LAST review (confirmation or rejection). After a rejection the Buyer
+    /// updates the declaration, which returns the status to PENDING without clearing those columns (they are evidence).
+    /// A review made BEFORE the current declaration (<c>FinanceReviewedAtUtc &lt; EcfDeclaredAtUtc</c>) therefore describes
+    /// the PREVIOUS declaration: it is reported as history, never as the decision on the declaration now awaiting review.
+    /// Pure over the row; the event table is not needed for the chronology.
+    /// </summary>
+    internal static (bool IsCurrent, PoGroupCancellationPreviousReviewDto? Previous) ResolveReviewChronology(RequestPoGroupCancellation c, string? reviewerName)
+    {
+        if (!c.FinanceReviewedAtUtc.HasValue) return (false, null);
+        var isCurrent = !c.EcfDeclaredAtUtc.HasValue || c.FinanceReviewedAtUtc.Value >= c.EcfDeclaredAtUtc.Value;
+        if (isCurrent) return (true, null);
+        var previousStatus = c.FinanceConfirmedAtUtc.HasValue && c.FinanceConfirmedAtUtc.Value == c.FinanceReviewedAtUtc.Value
+            ? C.FinanceConfirmationStatuses.Confirmed
+            : C.FinanceConfirmationStatuses.Rejected;
+        return (false, new PoGroupCancellationPreviousReviewDto
+        {
+            Status = previousStatus, ByName = reviewerName, AtUtc = c.FinanceReviewedAtUtc, Note = c.FinanceConfirmationNote,
+        });
+    }
+
     private async Task<PoGroupCancellationDto> BuildDtoAsync(RequestPoGroupCancellation c, PoGroupCancellationActor actor)
     {
         var ids = c.EcfEvents.Select(e => e.ActorUserId).Concat(new[] { c.CancelledByUserId, c.EcfDeclaredByUserId ?? Guid.Empty, c.FinanceConfirmedByUserId ?? Guid.Empty, c.FinanceReviewedByUserId ?? Guid.Empty })
@@ -812,6 +835,7 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
         var buyerAuth = AuthorizeBuyer(request, group, actor) == null;
         var financeBlock = await FinanceReviewBlockReasonAsync(c, actor);
         var open = c.FinanceConfirmationStatus is C.FinanceConfirmationStatuses.Pending or C.FinanceConfirmationStatuses.Rejected;
+        var (reviewIsCurrent, previousReview) = ResolveReviewChronology(c, N(c.FinanceReviewedByUserId));
         return new PoGroupCancellationDto
         {
             Id = c.Id, RequestPoGroupId = c.RequestPoGroupId, RequestId = c.RequestId, Kind = c.Kind, ReasonCode = c.ReasonCode, ReasonLabel = C.ReasonCodes.Label(c.ReasonCode), Reason = c.Reason,
@@ -822,6 +846,7 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
             EcfEvidenceAttachmentId = c.EcfEvidenceAttachmentId, EcfDeclaredByUserId = c.EcfDeclaredByUserId, EcfDeclaredByName = N(c.EcfDeclaredByUserId), EcfDeclaredAtUtc = c.EcfDeclaredAtUtc,
             FinanceConfirmationStatus = c.FinanceConfirmationStatus, FinanceConfirmedByUserId = c.FinanceConfirmedByUserId, FinanceConfirmedByName = N(c.FinanceConfirmedByUserId),
             FinanceConfirmedAtUtc = c.FinanceConfirmedAtUtc, FinanceConfirmationNote = c.FinanceConfirmationNote, FinanceReviewedByName = N(c.FinanceReviewedByUserId), FinanceReviewedAtUtc = c.FinanceReviewedAtUtc,
+            FinanceReviewAppliesToCurrentDeclaration = reviewIsCurrent, PreviousFinanceReview = previousReview,
             FinanceRecipientsResolvedCount = c.FinanceRecipientsResolvedCount, FinanceRecipientsWithEmailCount = c.FinanceRecipientsWithEmailCount, FinanceEmailsQueuedCount = c.FinanceEmailsQueuedCount,
             FinanceEmailPolicyOutcome = c.FinanceEmailPolicyOutcome, BuyerRecipientResolved = c.BuyerRecipientResolved, BuyerEmailQueued = c.BuyerEmailQueued,
             LastNotificationCorrelationId = c.LastNotificationCorrelationId, LastNotifiedAtUtc = c.LastNotifiedAtUtc, NotificationResendCount = c.NotificationResendCount,

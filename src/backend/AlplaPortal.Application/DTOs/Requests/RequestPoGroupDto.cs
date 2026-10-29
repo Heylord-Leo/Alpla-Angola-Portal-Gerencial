@@ -39,6 +39,10 @@ public class RequestPoGroupDto
     public int LineItemCount { get; set; }
 
     public int AttachmentCount { get; set; }
+    /// <summary>v2.249.4 — lines this group covered before a cancellation released them (0 unless cancelled with RESTART_QUOTATION).</summary>
+    public int HistoricalLineItemCount { get; set; }
+    /// <summary>v2.249.4 — the group's current P.O. document (pointer or resolved fallback). Null when no live P.O. file exists.</summary>
+    public Guid? CurrentPoAttachmentId { get; set; }
 
     public List<RequestPaymentDto> Payments { get; set; } = new();
 

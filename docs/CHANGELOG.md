@@ -4,7 +4,81 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.3
+v2.249.4
+
+## [v2.249.4] - 2026-10-29 — P.O. document validation (server-held evidence), correction number, superseded P.O. files, cancelled-group invoice obligations, Print View dates, counts, previous Finance review, AP cancellation switch
+
+PATCH, backend + frontend, **additive migration `20261029140552_AddPoDocumentSupersessionAndExtraction`** (4 nullable columns:
+`RequestPoGroups.CurrentPoAttachmentId`, `RequestAttachments.SupersededAtUtc/SupersededByAttachmentId/SupersededByUserId`; new table
+`PoDocumentExtractions` + index; no data statements, no backfill; **TEST: Apply TEST Migrations before Deploy to TEST; never `Down`**).
+No configuration change. Nine findings of the manual TEST validation of v2.249.3 on REQ-28/10/2026-628, reference
+`docs/PO_DOCUMENT_VALIDATION_v2.249.4.md` (matrix, trust model, dates, legacy data, tests), decision DEC-152, manual resume script §3.9.
+
+- **P.O. correction can now change the number (confirmed defect).** `CorrectPoModal` had no number field and
+  `lib/correctPoSubmission` never sent one; `RegisterPo` keeps the stored number when none arrives, so the quotation number
+  `TEST-MAQSIS-2026-9003` survived the correction. Now: the current number and the number detected in the replacement document are
+  shown separately; when they differ the Buyer must choose ("Usar número detetado" / type another / "Manter número atual") before
+  submitting; `register-po` refuses a correction without a number (`400 PO_NUMBER_REQUIRED`), treats a kept number that differs
+  from what the server's evidence read as an OCR divergence (existing override: confirmation + justification) and audits a change
+  (`PO_NUMBER_CORRECTED`: old → new, source, current and superseded files). Also fixed on the trace: "Corrigir P.O." mounted the
+  registration modal underneath the correction modal; the correction's "P.O. atual" card never matched a file because the
+  attachment DTO lacked `requestPoGroupId`.
+- **Document identification on server-held evidence (confirmed defect: a quotation PDF was registered as the P.O.; type
+  verification was absent, not bypassed).** New `POST /api/v1/requests/{id}/po-document-extract` (request scope, then Buyer/SysAdmin)
+  persists what the provider read as `PoDocumentExtraction`, bound to the request and to the SHA-256 the server computes; both
+  wizards call it instead of the anonymous `direct-ocr` (which is unchanged for other callers). `register-po` identifies the document
+  from that evidence only, looked up by the registered attachment's own server-computed hash — the DTO carries **no** extraction
+  fields. Pure rule `PurchaseOrderDocumentIdentifier` (shared, Domain): identity = the document's own number + heading; only
+  `ECF11` (Serviços), `ECF10` (Materiais diversos) and `ECF` (Material de stock) are recognised, longest family first, word-bounded
+  (`ECF99` is never generic `ECF`); body references never identify. Verdicts: IDENTIFIED_PO; IDENTIFIED_OTHER_TYPE (quotation /
+  proforma / invoice without any P.O. identity → `400 DOCUMENT_NOT_PURCHASE_ORDER`, no override, whatever supplier and amount say);
+  UNCERTAIN (several identities, confident contrary classification, body references only, unrecognised prefix, no identifier, **no
+  evidence for this exact file**, provider failure → `400 DOCUMENT_TYPE_CONFIRMATION_REQUIRED` unless `documentTypeConfirmed` +
+  Comment, audited with the evidence reference). Extraction-independent guard: a P.O. file byte-identical to a QUOTATION / PROFORMA
+  document of the request is refused at the upload and at the registration (`400 DOCUMENT_IS_QUOTATION_EVIDENCE`). The OpenAI prompt
+  returns `documentTitle` and `referencedDocumentNumbers`. **Behaviour change:** a P.O. file that was never run through the wizard's
+  extraction (API clients, failed OCR) now requires the explicit, audited type confirmation + justification to register.
+- **Superseded vs current P.O. documents (confirmed defect).** `RegisterPo` stamps `RequestPoGroup.CurrentPoAttachmentId` and
+  supersedes the earlier live P.O. files of the group in the same transaction (chained on repeated corrections, earlier stamps never
+  rewritten). One reader rule `PoDocumentSelection` (group-bound; pointer → newest live non-superseded → newest live; deleted/voided
+  never current) feeds `RequestPoGroupDto.currentPoAttachmentId`, `RequestAttachmentDto.isCurrentPo / supersededAtUtc /
+  supersededByAttachmentId / requestPoGroupId`, the correction modal and the Print View. UI: "Substituído" (amber, history) ≠
+  "Sem efeito" (voided, DEC-150) ≠ "P.O. atual". Legacy groups (no pointer): newest live file is current; the first correction
+  supersedes every earlier live file. Migration rehearsed on a pre-migration LocalDB database with the idempotent script.
+- **Cancelled group without active final-invoice obligation (confirmed defect).** `OperationInvoiceObligationProjector` now receives
+  the group status: CANCELLED (DEC-151) → `requiresOperationInvoice=false`, `derivedStatus=CANCELLED` (derived-only constant),
+  expected/remaining null, `historicalExpectedAmount`, `historicalLineItemCount`, no drift, excluded from the rollup
+  (`cancelledGroupCount`). Writes refused: short-close propose/approve/reject (`409 OI_GROUP_CANCELLED`), invoice create admissibility,
+  supplier-belongs, allocation PUT and integrity, finalize "unclassified". UI: "Histórico — grupos P.O. cancelados" block, no actions;
+  REQ-628 active total 350,000 = MULTIBIZ 120,000 + MAQSIS 230,000. Dashboards/alerts never read invoice obligations; the Finance
+  obligations list, the completion engine and the readiness endpoint already excluded cancelled groups. Cached invoice columns are
+  not rewritten (history).
+- **Print View dates one day earlier (hypothesis confirmed).** The shared formatters parsed offsetless backend strings
+  (`"2026-11-04T00:00:00"`, how System.Text.Json serializes every `datetime2`) as browser-local time and then used UTC getters.
+  Date-only business fields in the Print View (quotation date, required date, scheduled/paid dates) now use `formatCalendarDate`
+  (string slicing, no timezone); `formatDate` / `formatDateTime` / `formatTime` / `getUrgencyStyle` read an offsetless string as UTC
+  (`parseBackendInstant`). **Visible impact on other screens:** offsetless audit timestamps now display the stored UTC time instead of
+  UTC minus the browser offset (+1 h on Angola browsers); suffixed values unchanged. No data corrected.
+- **Item counts (labelling).** `SavedQuotationDto.quotedItemCount / notQuotedItemCount` and `BuyerWorkspaceQuotationDto.itemsQuotedCount
+  / itemsNotQuotedCount` separate quoted lines from NOT_QUOTED / IGNORED reconciliation placeholders ("Itens cotados" / "não cotados");
+  cancelled RESTART groups show their released lines as history (`historicalLineItemCount`, `historicalLineNumbers`).
+- **Previous Finance review (confirmed defect).** After a rejection and a re-declaration the status is PENDING but the review columns
+  (evidence) still named the previous reviewer. Read-side chronology (`financeReviewAppliesToCurrentDeclaration`,
+  `previousFinanceReview` on the detail and the Finance queue): the Workspace shows "Declaração atual ainda sem decisão de Finanças"
+  and a labelled "Revisão anterior (rejeitada) — declaração entretanto atualizada"; the Finance queue shows it as context.
+- **`NotifyOnPoCancelled` configurable** on `/api/v1/ap-notification-configs` (GET/POST/PUT) and in Configuração → Contas a Pagar
+  (checkbox + column "P.O. canc."); default off.
+- Reported, unchanged: cancellation evidence upload (optional enhancement, no requirement), requester cancellation e-mail (D16),
+  legacy "Cotar itens" and the dashboard's one entry per action (existing behaviour). **Pre-existing defect recorded, not fixed:**
+  the EF migration chain is not replayable from an empty database (`20260603152331_AddItemCatalogSourceCompanyFix` re-adds the
+  `SourceCompany` and `LastSyncedAtUtc` columns of `20260603151258`) — `docs/BACKLOG-MIGRATION-CHAIN-REPLAY.md`.
+- Tests: backend `PurchaseOrderDocumentIdentifierTests`, `RegisterPoDocumentIdentificationTests` (trust model, numbers, REQ-628
+  cases, legacy supersession, evidence-hash guard, extraction endpoint), `PoDocumentSupersessionMigrationRehearsalTests` (LocalDB),
+  `CancelledGroupObligationTests`, extensions of `PoGroupCancellationServiceTests` and `AccountsPayableConfigControllerTests`; the four
+  pre-existing register-po test classes now pass the explicit type confirmation. Frontend `utils.dates.test.ts`,
+  `poDocumentIdentification.test.ts`, extensions of `correctPoSubmission`, `registerPoErrors`, `operationInvoiceView`,
+  `requestPrintModel`, `buyerWorkspaceView`, `poGroupCancellation`, `poGroupCancellationWiring`, `apNotificationsForm` tests.
+  **Not verified in a browser.**
 
 ## [v2.249.3] - 2026-10-29 — Import wizard: OCR extraction on the item-level quotation window; failures shown inside the wizard
 

@@ -15,6 +15,10 @@ interface Attachment {
     uploadedByName: string;
     voidedAtUtc?: string | null;
     voidReason?: string | null;
+    /** v2.249.4 — document supersession (a later P.O. file of the same group replaced this one) and the current flag. */
+    supersededAtUtc?: string | null;
+    supersededByAttachmentId?: string | null;
+    isCurrentPo?: boolean;
 }
 
 interface RequestAttachmentsProps {
@@ -333,6 +337,15 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: '#dc2626', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                                                 Sem efeito
                                                             </span>
+                                                        ) : a.supersededAtUtc ? (
+                                                            /* v2.249.4 — replaced by a correction: history, never "cancelled" and never the current P.O. */
+                                                            <span data-testid="attachment-superseded" style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                                                Substituído
+                                                            </span>
+                                                        ) : a.isCurrentPo ? (
+                                                            <span data-testid="attachment-current-po" style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: '#166534', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                                                P.O. atual
+                                                            </span>
                                                         ) : (
                                                             <CheckCircle size={14} style={{ color: '#10B981' }} />
                                                         )}
@@ -344,6 +357,11 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                                                 {a.voidedAtUtc && a.voidReason && (
                                                     <div style={{ fontSize: '0.7rem', color: '#dc2626', marginLeft: '24px', marginTop: '2px', fontStyle: 'italic' }}>
                                                         Cancelado: {a.voidReason}
+                                                    </div>
+                                                )}
+                                                {!a.voidedAtUtc && a.supersededAtUtc && (
+                                                    <div style={{ fontSize: '0.7rem', color: '#92400e', marginLeft: '24px', marginTop: '2px', fontStyle: 'italic' }}>
+                                                        Substituído pela correção da P.O. em {formatDateTime(a.supersededAtUtc)} — mantido como histórico; não é o documento atual.
                                                     </div>
                                                 )}
                                             </div>

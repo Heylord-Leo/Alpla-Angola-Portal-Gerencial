@@ -193,7 +193,7 @@ export function getUrgencyStyle(needByDateUtc: string | null | undefined, status
     // Use UTC for "today" to match deadline normalization
     const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
-    const d = new Date(needByDateUtc);
+    const d = parseBackendInstant(needByDateUtc); // offsetless backend string = UTC midnight, never local
     if (isNaN(d.getTime())) return null;
     // Normalized deadline to UTC 00:00:00
     const deadline = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -227,12 +227,40 @@ export function getUrgencyStyle(needByDateUtc: string | null | undefined, status
     return null; // Comfortable future
 }
 
+/**
+ * Parses a backend date/datetime value as the UTC instant it represents.
+ *
+ * Contract: every `*Utc` column and every date-only business field (`NeedByDateUtc`, `DocumentDate`, `DueDate`,
+ * `ScheduledDateUtc`, …) is stored as UTC in `datetime2` and serialized by System.Text.Json WITHOUT an offset
+ * (`DateTimeKind.Unspecified` → `"2026-11-04T00:00:00"`). `new Date("2026-11-04T00:00:00")` reads such a string as
+ * browser-LOCAL time; combined with UTC getters that shifted the calendar day by one on any UTC+ browser (Angola, UTC+1:
+ * 04/11 shown as 03/11 in the Print View — v2.249.4). An offsetless string is therefore read as UTC, a string with an offset
+ * as-is, and a bare `YYYY-MM-DD` as UTC midnight (the ECMAScript date-only form is already UTC; no suffix is appended to it).
+ */
+export function parseBackendInstant(value: string | Date): Date {
+    if (value instanceof Date) return value;
+    const s = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00Z`);
+    return new Date(HAS_TIMEZONE.test(s) ? s : `${s}Z`);
+}
+
+/**
+ * CALENDAR date of a DATE-ONLY business field (NeedByDateUtc, Quotation.DocumentDate, ScheduledDateUtc, PaidDateUtc, invoice
+ * DocumentDate/DueDate): pure string slicing, no Date object, no timezone — the day printed is the day stored, on every
+ * browser. Use it for calendar dates; use formatDate / formatDateTime for instants (audit timestamps), which are UTC.
+ */
+export function formatCalendarDate(value: string | Date | null | undefined): string {
+    if (!value) return '-';
+    if (value instanceof Date) return isNaN(value.getTime()) ? '-' : formatDate(value);
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+    if (!match) return '-';
+    return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 export function formatDate(date: string | Date | null | undefined): string {
     if (!date) return '-';
-    // If it's a string from backend like "2023-10-25", we want to keep that exact date regardless of timezone
-    // new Date("2023-10-25") in some browsers/locales might shift.
-    // However, our backend strings are usually ISO UTC
-    const d = new Date(date);
+    // Calendar day of the UTC instant: offsetless backend strings are UTC (see parseBackendInstant) — never local time.
+    const d = parseBackendInstant(date);
     if (isNaN(d.getTime())) return '-';
 
     const day = d.getUTCDate().toString().padStart(2, '0');
@@ -244,7 +272,7 @@ export function formatDate(date: string | Date | null | undefined): string {
 
 export function formatDateTime(date: string | Date | null | undefined): string {
     if (!date) return '-';
-    const d = new Date(date);
+    const d = parseBackendInstant(date);
     if (isNaN(d.getTime())) return '-';
 
     const day = d.getUTCDate().toString().padStart(2, '0');
@@ -258,7 +286,7 @@ export function formatDateTime(date: string | Date | null | undefined): string {
 
 export function formatTime(date: string | Date | null | undefined): string {
     if (!date) return '-';
-    const d = new Date(date);
+    const d = parseBackendInstant(date);
     if (isNaN(d.getTime())) return '-';
 
     const hours = d.getUTCHours().toString().padStart(2, '0');
@@ -288,8 +316,7 @@ const ANGOLA_TZ = 'Africa/Luanda';
  * Handles seven-digit fractional seconds from SQL Server datetime2.
  */
 function parseUtcInstant(value: string | Date): Date {
-    if (value instanceof Date) return value;
-    return new Date(HAS_TIMEZONE.test(value) ? value : `${value}Z`);
+    return parseBackendInstant(value);
 }
 
 /**

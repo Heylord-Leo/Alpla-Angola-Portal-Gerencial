@@ -229,3 +229,46 @@ describe('buildRequestPrintModel (§27)', () => {
     expect(m.approvals).toHaveLength(0);
   });
 });
+
+// ── v2.249.4 — TEST findings on REQ-628 in the Print View ──
+describe('Print View v2.249.4', () => {
+    it('date-only business fields keep their calendar day as the API really sends them (offsetless), under UTC+1', () => {
+        (globalThis as any).process.env.TZ = 'Africa/Luanda';
+    const m = buildRequestPrintModel(baseDetail({
+      needByDateUtc: '2026-11-04T00:00:00',
+      quotations: [{ id: 'q1', supplierNameSnapshot: 'MAQSIS', documentNumber: 'TEST-MAQSIS-2026-9003', documentDate: '2026-10-29T00:00:00', currency: 'AOA', totalAmount: 230000, itemCount: 1, quotedItemCount: 1, notQuotedItemCount: 0, isSelected: true }] as any,
+    }));
+    expect(m.general.find(f => f.label === 'Data necessária')!.value).toBe('04/11/2026');
+    expect(m.quotations[0].fields.find(f => f.label === 'Data')!.value).toBe('29/10/2026');
+  });
+  it('a quotation prints quoted items apart from NOT_QUOTED placeholders (TREVOTECH: 1 quoted, 1 not quoted — never "Itens: 2")', () => {
+    const m = buildRequestPrintModel(baseDetail({
+      quotations: [{ id: 'q1', supplierNameSnapshot: 'TREVOTECH', documentNumber: 'TREVO-1', currency: 'AOA', totalAmount: 250000, itemCount: 2, quotedItemCount: 1, notQuotedItemCount: 1, isSelected: true }] as any,
+    }));
+    const f = m.quotations[0].fields;
+    expect(f.find(x => x.label === 'Itens cotados')!.value).toBe('1');
+    expect(f.find(x => x.label === 'Itens não cotados')!.value).toBe('1');
+    expect(f.find(x => x.label === 'Itens')).toBeUndefined();
+  });
+  it('a cancelled RESTART group prints its released lines as history and names the current P.O. document of live groups', () => {
+    const m = buildRequestPrintModel(baseDetail({
+      poGroups: [
+        { id: 'g1', requestId: 'r1', supplierNameSnapshot: 'TREVOTECH', totalAmount: 250000, currencyCode: 'AOA', status: 'CANCELLED', purchaseOrderNumber: 'ECF99 2026/9001', lineItemCount: 0, historicalLineItemCount: 1, attachmentCount: 1, payments: [] },
+        { id: 'g2', requestId: 'r1', supplierNameSnapshot: 'MAQSIS', totalAmount: 230000, currencyCode: 'AOA', status: 'PO_ISSUED', purchaseOrderNumber: 'ECF99 2026/9003', lineItemCount: 1, attachmentCount: 2, currentPoAttachmentId: 'a2', payments: [] },
+      ] as any,
+      attachments: [
+        { id: 'a1', fileName: 'Cotacao_TEST_MAQSIS_9003_REQ628.pdf', fileExtension: 'pdf', attachmentTypeCode: 'PO', requestPoGroupId: 'g2', uploadedAtUtc: '2026-10-29T08:00:00', uploadedByName: 'Samuel', supersededAtUtc: '2026-10-29T10:00:00', supersededByAttachmentId: 'a2' },
+        { id: 'a2', fileName: 'PO_Ficticia_MAQSIS_9003_REQ628.pdf', fileExtension: 'pdf', attachmentTypeCode: 'PO', requestPoGroupId: 'g2', uploadedAtUtc: '2026-10-29T10:00:00', uploadedByName: 'Samuel', isCurrentPo: true },
+      ] as any,
+    }));
+    const g1 = m.groups[0].fields; const g2 = m.groups[1].fields;
+    expect(g1.find(f => f.label === 'Itens (histórico, libertados)')!.value).toBe('1');
+    expect(g1.find(f => f.label === 'Itens')).toBeUndefined();
+    expect(g2.find(f => f.label === 'Documento P.O. atual')!.value).toBe('PO_Ficticia_MAQSIS_9003_REQ628.pdf');
+    expect(m.attachments[0].superseded).toBe(true); expect(m.attachments[0].voided).toBe(false);
+    expect(m.attachments[0].fields.find(f => f.label === 'Situação')!.value).toBe('Substituído em 29/10/2026 (histórico)');
+    expect(m.attachments[0].fields.find(f => f.label === 'Anulado')).toBeUndefined();
+    expect(m.attachments[1].currentPo).toBe(true);
+    expect(m.attachments[1].fields.find(f => f.label === 'Situação')!.value).toBe('P.O. atual');
+  });
+});

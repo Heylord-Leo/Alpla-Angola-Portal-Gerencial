@@ -12,7 +12,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { MIN_JUSTIFICATION_LENGTH } from './poGroupCancellation';
 
-export type RegisterPoErrorKind = 'PRIOR_ECF_CONFIRMATION_PENDING' | 'PREVIOUS_PO_NUMBER_REUSED' | 'DUPLICATE_PO' | 'OCR_MISMATCH' | 'OTHER';
+export type RegisterPoErrorKind =
+    | 'PRIOR_ECF_CONFIRMATION_PENDING' | 'PREVIOUS_PO_NUMBER_REUSED' | 'DUPLICATE_PO' | 'OCR_MISMATCH'
+    // v2.249.4 — P.O. document identification (server-enforced, shared by registration and correction)
+    | 'DOCUMENT_NOT_PURCHASE_ORDER'        // positively another type (quotation / proforma / invoice): blocked, no override
+    | 'DOCUMENT_IS_QUOTATION_EVIDENCE'     // byte-identical to a quotation / proforma document of the request: blocked
+    | 'DOCUMENT_TYPE_CONFIRMATION_REQUIRED'// UNCERTAIN document: explicit confirmation + justification needed
+    | 'PO_NUMBER_REQUIRED'                 // correction without a number
+    | 'PO_ATTACHMENT_INVALID'              // the upload id no longer names a live P.O. file of the group
+    | 'OTHER';
+
+/** Kinds that block the registration with the CURRENT file: the Buyer must choose another document. */
+export const DOCUMENT_BLOCKING_KINDS: readonly RegisterPoErrorKind[] = ['DOCUMENT_NOT_PURCHASE_ORDER', 'DOCUMENT_IS_QUOTATION_EVIDENCE'];
+export function isDocumentBlockingKind(kind: RegisterPoErrorKind): boolean { return DOCUMENT_BLOCKING_KINDS.includes(kind); }
 
 export interface RegisterPoErrorDecision {
     kind: RegisterPoErrorKind;
@@ -71,6 +83,11 @@ export function classifyRegisterPoError(err: ErrorLike | null | undefined): Regi
         };
     }
     if (title === 'DUPLICATE_PO' || code === 'DUPLICATE_PO') return { kind: 'DUPLICATE_PO', message: detail || 'Número de P.O já existente.' };
+    if (code === 'DOCUMENT_NOT_PURCHASE_ORDER') return { kind: 'DOCUMENT_NOT_PURCHASE_ORDER', message: detail || 'O documento não é uma Ordem de Compra.' };
+    if (code === 'DOCUMENT_IS_QUOTATION_EVIDENCE') return { kind: 'DOCUMENT_IS_QUOTATION_EVIDENCE', message: detail || 'O ficheiro é o documento de cotação já registado neste pedido.' };
+    if (code === 'DOCUMENT_TYPE_CONFIRMATION_REQUIRED') return { kind: 'DOCUMENT_TYPE_CONFIRMATION_REQUIRED', message: detail || 'Confirme que o documento é uma Ordem de Compra e justifique.' };
+    if (code === 'PO_NUMBER_REQUIRED') return { kind: 'PO_NUMBER_REQUIRED', message: detail || 'Indique o número da P.O. corrigida.' };
+    if (code === 'PO_ATTACHMENT_INVALID') return { kind: 'PO_ATTACHMENT_INVALID', message: detail || 'O documento de P.O. indicado já não está ativo. Carregue-o novamente.' };
     if (title === 'OCR_MISMATCH' || code === 'OCR_MISMATCH') return { kind: 'OCR_MISMATCH', message: detail || 'Divergências validadas pelo sistema central.' };
     return { kind: 'OTHER', message: err?.message || detail || REGISTER_PO_ERROR_MESSAGES.generic };
 }

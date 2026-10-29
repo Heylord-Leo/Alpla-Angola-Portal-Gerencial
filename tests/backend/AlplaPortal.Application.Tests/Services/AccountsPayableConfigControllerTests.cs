@@ -96,4 +96,30 @@ public class AccountsPayableConfigControllerTests
         var row = await ctx.AccountsPayableNotificationConfigs.AsNoTracking().SingleAsync();
         Assert.False(row.IsActive); Assert.True(row.NotifyOnPoRegistered); Assert.True(row.NotifyFinanceUsersByEmail);
     }
+
+    // ── v2.249.4 — NotifyOnPoCancelled (DEC-151 AP notice) is configurable through the same supported path ──
+
+    [Fact]
+    public async Task NotifyOnPoCancelled_defaults_to_false_and_round_trips_through_create_get_and_update()
+    {
+        await using var ctx = NewCtx();
+        ctx.Companies.Add(new Company { Id = 1, Name = "AlplaPLASTICO", IsActive = true }); await ctx.SaveChangesAsync();
+        var created = Assert.IsType<OkObjectResult>(await Controller(ctx).Create(new AccountsPayableConfigController.CreateApConfigDto { CompanyId = 1, Email = "ap@alpla.test" }));
+        Assert.False(Prop<bool>(created.Value!, "NotifyOnPoCancelled"));
+        var row = await ctx.AccountsPayableNotificationConfigs.AsNoTracking().SingleAsync();
+        Assert.False(row.NotifyOnPoCancelled);
+
+        Assert.IsType<OkResult>(await Controller(ctx).Update(row.Id, new AccountsPayableConfigController.UpdateApConfigDto { Email = "ap@alpla.test", NotifyOnPoCancelled = true, NotifyOnPoRegistered = false }));
+        ctx.ChangeTracker.Clear();
+        row = await ctx.AccountsPayableNotificationConfigs.AsNoTracking().SingleAsync();
+        Assert.True(row.NotifyOnPoCancelled); Assert.False(row.NotifyOnPoRegistered); Assert.True(row.NotifyOnScheduled);
+
+        var list = Assert.IsType<OkObjectResult>(await Controller(ctx).GetAll());
+        var first = ((System.Collections.IEnumerable)list.Value!).Cast<object>().Single();
+        Assert.True(Prop<bool>(first, "NotifyOnPoCancelled"));
+
+        Assert.IsType<OkResult>(await Controller(ctx).Update(row.Id, new AccountsPayableConfigController.UpdateApConfigDto { Email = "ap@alpla.test" }));   // omitted → false again
+        ctx.ChangeTracker.Clear();
+        Assert.False((await ctx.AccountsPayableNotificationConfigs.AsNoTracking().SingleAsync()).NotifyOnPoCancelled);
+    }
 }

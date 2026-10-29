@@ -43,6 +43,18 @@ public sealed record OperationInvoiceObligationGroupSnapshot
 
     /// <summary>The line items that landed in this group.</summary>
     public IReadOnlyList<Guid> LineItemIds { get; init; } = Array.Empty<Guid>();
+
+    /// <summary>
+    /// `RequestPoGroup.Status`. A CANCELLED group (DEC-151) carries no active obligation: the projector reports it as
+    /// history (v2.249.4). Null/unknown = treated as live (legacy callers that never passed a status).
+    /// </summary>
+    public string? GroupStatus { get; init; }
+
+    /// <summary>
+    /// Lines the group covered BEFORE a cancellation released them (`RequestPoGroupCancellationItems.PreviousPoGroupId`).
+    /// Only meaningful for a cancelled group whose live links were removed by a RESTART_QUOTATION outcome.
+    /// </summary>
+    public int HistoricalLineItemCount { get; init; }
 }
 
 /// <summary>
@@ -65,6 +77,9 @@ public static class OperationInvoiceObligationReasons
     /// Reported instead of inventing a total (rule: no historical fact invention).
     /// </summary>
     public const string ExpectedTotalUnknown = "EXPECTED_TOTAL_UNKNOWN";
+
+    /// <summary>The P.O. group was cancelled (DEC-151): historical figures only, no active obligation (v2.249.4).</summary>
+    public const string GroupCancelled = "GROUP_CANCELLED";
 }
 
 /// <summary>
@@ -115,6 +130,19 @@ public sealed record OperationInvoiceObligation
 
     /// <summary>User-facing explanation, pt-PT — same convention as <see cref="PostPaymentPendingReason"/>.</summary>
     public string Explanation { get; init; } = string.Empty;
+
+    /// <summary>
+    /// v2.249.4 — the P.O. group is CANCELLED (DEC-151). <see cref="RequiresOperationInvoice"/> is false,
+    /// <see cref="DerivedStatus"/> is <c>CANCELLED</c>, <see cref="ExpectedAmount"/>/<see cref="RemainingAmount"/> are null
+    /// (nothing is owed); the pre-cancellation finish line survives as <see cref="HistoricalExpectedAmount"/>.
+    /// </summary>
+    public bool GroupCancelled { get; init; }
+
+    /// <summary>The expected total captured before the cancellation. History, never an active figure.</summary>
+    public decimal? HistoricalExpectedAmount { get; init; }
+
+    /// <summary>Lines covered before the cancellation released them (0 when the live links were kept).</summary>
+    public int HistoricalLineItemCount { get; init; }
 }
 
 /// <summary>Per-currency sums for the rollup. Amounts are never summed across currencies.</summary>
@@ -145,6 +173,9 @@ public sealed record OperationInvoiceObligationRollup
 
     public int DriftCount { get; init; }
     public bool HasStatusDrift => DriftCount > 0;
+
+    /// <summary>Cancelled groups (DEC-151) listed as history: absent from every count and total above except TotalGroups.</summary>
+    public int CancelledGroupCount { get; init; }
 
     public IReadOnlyList<OperationInvoiceObligationCurrencyTotals> CurrencyTotals { get; init; } =
         Array.Empty<OperationInvoiceObligationCurrencyTotals>();
@@ -196,6 +227,39 @@ public static class OperationInvoiceObligationProjector
     {
         var normalizedType = RequestConstants.SourceDocumentTypes.Normalize(group.SourceDocumentType);
         var isClassified = RequestConstants.SourceDocumentTypes.IsValid(normalizedType);
+
+        // v2.249.4 — a CANCELLED P.O. group (DEC-151) owes nothing: it is reported as history, never as an obligation.
+        // The cancellation does not rewrite the group's cached invoice columns (they are evidence), so the obligation
+        // must be derived from the group status here — the only place every consumer of this read model shares.
+        if (Is(group.GroupStatus, RequestConstants.PoGroupStatuses.Cancelled))
+        {
+            var historicalCoverage = OperationInvoiceAggregateDeriver.Derive(
+                isClassified, true, group.ExpectedTotal, group.Allocations, hasApprovedShortClose: false);
+            return new OperationInvoiceObligation
+            {
+                GroupId = group.GroupId,
+                SourceDocumentType = isClassified ? normalizedType : null,
+                RequiresOperationInvoice = false,
+                ExpectedAmount = null,
+                ExpectedCurrency = group.ExpectedCurrency ?? group.CurrencyCode,
+                ValidatedCoveredAmount = historicalCoverage.ValidatedTotal,
+                PendingCoveredAmount = historicalCoverage.PendingValidationTotal,
+                RemainingAmount = null,
+                AppliedTolerance = 0m,
+                DerivedStatus = RequestConstants.OperationInvoiceStatuses.Cancelled,
+                PersistedStatus = group.PersistedStatus,
+                StatusDrift = false,
+                ClosedShort = false,
+                PurchaseOrderNumber = group.PurchaseOrderNumber,
+                SourceDocumentIds = group.SourceDocumentIds,
+                LineItemCount = group.LineItemIds.Count,
+                ReasonCode = OperationInvoiceObligationReasons.GroupCancelled,
+                Explanation = "Grupo P.O. cancelado: sem obrigação de fatura final ativa. Os valores apresentados são apenas históricos.",
+                GroupCancelled = true,
+                HistoricalExpectedAmount = group.ExpectedTotal,
+                HistoricalLineItemCount = Math.Max(group.HistoricalLineItemCount, group.LineItemIds.Count)
+            };
+        }
 
         // RequiresOperationInvoice is invariant across usage contexts (the context only affects
         // blocking and review flags), so the origin context does not need to travel in the
@@ -328,6 +392,7 @@ public static class OperationInvoiceObligationProjector
             UnclassifiedCount = obligations.Count(
                 o => Is(o.DerivedStatus, RequestConstants.OperationInvoiceStatuses.Unclassified)),
             DriftCount = obligations.Count(o => o.StatusDrift),
+            CancelledGroupCount = obligations.Count(o => o.GroupCancelled),
             CurrencyTotals = currencyTotals
         };
     }

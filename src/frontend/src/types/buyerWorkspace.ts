@@ -36,7 +36,9 @@ export interface BuyerWorkspaceQuotation {
   supplierName?: string | null;
   documentNumber?: string | null;
   documentDate?: string | null;
+  /** v2.249.4 — quoted lines only (NOT_QUOTED / IGNORED placeholders excluded). */
   itemsQuotedCount: number;
+  itemsNotQuotedCount?: number;
   currency?: string | null;
   totalAmount: number;
   documentCount: number;
@@ -109,6 +111,8 @@ export interface BuyerWorkspacePoGroup {
   paymentConditionCode?: string | null;
   plantId?: number | null;
   lineNumbers: number[];
+  /** v2.249.4 — lines the group covered before a cancellation released them (empty unless cancelled with RESTART_QUOTATION). */
+  historicalLineNumbers?: number[];
   createdAtUtc: string;
   rowVersion?: string | null;
   poResponsibleBuyerId?: string | null;

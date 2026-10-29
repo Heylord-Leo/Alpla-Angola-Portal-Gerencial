@@ -505,6 +505,30 @@ public class AttachmentsController : BaseController
                 fileHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
             }
 
+            // v2.249.4 — a P.O. file that is byte-identical to a QUOTATION / PROFORMA document of this request is quotation
+            // evidence, not a purchase order: refused at the front door (RegisterPo repeats the check). Nothing was saved to
+            // the database yet; the physical copy is removed.
+            if (typeCodeStr == AttachmentConstants.Types.PurchaseOrder && !string.IsNullOrEmpty(fileHash))
+            {
+                var quotationTwin = await _context.RequestAttachments.AsNoTracking()
+                    .Where(a => a.RequestId == requestId && !a.IsDeleted && a.FileHash == fileHash
+                                && (a.AttachmentTypeCode == AttachmentConstants.Types.Quotation || a.AttachmentTypeCode == AttachmentConstants.Types.Proforma))
+                    .Select(a => new { a.FileName, a.AttachmentTypeCode })
+                    .FirstOrDefaultAsync();
+                if (quotationTwin != null)
+                {
+                    try { System.IO.File.Delete(filePath); } catch { /* best effort: the row was never written */ }
+                    var pd = new ProblemDetails
+                    {
+                        Title = "Documento não é uma P.O.",
+                        Detail = $"O ficheiro '{f.FileName}' é o mesmo documento de {(quotationTwin.AttachmentTypeCode == AttachmentConstants.Types.Proforma ? "proforma" : "cotação")} já registado neste pedido ('{quotationTwin.FileName}'). Uma cotação não pode ser carregada como Ordem de Compra.",
+                        Status = 400
+                    };
+                    pd.Extensions["code"] = "DOCUMENT_IS_QUOTATION_EVIDENCE";
+                    return BadRequest(pd);
+                }
+            }
+
             // Sanitized name for display/audit
             var sanitizedDisplayFileName = SanitizeFileName(f.FileName);
 

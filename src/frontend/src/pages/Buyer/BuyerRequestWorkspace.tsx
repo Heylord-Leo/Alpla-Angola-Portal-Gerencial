@@ -29,7 +29,7 @@ import {
   GROUPS_TAB, poGroupStatusLabel, batchReleasedItemsLabel, batchTotalsLines, headerApprovedTotals, resolveCancelPoGroupTarget, groupLineNumbersLabel,
 } from './buyerWorkspaceView';
 import { CancelPoGroupDialog } from '../../components/Buyer/CancelPoGroupDialog';
-import { financeReturnGuidance, cancellationKindLabel, ecfStatusLabel, financeStatusLabel, lastFinanceReturnLabel, priorEcfBlockMessage, describeFinanceEmailPolicy, deliveryChip, resendNeedsAttention } from '../../lib/poGroupCancellation';
+import { financeReturnGuidance, cancellationKindLabel, ecfStatusLabel, financeStatusLabel, lastFinanceReturnLabel, priorEcfBlockMessage, describeFinanceEmailPolicy, deliveryChip, resendNeedsAttention, describeFinanceReview } from '../../lib/poGroupCancellation';
 import { buildQuotationDraft, openItemsForQuotation } from './buyerQuotationRequestEmail';
 import { deriveWorkspaceHeaderActions } from './buyerWorkspaceActions';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -693,7 +693,7 @@ function TabQuotes({ ws, canManage, busy, onEdit, onDelete }: {
               <Td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={q.supplierName ?? undefined}>{q.supplierName || '—'}</Td>
               <Td style={{ ...nowrap, overflow: 'hidden', textOverflow: 'ellipsis' }} title={q.documentNumber ?? undefined}>{q.documentNumber || '—'}</Td>
               <Td style={nowrap}>{fmtDate(q.documentDate)}</Td>
-              <Td style={{ textAlign: 'center' }}>{q.itemsQuotedCount}</Td>
+              <Td style={{ textAlign: 'center' }} title={(q.itemsNotQuotedCount ?? 0) > 0 ? `${q.itemsQuotedCount} cotado(s) · ${q.itemsNotQuotedCount} não cotado(s) (registo de reconciliação, não compra)` : `${q.itemsQuotedCount} cotado(s)`}>{q.itemsQuotedCount}{(q.itemsNotQuotedCount ?? 0) > 0 ? <span style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem' }}> (+{q.itemsNotQuotedCount} n/c)</span> : null}</Td>
               <Td style={{ ...nowrap, textAlign: 'right' }}>{q.currency ? `${fmtAmount(q.totalAmount)} ${q.currency}` : fmtAmount(q.totalAmount)}</Td>
               <Td style={{ textAlign: 'center' }}>{q.documentCount}</Td>
               {canManage && (() => {
@@ -823,7 +823,7 @@ function TabGroups({ ws, busy, readAt, onCancel, onRegister, onCorrect, onUpdate
                   {g.approvalBatchNumber != null && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Lote {g.approvalBatchNumber}</span>}
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
-                  {g.purchaseOrderNumber ? `P.O. ${g.purchaseOrderNumber}` : 'Sem P.O. registada'} · {groupLineNumbersLabel(g.lineNumbers)}
+                  {g.purchaseOrderNumber ? `P.O. ${g.purchaseOrderNumber}` : 'Sem P.O. registada'} · {groupLineNumbersLabel(g.lineNumbers, g.historicalLineNumbers, cancelled)}
                 </div>
               </div>
               <div style={{ textAlign: 'right', fontSize: '0.84rem', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>
@@ -868,8 +868,24 @@ function TabGroups({ ws, busy, readAt, onCancel, onRegister, onCorrect, onUpdate
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={statLabel}>Confirmação de Finanças</div>
                   <div style={{ fontWeight: 700, color: c.financeConfirmationStatus === 'CONFIRMED' ? 'var(--color-status-green)' : c.financeConfirmationStatus === 'REJECTED' ? 'var(--color-status-red)' : c.financeConfirmationStatus === 'PENDING' ? 'var(--color-status-orange)' : 'var(--color-text-muted)' }}>{financeStatusLabel(c.financeConfirmationStatus)}</div>
-                  {(c.financeConfirmedByName || c.financeReviewedByName) && <div style={{ color: 'var(--color-text-muted)' }}>Por {c.financeConfirmedByName || c.financeReviewedByName} · {fmtDateTime(c.financeConfirmedAtUtc || c.financeReviewedAtUtc)}</div>}
-                  {c.financeConfirmationNote && <div style={{ whiteSpace: 'pre-wrap' }}>Nota: {c.financeConfirmationNote}</div>}
+                  {/* v2.249.4 — reviewer/note belong to the CURRENT decision only; a review older than the current declaration is history, labelled. */}
+                  {(() => {
+                    const review = describeFinanceReview(c);
+                    return (
+                      <>
+                        {review.current && (review.current.byName || review.current.atUtc) && <div data-testid="finance-review-current" style={{ color: 'var(--color-text-muted)' }}>Por {review.current.byName || '—'} · {fmtDateTime(review.current.atUtc)}</div>}
+                        {review.current?.note && <div style={{ whiteSpace: 'pre-wrap' }}>Nota: {review.current.note}</div>}
+                        {!review.current && c.financeConfirmationStatus === 'PENDING' && <div data-testid="finance-review-awaiting" style={{ color: 'var(--color-text-muted)' }}>Declaração atual ainda sem decisão de Finanças.</div>}
+                        {review.previous && (
+                          <div data-testid="finance-review-previous" style={{ marginTop: 4, padding: '6px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.035)', border: '1px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
+                            <div style={{ fontWeight: 700 }}>{review.previous.label}</div>
+                            {(review.previous.byName || review.previous.atUtc) && <div>Por {review.previous.byName || '—'} · {fmtDateTime(review.previous.atUtc)}</div>}
+                            {review.previous.note && <div style={{ whiteSpace: 'pre-wrap' }}>Nota anterior: {review.previous.note}</div>}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <div style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>
                     Notificação: {c.financeRecipientsResolvedCount} destinatário(s) Finanças{c.notificationResendCount > 0 ? ` · ${c.notificationResendCount} reenvio(s)` : ''}{c.lastNotifiedAtUtc ? ` · ${fmtDateTime(c.lastNotifiedAtUtc)}` : ''}
                   </div>

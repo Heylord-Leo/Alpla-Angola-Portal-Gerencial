@@ -56,7 +56,7 @@ public class PoGroupCancellationRelationalTests
             if (ctx.Database.CanConnect())
             {
                 // Drift-aware bootstrap: the sandbox predates this feature's tables → rebuild it (EnsureCreated is a no-op on an existing DB).
-                var has = ctx.Database.SqlQueryRaw<int>("SELECT CAST(CASE WHEN COL_LENGTH('dbo.RequestPoGroupCancellations', 'FinanceEmailPolicyOutcome') IS NULL THEN 0 ELSE 1 END AS int) AS [Value]").AsEnumerable().First();
+                var has = ctx.Database.SqlQueryRaw<int>("SELECT CAST(CASE WHEN COL_LENGTH('dbo.RequestPoGroupCancellations', 'FinanceEmailPolicyOutcome') IS NULL OR COL_LENGTH('dbo.RequestPoGroups', 'CurrentPoAttachmentId') IS NULL OR OBJECT_ID('dbo.PoDocumentExtractions') IS NULL THEN 0 ELSE 1 END AS int) AS [Value]").AsEnumerable().First();   // v2.249.4 drift
                 if (has == 0)
                 {
                     Microsoft.Data.SqlClient.SqlConnection.ClearAllPools();
@@ -254,7 +254,7 @@ public class PoGroupCancellationRelationalTests
         try
         {
             var (cancellationId, groupC) = await RestartedAsync(s);
-            var dto = new RegisterPoActionDto { PoGroupId = groupC, PaymentConditionCode = "POST_PAID", PurchaseOrderNumber = "ECF10 2026/NEW" + s.Tag };
+            var dto = new RegisterPoActionDto { PoGroupId = groupC, PaymentConditionCode = "POST_PAID", PurchaseOrderNumber = "ECF10 2026/NEW" + s.Tag, DocumentTypeConfirmed = true, Comment = "ZZTEST tipo de documento confirmado manualmente (sem extração registada no teste)" };
 
             await using (var ctx = NewCtx())
             {
@@ -423,7 +423,7 @@ public class PoGroupCancellationRelationalTests
             var enabled = new PostPaymentCompletionOptions { Enabled = true, CompletionEnabled = true };
             await using (var ctx = NewCtx())
             {
-                var result = await Buyer(ctx, s.Owner, enabled).RegisterPo(s.RequestId, new RegisterPoActionDto { PoGroupId = groupC, PaymentConditionCode = "POST_PAID", PurchaseOrderNumber = "ECF10 2026/ENB" + s.Tag });
+                var result = await Buyer(ctx, s.Owner, enabled).RegisterPo(s.RequestId, new RegisterPoActionDto { PoGroupId = groupC, PaymentConditionCode = "POST_PAID", PurchaseOrderNumber = "ECF10 2026/ENB" + s.Tag, DocumentTypeConfirmed = true, Comment = "ZZTEST tipo de documento confirmado manualmente (sem extração registada no teste)" });
                 Assert.IsType<OkObjectResult>(result);
                 Assert.Null(ctx.Database.CurrentTransaction);   // the registering transaction was committed and released
             }

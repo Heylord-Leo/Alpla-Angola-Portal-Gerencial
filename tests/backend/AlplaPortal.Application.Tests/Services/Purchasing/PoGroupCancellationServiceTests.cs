@@ -298,11 +298,22 @@ public class PoGroupCancellationServiceTests
         Assert.False(dto.Actions.CanUpdateDeclaration);   // actions are per CALLER: Finance may not touch the Buyer's declaration
         Assert.True((await svc.GetAsync(s.GroupA, S.Buyer(s.Owner)))!.Actions.CanUpdateDeclaration);
         events.Clear();
+        // v2.249.4 — the rejection is the CURRENT review while the declaration stands
+        Assert.True(dto.FinanceReviewAppliesToCurrentDeclaration); Assert.Null(dto.PreviousFinanceReview);
         var upd = Payload<PoGroupCancellationDto>(await svc.UpdateEcfDeclarationAsync(new UpdateEcfDeclarationCommand(id, S.Buyer(s.Owner), "DECLARED_CANCELLED", "ECF10 2026/364-A", "Anulada hoje.", null, null)));
         Assert.Equal("PENDING", upd.FinanceConfirmationStatus); Assert.Equal("ECF10 2026/364-A", upd.EcfReference);
         Assert.Contains(upd.Events, e => e.EventType == "BUYER_UPDATED");
         Assert.Equal("ECF_DECLARATION_UPDATED", Assert.Single(events).ActionTaken);   // Finance re-notified under a new correlation
-        Payload<PoGroupCancellationDto>(await svc.FinanceReviewAsync(new FinanceReviewCommand(id, S.Finance(s.Finance2), true, null, null)));
+        // v2.249.4 — after the re-declaration the earlier rejection is HISTORY: labelled as the previous review, never the decision
+        // on the declaration now awaiting Finance (the row still carries the reviewer/note columns as evidence).
+        Assert.False(upd.FinanceReviewAppliesToCurrentDeclaration);
+        Assert.NotNull(upd.PreviousFinanceReview);
+        Assert.Equal("REJECTED", upd.PreviousFinanceReview!.Status); Assert.Equal("Finance Um", upd.PreviousFinanceReview.ByName);
+        Assert.Equal("A ECF 2026/364 continua ativa no Primavera.", upd.PreviousFinanceReview.Note);
+        var queueRow = Assert.Single((await svc.ListForFinanceAsync(S.Finance(s.Finance2), "PENDING", null, null)).Items);
+        Assert.False(queueRow.FinanceReviewAppliesToCurrentDeclaration); Assert.Equal("REJECTED", queueRow.PreviousFinanceReview!.Status);
+        var confirmed = Payload<PoGroupCancellationDto>(await svc.FinanceReviewAsync(new FinanceReviewCommand(id, S.Finance(s.Finance2), true, null, null)));
+        Assert.True(confirmed.FinanceReviewAppliesToCurrentDeclaration); Assert.Null(confirmed.PreviousFinanceReview); Assert.Equal("Finance Dois", confirmed.FinanceConfirmedByName);
         var locked = await svc.UpdateEcfDeclarationAsync(new UpdateEcfDeclarationCommand(id, S.Buyer(s.Owner), "UNKNOWN", null, null, null, null));
         Assert.Equal(409, locked.Status); Assert.Equal(C.ErrorCodes.DeclarationLocked, locked.Code);
     }

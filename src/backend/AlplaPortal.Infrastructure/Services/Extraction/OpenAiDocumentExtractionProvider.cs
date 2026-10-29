@@ -905,6 +905,8 @@ Output ONLY JSON with this structure:
     ""billedCompanyName"": ""Name of company being billed (the CUSTOMER). Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
     ""billedCompanyTaxId"": ""Fiscal number printed inside the CUSTOMER block only, or null. This is where an ALPLA 'Nº Contribuinte' belongs on a supplier invoice."",
     ""documentNumber"": ""string. For Primavera PURCHASE ORDERS (titles like 'Encomenda a Fornecedor ECF', 'Encomenda Mat Escritório/Diversos ECF10', 'PO Serviços ECF11') this MUST be the full ECF reference exactly as printed, e.g. 'ECF11 2026/421' — NEVER a NIF/tax number and never any other prominent numeric field."",
+    ""documentTitle"": ""The exact main heading of the document as printed (e.g. 'Encomenda a Fornecedor ECF 2026/107', 'PO Serviços ECF11 2026/421', 'Factura Pró-forma', 'Cotação', 'Proposta Comercial'), or null"",
+    ""referencedDocumentNumbers"": [""other document numbers mentioned in the body: quotation/proposal numbers, previous or cancelled purchase orders ('em substituição da ECF …', 'anula a encomenda …'), invoice numbers. NEVER the document's own number. Empty array if none""],
     ""documentDate"": ""Date of the document, strictly YYYY-MM-DD. Numeric dates on these documents are day-first (dd/MM/yyyy). null if unreadable or genuinely undecidable."",
     ""dueDate"": ""Payment due date, strictly YYYY-MM-DD, same day-first rule. null if the document states none."",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
@@ -965,6 +967,9 @@ Output ONLY JSON with this structure:
                     BilledCompanyName = header.TryGetProperty("billedCompanyName", out var bcn) ? bcn.GetString() : null,
                     BilledCompanyTaxId = header.TryGetProperty("billedCompanyTaxId", out var bct) ? bct.GetString() : null,
                     DocumentNumber = header.TryGetProperty("documentNumber", out var dn) ? dn.GetString() : null,
+                    // v2.249.4 — identity evidence for the P.O. document identifier (title + body references).
+                    DocumentTitle = header.TryGetProperty("documentTitle", out var dti) && dti.ValueKind == JsonValueKind.String ? dti.GetString() : null,
+                    ReferencedDocumentNumbers = ReadStringArray(header, "referencedDocumentNumbers"),
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
                     // The prompt asks for it and the envelope declares it, but nothing ever read it
                     // here — so the due date arrived null on every document and the user retyped a

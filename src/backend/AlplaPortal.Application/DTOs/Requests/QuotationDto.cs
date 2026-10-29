@@ -194,6 +194,10 @@ public class SavedQuotationDto
     public bool IsSelected { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public int ItemCount { get; set; }
+    /// <summary>v2.249.4 — lines the supplier actually quoted (reconciliation status other than NOT_QUOTED / IGNORED). "Itens: N" means this.</summary>
+    public int QuotedItemCount { get; set; }
+    /// <summary>v2.249.4 — requested lines recorded as NOT_QUOTED / IGNORED on this document (placeholders, not purchases).</summary>
+    public int NotQuotedItemCount { get; set; }
     /// <summary>§7 — true when any line of this quotation was ever submitted for approval (selected item or candidate of any batch). Locks ordinary edit/delete; the revision/rework flow remains.</summary>
     public bool IsSubmittedForApproval { get; set; }
     public int? SubmittedBatchNumber { get; set; }

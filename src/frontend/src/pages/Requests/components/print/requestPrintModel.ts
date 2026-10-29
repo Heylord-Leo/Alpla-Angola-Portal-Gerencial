@@ -2,7 +2,7 @@ import type {
   RequestDetailsDto, RequestPoGroupDto, RequestStatusHistoryDto,
   RequestAttachmentDto, SavedQuotationDto, RequestLineItemDto, ApprovalBatchSummary,
 } from '../../../../types';
-import { formatCurrencyAO, formatDate, formatDateTime } from '../../../../lib/utils';
+import { formatCurrencyAO, formatCalendarDate, formatDate, formatDateTime } from '../../../../lib/utils';
 import { documentTypeLabel, isSelectableDocumentType } from '../../../../lib/sourceDocumentType';
 
 // v2.245.0 Request Print View — Phase 1. PURE mapping from the already-loaded RequestDetailsDto
@@ -24,7 +24,7 @@ export interface PrintQuotation { fields: PrintField[]; selected: boolean; }
 
 export interface PrintApproval { fields: PrintField[]; }
 
-export interface PrintAttachment { fields: PrintField[]; voided: boolean; }
+export interface PrintAttachment { fields: PrintField[]; voided: boolean; superseded?: boolean; currentPo?: boolean; }
 
 export interface PrintHistoryEntry {
   at: string;
@@ -184,7 +184,8 @@ function groupTitle(g: RequestPoGroupDto, index: number): string {
   return supplier ? `Lote ${index + 1} — ${supplier}` : `Lote ${index + 1}`;
 }
 
-function mapGroup(g: RequestPoGroupDto, index: number): PrintGroup {
+function mapGroup(g: RequestPoGroupDto, index: number, attachments: RequestAttachmentDto[] = []): PrintGroup {
+  const currentPoFileName = g.currentPoAttachmentId ? attachments.find(a => a.id === g.currentPoAttachmentId)?.fileName : undefined;
   const fields = compact([
     field('Fornecedor', g.supplierNameSnapshot),
     field('NIF', g.supplierNifSnapshot),
@@ -196,16 +197,20 @@ function mapGroup(g: RequestPoGroupDto, index: number): PrintGroup {
     // group was never classified — never a fabricated "Não classificado".
     field('Documento de origem', isSelectableDocumentType(g.sourceDocumentType) ? documentTypeLabel(g.sourceDocumentType) : null),
     field('Estado', g.status),
-    field('Itens', g.lineItemCount),
+    // v2.249.4 — a cancelled group (RESTART_QUOTATION) keeps no live lines: print what it covered, as history.
+    ...(g.status === 'CANCELLED' && g.lineItemCount === 0 && (g.historicalLineItemCount ?? 0) > 0
+      ? [field('Itens (histórico, libertados)', g.historicalLineItemCount)]
+      : [field(g.status === 'CANCELLED' ? 'Itens (histórico)' : 'Itens', g.lineItemCount)]),
     field('Documentos', g.attachmentCount),
+    field('Documento P.O. atual', currentPoFileName ?? null),
   ]);
   const payments = (g.payments ?? []).map(p => compact([
     field('Tipo', p.paymentType),
     field('Estado', p.paymentStatus),
     field('Planeado', money(p.plannedAmount, p.currencyCode)),
     field('Pago', p.actualPaidAmount != null ? money(p.actualPaidAmount, p.currencyCode) : null),
-    field('Agendado', p.scheduledDateUtc ? formatDate(p.scheduledDateUtc) : null),
-    field('Data de pagamento', p.paidDateUtc ? formatDate(p.paidDateUtc) : null),
+    field('Agendado', p.scheduledDateUtc ? formatCalendarDate(p.scheduledDateUtc) : null),   // calendar date (business), v2.249.4
+    field('Data de pagamento', p.paidDateUtc ? formatCalendarDate(p.paidDateUtc) : null),
     field('Divergência', p.hasDivergence ? 'Sim' : null),
   ]));
   return { title: groupTitle(g, index), fields, payments };
@@ -230,10 +235,12 @@ function mapQuotation(q: SavedQuotationDto): PrintQuotation {
     fields: compact([
       field('Fornecedor', q.supplierNameSnapshot),
       field('Documento', q.documentNumber),
-      field('Data', q.documentDate ? formatDate(q.documentDate) : null),
+      field('Data', q.documentDate ? formatCalendarDate(q.documentDate) : null),   // the quotation's own date: calendar, never shifted
       field('Moeda', q.currency),
       field('Total', money(q.totalAmount, q.currency)),
-      field('Itens', q.itemCount),
+      // v2.249.4 — "Itens" = quoted lines; NOT_QUOTED/IGNORED placeholders are reported separately, never as purchases.
+      field('Itens cotados', q.quotedItemCount ?? q.itemCount),
+      field('Itens não cotados', (q.notQuotedItemCount ?? 0) > 0 ? q.notQuotedItemCount : null),
       field('Selecionada', q.isSelected ? 'Sim' : null),
     ]),
   };
@@ -256,12 +263,16 @@ function mapApproval(b: ApprovalBatchSummary): PrintApproval {
 function mapAttachment(a: RequestAttachmentDto): PrintAttachment {
   return {
     voided: !!a.voidedAtUtc,
+    superseded: !a.voidedAtUtc && !!a.supersededAtUtc,
+    currentPo: a.isCurrentPo === true,
     fields: compact([
       field('Documento', a.fileName),
       field('Tipo', humanizeDocumentType(a.attachmentTypeCode)),
       field('Enviado em', a.uploadedAtUtc ? formatDate(a.uploadedAtUtc) : null),
       field('Enviado por', a.uploadedByName),
       field('Anulado', a.voidedAtUtc ? 'Sim' : null),
+      // v2.249.4 — replacement ≠ cancellation: a superseded P.O. file is history, the current one is named as such.
+      field('Situação', a.isCurrentPo ? 'P.O. atual' : (!a.voidedAtUtc && a.supersededAtUtc) ? `Substituído em ${formatDate(a.supersededAtUtc)} (histórico)` : null),
     ]),
   };
 }
@@ -321,7 +332,7 @@ export function buildRequestPrintModel(detail: RequestDetailsDto, projection: an
     field('Nível de necessidade', detail.needLevelName),
     field('Valor estimado', money(detail.estimatedTotalAmount, detail.currencyCode)),
     field('Data de criação', detail.createdAtUtc ? formatDate(detail.createdAtUtc) : null),
-    field('Data necessária', detail.needByDateUtc ? formatDate(detail.needByDateUtc) : null),
+    field('Data necessária', detail.needByDateUtc ? formatCalendarDate(detail.needByDateUtc) : null),
     field('Estado atual', detail.displayStatusName ?? detail.statusName),
   ]);
 
@@ -338,7 +349,7 @@ export function buildRequestPrintModel(detail: RequestDetailsDto, projection: an
     description: detail.description && detail.description.trim() !== '' ? detail.description : null,
     workflow: mapWorkflow(projection),
     lineItems: (detail.lineItems ?? []).map(mapLineItem),
-    groups: (detail.poGroups ?? []).map(mapGroup),
+    groups: (detail.poGroups ?? []).map((g, i) => mapGroup(g, i, detail.attachments ?? [])),
     quotations: (detail.quotations ?? []).map(mapQuotation),
     approvals: (detail.approvalBatches ?? []).map(mapApproval),
     attachments: (detail.attachments ?? []).map(mapAttachment),

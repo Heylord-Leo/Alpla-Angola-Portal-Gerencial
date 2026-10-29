@@ -418,6 +418,13 @@ public static class RequestConstants
         /// <summary>Cumulative coverage complete, or Finance approved a short close.</summary>
         public const string Satisfied = "SATISFIED";
 
+        /// <summary>
+        /// DERIVED ONLY (never persisted): the P.O. group itself is CANCELLED (DEC-151), so no operation-invoice
+        /// obligation is active any more. Neither blocking nor satisfied — the group is history. The cached column
+        /// keeps its pre-cancellation value as historical evidence and is not compared for drift (v2.249.4).
+        /// </summary>
+        public const string Cancelled = "CANCELLED";
+
         /// <summary>States in which the operation-invoice dimension counts as done.</summary>
         public static readonly string[] SatisfiedStates =
             { NotRequired, Satisfied };

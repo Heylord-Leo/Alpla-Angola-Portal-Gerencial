@@ -204,8 +204,14 @@ export function resolveCancelPoGroupTarget(
   return { kind: 'MULTIPLE' };
 }
 
-/** Group card line: "#1, #3" identifiers. */
-export function groupLineNumbersLabel(lineNumbers: number[] | null | undefined): string {
-  if (!lineNumbers || lineNumbers.length === 0) return 'Itens: —';
-  return 'Itens: ' + lineNumbers.map(n => `#${n}`).join(', ');
+/**
+ * Group card line: "#1, #3" identifiers. v2.249.4 — a CANCELLED group whose lines were released (RESTART_QUOTATION)
+ * has no live links any more; its historical lines are shown as such, never as "Itens: —" (which read as "covered nothing").
+ */
+export function groupLineNumbersLabel(lineNumbers: number[] | null | undefined, historicalLineNumbers?: number[] | null, cancelled?: boolean): string {
+  const live = lineNumbers ?? [];
+  if (live.length > 0) return (cancelled ? 'Itens (histórico): ' : 'Itens: ') + live.map(n => `#${n}`).join(', ');
+  const historical = historicalLineNumbers ?? [];
+  if (cancelled && historical.length > 0) return 'Itens (histórico, libertados): ' + historical.map(n => `#${n}`).join(', ');
+  return 'Itens: —';
 }

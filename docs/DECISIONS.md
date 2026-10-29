@@ -2437,6 +2437,50 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
 
+## DEC-152 — P.O. Document Identification, Correction Number and Document Supersession (v2.249.4)
+
+- **Date:** 2026-10-29
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** The manual TEST validation of v2.249.3 on `REQ-28/10/2026-628` registered the supplier's quotation PDF as the
+  P.O. (the only check was supplier + amount), the correction wizard could not change the P.O. number (the quotation number
+  survived the correction), a corrected P.O. left two "P.O." files with no current one, a cancelled group still carried an active
+  final-invoice obligation, and the Print View showed date-only fields one day earlier on a UTC+1 browser.
+- **Decision:**
+    1. **One pure identification rule** (`PurchaseOrderDocumentIdentifier`) for both P.O. wizards, computed by the request-scoped
+       `po-document-extract` endpoint — which PERSISTS the server's own reading (`PoDocumentExtraction`, bound to the request and to the
+       SHA-256 the server computes) — and re-derived by `register-po` from that evidence alone, looked up by the registered file's
+       server-computed hash (the DTO carries no extraction facts; no evidence for the exact file = UNCERTAIN): the document's identity
+       is its own number + heading;
+       only `ECF11` (Serviços), `ECF10` (Materiais diversos) and `ECF` (Material de stock) are recognised, longest family first
+       with word boundaries (no substring classification: `ECF99` is never generic `ECF`); body references never identify.
+       Verdicts: IDENTIFIED_PO; IDENTIFIED_OTHER_TYPE (positively a quotation / proforma / invoice without any P.O. identity →
+       refused server-side, no override — matching supplier/amount prove nothing); UNCERTAIN (several identities, conflict, body
+       references only, unrecognised prefix, no identifier, no extraction → explicit Buyer confirmation + justification, audited —
+       the existing override policy, never a blanket block). A submitted number that differs from the identified reference is an
+       OCR divergence under the existing override. Extraction-independent guard: a P.O. file byte-identical to a QUOTATION /
+       PROFORMA document of the request is refused at upload and at registration.
+    2. **A correction always states the P.O. number** it confirms or replaces (`400 PO_NUMBER_REQUIRED`); the UI shows the current
+       number and the number detected in the replacement document separately and, when they differ, requires an explicit choice
+       (use detected / type another / keep current) before submission; the server treats a kept number that differs from what its
+       evidence read as an OCR divergence (override + justification); a changed number is audited (`PO_NUMBER_CORRECTED`: old → new,
+       source, files).
+    3. **Document supersession is a state of its own** (`SupersededAtUtc/By`, `RequestPoGroup.CurrentPoAttachmentId`, additive
+       migration `20261029140552_AddPoDocumentSupersessionAndExtraction`), distinct from voiding (DEC-150) and deletion: a replaced P.O. file stays listed and downloadable
+       as history, is never the current document and is never labelled as a cancelled ECF. One reader rule (`PoDocumentSelection`).
+    4. **A CANCELLED P.O. group (DEC-151) has no active final-invoice obligation**: derived in the obligations read model
+       (`CANCELLED`, expected/remaining null, historical total kept, excluded from the rollup) and enforced on the short-close and
+       invoice write endpoints; cached columns are never rewritten (evidence).
+    5. **Date-only business fields are calendar dates** (`formatCalendarDate`: string slicing, no timezone) and **offsetless backend
+       instants are UTC** in the shared instant formatters (`parseBackendInstant`): the backend serializes `datetime2` as
+       `DateTimeKind.Unspecified`; neither the calendar day of a date-only field nor the UTC time of an audit timestamp shifts with the
+       browser offset.
+    6. Finance review chronology is derived (a review older than the current declaration is the *previous* review);
+       `NotifyOnPoCancelled` is exposed on the supported AP configuration path. Synthetic test documents should use a recognised
+       series with a fictitious sequential; `ECF99` stays unrecognised on purpose.
+- **Consequences:** see `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`. The server does not re-run OCR at registration: it trusts only the
+  evidence it persisted itself for the exact bytes being registered; a file never extracted can still be registered after the explicit,
+  audited confirmation. `Down` of the migration must never run.
+
 ## DEC-151 — P.O. Group Cancellation / Return to Quotation After Final Approval (phase 1)
 
 - **Date:** 2026-10-28

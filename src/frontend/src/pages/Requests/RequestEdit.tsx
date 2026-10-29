@@ -1019,8 +1019,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
             />
 
-            {/* Register PO Modal */}
-            {poGroupIdForUpload && (
+            {/* Register PO Modal — v2.249.4: never while the correction modal owns poGroupIdForUpload (both used to render). */}
+            {poGroupIdForUpload && !showCorrectPoModal && (
                 (() => {
                     const group = poGroups.find(g => g.id === poGroupIdForUpload);
                     if (!group) return null;

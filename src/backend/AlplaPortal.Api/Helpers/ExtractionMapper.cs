@@ -1,3 +1,4 @@
+using System.Linq;
 using AlplaPortal.Application.DTOs.Extraction;
 using AlplaPortal.Application.DTOs.Requests;
 using AlplaPortal.Domain.Constants;
@@ -14,8 +15,23 @@ public static class ExtractionMapper
     public static OcrExtractionResultDto MapToLegacyOcrResult(
         ExtractionResultDto internalResult, string? fileName = null)
     {
-        // Deterministic Primavera PO identification (v2.229.12 groundwork), parsed once.
-        var poReference = PrimaveraPoReference.TryParse(internalResult.Header?.DocumentNumber);
+        // v2.249.4 — one shared verdict for both P.O. wizards: is this document a purchase order, and which one.
+        // The identity fields are the document's own number and heading; body references never identify it.
+        var identification = PurchaseOrderDocumentIdentifier.Identify(new PoDocumentIdentificationInput
+        {
+            DocumentNumber = internalResult.Header?.DocumentNumber,
+            DocumentTitle = internalResult.Header?.DocumentTitle,
+            ClassificationType = internalResult.Header?.DocumentClassificationType,
+            ClassificationConfidence = internalResult.Header?.DocumentClassificationConfidence,
+            ClassificationTitleFound = internalResult.Header?.DocumentClassificationTitleFound,
+            ReferencedDocumentNumbers = internalResult.Header?.ReferencedDocumentNumbers,
+            ExtractionPerformed = internalResult.Header != null,
+        });
+
+        // Deterministic Primavera PO identification (v2.229.12 groundwork), parsed once. The identified reference wins;
+        // the raw document number is the fallback for an UNCERTAIN verdict with a single identity candidate.
+        var poReference = PrimaveraPoReference.TryParse(identification.Reference)
+                          ?? PrimaveraPoReference.TryParse(internalResult.Header?.DocumentNumber);
 
         var integrationDto = new OcrIntegrationDto
         {
@@ -77,7 +93,12 @@ public static class ExtractionMapper
                 // Document classification (Release 2 corrected). Passed through as a PROPOSAL with
                 // its evidence so the UI can ask the user to confirm or correct it. Deliberately
                 // never mapped into any field the user's selection is read from.
-                DocumentClassification = BuildDocumentClassification(internalResult.Header, fileName)
+                DocumentClassification = BuildDocumentClassification(internalResult.Header, fileName),
+                DocumentTitle = !string.IsNullOrWhiteSpace(internalResult.Header?.DocumentTitle)
+                    ? new OcrValueDto<string> { Value = internalResult.Header.DocumentTitle, Status = "informational" }
+                    : null,
+                ReferencedDocumentNumbers = internalResult.Header?.ReferencedDocumentNumbers,
+                PurchaseOrderIdentification = MapIdentification(identification)
             },
             LineItemSuggestions = (internalResult.Items ?? new()).Select(item => new OcrLineItemSuggestionDto
             {
@@ -141,6 +162,17 @@ public static class ExtractionMapper
     /// this document" and "the extraction identified nothing suspicious" are different situations,
     /// and only the first should leave the UI without a suggestion to reconcile against.</para>
     /// </summary>
+    /// <summary>v2.249.4 — DTO mirror of the Domain verdict (no logic here).</summary>
+    public static OcrPurchaseOrderIdentificationDto MapIdentification(PoDocumentIdentification id) => new()
+    {
+        Verdict = id.Verdict, ReasonCode = id.ReasonCode, Reason = id.Reason,
+        Family = id.Family, FamilyLabel = id.FamilyLabel, Reference = id.Reference, Canonical = id.Canonical,
+        IdentityCandidates = id.IdentityCandidates.Select(c => new OcrPurchaseOrderCandidateDto { Reference = c.Reference, Canonical = c.Canonical, Family = c.Family, FamilyLabel = c.FamilyLabel, Source = c.Source }).ToList(),
+        BodyReferences = id.BodyReferences.Select(c => new OcrPurchaseOrderCandidateDto { Reference = c.Reference, Canonical = c.Canonical, Family = c.Family, FamilyLabel = c.FamilyLabel, Source = c.Source }).ToList(),
+        OtherTypeCode = id.OtherTypeCode, OtherTypeLabel = id.OtherTypeLabel,
+        RequiresExplicitConfirmation = id.RequiresExplicitConfirmation, IsBlocked = id.IsBlocked,
+    };
+
     private static OcrDocumentClassificationDto? BuildDocumentClassification(
         ExtractionHeaderDto? header, string? fileName)
     {

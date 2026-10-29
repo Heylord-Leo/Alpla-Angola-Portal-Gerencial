@@ -202,3 +202,25 @@ describe('financeReturnGuidance (v2.249.2)', () => {
         expect(FINANCE_RETURN_KIND_GUIDANCE_UNCLASSIFIED).not.toMatch(/cancelamento solicitado|Corrigir P\.O\. e volte/);
     });
 });
+
+// ── v2.249.4 — current vs previous Finance review ──
+import { describeFinanceReview } from './poGroupCancellation';
+describe('describeFinanceReview (v2.249.4)', () => {
+    const base = { financeReviewedByName: 'Finance Um', financeReviewedAtUtc: '2026-10-29T09:00:00Z', financeConfirmationNote: 'A ECF continua ativa.' };
+    it('PENDING after a re-declaration: no current reviewer, the rejection is the labelled previous review', () => {
+        const r = describeFinanceReview({ ...base, financeConfirmationStatus: 'PENDING', financeReviewAppliesToCurrentDeclaration: false, previousFinanceReview: { status: 'REJECTED', byName: 'Finance Um', atUtc: base.financeReviewedAtUtc, note: base.financeConfirmationNote } });
+        expect(r.current).toBeNull();
+        expect(r.previous).toEqual({ label: 'Revisão anterior (rejeitada) — declaração entretanto atualizada', byName: 'Finance Um', atUtc: base.financeReviewedAtUtc, note: 'A ECF continua ativa.' });
+    });
+    it('REJECTED (current): the reviewer and note describe the current decision', () => {
+        const r = describeFinanceReview({ ...base, financeConfirmationStatus: 'REJECTED', financeReviewAppliesToCurrentDeclaration: true });
+        expect(r.current).toEqual({ byName: 'Finance Um', atUtc: base.financeReviewedAtUtc, note: 'A ECF continua ativa.' });
+        expect(r.previous).toBeNull();
+    });
+    it('CONFIRMED: the confirmer wins; older payloads without the flag fall back on the status', () => {
+        const r = describeFinanceReview({ financeConfirmationStatus: 'CONFIRMED', financeConfirmedByName: 'Finance Dois', financeConfirmedAtUtc: '2026-10-30T10:00:00Z', ...base });
+        expect(r.current?.byName).toBe('Finance Dois');
+        const legacyPending = describeFinanceReview({ ...base, financeConfirmationStatus: 'PENDING' });   // no flag: a pending status with a review on the row = previous review
+        expect(legacyPending.current).toBeNull(); expect(legacyPending.previous?.label).toContain('rejeitada');
+    });
+});

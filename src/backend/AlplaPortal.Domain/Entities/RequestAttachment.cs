@@ -79,4 +79,12 @@ public class RequestAttachment
     public DateTime? VoidedAtUtc { get; set; }
     public Guid? VoidedByUserId { get; set; }
     public string? VoidReason { get; set; }
+
+    // ── v2.249.4 — document SUPERSESSION (replacement by a later file of the same kind on the same group) ──
+    // Distinct from voiding (DEC-150: "Sem efeito", an external/business annulment) and from deletion: a superseded
+    // P.O. file is historical evidence that was REPLACED by a correction. It stays listed and downloadable, is never the
+    // group's current document, and is never labelled as a cancelled ECF. Stamped only by RegisterPo.
+    public DateTime? SupersededAtUtc { get; set; }
+    public Guid? SupersededByAttachmentId { get; set; }
+    public Guid? SupersededByUserId { get; set; }
 }

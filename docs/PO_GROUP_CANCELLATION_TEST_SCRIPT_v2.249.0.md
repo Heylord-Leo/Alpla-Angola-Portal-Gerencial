@@ -1,8 +1,13 @@
 # Guião de testes manuais em TEST — v2.249.0 (cancelamento de grupo P.O. / devolução à cotação)
 
-> Versão alvo: **v2.249.3** (v2.249.2 + extração OCR na janela por item e erros do assistente de importação apresentados dentro
+> Versão alvo: **v2.249.4** (v2.249.3 + correção do número da P.O. no assistente de correção, identificação do tipo de documento
+> nos dois assistentes de P.O., documentos de P.O. substituídos vs atual, grupo cancelado sem obrigação de fatura final, datas na
+> Vista de impressão, contagens de itens, revisão anterior de Finanças, interruptor `NotifyOnPoCancelled` — achados da validação
+> da v2.249.3 no pedido A). Build esperado **2.249.4+<sha do commit da v2.249.4>**; **exige Apply TEST Migrations**
+> (`20261029140552_AddPoDocumentSupersessionAndExtraction`, aditiva) antes do Deploy to TEST. Retoma em **§3.9**. A v2.249.3 era 2.249.3+8d8d5b5.
+> Versão anterior: **v2.249.3** (v2.249.2 + extração OCR na janela por item e erros do assistente de importação apresentados dentro
 > do assistente — encontrado na validação da v2.249.2: “Importar Cotação” aceitava o ficheiro mas o OCR respondia 409).
-> Build esperado **2.249.3+<sha do commit da v2.249.3>**; a v2.249.2 era 2.249.2+6b3dbc5.
+> A v2.249.2 era 2.249.2+6b3dbc5.
 > Versão anterior: **v2.249.2** (correções da v2.249.1 encontradas neste guião após o cancelamento do grupo S1: item libertado
 > mostrado como “pronto para lote”, sem entrada de cotação, navegação da devolução, “Corrigir P.O.” antes do primeiro registo,
 > textos do tipo de devolução, estado de entrega dos e-mails), build esperado **2.249.2+<sha do commit da v2.249.2>**
@@ -367,6 +372,80 @@ Evidência: captura da caixa vermelha. `Resultado: ____`
 
 Evidência: capturas do cartão confirmado, do e-mail ao comprador e do grupo com P.O. Emitida. `Resultado: ____`
 
+### 3.9 Retoma v2.249.4 — pedido **A**, grupo MAQSIS (Lote 2) já em “aguardando correção da P.O.” (BUYER / FIN1) — 40 min
+
+Pré-condição: TEST com build **2.249.4+<sha>** (§1.1) **depois** de Apply TEST Migrations (`20261029140552_AddPoDocumentSupersessionAndExtraction`).
+Estado esperado do pedido A: S1 TREVOTECH **cancelado** (anulação confirmada), S2 MULTIBIZ **P.O. Emitida** (`ECF99 2026/9002`),
+MAQSIS (Lote 2) **devolvido para correção pela segunda vez** por Finanças, com o número errado **`TEST-MAQSIS-2026-9003`** (número da
+cotação) e **dois** ficheiros de tipo P.O. (`Cotacao_TEST_MAQSIS_9003_REQ628.pdf`, `PO_Ficticia_MAQSIS_9003_REQ628.pdf`). **Não** recriar
+cotações nem aprovações; **não** reparar dados. Os PDFs sintéticos existentes usam `ECF99`, que **não** é uma série reconhecida
+(ECF11 = Serviços, ECF10 = Materiais diversos, ECF = Material de stock): o documento fica **“não identificado”** e exige confirmação
+manual — comportamento esperado; o histórico ECF99 do pedido A mantém-se. Para **novos** PDFs sintéticos de material (como o filme
+estirável) use **ECF10** (ex.: título “Encomenda Mat Escritório/Diversos ECF10 2026/9004”) ou **ECF** (material de stock); **ECF11 só
+para serviços**.
+
+0. **[BUYER] Verificar o estado atual antes de qualquer ação**: Workspace do A → **Grupos P.O.** → cartão MAQSIS (Lote 2) deve mostrar
+   **“Devolvido para Compras / Correção de P.O.”** com o botão **Corrigir P.O.**. Se mostrar isso, **não** faça nova devolução — siga para 1.
+   Só se o cartão mostrar **P.O. Emitida** (devolução ainda não feita) é que FIN1 devolve o grupo (Finanças → Pagamentos → MAQSIS →
+   Devolver, tipo **Corrigir P.O.**, nota “Número da P.O. errado — corrigir para o número da ECF (TEST)”).
+1. **[BUYER] Só leitura — Documentos do pedido A**: `PO_Ficticia_MAQSIS_9003_REQ628.pdf` mostra o selo verde **“P.O. atual”** (ficheiro de
+   P.O. mais recente do grupo: os grupos registados antes desta versão não têm ponteiro); `Cotacao_TEST_MAQSIS_9003_REQ628.pdf` (tipo P.O.)
+   **não** tem selo (só uma nova correção o marca como substituído); nenhum dos dois mostra “Sem efeito”. **Vista de impressão**: Lote MAQSIS
+   com “Documento P.O. atual: PO_Ficticia…”, anexo PO_Ficticia com “Situação: P.O. atual”; datas das cotações **29/10/2026** (MAQSIS) e
+   **28/10/2026** (TREVOTECH/MULTIBIZ) e “Data necessária” **04/11/2026** — iguais aos PDFs e à UI; cotação TREVOTECH **“Itens cotados: 1”**
+   e **“Itens não cotados: 1”**; Lote S1 (cancelado) **“Itens (histórico, libertados): 1”**. **Grupos P.O.**: cartão S1 “Itens (histórico,
+   libertados): #1”. **Cotações & Documentos**: coluna Itens da cotação TREVOTECH “1 (+1 n/c)”.
+2. **[BUYER] Fatura Final — Cobertura** (página do pedido A): cabeçalho **“2 grupo(s) ativo(s) · 1 cancelado(s)”**; cartões ativos só
+   MULTIBIZ e MAQSIS; TREVOTECH **apenas** em **“Histórico — grupos P.O. cancelados (sem obrigação de fatura final)”** com “Valor esperado
+   antes do cancelamento (histórico): 250 000,00”, “Obrigação ativa: nenhuma”, **sem** “Propor Encerramento com Saldo” nem percentagem;
+   totais = 350 000,00 AOA. (Opcional, C.2) `POST …/po-groups/<S1>/operation-invoice-short-close` → **409 `OI_GROUP_CANCELLED`**.
+3. **[BUYER] Corrigir P.O. — a cotação é recusada**: Pedidos → A → **CORRIGIR P.O (MAQSIS)**. O modal mostra **“P.O atual (devolvida) — nº
+   TEST-MAQSIS-2026-9003 · será substituída pelo novo documento”** com o ficheiro atual e o bloco **Número atual `TEST-MAQSIS-2026-9003`**
+   (campo “Número da P.O. corrigida” pré-preenchido, selo “Número atual (sem alteração)”). Selecione `Cotacao_TEST_MAQSIS_9003_REQ628.pdf`.
+   Esperado: a extração é feita pelo servidor para este pedido (sem “Documento Validado”); surge a caixa **vermelha** “Documento
+   identificado como Cotação / Factura pró-forma … não pode ser registado como P.O., mesmo que o fornecedor e o valor coincidam” e o botão
+   fica **desativado**. Se a classificação do OCR em TEST não reconhecer a cotação, o passo seguinte (upload) é na mesma recusado com
+   **“Documento não é uma P.O.”** (`DOCUMENT_IS_QUOTATION_EVIDENCE`: ficheiro idêntico ao documento de cotação do pedido) — confirme em
+   Documentos que **não** surgiu novo ficheiro. Remova o ficheiro (X).
+4. **[BUYER] Corrigir P.O. — com a P.O. fictícia e a decisão do número**: selecione `PO_Ficticia_MAQSIS_9003_REQ628.pdf`. Esperado:
+   caixa **âmbar “Revisão necessária: documento não identificado como P.O.”** com “O identificador ‘ECF99 2026/9003’ não corresponde a
+   nenhuma série reconhecida (ECF11 = Serviços, …)” e a linha **“Número lido no documento: ECF99 2026/9003 — série não reconhecida”**;
+   a caixa **“Confirmo que este documento é uma Ordem de Compra…”**; o comentário passa a **(Obrigatório)**. No bloco do número surge a
+   decisão **“O documento indica um número diferente do atual — escolha antes de registar”** com **Número atual do grupo:
+   TEST-MAQSIS-2026-9003 [Manter número atual]** e **Detetado no documento: ECF99 2026/9003 (série não reconhecida) [Usar número
+   detetado]**; enquanto não escolher, o botão de registo fica **desativado** (mensagem se forçar: “O documento indica um número de P.O.
+   diferente do atual. Escolha…”). (a) Clique **Manter número atual**, marque a confirmação, escreva a justificativa e registe → o servidor
+   responde **“Divergência Detectada (SISTEMA CENTRAL)”** com “Número de P.O. divergente: introduzido ‘TEST-MAQSIS-2026-9003’ (Lido no
+   documento: ECF99 2026/9003)” — manter o número antigo **nunca é silencioso**; não confirme a divergência. (b) Clique **Usar número
+   detetado** → campo = `ECF99 2026/9003`, selo **“Extraído do documento”**, número atual **riscado** com “será substituído”; registe.
+   Esperado: sucesso; **Grupos P.O.** / página / Finanças / Vista de impressão mostram **`ECF99 2026/9003`**; **Documentos**: o novo
+   ficheiro com **“P.O. atual”**, os dois anteriores com o selo âmbar **“Substituído”** e a linha “Substituído pela correção da P.O. em
+   dd/mm/aaaa hh:mm — mantido como histórico”; **nenhum** “Sem efeito”; os três continuam descarregáveis. **Histórico**: **“Número de
+   P.O. corrigido: 'TEST-MAQSIS-2026-9003' → 'ECF99 2026/9003' (origem do número: EXTRACTED)…”** com os nomes dos ficheiros, e a linha
+   da re-emissão com “Tipo de documento NÃO identificado automaticamente (UNRECOGNISED_IDENTIFIER; extração …); confirmado manualmente
+   pelo comprador”.
+5. **[BUYER] Número em branco e número duplicado**: apagar o número → botão desativado (por API: **400 `PO_NUMBER_REQUIRED`**); introduzir
+   `ECF99 2026/9002` (já de S2) → caixa **“P.O Duplicada (SISTEMA CENTRAL)”** com confirmação + justificativa obrigatória (não concluir).
+6. **[BUYER] P.O. reconhecida (grupo em Aguardando P.O. de outro pedido sintético de material, ex.: D)**: PDF com título
+   “Encomenda Mat Escritório/Diversos ECF10 2026/9004”. Esperado: caixa **verde “Ordem de Compra identificada — ECF10 2026/9004 — ECF10
+   (Material diverso / escritório)”** com “Tipo detetado / Número completo / Origem: extraído do documento”; campo preenchido com selo
+   **“Extraído do documento”**. Alterar para `ECF10 2026/9005` e registar → **“Divergência Detectada (SISTEMA CENTRAL)”** com “Número de
+   P.O. divergente: introduzido ‘ECF10 2026/9005’ (Identificado no documento: ECF10 2026/9004)” → exige confirmação + justificativa.
+   Voltar ao número extraído (**Usar número extraído**) → registo sem divergência. (Evidência de servidor: C.2 — chamar
+   `register-po` por API **sem** ter chamado `po-document-extract` para esse ficheiro → **400 `DOCUMENT_TYPE_CONFIRMATION_REQUIRED`**
+   com `evidence: NONE`; com `documentTypeConfirmed` e comentário → aceite e auditado “sem extração registada para este ficheiro”.)
+7. **[FIN1 → BUYER] Revisão anterior (pedido B, §4)**: depois de FIN1 rejeitar e o BUYER atualizar a declaração, o cartão mostra
+   **“Aguarda confirmação de Finanças”**, a linha **“Declaração atual ainda sem decisão de Finanças.”** e, em bloco tracejado,
+   **“Revisão anterior (rejeitada) — declaração entretanto atualizada · Por FIN1 · data · Nota anterior: …”**. Na fila **Cancelamentos
+   a confirmar** (FIN2) a linha mostra o mesmo bloco como contexto.
+8. **[A] Configuração → Contas a Pagar**: nova caixa **“Notificar Contas a Pagar quando uma P.O. é cancelada ou devolvida a cotação
+   (PO_GROUP_CANCELLED)”** (predefinição desligada) e coluna **“P.O. canc.”**; gravar liga/desliga (GET `/api/v1/ap-notification-configs`
+   → `notifyOnPoCancelled`). **Repor** ao fim (§9.3).
+
+Evidência: `v2249-3.9-00.png` (estado inicial do cartão MAQSIS), `-01.png` (documentos com selos), `-02.png` (impressão), `-03.png`
+(Fatura Final — histórico), `-04.png` (recusa da cotação), `-05.png` (decisão do número + divergência ao manter), `-06.png` (sucesso +
+histórico), `-07.png` (P.O. reconhecida), `-08.png` (revisão anterior), `-09.png` (Contas a Pagar). `Resultado: ____`
+
 ---
 
 ## 4. Rejeição de Finanças e correção (A) — 25 min — pedido **B**
@@ -474,7 +553,8 @@ Pré-requisito: cancelamento de B confirmado (fim de 4.7), grupo do Lote 2 em Ag
 
 ### 6.7 Ramos DUPLICATE_PO e OCR_MISMATCH do modal de registo (B) — qualquer grupo em Aguardando P.O.
 
-Estes ramos existiam antes mas só ficaram efetivos com a correção do classificador de erros em v2.249.0.
+Estes ramos existiam antes mas só ficaram efetivos com a correção do classificador de erros em v2.249.0. *v2.249.4:* o modal de
+**correção** também os trata (antes mostrava um erro genérico) e ambos os modais mostram primeiro o **veredito do documento** (ver §3.9).
 1. **DUPLICATE_PO:** registe uma P.O. com um número que **já exista noutro pedido** de TEST (ex.: `ECF99 2026/9002`, já usado por A-S2) → caixa vermelha **“P.O Duplicada (SISTEMA CENTRAL)”** → caixa **“Confirmar uso do número de P.O duplicado sob minha responsabilidade.”** → campo “Justificativa obrigatória para P.O duplicada…” → **REGISTRAR P.O** → sucesso com auditoria de override.
 2. **OCR_MISMATCH:** registe com um PDF cujo valor/fornecedor não bate com o grupo e que o serviço central rejeite → caixa **“Divergência Detectada (SISTEMA CENTRAL)”** com a lista de motivos → caixa “Estou ciente das divergências reportadas e confirmo a emissão sob minha responsabilidade.” → registar. Se o OCR de TEST não produzir rejeição central, marque N/A e anote.
 

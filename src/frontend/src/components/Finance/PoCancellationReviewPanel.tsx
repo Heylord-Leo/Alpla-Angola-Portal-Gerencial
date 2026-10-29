@@ -6,7 +6,7 @@ import { ModalWrapper } from '../common/ModalWrapper';
 import { cancelBtnStyle } from '../it/EquipmentFormModal';
 import {
     cancellationKindLabel, ecfStatusLabel, financeStatusLabel, validateFinanceRejectionNote,
-    MIN_JUSTIFICATION_LENGTH, NO_FINANCE_RECIPIENTS_WARNING, describeFinanceEmailPolicy,
+    MIN_JUSTIFICATION_LENGTH, NO_FINANCE_RECIPIENTS_WARNING, describeFinanceEmailPolicy, describeFinanceReview,
 } from '../../lib/poGroupCancellation';
 
 /**
@@ -105,6 +105,17 @@ function ReviewRow({ item, onReview }: { item: FinancePoCancellationListItemDto;
                 <div style={{ color: 'var(--color-text-muted)' }}>Declarado por {item.ecfDeclaredByName || '—'} · {fmtDateTime(item.ecfDeclaredAtUtc)}</div>
                 <div style={{ marginTop: '4px', fontWeight: 700, color: rejected ? 'var(--color-status-red)' : 'var(--color-status-orange)' }}>{financeStatusLabel(item.financeConfirmationStatus)}</div>
                 {rejected && item.financeConfirmationNote && <div style={{ color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap' }}>Nota de Finanças: {item.financeConfirmationNote}</div>}
+                {/* v2.249.4 — the Buyer re-declared after a review: the reviewer sees the previous decision as context, never as the current one. */}
+                {(() => {
+                    const review = describeFinanceReview(item);
+                    return review.previous && !rejected ? (
+                        <div data-testid="finance-queue-previous-review" style={{ marginTop: '4px', padding: '6px 8px', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.035)', border: '1px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
+                            <div style={{ fontWeight: 700 }}>{review.previous.label}</div>
+                            {(review.previous.byName || review.previous.atUtc) && <div>Por {review.previous.byName || '—'} · {fmtDateTime(review.previous.atUtc)}</div>}
+                            {review.previous.note && <div style={{ whiteSpace: 'pre-wrap' }}>Nota anterior: {review.previous.note}</div>}
+                        </div>
+                    ) : null;
+                })()}
                 {item.financeRecipientsResolvedCount === 0 && (
                     <div style={{ marginTop: '4px', color: '#B45309', fontWeight: 700 }}><AlertTriangle size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />{NO_FINANCE_RECIPIENTS_WARNING}</div>
                 )}

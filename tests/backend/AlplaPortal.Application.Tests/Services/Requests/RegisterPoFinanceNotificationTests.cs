@@ -167,7 +167,7 @@ public class RegisterPoFinanceNotificationTests
         return controller;
     }
 
-    private static RegisterPoActionDto Dto(Guid groupId) => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/Teste449" };
+    private static RegisterPoActionDto Dto(Guid groupId) => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/Teste449", DocumentTypeConfirmed = true, Comment = "ZZTEST tipo de documento confirmado manualmente (sem extração registada no teste)" };
 
     [Fact]
     public async Task RegisterPo_queues_PO_REGISTERED_emails_for_plant_scoped_finance_users_and_keeps_in_app_notifications()
@@ -314,7 +314,7 @@ public class RegisterPoFinanceNotificationTests
              .Callback<string, string, string, string, string, string?, string?, string?>((_, _, sub, _, body, _, _, _) => bodies.Add((sub, body))).ReturnsAsync(true);
 
         // 1) Register group B (USD) — header supplier is IP WORLD (10) and header estimate 400,758.34: neither may appear.
-        Assert.IsType<OkObjectResult>(await BuildBuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, new RegisterPoActionDto { PoGroupId = groupB, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/TesteB" }));
+        Assert.IsType<OkObjectResult>(await BuildBuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, new RegisterPoActionDto { PoGroupId = groupB, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/TesteB", DocumentTypeConfirmed = true, Comment = "ZZTEST tipo de documento confirmado manualmente (sem extração registada no teste)" }));
         var first = Assert.Single(bodies);
         Assert.Contains("P.O. registada", first.subject);
         Assert.Contains("USD VENDOR INC", first.body);

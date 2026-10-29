@@ -273,7 +273,9 @@ public class BuyerWorkspaceController : BaseController
                 SupplierName = q.Supplier?.Name ?? q.SupplierNameSnapshot,
                 DocumentNumber = q.DocumentNumber,
                 DocumentDate = q.DocumentDate,
-                ItemsQuotedCount = q.Items.Count,
+                // v2.249.4 — "Itens" = quoted lines; NOT_QUOTED / IGNORED rows are reconciliation placeholders, not offers.
+                ItemsQuotedCount = q.Items.Count(qi => qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.NotQuoted && qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.Ignored),
+                ItemsNotQuotedCount = q.Items.Count(qi => qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.NotQuoted || qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored),
                 Currency = q.Currency,
                 TotalAmount = q.TotalAmount,
                 DocumentCount = q.ProformaAttachmentId.HasValue ? 1 : 0,
@@ -380,6 +382,14 @@ public class BuyerWorkspaceController : BaseController
                 CanRegisterPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPo,
                 CanCorrectPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection,
             };
+            if (g.Status == RequestConstants.PoGroupStatuses.Cancelled)
+            {
+                // v2.249.4 — the released lines keep no live link to the cancelled group; their numbers come from the
+                // cancellation items (history), so the card can still name what the P.O. covered.
+                var historicalLineIds = await _context.RequestPoGroupCancellationItems.AsNoTracking()
+                    .Where(i => i.PreviousPoGroupId == g.Id).Select(i => i.RequestLineItemId).ToListAsync();
+                dto.HistoricalLineNumbers = r.LineItems.Where(li => historicalLineIds.Contains(li.Id)).Select(li => li.LineNumber).Union(dto.LineNumbers).OrderBy(ln => ln).ToList();
+            }
             if (_cancellation != null)
             {
                 dto.LastFinanceReturn = await _cancellation.GetLastFinanceReturnAsync(g.Id);

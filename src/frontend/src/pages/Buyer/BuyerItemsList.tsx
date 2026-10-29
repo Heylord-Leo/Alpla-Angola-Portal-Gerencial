@@ -2057,7 +2057,7 @@ export function BuyerItemsList() {
                                                                                     <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
                                                                                     {formatCurrencyAO(q.totalAmount)}
                                                                                 </div>
-                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.itemCount} ITENS • {formatDate(q.createdAtUtc)}</div>
+                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.quotedItemCount ?? q.itemCount} ITENS COTADOS{(q.notQuotedItemCount ?? 0) > 0 ? ` · ${q.notQuotedItemCount} NÃO COTADO(S)` : ''} • {formatDate(q.createdAtUtc)}</div>
                                                                             </div>
                                                                             <div style={{ color: 'var(--color-text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
                                                                                 <ChevronDown size={20} />

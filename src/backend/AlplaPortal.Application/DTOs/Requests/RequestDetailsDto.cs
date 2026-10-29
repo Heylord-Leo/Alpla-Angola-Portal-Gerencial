@@ -345,6 +345,14 @@ public class RequestAttachmentDto
     // ── Void (correction workflows, e.g. Finance cancel-schedule) ──
     public DateTime? VoidedAtUtc { get; set; }
     public string? VoidReason { get; set; }
+
+    // ── v2.249.4 — group ownership + supersession ──
+    public Guid? RequestPoGroupId { get; set; }
+    /// <summary>Replaced by a later P.O. file of the same group (correction). History, never the current document.</summary>
+    public DateTime? SupersededAtUtc { get; set; }
+    public Guid? SupersededByAttachmentId { get; set; }
+    /// <summary>True for the ONE current P.O. document of its group (<c>PoDocumentSelection</c>). False for every other file.</summary>
+    public bool IsCurrentPo { get; set; }
 }
 
 public class RequestStatusHistoryDto

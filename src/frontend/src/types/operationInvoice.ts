@@ -234,6 +234,13 @@ export interface OperationInvoiceObligationDto {
 
     reasonCode: string;
     explanation: string;
+
+    /** v2.249.4 — the P.O. group is CANCELLED (DEC-151): history only, no active obligation, no actions. */
+    groupCancelled?: boolean;
+    groupStatus?: string | null;
+    /** Expected total captured before the cancellation (historical evidence; absent from the rollup). */
+    historicalExpectedAmount?: number | null;
+    historicalLineItemCount?: number;
 }
 
 export interface OperationInvoiceObligationRollupDto {
@@ -245,6 +252,8 @@ export interface OperationInvoiceObligationRollupDto {
     unclassifiedCount: number;
     driftCount: number;
     hasStatusDrift: boolean;
+    /** v2.249.4 — cancelled groups listed as history (counted in totalGroups only). */
+    cancelledGroupCount?: number;
     groupsWithUnknownExpectedTotal: number;
     currencyTotals: {
         currencyCode: string;
