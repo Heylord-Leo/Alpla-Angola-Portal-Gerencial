@@ -2437,6 +2437,48 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
 
+## DEC-153 — Registered P.O. Evidence Is Never Deleted; Quotation Lifecycle Context and Per-Item Price Comparison (v2.249.5)
+
+- **Date:** 2026-10-30
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** The manual TEST validation of v2.249.4 on `REQ-28/10/2026-628` found (1) the correction wizard's "Remover P.O atual"
+  soft-deleted the registered P.O. file of a group returned for correction (the delete endpoint gated P.O. files by status only),
+  (2) the saved-quotation list showed a cancelled adjudication (TREVOTECH) like an open quotation, and (3) "MENOR VALOR" compared
+  the total of a 1-item re-quotation with the total of a cancelled 2-item adjudication.
+- **Decision:**
+    1. **Registered P.O. evidence is never deleted, soft or hard, whatever the request/group status** — one pure rule
+       (`PoEvidenceProtection`): voided, superseded, the group's current document, or (legacy groups without pointer) a
+       `REGISTER_PO`/`REREGISTER_PO` of the owning group recorded at/after the upload (rows naming no group count for every group).
+       `DELETE /api/v1/attachments/{id}` answers `409 PO_EVIDENCE_PROTECTED`; the details DTO exposes `isPoEvidence` with the same
+       rule. Replacement is **supersession by `RegisterPo`** (DEC-152), never deletion. Only a temporary, never-registered upload
+       (refused or abandoned wizard attempt) remains deletable inside the status window (owning group `WAITING_PO` added), and the
+       wizards clean up only that upload (clear file / cancel), never after a successful registration. The deletion that happened in
+       TEST was a soft delete (row hidden, bytes kept); un-hiding it is a separate, explicitly authorized repair.
+    2. **Lifecycle context is derived, per item, from stored relationships only** (`QuotationAdjudicationProjection`: batches with
+       items + candidates, release stamps, request lines, the DEC-147/D3 reuse rule) and exposed as `adjudicationStatus` /
+       `lineCurrentState` per item and `lifecycleStatus` per quotation. The historical adjudication status is kept apart from the
+       current reuse eligibility (`isReuseBlocked` / `isReuseAuthorized`, unchanged). A cancellation of one item's award never
+       classifies the whole quotation; a NOT_QUOTED placeholder is never called "Ignorada". A historical quotation cannot be selected
+       from the card.
+    3. **"Menor valor" is a per-request-item comparison** on the unit price among current candidates sharing currency and unit
+       (ties mark every lowest candidate; different quantities flagged, not compared away); a card-level "Menor valor" exists only on
+       identical line scope / quantities / units / currency; otherwise a per-item indicator plus a scope notice. Display only: the
+       Area approver's per-item award rules (`WizardStepAward`) are untouched; candidate batches keep suppressing the card claim.
+- **Consequences:** see `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`. No migration. The legacy history heuristic is
+  protective by design (a false positive keeps a file; it never loses one).
+- **Amendment (2026-10-30, boundary pass, same release — doc §9):**
+    1. `register-po` and `DELETE` of a P.O. file are serialized on the file row (`PoDocumentRowLock`: `UPDLOCK, HOLDLOCK` inside the
+       transaction, then re-read). A registration never commits with a file deleted meanwhile (`409 PO_DOCUMENT_CONCURRENT_CHANGE`,
+       nothing written); a delete never commits against a file registered meanwhile (409 `PO_EVIDENCE_PROTECTED`). Proven on SQL Server.
+    2. A group that has a pointer never falls back to the timestamp heuristic: a live file that is not the pointer, not superseded and
+       not voided is a temporary upload (deletable). The heuristic (legacy groups only) keeps its 1 s tolerance: a tie is protected.
+    3. Selection from the card follows the D3 reuse eligibility, not the historical label: an explicitly authorised reuse is
+       selectable; a quotation whose every item is reuse-blocked is refused by the server (`409 QUOTATION_REUSE_NOT_AUTHORIZED`).
+    4. Unequal quantities never yield an unqualified "Menor valor": the line becomes informational (`QUANTITY_DIFFERS`), the card
+       claim keeps requiring identical lines, quantities, units and currency.
+    5. A wizard clean-up the server refuses as registered evidence is "kept", never a failure: a registration that succeeded while
+       the client saw a network error is neither undone nor misrepresented.
+
 ## DEC-152 — P.O. Document Identification, Correction Number and Document Supersession (v2.249.4)
 
 - **Date:** 2026-10-29

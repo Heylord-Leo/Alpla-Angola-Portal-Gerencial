@@ -235,3 +235,9 @@ Remaining limitations:
 
 See `docs/PO_GROUP_CANCELLATION_TEST_SCRIPT_v2.249.0.md` **§3.9** (Portuguese): it checks the current state first (MAQSIS already
 "Devolvido para Compras" after the second Finance return — no further return), then resumes with the existing PDFs.
+
+## 10. Follow-up (v2.249.5)
+
+The TEST validation of this version found that the correction wizard could still **delete** the registered P.O. file (the delete
+endpoint had no evidence rule for P.O. files), that saved quotations carried no lifecycle context and that "Menor valor" compared
+totals across different scopes. See `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md` (DEC-153) and the test script **§3.10**.

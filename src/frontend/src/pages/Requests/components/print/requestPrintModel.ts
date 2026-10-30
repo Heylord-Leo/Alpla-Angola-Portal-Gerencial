@@ -4,6 +4,7 @@ import type {
 } from '../../../../types';
 import { formatCurrencyAO, formatCalendarDate, formatDate, formatDateTime } from '../../../../lib/utils';
 import { documentTypeLabel, isSelectableDocumentType } from '../../../../lib/sourceDocumentType';
+import { describeQuotationLifecycle } from '../../../../lib/quotationLifecycle';
 
 // v2.245.0 Request Print View — Phase 1. PURE mapping from the already-loaded RequestDetailsDto
 // (+ optional workflow projection) into a flat, formatted, print-ready view-model. No React, no
@@ -242,8 +243,16 @@ function mapQuotation(q: SavedQuotationDto): PrintQuotation {
       field('Itens cotados', q.quotedItemCount ?? q.itemCount),
       field('Itens não cotados', (q.notQuotedItemCount ?? 0) > 0 ? q.notQuotedItemCount : null),
       field('Selecionada', q.isSelected ? 'Sim' : null),
+      // v2.249.5 — lifecycle context from the server projection (e.g. "Histórica — adjudicação cancelada"), never inferred.
+      field('Situação', quotationSituation(q)),
     ]),
   };
+}
+
+function quotationSituation(q: SavedQuotationDto): string | null {
+  const d = describeQuotationLifecycle(q);
+  if (!d) return null;
+  return `${d.label}. ${d.detail}`;
 }
 
 function mapApproval(b: ApprovalBatchSummary): PrintApproval {

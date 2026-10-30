@@ -168,6 +168,13 @@ write endpoints refuse it (`409 OI_GROUP_CANCELLED`); `PoGroupCancellationDto` /
 historicalLineItemCount`, `RequestAttachmentDto.requestPoGroupId / supersededAtUtc / supersededByAttachmentId / isCurrentPo`,
 `SavedQuotationDto.quotedItemCount / notQuotedItemCount`, `BuyerWorkspacePoGroupDto.historicalLineNumbers`,
 `BuyerWorkspaceQuotationDto.itemsNotQuotedCount`; `NotifyOnPoCancelled` configurable on `/api/v1/ap-notification-configs`.
+*v2.249.5 (findings of the v2.249.4 TEST validation — `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`, DEC-153):*
+`DELETE /api/v1/attachments/{id}` refuses registered P.O. evidence with `409 PO_EVIDENCE_PROTECTED` (+ `reasonCode`
+`PO_EVIDENCE_CURRENT | PO_EVIDENCE_SUPERSEDED | PO_EVIDENCE_VOIDED | PO_EVIDENCE_REGISTERED`), whatever the request/group status;
+a temporary unregistered upload of an owning group `WAITING_PO` / `WAITING_PO_CORRECTION` stays deletable; `RequestAttachmentDto.isPoEvidence`.
+`SavedQuotationDto.lifecycleStatus / activeAwardedItemCount / historicalItemCount / historicalBatchNumber / historicalReleaseKind`,
+`SavedQuotationItemDto.adjudicationStatus / adjudicationBatchNumber / adjudicationReleaseKind / lineCurrentState / lineCurrentSupplierName`
+(read-only projection `QuotationAdjudicationProjection`; details endpoint loads `ApprovalBatches.Items.Candidates`). No migration.
 
 ## 8. Notifications — explicit recipient policy
 

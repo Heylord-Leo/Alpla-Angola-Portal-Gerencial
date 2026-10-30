@@ -252,6 +252,16 @@ export interface SavedQuotationItemDto {
     sourceCancelledBatchNumber?: number | null;
     reuseAuthorizationId?: string | null;
     reuseConsumedFromBatchId?: string | null;
+
+    // v2.249.5 — per-item adjudication history (server projection; see lib/quotationLifecycle)
+    /** NOT_QUOTED | NOT_SUBMITTED | IN_APPROVAL | AWARDED | CANDIDATE_NOT_AWARDED | AWARD_CANCELLED | CANDIDATE_CANCELLED | REJECTED */
+    adjudicationStatus?: string | null;
+    adjudicationBatchNumber?: number | null;
+    /** RESTART_QUOTATION | CANCEL_ITEMS when released by a P.O.-group cancellation. */
+    adjudicationReleaseKind?: string | null;
+    /** REQUOTED_WITH_OTHER | PENDING_REQUOTE | CLOSED_AFTER_APPROVAL | AWARDED_HERE */
+    lineCurrentState?: string | null;
+    lineCurrentSupplierName?: string | null;
 }
 
 export interface PurchaseHistoryInsightDto {
@@ -308,6 +318,13 @@ export interface SavedQuotationDto {
     /** v2.249.4 — requested lines recorded as not quoted / ignored on this document. */
     notQuotedItemCount?: number;
     items: SavedQuotationItemDto[];
+    // v2.249.5 — lifecycle context (server projection; see lib/quotationLifecycle)
+    /** OPEN | IN_APPROVAL | AWARDED | NOT_AWARDED | PARTIALLY_HISTORICAL | HISTORICAL_CANCELLED | REJECTED */
+    lifecycleStatus?: string | null;
+    activeAwardedItemCount?: number;
+    historicalItemCount?: number;
+    historicalBatchNumber?: number | null;
+    historicalReleaseKind?: string | null;
 }
 
 export interface RequestPoGroupDto {
@@ -734,6 +751,8 @@ export interface RequestAttachmentDto {
     supersededByAttachmentId?: string | null;
     /** v2.249.4 — the ONE current P.O. document of its group (server-resolved). */
     isCurrentPo?: boolean;
+    /** v2.249.5 — registered P.O. evidence (current, superseded, voided or registered before the pointer existed): the server refuses its deletion. Null for non-P.O. files. */
+    isPoEvidence?: boolean | null;
 }
 
 // ── ApprovalBatch (partial/batch approval) — focused interfaces for the buyer batch-composition

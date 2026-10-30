@@ -1509,6 +1509,7 @@ public class RequestsController : BaseController
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
             .Include(r => r.ApprovalBatches)
                 .ThenInclude(b => b.Items)
+                    .ThenInclude(i => i.Candidates) // v2.249.5 — adjudication history per quotation item
             .Include(r => r.PoGroups)
             .AsSplitQuery()
             .FirstOrDefaultAsync();
@@ -1545,6 +1546,70 @@ public class RequestsController : BaseController
         }
         var currentPoIds = request.PoGroups.Where(g => g.CurrentPoAttachmentId.HasValue).Select(g => g.CurrentPoAttachmentId!.Value).ToHashSet();
         foreach (var aDto in request.Attachments) aDto.IsCurrentPo = currentPoIds.Contains(aDto.Id);
+
+        // v2.249.5 — registered P.O. evidence flag (same rule the delete endpoint enforces: PoEvidenceProtection), so no UI
+        // offers a "remove" action the server will refuse. Legacy groups (no pointer) are covered by the registration history.
+        if (request.Attachments.Any(a => a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
+        {
+            var poGroupIds = request.PoGroups.Select(g => g.Id).ToList();
+            var registrationActions = AlplaPortal.Domain.Services.PoEvidenceProtection.RegistrationActions;
+            var registrationRows = await _context.RequestStatusHistories.AsNoTracking()
+                .Where(h => h.RequestId == id && registrationActions.Contains(h.ActionTaken))
+                .Select(h => new { h.CreatedAtUtc, h.Comment })
+                .ToListAsync();
+            var registrations = registrationRows.Select(h => new AlplaPortal.Domain.Services.PoEvidenceProtection.Registration(
+                h.CreatedAtUtc, AlplaPortal.Domain.Services.PoEvidenceProtection.GroupFromHistoryComment(h.Comment, poGroupIds))).ToList();
+            foreach (var aDto in request.Attachments.Where(a => a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
+            {
+                Guid? pointer = aDto.RequestPoGroupId.HasValue
+                    ? request.PoGroups.FirstOrDefault(g => g.Id == aDto.RequestPoGroupId.Value)?.CurrentPoAttachmentId
+                    : (currentPoIds.Contains(aDto.Id) ? aDto.Id : (Guid?)null);
+                aDto.IsPoEvidence = AlplaPortal.Domain.Services.PoEvidenceProtection.Evaluate(
+                    new AlplaPortal.Domain.Services.PoEvidenceProtection.FileFacts(aDto.Id, aDto.RequestPoGroupId, aDto.UploadedAtUtc, aDto.VoidedAtUtc, aDto.SupersededAtUtc),
+                    pointer, registrations).IsProtected;
+            }
+        }
+
+        // ── v2.249.5 — lifecycle context of each saved quotation / item (QuotationAdjudicationProjection): what already
+        // happened (awarded, award cancelled by a P.O.-group cancellation and the line re-quoted with another supplier, …)
+        // separated from the CURRENT reuse eligibility above. Derived only from batches (items + candidates), lines and the
+        // reuse rule; nothing is persisted. Found in TEST on REQ-628 (TREVOTECH listed like an open quotation).
+        if (displayEntity != null && request.Quotations != null && request.Quotations.Count > 0)
+        {
+            var reuseAuthRows = await _context.QuotationReuseAuthorizations.AsNoTracking()
+                .Where(a => a.RequestId == id)
+                .Select(a => new { a.Id, a.QuotationItemId, a.SourceApprovalBatchId, a.AuthorizedAtUtc, a.IsActive, a.ConsumedAtUtc, a.RevokedAtUtc, a.ConsumedByApprovalBatchId })
+                .ToListAsync();
+            var projection = AlplaPortal.Domain.Services.QuotationAdjudicationProjection.Project(
+                request.Quotations.Select(q => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.QuotationFacts(q.Id, q.SupplierNameSnapshot)).ToList(),
+                request.Quotations.SelectMany(q => q.Items.Select(qi => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.QuotationItemFacts(qi.Id, q.Id, qi.MappedRequestLineItemId, qi.ReconciliationStatus))).ToList(),
+                displayEntity.ApprovalBatches.Select(b => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.BatchFacts(
+                    b.Id, b.BatchNumber, b.Status, b.CreatedAtUtc,
+                    b.Items.Select(bi => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.BatchItemFacts(
+                        bi.RequestLineItemId, bi.SelectedQuotationItemId, bi.Candidates.Select(c => c.QuotationItemId).ToList(), bi.ReleasedAtUtc, bi.ReleaseKind)).ToList())).ToList(),
+                displayEntity.LineItems.Select(li => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.LineFacts(li.Id, li.LineNumber, li.QuotationLifecycleStatus, li.SelectedQuotationItemId)).ToList(),
+                QuotationReuseEligibilityPolicy.FinishedUsesFromLoaded(displayEntity.ApprovalBatches),
+                reuseAuthRows.Select(a => new QuotationReuseEligibilityPolicy.AuthorizationFacts(a.Id, a.QuotationItemId, a.SourceApprovalBatchId, a.AuthorizedAtUtc, a.IsActive, a.ConsumedAtUtc, a.RevokedAtUtc, a.ConsumedByApprovalBatchId)).ToList());
+            foreach (var qDto in request.Quotations)
+            {
+                if (!projection.TryGetValue(qDto.Id, out var qp)) continue;
+                qDto.LifecycleStatus = qp.LifecycleStatus;
+                qDto.ActiveAwardedItemCount = qp.ActiveAwardedItemCount;
+                qDto.HistoricalItemCount = qp.HistoricalItemCount;
+                qDto.HistoricalBatchNumber = qp.HistoricalBatchNumber;
+                qDto.HistoricalReleaseKind = qp.HistoricalReleaseKind;
+                foreach (var qiDto in qDto.Items)
+                {
+                    var ip = qp.Items.FirstOrDefault(x => x.QuotationItemId == qiDto.Id);
+                    if (ip == null) continue;
+                    qiDto.AdjudicationStatus = ip.AdjudicationStatus;
+                    qiDto.AdjudicationBatchNumber = ip.BatchNumber;
+                    qiDto.AdjudicationReleaseKind = ip.ReleaseKind;
+                    qiDto.LineCurrentState = ip.LineState;
+                    qiDto.LineCurrentSupplierName = ip.LineCurrentSupplierName;
+                }
+            }
+        }
 
         // ── Phase 1 P.O. cancellation: per-group cancellation record, last Finance return (never inferred), the D4
         // replacement-P.O. block and the D5 active approved totals (historical totals untouched). ──
@@ -7947,6 +8012,28 @@ public class RequestsController : BaseController
             return Conflict(priorPd);
         }
 
+        // ── v2.249.5 — the chosen P.O. DOCUMENT is locked and re-read INSIDE the transaction (PoDocumentRowLock: UPDLOCK,
+        // HOLDLOCK on SQL Server). It was selected from a read made BEFORE the transaction; a DELETE /attachments/{id} that
+        // committed meanwhile (temporary-upload clean-up of another session / tab) must refuse this registration instead of
+        // becoming the group's current document with IsDeleted = 1. The same lock makes a concurrent DELETE wait for this
+        // commit and then see the pointer (409 PO_EVIDENCE_PROTECTED). Returning here rolls everything back. ──
+        if (poDocument != null)
+        {
+            var stillThere = await PoDocumentRowLock.LockAndReloadAsync(_context, poDocument);
+            if (!stillThere || poDocument.IsDeleted || poDocument.VoidedAtUtc != null)
+            {
+                var racePd = new ProblemDetails
+                {
+                    Title = "Documento de P.O. alterado entretanto",
+                    Detail = $"O ficheiro '{poDocument.FileName}' foi removido ou anulado enquanto o registo decorria. Nada foi registado. Carregue novamente o documento da P.O. e repita o registo.",
+                    Status = 409
+                };
+                racePd.Extensions["code"] = PoDocumentRowLock.ConcurrentChangeCode;
+                racePd.Extensions["attachmentId"] = poDocument.Id;
+                return Conflict(racePd);
+            }
+        }
+
 
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
         {
@@ -9993,6 +10080,25 @@ public class RequestsController : BaseController
 
         var targetQuotation = request.Quotations.FirstOrDefault(q => q.Id == quotationId);
         if (targetQuotation == null) return NotFound(new ProblemDetails { Title = "Cotação não encontrada no pedido.", Status = 404 });
+
+        // ── v2.249.5 — selection follows the D3 reuse eligibility (same rule as the batch endpoints, Option C: no silent
+        // reuse). A quotation whose EVERY considered item was used in a cancelled / released batch and carries no active
+        // reuse authorization cannot be selected again from the card; one eligible or explicitly authorized item is enough.
+        // The historical adjudication shown on the card is display only — it never blocks an authorized candidate. ──
+        var reuseEligibility = await _quotationEligibility.GetEligibilityMapAsync(requestId);
+        var consideredItems = targetQuotation.Items
+            .Where(i => i.ReconciliationStatus != null && RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus))
+            .ToList();
+        if (reuseEligibility != null && consideredItems.Count > 0)
+        {
+            var blockedItems = consideredItems
+                .Select(i => reuseEligibility.TryGetValue(i.Id, out var e) ? e : null)
+                .Where(e => e != null && e.IsReuseBlocked)
+                .Select(e => e!)
+                .ToList();
+            if (blockedItems.Count == consideredItems.Count)
+                return ApprovalBatchController.ReuseNotAuthorizedConflict(blockedItems);
+        }
 
         // Enforce single selection
         foreach (var q in request.Quotations)

@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.249.4
+v2.249.5
+
+## [v2.249.5] - 2026-10-30
+
+### Registered P.O. evidence never deleted (row-locked), quotation lifecycle context, "Menor valor" per item, selection follows reuse eligibility
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Findings of the v2.249.4 TEST validation
+on REQ-28/10/2026-628 plus the boundary pass: `PoEvidenceProtection` (409 `PO_EVIDENCE_PROTECTED`, `isPoEvidence`, no "Remover P.O
+atual", temporary-upload cleanup treated as "kept" on refusal), `PoDocumentRowLock` (register-po vs delete serialized, 409
+`PO_DOCUMENT_CONCURRENT_CHANGE`), `QuotationAdjudicationProjection` (lifecycle fields on saved quotations/items, card chip, SITUAÇÃO
+column, Print View), select-from-card guard (409 `QUOTATION_REUSE_NOT_AUTHORIZED`), `lib/quotationComparison` (per-item unit price,
+unequal quantities indicative only, card claim only on identical scope). See CHANGELOG and
+`docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`.
 
 ## [v2.249.4] - 2026-10-29
 

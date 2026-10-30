@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, X, AlertTriangle, Download, Trash2, Save, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Upload, FileText, X, AlertTriangle, Download, Save, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { cleanupTemporaryPoUpload } from '../lib/poEvidence';
 import { parseFinanceReturnComment } from '../lib/financeReturnReason';
 import { Feedback, FeedbackType } from './ui/Feedback';
 import { DropdownPortal } from './ui/DropdownPortal';
@@ -44,7 +45,6 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const [returnDate, setReturnDate] = useState<string>('');
     const [showReturnTechnical, setShowReturnTechnical] = useState(false);
     const [existingPo, setExistingPo] = useState<RequestAttachmentDto | null>(null);
-    const [poRemoved, setPoRemoved] = useState(false);
 
     const [file, setFile] = useState<File | null>(null);
     const [comment, setComment] = useState('');
@@ -99,7 +99,6 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
             setReturnActor('');
             setReturnDate('');
             setExistingPo(null);
-            setPoRemoved(false);
             setFile(null);
             setComment('');
             setOcrResult(null);
@@ -298,18 +297,22 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         }
     };
 
-    const handleRemovePo = async () => {
-        if (!existingPo) return;
-        try {
-            await api.attachments.delete(existingPo.id);
-            setPoRemoved(true);
-            setExistingPo(null);
-        } catch {
-            setFeedback({ type: 'error', message: 'Falha ao remover o documento.' });
-        }
+    // v2.249.5 — the current P.O. is NEVER removed here (found in TEST on REQ-628: the old remove-current-P.O. button soft-deleted the
+    // registered file before the correction superseded it). The correction REPLACES it: RegisterPo marks it superseded
+    // and keeps it as history. The server refuses the deletion of registered evidence anyway (409 PO_EVIDENCE_PROTECTED).
+
+    const reportCleanupFailure = (error: unknown, attachmentId: string) => {
+        logger.log({ level: 'Warning', eventType: 'API_REQUEST_FAILED', componentKey: 'PoDocumentExtract', message: `Limpeza do upload temporário de P.O. ${attachmentId} não concluída (o servidor mantém ficheiros registados).`, exception: error });
+    };
+    // v2.249.5 §9.4 — the server refused because the file IS registered evidence (e.g. the registration succeeded while this
+    // client saw a network error): correct outcome, nothing removed, the registration stands. Informational, never an error.
+    const reportCleanupKept = (attachmentId: string) => {
+        logger.log({ level: 'Information', eventType: 'FRONTEND_EVENT', componentKey: 'PoDocumentExtract', message: `Upload de P.O. ${attachmentId} mantido pelo servidor: é evidência registada (PO_EVIDENCE_PROTECTED); nenhum ficheiro foi removido e um registo concluído entretanto não é afetado.` });
     };
 
     const handleClearFile = () => {
+        // v2.249.5 — the file stored by a refused attempt is a temporary, unregistered upload: best-effort server clean-up.
+        void cleanupTemporaryPoUpload(api.attachments.delete, uploadedAttachmentIdRef.current, reportCleanupFailure, reportCleanupKept);
         setFile(null);
         setOcrResult(null);
         setOverrideConfirmed(false);
@@ -319,6 +322,15 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         setBackendOcrMismatch(null); setDuplicateWarning(null); setOverrideDuplicateConfirmed(false); setDuplicateOverrideComment(''); setDocumentBlock(null);
         setPoNumber(f => clearExtractedNumber(f, selectedGroup?.purchaseOrderNumber));
         if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    // v2.249.5 — cancelling an unfinished correction cleans up the temporary upload of this attempt (never the current P.O.).
+    const handleCancel = () => {
+        if (processing) return;
+        void cleanupTemporaryPoUpload(api.attachments.delete, uploadedAttachmentIdRef.current, reportCleanupFailure, reportCleanupKept);
+        uploadedAttachmentIdRef.current = null;
+        uploadedFileRef.current = null;
+        onClose();
     };
 
     const handleConfirm = async () => {
@@ -364,6 +376,9 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                 setProcessing(false);
                 return;
             }
+            // Registered: the uploaded file is now the group's current P.O. document (evidence) — nothing to clean up.
+            uploadedAttachmentIdRef.current = null;
+            uploadedFileRef.current = null;
             onSuccess(outcome.message);
         } catch (err: any) {
             const decision = classifyRegisterPoError(err);
@@ -546,10 +561,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 </div>
 
                                 {/* Current P.O. Section */}
-                                {existingPo && !poRemoved && (
+                                {existingPo && (
                                     <div style={{ marginBottom: '24px' }}>
                                         <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                            P.O atual (devolvida){selectedGroup?.purchaseOrderNumber ? ` — nº ${selectedGroup.purchaseOrderNumber}` : ''} · será substituída pelo novo documento
+                                            P.O atual (devolvida){selectedGroup?.purchaseOrderNumber ? ` — nº ${selectedGroup.purchaseOrderNumber}` : ''} · ficará como histórico (substituída) após a correção; não é removida
                                         </label>
                                         <div style={{
                                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -576,17 +591,6 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                     }}
                                                 >
                                                     <Download size={18} />
-                                                </button>
-                                                <button
-                                                    onClick={handleRemovePo}
-                                                    title="Remover P.O atual"
-                                                    style={{
-                                                        background: 'none', border: '2px solid #fecaca', cursor: 'pointer',
-                                                        padding: '8px', display: 'flex', borderRadius: 'var(--radius-sm)',
-                                                        color: '#dc2626', transition: 'all 0.15s'
-                                                    }}
-                                                >
-                                                    <Trash2 size={18} />
                                                 </button>
                                             </div>
                                         </div>
@@ -996,7 +1000,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                 {/* Actions */}
                                 <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
                                     <button
-                                        onClick={onClose}
+                                        onClick={handleCancel}
                                         disabled={processing}
                                         style={{
                                             height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',

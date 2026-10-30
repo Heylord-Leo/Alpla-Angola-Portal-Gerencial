@@ -353,6 +353,12 @@ public class RequestAttachmentDto
     public Guid? SupersededByAttachmentId { get; set; }
     /// <summary>True for the ONE current P.O. document of its group (<c>PoDocumentSelection</c>). False for every other file.</summary>
     public bool IsCurrentPo { get; set; }
+    /// <summary>
+    /// v2.249.5 — true when this P.O. file is REGISTERED EVIDENCE (current document, superseded, voided, or registered before the
+    /// group had a pointer): the server refuses its deletion (409 PO_EVIDENCE_PROTECTED). False only for a temporary upload
+    /// that no registration ever used. Null for non-P.O. files.
+    /// </summary>
+    public bool? IsPoEvidence { get; set; }
 }
 
 public class RequestStatusHistoryDto

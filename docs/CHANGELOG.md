@@ -4,7 +4,60 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.4
+v2.249.5
+
+## [v2.249.5] - 2026-10-30 — Registered P.O. evidence is never deleted (row-locked against register-po), saved-quotation lifecycle context, "Menor valor" per request item, selection follows reuse eligibility
+
+PATCH, backend + frontend, **no migration** (read-model/DTO fields and new pure rules only; no change to any existing migration;
+TEST needs only Deploy to TEST on the v2.249.4 schema). No configuration change. Findings of the manual TEST validation of v2.249.4
+on REQ-28/10/2026-628 plus the pre-publication boundary pass, reference `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`
+(§1 matrix, §2 evidence preservation, §3 lifecycle, §4 comparison, §9 boundary cases), decision DEC-153 (with same-day amendment),
+manual resume script §3.10.
+
+- **Registered P.O. evidence is never deleted, soft or hard (confirmed defect).** TEST: the correction wizard's "Remover P.O atual"
+  soft-deleted the P.O. file registered the day before while the group was WAITING_PO_CORRECTION (row hidden with `IsDeleted=1`,
+  bytes kept, download 404, history "DOCUMENTO REMOVIDO"); the delete endpoint gated P.O. files by status only. New pure rule
+  `PoEvidenceProtection` (Domain): voided, superseded, the group's current document, or — legacy groups without pointer — a
+  `REGISTER_PO`/`REREGISTER_PO` of the owning group recorded at/after the upload (1 s tolerance; rows naming no group count for every
+  group; a group that has a pointer never falls back to the heuristic). `DELETE /api/v1/attachments/{id}` answers
+  `409 PO_EVIDENCE_PROTECTED` (+`reasonCode`), the details DTO exposes `RequestAttachmentDto.isPoEvidence`, the attachment list offers
+  "Remover" for a P.O. file only when the server says it is not evidence. Only a temporary, never-registered upload stays deletable
+  (status window extended to an owning group still WAITING_PO). The correction wizard lost the remove button ("ficará como histórico
+  (substituída) após a correção; não é removida"); both wizards clean up only their own temporary upload on clear-file and Cancelar,
+  never after a successful registration, and treat a server refusal (`PO_EVIDENCE_PROTECTED`) as "kept", not as a failure. The hidden
+  TEST row of REQ-628 is **not** un-hidden by this release (separate authorization).
+- **Register-po and delete serialized on the file row (boundary pass).** `register-po` selected its document from a pre-transaction
+  read and never wrote that row, so a concurrent delete could leave the group pointing at a hidden file. New `PoDocumentRowLock`
+  (Infrastructure: `UPDLOCK, HOLDLOCK` inside the transaction + reload, repo convention): `register-po` locks and re-reads the chosen
+  file inside its transaction and answers `409 PO_DOCUMENT_CONCURRENT_CHANGE` with nothing written if it was deleted/voided
+  meanwhile; the P.O. delete runs decision + write in one transaction under the same lock (idempotent 204 when already deleted).
+  Proven on SQL Server (LocalDB relational tests): the delete waits for the registering transaction and is then refused; the
+  registration waits for the deleting transaction and is then refused.
+- **Saved quotations carry their lifecycle context (confirmed defect: TREVOTECH listed like an open quotation).** New pure
+  `QuotationAdjudicationProjection` (Domain) derives, per item, AWARDED / IN_APPROVAL / CANDIDATE_NOT_AWARDED / AWARD_CANCELLED /
+  CANDIDATE_CANCELLED / REJECTED / NOT_SUBMITTED / NOT_QUOTED from batches (items + candidates), release stamps and request lines,
+  plus what the line did afterwards (`REQUOTED_WITH_OTHER` with the current supplier, `PENDING_REQUOTE`, `CLOSED_AFTER_APPROVAL`);
+  per quotation OPEN / IN_APPROVAL / AWARDED / NOT_AWARDED / PARTIALLY_HISTORICAL / HISTORICAL_CANCELLED / REJECTED
+  (`SavedQuotationDto.lifecycleStatus`, `activeAwardedItemCount`, `historicalItemCount`, `historicalBatchNumber`,
+  `historicalReleaseKind`; `SavedQuotationItemDto.adjudicationStatus`, `adjudicationBatchNumber`, `adjudicationReleaseKind`,
+  `lineCurrentState`, `lineCurrentSupplierName`). Historical status is kept apart from the current reuse eligibility
+  (`isReuseBlocked`/`isReuseAuthorized`, unchanged). UI: lifecycle chip + detail on the collapsed card (historical card dashed, total
+  struck), "SITUAÇÃO" column on expanded items ("Não cotado", never "Ignorada"), Print View "Situação".
+- **Selection from the card follows the D3 reuse eligibility, not the historical label (boundary pass).** `POST
+  …/quotations/{quotationId}/select` refuses `409 QUOTATION_REUSE_NOT_AUTHORIZED` when every considered item of the quotation is
+  reuse-blocked (same code/payload as the batch endpoints); an explicitly authorised reuse or one current item keeps the quotation
+  selectable. The card mirrors it (`describeQuotationSelectability`): blocked cards show "Seleção sujeita a autorização de
+  reutilização"; the historical chip stays visible in every case.
+- **"Menor valor" per request item (confirmed defect: totals of different scopes compared).** `lib/quotationComparison`: unit-price
+  comparison per line among current candidates with the same currency and unit; ties mark every lowest candidate; **unequal
+  quantities make the line informational only** (`QUANTITY_DIFFERS`, "menor preço unit. apenas indicativo", never counted as a win);
+  a card-level "Menor valor" exists only on identical lines, quantities, units and currency; otherwise a per-item indicator and a scope
+  notice. Applied to the request page, the Buyer queue ("Cotações registadas") and the legacy approval drawer path; the Area approver's
+  per-item award wizard (`WizardStepAward`) is untouched.
+- **Checks (local, 2026-10-30):** backend 3280/3280 (relational LocalDB tests ran), vitest 110 files / 1225 tests, `tsc --noEmit`
+  clean, `vite build` ok, EF `has-pending-model-changes`: none. Browser validation pending (script §3.10: evidence protection and
+  temporary-file cleanup, historical quotation labels, authorised reuse, comparable-price indicators, quotation rejection, supported
+  ECF identification, duplicate/divergence, previous-review labelling, AP cancellation switch).
 
 ## [v2.249.4] - 2026-10-29 — P.O. document validation (server-held evidence), correction number, superseded P.O. files, cancelled-group invoice obligations, Print View dates, counts, previous Finance review, AP cancellation switch
 

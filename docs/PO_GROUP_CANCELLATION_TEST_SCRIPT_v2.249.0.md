@@ -1,9 +1,13 @@
 # Guião de testes manuais em TEST — v2.249.0 (cancelamento de grupo P.O. / devolução à cotação)
 
-> Versão alvo: **v2.249.4** (v2.249.3 + correção do número da P.O. no assistente de correção, identificação do tipo de documento
+> Versão alvo: **v2.249.5** (v2.249.4 + evidência de P.O. registada nunca removível — `409 PO_EVIDENCE_PROTECTED`, assistente de
+> correção sem “Remover P.O atual”, limpeza só do upload temporário; contexto do ciclo de vida das cotações salvas e “Menor valor”
+> por item — achados da validação da v2.249.4 no pedido A). Build esperado **2.249.5+<sha do commit da v2.249.5>**; **sem migração**
+> (só Deploy to TEST). Retoma em **§3.10**. A v2.249.4 era 2.249.4+6cf7ba7.
+> Versão anterior: **v2.249.4** (v2.249.3 + correção do número da P.O. no assistente de correção, identificação do tipo de documento
 > nos dois assistentes de P.O., documentos de P.O. substituídos vs atual, grupo cancelado sem obrigação de fatura final, datas na
 > Vista de impressão, contagens de itens, revisão anterior de Finanças, interruptor `NotifyOnPoCancelled` — achados da validação
-> da v2.249.3 no pedido A). Build esperado **2.249.4+<sha do commit da v2.249.4>**; **exige Apply TEST Migrations**
+> da v2.249.3 no pedido A). Build **2.249.4+6cf7ba7**; **exigiu Apply TEST Migrations**
 > (`20261029140552_AddPoDocumentSupersessionAndExtraction`, aditiva) antes do Deploy to TEST. Retoma em **§3.9**. A v2.249.3 era 2.249.3+8d8d5b5.
 > Versão anterior: **v2.249.3** (v2.249.2 + extração OCR na janela por item e erros do assistente de importação apresentados dentro
 > do assistente — encontrado na validação da v2.249.2: “Importar Cotação” aceitava o ficheiro mas o OCR respondia 409).
@@ -400,7 +404,8 @@ para serviços**.
    antes do cancelamento (histórico): 250 000,00”, “Obrigação ativa: nenhuma”, **sem** “Propor Encerramento com Saldo” nem percentagem;
    totais = 350 000,00 AOA. (Opcional, C.2) `POST …/po-groups/<S1>/operation-invoice-short-close` → **409 `OI_GROUP_CANCELLED`**.
 3. **[BUYER] Corrigir P.O. — a cotação é recusada**: Pedidos → A → **CORRIGIR P.O (MAQSIS)**. O modal mostra **“P.O atual (devolvida) — nº
-   TEST-MAQSIS-2026-9003 · será substituída pelo novo documento”** com o ficheiro atual e o bloco **Número atual `TEST-MAQSIS-2026-9003`**
+   TEST-MAQSIS-2026-9003 · ficará como histórico (substituída) após a correção; não é removida”** (*v2.249.5*: só com o botão de
+   descarregar — o caixote do lixo deixou de existir) com o ficheiro atual e o bloco **Número atual `TEST-MAQSIS-2026-9003`**
    (campo “Número da P.O. corrigida” pré-preenchido, selo “Número atual (sem alteração)”). Selecione `Cotacao_TEST_MAQSIS_9003_REQ628.pdf`.
    Esperado: a extração é feita pelo servidor para este pedido (sem “Documento Validado”); surge a caixa **vermelha** “Documento
    identificado como Cotação / Factura pró-forma … não pode ser registado como P.O., mesmo que o fornecedor e o valor coincidam” e o botão
@@ -445,6 +450,79 @@ para serviços**.
 Evidência: `v2249-3.9-00.png` (estado inicial do cartão MAQSIS), `-01.png` (documentos com selos), `-02.png` (impressão), `-03.png`
 (Fatura Final — histórico), `-04.png` (recusa da cotação), `-05.png` (decisão do número + divergência ao manter), `-06.png` (sucesso +
 histórico), `-07.png` (P.O. reconhecida), `-08.png` (revisão anterior), `-09.png` (Contas a Pagar). `Resultado: ____`
+
+### 3.10 Retoma v2.249.5 — evidência de P.O. nunca removida, contexto das cotações salvas e “Menor valor” por item (BUYER / FIN1 / A) — 45 min
+
+Pré-condição: TEST com build **2.249.5+<sha>** (§1.1); **não** exige Apply TEST Migrations (sem migração). No pedido **A**, o grupo
+MAQSIS (Lote 2) está **P.O. Emitida** com o número correto — **não** o devolver outra vez para estes testes. Usar um **novo pedido
+sintético H** (título `TEST v2.249.0 H — evidência P.O.`, tipo Cotação, **2 linhas** de material com a mesma unidade; cotação **H1**
+cobre as linhas 1+2, cotação **H2** cobre **só a linha 1** com preço unitário **inferior** ao da H1; lote com a H1 vencedora nas duas
+linhas, aprovação de área e final; P.O. H1 registada com um PDF **“Encomenda Mat Escritório/Diversos ECF10 2026/9010”**; devolução por
+Finanças tipo **Corrigir P.O.**). Preparação como §2.1–§2.5 com estas variações. Não alterar dados de outros pedidos.
+
+> **Aguarda validação em browser (v2.249.5 só tem evidência automatizada local para estes pontos):** (a) proteção da evidência de
+> P.O. e limpeza do ficheiro temporário (passos 1–3 e variante de rede); (b) rótulos de cotação histórica (passo 6, cartão TREVOTECH,
+> coluna SITUAÇÃO, impressão); (c) reutilização autorizada → botão **Selecionar** volta (passo 6); (d) indicadores de preço comparável —
+> “Menor valor” só em âmbito idêntico, “Menor preço unit.” por item, quantidades diferentes apenas indicativas (passo 6, pedido H);
+> (e) cotação recusada como P.O. (passo 2); (f) identificação de ECF suportada — ECF10/ECF11/ECF reconhecidas, `ECF99` não (passo 3).
+> Registar cada alínea com `PASS/FAIL` na linha `Resultado`.
+
+0. **[BUYER] Verificar o estado antes de agir**: Workspace do H → **Grupos P.O.** → cartão H1 deve mostrar **“Devolvido para Compras /
+   Correção de P.O.”** com **Corrigir P.O.** Só se ainda mostrar **P.O. Emitida** é que FIN1 devolve (Finanças → Pagamentos → H1 →
+   Devolver, tipo Corrigir P.O.).
+1. **[BUYER] Corrigir P.O. — a P.O. atual não pode ser removida**: Pedidos → H → **CORRIGIR P.O (H1)**. Esperado: cartão **“P.O atual
+   (devolvida) — nº ECF10 2026/9010 · ficará como histórico (substituída) após a correção; não é removida”** **só com o botão de
+   descarregar** (nenhum caixote do lixo). (C.2) `DELETE /api/v1/attachments/<id do PDF atual>` → **409 `PO_EVIDENCE_PROTECTED`**
+   (`reasonCode: PO_EVIDENCE_CURRENT`). Em **Documentos** o ficheiro continua listado, descarregável e **sem** botão Remover; **Histórico**
+   sem “DOCUMENTO REMOVIDO”.
+2. **[BUYER] Cotação recusada como P.O. + cancelar sem deixar ficheiros**: no mesmo modal selecionar o PDF da **cotação** H1 → caixa
+   vermelha **“Documento identificado como Cotação / Factura pró-forma … não pode ser registado como P.O.”** e botão desativado (se o OCR
+   de TEST não reconhecer a cotação, a recusa surge no upload: **“Documento não é uma P.O.”** `DOCUMENT_IS_QUOTATION_EVIDENCE`). Clicar
+   **CANCELAR**. **Documentos**: **nenhum** ficheiro novo de tipo P.O.; o PDF atual intacto. Repetir com um PDF fictício `ECF99` **sem**
+   registar: X (remover ficheiro) e depois CANCELAR → idem (o upload temporário que o servidor tenha guardado é limpo pelo assistente;
+   se algum restar, só **ele** mostra “Remover” na lista — nunca a P.O. atual). **Variante (rede)**: com as DevTools em *Offline* logo
+   após clicar **Registar** (registo já enviado) → erro no modal; voltar *Online*, **CANCELAR** → recarregar: o grupo está **P.O. Emitida**
+   com o ficheiro como **P.O. atual** (nenhum ficheiro removido; na consola só um evento informativo `PO_EVIDENCE_PROTECTED`).
+3. **[BUYER] Correção efetiva + ECF reconhecida + substituído não removível**: Corrigir P.O. com PDF **“Encomenda Mat Escritório/Diversos
+   ECF10 2026/9011”** → caixa **verde “Ordem de Compra identificada — ECF10 2026/9011 — ECF10 (Material diverso / escritório)”**; decisão
+   do número → **Usar número detetado** → registar. Esperado: **Documentos**: novo ficheiro **“P.O. atual”**, o anterior **“Substituído”**
+   (descarregável; **nenhum** dos dois com Remover); (C.2) `DELETE` do substituído → **409** (`PO_EVIDENCE_SUPERSEDED`). **Histórico**:
+   “Número de P.O. corrigido: 'ECF10 2026/9010' → 'ECF10 2026/9011' (origem do número: EXTRACTED)…”.
+4. **[BUYER] Duplicado** (grupo em **Aguardando P.O.** de outro pedido sintético, ex.: D): registar com o número `ECF10 2026/9011` → caixa
+   **“P.O Duplicada (SISTEMA CENTRAL)”** → confirmação + justificativa obrigatória → sucesso com auditoria de override (ou cancelar e anotar).
+5. **[BUYER] Divergência** (mesmo grupo): PDF reconhecido `ECF10 2026/9012`, alterar o número para `ECF10 2026/9013` → **“Divergência
+   Detectada (SISTEMA CENTRAL)”** com “Número de P.O. divergente: introduzido ‘ECF10 2026/9013’ (Identificado no documento: ECF10
+   2026/9012)” → **Usar número extraído** → registo sem divergência.
+6. **[BUYER / REQ] Cotações salvas — contexto e “Menor valor”**: página do pedido **A** → Cotações. Esperado: cartão **TREVOTECH**
+   tracejado/cinzento com o chip **“Histórica — adjudicação cancelada”** e a linha “Cotação adjudicada (lote 1); a P.O. foi cancelada e
+   o(s) item(ns) devolvido(s) à cotação. Mantida como histórico; não é uma opção atual.”, total **riscado**, **sem** “Selecionar” (um
+   aprovador em fase de decisão vê “Seleção sujeita a autorização de reutilização”; após **autorizar a reutilização** do item — Workspace
+   do comprador — o botão **Selecionar** volta a aparecer com o mesmo chip histórico); expandir
+   → coluna **SITUAÇÃO**: item 1 **“Adjudicação cancelada (lote 1)”** + “Item devolvido à cotação e recotado com MAQSIS. Reutilização
+   sujeita a autorização.”; a linha não cotada **“Não cotado”** (nunca “Ignorada”). Cartão **MAQSIS**: “Vencedora”/“Adjudicada · 1 item(ns)”.
+   **Nenhum** cartão com **“Menor valor (AOA)”**; aviso no topo “As cotações cobrem itens ou quantidades diferentes: o total não é
+   comparável. A comparação de preços é feita por item.”; MAQSIS expandido, item 1: “Única cotação atual para o item”. **Vista de
+   impressão**: cotação TREVOTECH com **“Situação: Histórica — adjudicação cancelada. …”**. Pedido **H** (âmbitos diferentes): H2 mostra
+   **“Menor preço unit. em 1 de 1 item(ns)”**, nunca “Menor valor”; linha 1 de H2 “Menor preço unit.”, de H1 sem rótulo, linha 2 de H1
+   “Única cotação atual para o item”. Num pedido com duas cotações de **âmbito idêntico** (mesmas linhas, quantidades, unidade, moeda), a
+   mais barata mostra **“Menor valor (AOA)”** e, por item, “Menor preço unit.” / “Empate no menor preço unit.”. Se uma das cotações cotar
+   a linha com **quantidade diferente**, esse item mostra **“Quantidades diferentes — menor preço unit. apenas indicativo”** (nunca “Menor
+   preço unit.”), nenhum cartão mostra “Menor valor” e o aviso acrescenta “Há itens cotados em quantidades diferentes…”. **Fila do comprador**
+   (Cotações registadas) e **drawer de aprovação legado**: o mesmo critério (sem “MELHOR PREÇO” entre âmbitos diferentes); o assistente
+   de adjudicação por item do aprovador de área **não** muda.
+7. **[FIN1 → BUYER] Revisão anterior (pedido B, §4)**: após FIN1 rejeitar e o BUYER atualizar a declaração: **“Aguarda confirmação de
+   Finanças”**, **“Declaração atual ainda sem decisão de Finanças.”** e o bloco tracejado **“Revisão anterior (rejeitada) — declaração
+   entretanto atualizada · Por FIN1 · data · Nota anterior: …”**; o mesmo bloco na fila **Cancelamentos a confirmar** (FIN2).
+8. **[A] Configuração → Contas a Pagar**: caixa **“Notificar Contas a Pagar quando uma P.O. é cancelada ou devolvida a cotação
+   (PO_GROUP_CANCELLED)”** (predefinição desligada) e coluna **“P.O. canc.”**; gravar liga/desliga (GET `/api/v1/ap-notification-configs`
+   → `notifyOnPoCancelled`). **Repor** no fim (§9.3).
+9. **[A — só leitura, opcional] Ficheiro removido em TEST (REQ-628, grupo MAQSIS)**: consulta de diagnóstico de
+   `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md` §2.1 (C.6) — anotar o `Id` com `IsDeleted = 1`. **Não** alterar dados; qualquer
+   reposição é autorização separada.
+
+Evidência: `v2249-3.10-01.png` (modal sem remover), `-02.png` (409 por API), `-03.png` (cancelar sem ficheiro extra), `-04.png`
+(substituído sem remover), `-05.png` (duplicado), `-06.png` (divergência), `-07.png` (cotações do A), `-08.png` (impressão), `-09.png`
+(cotações do H), `-10.png` (revisão anterior), `-11.png` (Contas a Pagar). `Resultado: ____`
 
 ---
 

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { ConfirmationDialog } from './common/ConfirmationDialog';
 import { selectUnmappedAttachments } from './attachmentVisibility';
+import { isPoAttachmentDeleteOffered } from '../lib/poEvidence';
 
 interface Attachment {
     id: string;
@@ -19,6 +20,8 @@ interface Attachment {
     supersededAtUtc?: string | null;
     supersededByAttachmentId?: string | null;
     isCurrentPo?: boolean;
+    /** v2.249.5 — server verdict: registered P.O. evidence (never deletable). Only `false` allows the remove action. */
+    isPoEvidence?: boolean | null;
 }
 
 interface RequestAttachmentsProps {
@@ -373,7 +376,7 @@ export const RequestAttachments: React.FC<RequestAttachmentsProps> = ({
                                                 >
                                                     <Download size={16} />
                                                 </button>
-                                                {canEdit && isTypeDeletable(a.attachmentTypeCode) && (
+                                                {canEdit && isTypeDeletable(a.attachmentTypeCode) && isPoAttachmentDeleteOffered(a) && (
                                                     <button
                                                         onClick={() => handleDelete(a.id)}
                                                         style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer' }}

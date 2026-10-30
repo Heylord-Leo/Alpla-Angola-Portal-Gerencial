@@ -51,6 +51,7 @@ import { buildManualQuotationDraftItems } from './QuotationWizard/manualQuotatio
 // edit-draft rehydration (incl. parseClassificationEvidence) and the manual/OCR open logic.
 import { createBuyerQuotationWizardController } from './QuotationWizard/buyerQuotationWizardController';
 import type { WizardOcrError } from './QuotationWizard/wizardOcrError';
+import { compareQuotationsPerLine } from '../../lib/quotationComparison';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -1897,17 +1898,13 @@ export function BuyerItemsList() {
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                                     {/* Real Quotations (New Step 7: Improved Visualization & Comparison) */}
                                                     {(() => {
-                                                        // Subtle visual cue for lowest total in same currency (Step 7.3)
-                                                        const lowestByCurrency: Record<string, number> = {};
-                                                        group.quotations.forEach((q: SavedQuotationDto) => {
-                                                            if (!lowestByCurrency[q.currency] || q.totalAmount < lowestByCurrency[q.currency]) {
-                                                                lowestByCurrency[q.currency] = q.totalAmount;
-                                                            }
-                                                        });
+                                                        // v2.249.5 — "menor valor" only when totals are comparable (identical line scope,
+                                                        // quantities, units and currency; historical adjudications excluded) — lib/quotationComparison.
+                                                        const quotationComparison = compareQuotationsPerLine(group.quotations);
 
                                                         return group.quotations.map((q: SavedQuotationDto) => {
                                                             const isExpanded = !!expandedQuotations[q.id];
-                                                            const isLowest = group.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency];
+                                                            const isLowest = !!quotationComparison.byQuotationId.get(q.id)?.lowestTotal;
                                                             // Option C: items of this quotation used in a CANCELLED batch
                                                             const reuseBlockedCount = (q.items || []).filter((qi: any) => qi.isReuseBlocked).length;
                                                             const reuseAuthorizedCount = (q.items || []).filter((qi: any) => qi.isReuseAuthorized).length;

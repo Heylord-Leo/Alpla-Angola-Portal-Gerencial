@@ -15,6 +15,7 @@ import {
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
 import { readUploadedAttachmentId } from '../lib/correctPoSubmission';
+import { cleanupTemporaryPoUpload } from '../lib/poEvidence';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
@@ -395,6 +396,9 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             };
             const result = await api.requests.registerPo(requestId, previousPoReuse ? withPreviousPoReuse(basePayload, reuseComment) : basePayload);
 
+            // Registered: the uploaded file is now the group's current P.O. document (evidence) — nothing to clean up.
+            uploadedAttachmentIdRef.current = null;
+            uploadedFileRef.current = null;
             onSuccess(result.message || 'P.O registrada com sucesso!');
 
         } catch (err: any) {
@@ -426,7 +430,19 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         }
     };
 
+    const reportCleanupFailure = (error: unknown, attachmentId: string) => {
+        logger.log({ level: 'Warning', eventType: 'API_REQUEST_FAILED', componentKey: 'PoDocumentExtract', message: `Limpeza do upload temporário de P.O. ${attachmentId} não concluída (o servidor mantém ficheiros registados).`, exception: error });
+    };
+    // v2.249.5 §9.4 — the server refused because the file IS registered evidence (e.g. the registration succeeded while this
+    // client saw a network error): correct outcome, nothing removed, the registration stands. Informational, never an error.
+    const reportCleanupKept = (attachmentId: string) => {
+        logger.log({ level: 'Information', eventType: 'FRONTEND_EVENT', componentKey: 'PoDocumentExtract', message: `Upload de P.O. ${attachmentId} mantido pelo servidor: é evidência registada (PO_EVIDENCE_PROTECTED); nenhum ficheiro foi removido e um registo concluído entretanto não é afetado.` });
+    };
+
     const handleClearFile = () => {
+        // v2.249.5 — the file stored by a refused attempt is a temporary, unregistered upload: best-effort server clean-up
+        // (registered evidence is never deleted — the server refuses it with PO_EVIDENCE_PROTECTED).
+        void cleanupTemporaryPoUpload(api.attachments.delete, uploadedAttachmentIdRef.current, reportCleanupFailure, reportCleanupKept);
         setFile(null);
         setOcrResult(null);
         setOverrideConfirmed(false);
@@ -438,6 +454,15 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
+    };
+
+    // v2.249.5 — cancelling an unfinished registration cleans up the temporary upload of this attempt.
+    const handleCancel = () => {
+        if (processing) return;
+        void cleanupTemporaryPoUpload(api.attachments.delete, uploadedAttachmentIdRef.current, reportCleanupFailure, reportCleanupKept);
+        uploadedAttachmentIdRef.current = null;
+        uploadedFileRef.current = null;
+        onClose();
     };
 
     const inputStyle = {
@@ -1074,7 +1099,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
                         <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
                             <button
-                                onClick={onClose}
+                                onClick={handleCancel}
                                 disabled={processing}
                                 style={{
                                     height: '48px', padding: '0 24px', background: 'none', border: '1px solid var(--color-border)',

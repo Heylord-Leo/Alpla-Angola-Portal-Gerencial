@@ -33,6 +33,7 @@ import { DecisionInsightsPanel } from './components/DecisionInsightsPanel';
 import { DecisionFinancialTrendLine } from './components/DecisionFinancialTrendLine';
 import { ItemAwardMatrix } from './components/ItemAwardMatrix';
 import { AwardSummary } from './components/AwardSummary';
+import { compareQuotationsPerLine } from '../../lib/quotationComparison';
 
 // --- Constants ---
 
@@ -448,15 +449,9 @@ export function ApprovalDetailPanel({
     // REQUEST_ADJUSTMENT is hidden for PAYMENT requests
     const showAdjustmentAction = !isPayment;
 
-    // Find lowest amount for visual highlights
-    const lowestByCurrency: Record<string, number> = {};
-    if (isQuotation && data.quotations) {
-        data.quotations.forEach(q => {
-            if (!lowestByCurrency[q.currency] || q.totalAmount < lowestByCurrency[q.currency]) {
-                lowestByCurrency[q.currency] = q.totalAmount;
-            }
-        });
-    }
+    // v2.249.5 — legacy card-level highlight only when totals are comparable (identical line scope, quantities, units,
+    // currency; historical adjudications excluded) — lib/quotationComparison. Candidate batches suppress it anyway.
+    const quotationComparison = useMemo(() => compareQuotationsPerLine(isQuotation && data.quotations ? data.quotations : []), [isQuotation, data.quotations]);
 
     // Intelligence summary flags
     const intelItemsWithHistory = intelligence?.items?.filter(i => i.hasHistory) || [];
@@ -905,7 +900,7 @@ export function ApprovalDetailPanel({
                                             quotation={q}
                                             /* Candidate model: awards are per ITEM, so a whole-quotation
                                                "MELHOR PREÇO" comparison is decision-irrelevant and suppressed. */
-                                            isLowest={!isCandidateBatchContext && data.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency]}
+                                            isLowest={!isCandidateBatchContext && !!quotationComparison.byQuotationId.get(q.id)?.lowestTotal}
                                             canSelectWinner={canSelectWinner}
                                             onSelectWinner={handleSelectWinner}
                                             isProcessing={quotationProcessingId === q.id}

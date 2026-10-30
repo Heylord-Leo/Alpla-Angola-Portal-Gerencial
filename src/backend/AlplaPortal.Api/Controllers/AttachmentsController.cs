@@ -717,10 +717,14 @@ public class AttachmentsController : BaseController
                         .Where(g => g.Id == attachment.RequestPoGroupId.Value)
                         .Select(g => g.Status)
                         .FirstOrDefaultAsync();
-                    poGroupOk = owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+                    // v2.249.5 — a temporary, unregistered upload of a group still WAITING_PO (abandoned registration
+                    // attempt) may be cleaned up too; registered evidence is refused below by PoEvidenceProtection,
+                    // whatever the group status.
+                    poGroupOk = owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                             || owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPo;
                 }
                 isDeletable = poScalarOk || poGroupOk;
-                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado, ou enquanto o grupo P.O correspondente está devolvido para correção.";
+                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado, ou enquanto o grupo P.O correspondente aguarda registo ou está devolvido para correção.";
                 break;
             }
             case AttachmentConstants.Types.PaymentSchedule:
@@ -784,6 +788,37 @@ public class AttachmentsController : BaseController
             }
         }
 
+        // v2.249.5 — REGISTERED P.O. EVIDENCE IS NEVER DELETED (soft or hard). Found in TEST on REQ-628: the correction modal
+        // offered "Remover P.O atual" while the group was WAITING_PO_CORRECTION and this endpoint soft-deleted the file
+        // registered the day before (row kept with IsDeleted=1, bytes kept, but hidden from every list and from download).
+        // Replacement is supersession by RegisterPo. Protected = voided, superseded, the group's current document, or
+        // (legacy groups with no pointer) any registration of the owning group at/after the upload. Only a temporary,
+        // never-registered upload (abandoned wizard attempt) remains deletable.
+        // The decision and the write run in ONE transaction with the row locked (PoDocumentRowLock, SQL Server UPDLOCK/HOLDLOCK):
+        // a register-po of this same file waits for this commit and then refuses (PO_DOCUMENT_CONCURRENT_CHANGE); a register-po
+        // that committed first is seen here after the lock (pointer → 409). Returning early disposes the transaction → rollback.
+        await using var evidenceTx = attachment.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder && _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync()
+            : null;
+        if (attachment.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder)
+        {
+            var stillThere = await AlplaPortal.Infrastructure.Services.Purchasing.PoDocumentRowLock.LockAndReloadAsync(_context, attachment);
+            if (!stillThere || attachment.IsDeleted) return NoContent();   // already removed by a concurrent clean-up — idempotent, nothing written
+            var protection = await EvaluatePoEvidenceProtectionAsync(_context, attachment);
+            if (protection.IsProtected)
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Evidência de P.O. protegida",
+                    Detail = protection.Detail,
+                    Status = 409
+                };
+                pd.Extensions["code"] = AlplaPortal.Domain.Services.PoEvidenceProtection.ErrorCode;
+                pd.Extensions["reasonCode"] = protection.ReasonCode;
+                return Conflict(pd);
+            }
+        }
+
         attachment.IsDeleted = true;
 
         // Record removal in history
@@ -810,8 +845,36 @@ public class AttachmentsController : BaseController
         }
 
         await _context.SaveChangesAsync();
+        if (evidenceTx != null) await evidenceTx.CommitAsync();
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// v2.249.5 — loads the facts <see cref="AlplaPortal.Domain.Services.PoEvidenceProtection"/> needs for ONE P.O. file: the
+    /// owning group's current pointer and the REGISTER_PO / REREGISTER_PO history rows of the request (group read from the
+    /// history comment; rows naming no group count for every group). Same rule the details read model exposes (IsPoEvidence).
+    /// </summary>
+    internal static async Task<AlplaPortal.Domain.Services.PoEvidenceProtection.Verdict> EvaluatePoEvidenceProtectionAsync(ApplicationDbContext context, RequestAttachment attachment)
+    {
+        var groups = await context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == attachment.RequestId)
+            .Select(g => new { g.Id, g.CurrentPoAttachmentId })
+            .ToListAsync();
+        var groupIds = groups.Select(g => g.Id).ToList();
+        Guid? pointer = attachment.RequestPoGroupId.HasValue
+            ? groups.FirstOrDefault(g => g.Id == attachment.RequestPoGroupId.Value)?.CurrentPoAttachmentId
+            : groups.Select(g => g.CurrentPoAttachmentId).FirstOrDefault(p => p == attachment.Id);
+        var registrationActions = AlplaPortal.Domain.Services.PoEvidenceProtection.RegistrationActions;
+        var rows = await context.RequestStatusHistories.AsNoTracking()
+            .Where(h => h.RequestId == attachment.RequestId && registrationActions.Contains(h.ActionTaken))
+            .Select(h => new { h.CreatedAtUtc, h.Comment })
+            .ToListAsync();
+        var registrations = rows.Select(h => new AlplaPortal.Domain.Services.PoEvidenceProtection.Registration(
+            h.CreatedAtUtc, AlplaPortal.Domain.Services.PoEvidenceProtection.GroupFromHistoryComment(h.Comment, groupIds)));
+        return AlplaPortal.Domain.Services.PoEvidenceProtection.Evaluate(
+            new AlplaPortal.Domain.Services.PoEvidenceProtection.FileFacts(attachment.Id, attachment.RequestPoGroupId, attachment.UploadedAtUtc, attachment.VoidedAtUtc, attachment.SupersededAtUtc),
+            pointer, registrations);
     }
 
     private string SanitizeFileName(string fileName)

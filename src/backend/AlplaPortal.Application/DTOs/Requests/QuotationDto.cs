@@ -209,6 +209,17 @@ public class SavedQuotationDto
     public string? SupplierRegistrationStatus { get; set; }
 
     public List<SavedQuotationItemDto> Items { get; set; } = new();
+
+    // ── v2.249.5 — lifecycle context (QuotationAdjudicationProjection; read-only, derived from batches/lines/reuse rule) ──
+    /// <summary>OPEN | IN_APPROVAL | AWARDED | NOT_AWARDED | PARTIALLY_HISTORICAL | HISTORICAL_CANCELLED | REJECTED.</summary>
+    public string? LifecycleStatus { get; set; }
+    /// <summary>Quoted items currently awarded (active approved batch item, not released).</summary>
+    public int ActiveAwardedItemCount { get; set; }
+    /// <summary>Quoted items whose award/candidacy was cancelled (released by a P.O.-group cancellation or batch cancelled).</summary>
+    public int HistoricalItemCount { get; set; }
+    public int? HistoricalBatchNumber { get; set; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS when the historical award was released by a P.O.-group cancellation.</summary>
+    public string? HistoricalReleaseKind { get; set; }
 }
 
 public class PurchaseHistoryInsightDto
@@ -282,6 +293,17 @@ public class SavedQuotationItemDto
     public Guid? ReuseAuthorizationId { get; set; }
     /// <summary>Batch that consumed the reuse authorization (provenance after consumption).</summary>
     public Guid? ReuseConsumedFromBatchId { get; set; }
+
+    // ── v2.249.5 — per-item adjudication history (QuotationAdjudicationProjection) ──
+    /// <summary>NOT_QUOTED | NOT_SUBMITTED | IN_APPROVAL | AWARDED | CANDIDATE_NOT_AWARDED | AWARD_CANCELLED | CANDIDATE_CANCELLED | REJECTED.</summary>
+    public string? AdjudicationStatus { get; set; }
+    public int? AdjudicationBatchNumber { get; set; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS for AWARD_CANCELLED / CANDIDATE_CANCELLED released by a P.O.-group cancellation.</summary>
+    public string? AdjudicationReleaseKind { get; set; }
+    /// <summary>What the request LINE did afterwards: REQUOTED_WITH_OTHER | PENDING_REQUOTE | CLOSED_AFTER_APPROVAL | AWARDED_HERE.</summary>
+    public string? LineCurrentState { get; set; }
+    /// <summary>Supplier of the line's current winning quotation when REQUOTED_WITH_OTHER.</summary>
+    public string? LineCurrentSupplierName { get; set; }
 }
 
 /// <summary>Buyer request to authorize reuse of specific quotation items previously used in a CANCELLED batch (Option C).</summary>
