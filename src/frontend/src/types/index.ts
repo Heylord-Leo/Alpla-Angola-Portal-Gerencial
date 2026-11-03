@@ -1159,7 +1159,11 @@ export interface OcrDraft {
     isCompanyOcrAutoFilled?: boolean;
     documentNumber: string;
     documentDate: string;
+    /** The quotation's validity date ("Validade da cotação"). Wizard-only: NOT part of the save payload and NOT persisted
+     * (no DTO / entity field) — informational for the Buyer's review. */
     dueDate?: string;
+    /** v2.249.8 — where `dueDate` came from: the extraction (normalised verbatim) or the Buyer. Undefined when none / unknown (edit hydration). */
+    dueDateSource?: 'EXTRACTED' | 'MANUAL';
     /**
      * Identity of the attached document — see lib/sourceDocumentType.
      * Widened from the superseded binary `'PROFORMA' | 'FINAL'`; the old values still normalize.

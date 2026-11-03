@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRequestPrintModel, humanizeActionLabel, humanizeDocumentType, normalizeActionCode, toPrintFileTitle, safeRequestNumber } from './requestPrintModel';
+import { buildRequestPrintModel, humanizeActionLabel, humanizeDocumentType, normalizeActionCode, toPrintFileTitle, safeRequestNumber, resolveApprovedLineValues } from './requestPrintModel';
 import type { RequestDetailsDto } from '../../../../types';
 
 // v2.245.0 Request Print View — Phase 1. Pure model coverage (§27).
@@ -270,5 +270,103 @@ describe('Print View v2.249.4', () => {
     expect(m.attachments[0].fields.find(f => f.label === 'Anulado')).toBeUndefined();
     expect(m.attachments[1].currentPo).toBe(true);
     expect(m.attachments[1].fields.find(f => f.label === 'Situação')!.value).toBe('P.O. atual');
+  });
+});
+
+// ── v2.249.8 — "Itens": the requester's estimate vs the approved value (REQ-03/11/2026-630: 0,00 printed while 61.560 was approved) ──
+describe('Print View v2.249.8 — line values', () => {
+  const L1 = 'line-1', L2 = 'line-2';
+  const cand = (over: Partial<any> = {}) => ({ id: 'c1', quotationItemId: 'qi1', quotationId: 'q1', supplierName: 'LUANDAY', description: 'ARTIGO K1', quantity: 10, unitPrice: 5000, discountAmount: 5000, ivaRatePercent: 14, ivaAmount: 6300, grossSubtotal: 50000, lineTotal: 51300, currency: 'AOA', hasReconciliationWarnings: false, isWinner: true, ...over });
+  const approvedBatch = (over: Partial<any> = {}): any => ({
+    id: 'b1', batchNumber: 1, status: 'APPROVED', createdAtUtc: '2026-11-03T10:00:00Z', createdByUserId: 'u', approvedTotalAmount: 61560,
+    items: [
+      { id: 'bi1', requestLineItemId: L1, selectedQuotationItemId: 'qi1', selectedCandidateId: 'c1', candidates: [cand(), cand({ id: 'c1b', unitPrice: 5200, lineTotal: 53352, isWinner: false })] },
+      { id: 'bi2', requestLineItemId: L2, selectedQuotationItemId: 'qi2', selectedCandidateId: 'c2', candidates: [cand({ id: 'c2', quotationItemId: 'qi2', description: 'ARTIGO K2', quantity: 20, unitPrice: 500, discountAmount: 1000, ivaAmount: 1260, grossSubtotal: 10000, lineTotal: 10260 })] },
+    ],
+    ...over,
+  });
+  const requesterLines = [
+    { id: L1, lineNumber: 1, description: 'ARTIGO K1', quantity: 10, unit: 'UN', unitPrice: 0, totalAmount: 0, currencyCode: 'AOA', quotationLifecycleStatus: 'QUOTATION_APPROVED' },
+    { id: L2, lineNumber: 2, description: 'ARTIGO K2', quantity: 20, unit: 'UN', unitPrice: 0, totalAmount: 0, currencyCode: 'AOA', quotationLifecycleStatus: 'QUOTATION_APPROVED' },
+  ];
+  const val = (m: ReturnType<typeof buildRequestPrintModel>, i: number, label: string) => m.lineItems[i].fields.find(f => f.label === label)?.value;
+
+  it('REQ-630 shape: a 0 requester estimate is NOT printed as a price; the approved value comes from the winning candidate per line (own currency)', () => {
+    const m = buildRequestPrintModel(baseDetail({ requestTypeName: 'Cotação', currencyCode: 'AOA', lineItems: requesterLines as any, approvalBatches: [approvedBatch()] as any }));
+    expect(m.lineItems).toHaveLength(2);
+    expect(m.lineItems[0].fields.find(f => f.label === 'Preço unit.')).toBeUndefined();          // the old unlabelled field is gone
+    expect(m.lineItems[0].fields.find(f => f.label === 'Total')).toBeUndefined();
+    expect(m.lineItems[0].fields.some(f => /estimativa/.test(f.label))).toBe(false);          // 0 is a placeholder, not an estimate
+    expect(m.lineItems[0].fields.every(f => !/\b0,00\b/.test(f.value))).toBe(true);   // no standalone zero amount
+    expect(val(m, 0, 'Preço unit. aprovado')).toMatch(/5.?000,00/);
+    expect(val(m, 0, 'Total aprovado (c/ IVA)')).toMatch(/51.?300,00/);
+    expect(val(m, 1, 'Preço unit. aprovado')).toMatch(/500,00/);
+    expect(val(m, 1, 'Total aprovado (c/ IVA)')).toMatch(/10.?260,00/);
+    expect(val(m, 0, 'Fornecedor aprovado')).toBe('LUANDAY');
+    expect(val(m, 0, 'Lote de aprovação')).toBe('#1');
+    // the winner is the SELECTED candidate, not the first / lowest one
+    expect(val(m, 0, 'Preço unit. aprovado')).not.toMatch(/5.?200,00/);
+  });
+
+  it('a requester estimate > 0 is printed, labelled as the requester\'s estimate, next to the approved value', () => {
+    const lines = [{ ...requesterLines[0], unitPrice: 4800, totalAmount: 48000 }];
+    const m = buildRequestPrintModel(baseDetail({ currencyCode: 'AOA', lineItems: lines as any, approvalBatches: [approvedBatch()] as any }));
+    expect(val(m, 0, 'Preço unit. (estimativa do solicitante)')).toMatch(/4.?800,00/);
+    expect(val(m, 0, 'Total (estimativa do solicitante)')).toMatch(/48.?000,00/);
+    expect(val(m, 0, 'Preço unit. aprovado')).toMatch(/5.?000,00/);
+  });
+
+  it('no approved value: a batch still in approval, a rejected batch, or a released item (P.O. group cancelled, line back in quotation)', () => {
+    const waiting = buildRequestPrintModel(baseDetail({ lineItems: requesterLines as any, approvalBatches: [approvedBatch({ status: 'WAITING_FINAL_APPROVAL' })] as any }));
+    expect(waiting.lineItems[0].fields.some(f => /aprovado/.test(f.label))).toBe(false);
+    expect(val(waiting, 0, 'Valores')).toBe('Sem estimativa do solicitante; sem valor aprovado para esta linha');
+    const rejected = buildRequestPrintModel(baseDetail({ lineItems: requesterLines as any, approvalBatches: [approvedBatch({ status: 'REJECTED' })] as any }));
+    expect(rejected.lineItems[0].fields.some(f => /aprovado/.test(f.label))).toBe(false);
+    const released = approvedBatch(); released.items[0] = { ...released.items[0], releasedAtUtc: '2026-11-04T08:00:00Z', releaseKind: 'RESTART_QUOTATION' };
+    const m = buildRequestPrintModel(baseDetail({ lineItems: requesterLines as any, approvalBatches: [released] as any }));
+    expect(m.lineItems[0].fields.some(f => /aprovado/.test(f.label))).toBe(false);   // line 1 released
+    expect(val(m, 1, 'Total aprovado (c/ IVA)')).toMatch(/10.?260,00/);              // line 2 still approved
+  });
+
+  it('a line closed by a CANCEL_ITEMS cancellation keeps its approved value, labelled as historical', () => {
+    const lines = [{ ...requesterLines[0], quotationLifecycleStatus: 'CANCELLED_AFTER_APPROVAL' }];
+    const m = buildRequestPrintModel(baseDetail({ lineItems: lines as any, approvalBatches: [approvedBatch()] as any }));
+    expect(val(m, 0, 'Preço unit. aprovado (histórico — P.O. cancelada)')).toMatch(/5.?000,00/);
+    expect(val(m, 0, 'Total aprovado (c/ IVA) (histórico — P.O. cancelada)')).toMatch(/51.?300,00/);
+    expect(m.lineItems[0].fields.find(f => f.label === 'Preço unit. aprovado')).toBeUndefined();
+  });
+
+  it('the latest APPROVED batch holding the line wins (re-approval after a release); currencies stay per line, nothing is summed or divided', () => {
+    const older = approvedBatch({ id: 'b1', batchNumber: 1, createdAtUtc: '2026-10-01T10:00:00Z' });
+    older.items = [{ ...older.items[0], releasedAtUtc: '2026-10-02T00:00:00Z' }, older.items[1]];
+    const newer = approvedBatch({ id: 'b2', batchNumber: 2, createdAtUtc: '2026-11-03T10:00:00Z' });
+    newer.items = [{ ...newer.items[0], id: 'bi3', selectedCandidateId: 'c3', candidates: [cand({ id: 'c3', unitPrice: 12, lineTotal: 120, currency: 'USD', supplierName: 'IMPORTADOR' })] }];
+    const idx = resolveApprovedLineValues(baseDetail({ lineItems: requesterLines as any, approvalBatches: [older, newer] as any }));
+    expect(idx.get(L1)).toMatchObject({ batchNumber: 2, unitPrice: 12, lineTotal: 120, currency: 'USD', supplierName: 'IMPORTADOR', source: 'CANDIDATE' });
+    expect(idx.get(L2)).toMatchObject({ batchNumber: 1, lineTotal: 10260, currency: 'AOA' });
+    const m = buildRequestPrintModel(baseDetail({ currencyCode: 'AOA', lineItems: requesterLines as any, approvalBatches: [older, newer] as any }));
+    expect(val(m, 0, 'Total aprovado (c/ IVA)')).toMatch(/USD|\$|120/);
+    expect(val(m, 1, 'Total aprovado (c/ IVA)')).toMatch(/10.?260,00/);
+    expect((m as any).totalAmount).toBeUndefined();
+  });
+
+  it('legacy pre-candidate batch (no candidate rows): the Buyer-selected quotation item is the approved value; an item without a resolvable winner prints none', () => {
+    const legacy = approvedBatch();
+    legacy.items = [
+      { id: 'bi1', requestLineItemId: L1, selectedQuotationItemId: 'qi1', selectedCandidateId: null, isLegacyBuyerSelectedWinner: true, candidates: [] },
+      { id: 'bi2', requestLineItemId: L2, selectedQuotationItemId: null, selectedCandidateId: null, candidates: [] },
+    ];
+    const quotations = [{ id: 'q1', requestId: 'r1', supplierNameSnapshot: 'LUANDAY', currency: 'AOA', totalAmount: 51300, isSelected: true, createdAtUtc: '2026-11-01T00:00:00Z', itemCount: 1, sourceType: 'OCR',
+      items: [{ id: 'qi1', lineNumber: 1, description: 'ARTIGO K1', quantity: 10, unitPrice: 5000, lineTotal: 51300, grossSubtotal: 50000, discountAmount: 5000, ivaAmount: 6300, ivaRatePercent: 14 }] }];
+    const idx = resolveApprovedLineValues(baseDetail({ lineItems: requesterLines as any, quotations: quotations as any, approvalBatches: [legacy] as any }));
+    expect(idx.get(L1)).toMatchObject({ unitPrice: 5000, lineTotal: 51300, currency: 'AOA', supplierName: 'LUANDAY', source: 'LEGACY_QUOTATION_ITEM' });
+    expect(idx.has(L2)).toBe(false);
+  });
+
+  it('the model never writes request-line values (inputs untouched)', () => {
+    const lines = requesterLines.map(l => ({ ...l }));
+    const snapshot = JSON.stringify(lines);
+    buildRequestPrintModel(baseDetail({ lineItems: lines as any, approvalBatches: [approvedBatch()] as any }));
+    expect(JSON.stringify(lines)).toBe(snapshot);
   });
 });

@@ -9,7 +9,8 @@ import ocrLib from '../lib/ocrPoValidation.ts?raw';
 
 describe('P.O. wizards — a definitively refused document shows divergences as diagnostics only', () => {
     it.each([['RegisterPoModal', register], ['CorrectPoModal', correct]])('%s derives the controls from the shared rule and renders the acceptance checkbox only in OVERRIDE mode', (_name, src) => {
-        expect(src).toMatch(/describeDivergenceControls\(identification, !!documentBlock, !!ocrResult\?\.hasMismatches \|\| !!backendOcrMismatch\)/);
+        // v2.249.8 — the reviewed set (reviewMismatches) carries the extraction-time divergences plus the number divergence of the current input.
+        expect(src).toMatch(/describeDivergenceControls\(identification, !!documentBlock, !!reviewMismatches\?\.hasMismatches \|\| !!backendOcrMismatch\)/);
         expect(src).toMatch(/divergenceControls\.mode === 'OVERRIDE' \? \(/);
         expect(src).toMatch(/data-testid="divergence-diagnostic-only"/);
         expect(src).toMatch(/Escolha outro ficheiro\./);
@@ -24,7 +25,7 @@ describe('P.O. wizards — a definitively refused document shows divergences as 
         expect(register).toMatch(/placeholder=\{divergenceControls\.commentRequired \? "Justifique o motivo de ignorar a divergência\.\.\."/);
         // handleConfirm: documentBlock / isBlocked check precedes the "Confirme estar ciente das divergências" check.
         const refusal = register.indexOf("if (documentBlock || identification?.isBlocked) {\n            setFeedback({ type: 'error', message: 'O documento foi identificado como cotação");
-        const divergence = register.indexOf("if (ocrResult?.hasMismatches && !overrideConfirmed) {");
+        const divergence = register.indexOf("if (reviewMismatches?.hasMismatches && !overrideConfirmed) {");
         expect(refusal).toBeGreaterThan(0);
         expect(refusal).toBeLessThan(divergence);
         // The submit gate still refuses the file (unchanged v2.249.4 rule).
@@ -32,7 +33,7 @@ describe('P.O. wizards — a definitively refused document shows divergences as 
     });
 
     it('CorrectPoModal: the justification policy receives the refused state and the submission guard refuses the document before any upload', () => {
-        expect(correct).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation, documentRefused\)/);
+        expect(correct).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!reviewMismatches\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation, documentRefused\)/);
         expect(submission).toMatch(/if \(documentRefused\) return \{ required: false, source: 'DOCUMENT_REFUSED' \};/);
         expect(submission).toMatch(/if \(input\.identification\?\.isBlocked\) return CORRECT_PO_MESSAGES\.documentBlocked;/);
         expect(correct).toMatch(/\|\| !!identification\?\.isBlocked/);
@@ -63,5 +64,44 @@ describe('P.O. wizards — payment condition proposed by the extraction', () => 
     it('the header reader exposes the classification status and the raw payment-terms text', () => {
         expect(ocrLib).toMatch(/paymentConditionStatus: suggestions\?\.paymentCondition\?\.status,/);
         expect(ocrLib).toMatch(/paymentConditionRawText: suggestions\?\.paymentConditionRawText\?\.value,/);
+    });
+});
+
+// ── v2.249.8 — REQ-03/11/2026-630 finding: the typed number differed from the identified ECF10 2026/9630 ("AAAAAA") and nothing warned ──
+import blocks from './po/PoDocumentReviewBlocks.tsx?raw';
+
+describe('P.O. wizards — the typed number vs the document number is evaluated from the current input (v2.249.8)', () => {
+    it.each([['RegisterPoModal', register, 'purchaseOrderNumber'], ['CorrectPoModal', correct, 'poNumber.value']])('%s derives the number divergence on every render and merges it into the reviewed set', (_name, src, typed) => {
+        const typedRe = typed.replace('.', '\\.');
+        expect(src).toMatch(new RegExp(`const numberDivergence = describePoNumberDivergence\\(${typedRe}, identification, detectedDocumentNumber\\);`));
+        expect(src).toMatch(/const reviewMismatches = withNumberDivergence\(ocrResult, numberDivergence\);/);
+        // The divergence panel renders the reviewed set (so the number line appears with the acknowledgement checkbox) …
+        expect(src).toMatch(/\) : reviewMismatches \? \(\s*reviewMismatches\.hasMismatches \? \(/);
+        expect(src).toMatch(/\{reviewMismatches\.details\.map\(\(d, i\) =>/);
+        // … the number block shows the inline warning, and the verdict block keeps identification separate from the number.
+        expect(src).toMatch(/<PoNumberFieldBlock[^]*?divergence=\{numberDivergence\}/);
+        expect(src).toMatch(/<PoDocumentVerdictBlock identification=\{identification\}[^]*?numberDivergence=\{numberDivergence\} \/>/);
+        // The extraction-time set is no longer what gates the acknowledgement.
+        expect(src).not.toMatch(/\(!!ocrResult\?\.hasMismatches && \(!overrideConfirmed/);
+        expect(src).not.toMatch(/\(!!ocrResult\?\.hasMismatches && !overrideConfirmed\)/);
+    });
+    it('RegisterPoModal submits the reviewed set and gates the button, the pre-submit checks and the mandatory comment on it', () => {
+        expect(register).toMatch(/hasMismatches: reviewMismatches\?\.hasMismatches \|\| false,/);
+        expect(register).toMatch(/mismatchDetails: reviewMismatches\?\.details \? reviewMismatches\.details\.join\('; '\) : '',/);
+        expect(register).toMatch(/\|\| \(!!reviewMismatches\?\.hasMismatches && \(!overrideConfirmed \|\| !comment\.trim\(\)\)\)/);
+        expect(register).toMatch(/if \(reviewMismatches\?\.hasMismatches && !comment\.trim\(\)\) \{/);
+        // The business facts of the extraction (supplier / total) still come from the extraction-time result.
+        expect(register).toMatch(/extractedSupplierName: ocrResult\?\.extractedSupplier,/);
+    });
+    it('the shared blocks render the inline warning with both numbers and the "Usar número extraído" shortcut, and the verdict note', () => {
+        expect(blocks).toMatch(/\{divergence\?\.divergent && !decisionPending && \(/);
+        expect(blocks).toMatch(/data-testid="po-number-divergence"/);
+        expect(blocks).toMatch(/data-testid="po-number-divergence-typed"/);
+        expect(blocks).toMatch(/data-testid="po-number-divergence-document"/);
+        expect(blocks).toMatch(/data-testid="po-number-divergence-use-extracted"[^]*?onClick=\{onUseSuggestion\}/);
+        expect(blocks).toMatch(/Número introduzido diferente do número do documento/);
+        expect(blocks).toMatch(/data-testid="po-document-number-divergence"/);
+        // The plain suggestion row yields to the warning while divergent.
+        expect(blocks).toMatch(/\{field\.suggestion && suggestionDiffers && !suggestionDiffersFromCurrent && !divergence\?\.divergent && \(/);
     });
 });

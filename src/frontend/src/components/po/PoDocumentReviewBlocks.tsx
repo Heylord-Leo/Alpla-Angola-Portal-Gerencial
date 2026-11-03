@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle, ShieldAlert, ShieldCheck, Wand2 } from 'lucide-react';
 import {
-    PoDocumentIdentification, PoNumberField, describePoDocumentReview, poNumberChanged, poNumberSourceLabel, numberDecisionPending,
+    PoDocumentIdentification, PoNumberField, PoNumberDivergence, describePoDocumentReview, poNumberChanged, poNumberSourceLabel, numberDecisionPending,
 } from '../../lib/poDocumentIdentification';
 
 /**
@@ -15,8 +15,11 @@ const inputStyle: React.CSSProperties = {
     borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-main)', fontFamily: 'inherit',
 };
 
-export function PoNumberFieldBlock({ field, currentNumber, disabled, inputId, onChange, onUseSuggestion, onKeepCurrent, children }: {
+export function PoNumberFieldBlock({ field, currentNumber, disabled, inputId, onChange, onUseSuggestion, onKeepCurrent, divergence, children }: {
     field: PoNumberField;
+    /** v2.249.8 — the number divergence of the CURRENT input (lib describePoNumberDivergence): inline warning with the typed and the
+     * document numbers; its acknowledgement and justification live in the shared divergence panel. */
+    divergence?: PoNumberDivergence | null;
     /** The group's number today (correction only). Null/undefined for the first registration. */
     currentNumber?: string | null;
     disabled?: boolean;
@@ -78,7 +81,27 @@ export function PoNumberFieldBlock({ field, currentNumber, disabled, inputId, on
                 </div>
             )}
             <input id={inputId} type="text" value={field.value} disabled={disabled} onChange={e => onChange(e.target.value)} placeholder="Ex: ECF11 2026/421" style={inputStyle} />
-            {field.suggestion && suggestionDiffers && !suggestionDiffersFromCurrent && (
+            {/* v2.249.8 — the typed number differs from the document's own number (same rule register-po enforces): the warning names both
+                numbers; registering with the typed number needs the divergence acknowledgement + justification; "Usar número extraído"
+                clears exactly this divergence. Hidden while the correction's number decision is still pending (that box asks first). */}
+            {divergence?.divergent && !decisionPending && (
+                <div role="alert" data-testid="po-number-divergence" style={{ marginTop: '8px', padding: '12px 14px', backgroundColor: '#fffbeb', border: '2px solid #f59e0b', borderRadius: '8px', fontSize: '0.8rem' }}>
+                    <div style={{ fontWeight: 800, color: '#92400e', marginBottom: '6px' }}>Número introduzido diferente do número do documento</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', color: '#78350f', fontWeight: 600 }}>
+                        <span>Introduzido: <strong data-testid="po-number-divergence-typed">{divergence.typed}</strong></span>
+                        <span>{divergence.comparison === 'CANONICAL' ? 'Identificado no documento' : 'Lido no documento'}: <strong data-testid="po-number-divergence-document">{divergence.documentNumber}</strong></span>
+                    </div>
+                    <div style={{ marginTop: '8px', color: '#78350f' }}>
+                        Registar com o número introduzido exige confirmar a divergência na caixa de divergências e justificar no comentário; a decisão fica registada no histórico. Para usar o número do documento, carregue em “Usar número extraído”.
+                    </div>
+                    {field.suggestion && suggestionDiffers && (
+                        <button type="button" data-testid="po-number-divergence-use-extracted" onClick={onUseSuggestion} disabled={disabled} style={{ marginTop: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', border: '1px solid var(--color-primary)', background: '#fff', color: 'var(--color-primary)', borderRadius: '6px', padding: '4px 10px', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer' }}>
+                            <Wand2 size={12} /> Usar número extraído
+                        </button>
+                    )}
+                </div>
+            )}
+            {field.suggestion && suggestionDiffers && !suggestionDiffersFromCurrent && !divergence?.divergent && (
                 <div data-testid="po-number-suggestion" style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
                     <span>Extraído do documento: <strong style={{ color: 'var(--color-text-main)' }}>{field.suggestion}</strong>{field.suggestionFamilyLabel ? ` (${field.suggestionFamilyLabel})` : ''}</span>
                     <button type="button" onClick={onUseSuggestion} disabled={disabled} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: '1px solid var(--color-primary)', background: 'transparent', color: 'var(--color-primary)', borderRadius: '6px', padding: '4px 10px', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer' }}>
@@ -91,8 +114,11 @@ export function PoNumberFieldBlock({ field, currentNumber, disabled, inputId, on
     );
 }
 
-export function PoDocumentVerdictBlock({ identification, hasBusinessMismatches, typeConfirmed, onTypeConfirmedChange, idPrefix, detectedNumber }: {
+export function PoDocumentVerdictBlock({ identification, hasBusinessMismatches, typeConfirmed, onTypeConfirmedChange, idPrefix, detectedNumber, numberDivergence }: {
     identification: PoDocumentIdentification | null;
+    /** v2.249.8 — identification and registration consistency are separate questions: an identified P.O. keeps its verdict and still
+     * states that the typed number differs from the document's. */
+    numberDivergence?: PoNumberDivergence | null;
     hasBusinessMismatches: boolean;
     typeConfirmed: boolean;
     onTypeConfirmedChange: (value: boolean) => void;
@@ -123,6 +149,11 @@ export function PoDocumentVerdictBlock({ identification, hasBusinessMismatches, 
                     <span>Tipo detetado: <strong>{identification.family ?? identification.identityCandidates[0]?.family ?? '—'}</strong>{(identification.familyLabel ?? identification.identityCandidates[0]?.familyLabel) ? ` — ${identification.familyLabel ?? identification.identityCandidates[0]?.familyLabel}` : ''}</span>
                     <span>Número completo: <strong>{identification.reference ?? identification.identityCandidates.map(c => c.reference).join(' / ')}</strong></span>
                     <span>Origem: extraído do documento</span>
+                </div>
+            )}
+            {numberDivergence?.divergent && (
+                <div data-testid="po-document-number-divergence" style={{ paddingLeft: '34px', fontSize: '0.75rem', color: '#92400e', fontWeight: 700 }}>
+                    O número introduzido ({numberDivergence.typed}) difere do número do documento ({numberDivergence.documentNumber}): a identificação do documento não muda, mas o registo com esse número exige a confirmação da divergência e uma justificativa (ver o campo “Número da P.O”).
                 </div>
             )}
             {identification && identification.verdict !== 'IDENTIFIED_PO' && detectedNumber && (

@@ -353,7 +353,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
 
                         {/* Due Date */}
                         <div>
-                            <label style={labelStyle}>Data de Vencimento da Cotação</label>
+                            <label style={labelStyle}>Validade da Cotação (Data de Vencimento)</label>
                             <div style={{ position: 'relative' }}>
                                 <Calendar style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, color: '#94a3b8' }} />
                                 <input
@@ -363,6 +363,12 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                     style={{ ...(!draft.dueDate ? inputError : inputBase), paddingLeft: '34px' }}
                                 />
                             </div>
+                            {/* v2.249.8 — provenance of the validity date (extraction vs Buyer) and its scope: informational, never persisted. */}
+                            {draft.dueDate && (
+                                <div data-testid="quotation-due-date-source" style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '4px', fontWeight: 600 }}>
+                                    {draft.dueDateSource === 'EXTRACTED' ? 'Lida do documento pela extração — confirme com a validade impressa.' : draft.dueDateSource === 'MANUAL' ? 'Introduzida manualmente.' : 'Origem não registada.'} Informativa: não fica guardada com a cotação.
+                                </div>
+                            )}
                             {!draft.dueDate && (
                                 <div style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px', fontWeight: 600 }}>
                                     Informe a data de vencimento da cotação antes de avançar.

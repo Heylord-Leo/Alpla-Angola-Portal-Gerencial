@@ -4,7 +4,66 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.7
+v2.249.8
+
+## [v2.249.8] - 2026-11-03 — The typed P.O. number is reviewed against the document on every input; Print View line values distinguish the requester's estimate from the approved value; the quotation validity date is copied, never derived
+
+PATCH, backend + frontend, **no migration** (no entity, DTO-persistence or configuration change; the backend change is the
+extraction prompt text only; no change to any migration file; TEST needs only Deploy to TEST on the v2.249.4 schema). Findings of
+the manual TEST validation of v2.249.7 on the synthetic request **REQ-03/11/2026-630** (LUANDAY, P.O.
+`PO_TEST_LUANDAY_ECF10_2026_9630_REQ630.pdf` identified as ECF10 2026/9630, approved 61.560,00 AOA). Reference
+`docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`, decision DEC-155, manual script §3.12. Already validated on
+v2.249.7 and not re-claimed: REQ-629 line discounts to the P.O. group at 345.775,50; REQ-630 global discount allocated once,
+residual 0, 61.560,00 through approvals, P.O., Finance and invoice coverage; REQ-631 unallocated global discount saved but excluded
+from submission **and the manual pre-allocation submission block (zero eligible items, explanation, submit disabled) — PASSED**;
+duplicate-discount draft as UI evidence; ECF10 recognition and correct-number registration.
+
+- **P.O. number divergence (both wizards).** Root cause: `RegisterPoModal` / `CorrectPoModal` computed their divergence set once, at
+  extraction, over the amount and the supplier only — the typed number was never compared, so replacing the identified
+  `ECF10 2026/9630` by "AAAAAA" showed only "Introduzido manualmente", an optional comment and an enabled button. The server rule (4)
+  of `register-po` already refused it (`400 OCR_MISMATCH` until `overrideConfirmed` + Comment; `400 Ação Bloqueada` without the
+  Comment) but only after the upload, and it had never been exercised manually. Now `lib/poDocumentIdentification.describePoNumberDivergence`
+  mirrors the server rule from the **current input on every render** (canonical identity for an IDENTIFIED document — formatting
+  differences are not divergences; loose comparison for an UNCERTAIN document with a letter-bearing non-fiscal reading; nothing to
+  compare otherwise) and `withNumberDivergence` merges it into the **reviewed set** that drives the divergence panel, the
+  acknowledgement checkbox, the mandatory justification, the submit gate and the payload (`hasMismatches`, `mismatchDetails`).
+  Inline warning in the number field (typed vs document number, "Usar número extraído"); the verdict block stays green and states
+  the mismatch separately (identification ≠ registration consistency); restoring the extracted number clears exactly that line.
+  Unchanged: quotation/proforma refusal, uncertain-document confirmation, amount/supplier/currency checks, duplicate and reuse rules,
+  the correction's number decision; the server is unchanged and remains authoritative. **Server enforcement proven** by
+  `RegisterPoNumberDivergenceTests` (10 real-endpoint tests on server-held extraction evidence bound to the exact file, initial
+  registration and correction: refusal leaves group status / number / current-document pointer / payment condition / history /
+  files unchanged; override + justification registers and audits the divergence; the extracted number in any formatting registers
+  without one; a file without evidence takes the uncertain path).
+- **Print View "Itens".** Root cause: the print showed the request line's own `unitPrice` / `totalAmount` as "Preço unit." / "Total";
+  a QUOTATION request is created with 0 on every requester line (no price is asked of the requester) and nothing in approval or P.O.
+  registration writes them — so REQ-630 printed 0,00 / 0,00 while the approved purchase lives in the APPROVED batch's winning
+  candidate snapshots. Now the requester's figures print only when given, labelled "(estimativa do solicitante)" (a 0 placeholder is
+  omitted), and each line prints its approved value from the latest APPROVED batch's selected candidate (`resolveApprovedLineValues`:
+  released items excluded, legacy pre-candidate batches from the Buyer-selected quotation item, CANCELLED_AFTER_APPROVAL lines
+  labelled "(histórico — P.O. cancelada)", each line in its own currency; never a group total divided over lines, never a
+  cross-currency sum; no request-line value rewritten, no snapshot recalculated). A line with neither prints "Sem estimativa do
+  solicitante; sem valor aprovado para esta linha".
+- **Quotation validity date.** Confirmed: the wizard's "Data de Vencimento / Data Validade" is `OcrDraft.dueDate`, copied verbatim
+  from the provider's `dueDate` (whose prompt definition was "Payment due date"), normalised by a deterministic alias (no default, no
+  timezone conversion), **never sent, never persisted** (no DTO/entity field) and not rehydrated on edit. The original discrepancy
+  (30/11/2026 printed, 01/12/2026 once shown) has **no confirmed cause** (provider variance or a manual entry remain hypotheses). Now:
+  the provider prompt defines `dueDate` per document type (quotation / proposal = the printed validity date; invoice = the printed
+  payment due date; strictly YYYY-MM-DD; `null` when only a duration is printed; never derived from the document date or today); the
+  alias is the pure, tested `lib/ocrDateAlias.resolveOcrDateAlias` (ISO date-time sliced to its calendar day); the draft records the
+  provenance (`dueDateSource` EXTRACTED / MANUAL) and the document step ("Validade da Cotação (Data de Vencimento)") and the final
+  review ("Validade da cotação") show it with "não fica guardada com a cotação". The value remains unpersisted (a migration and a
+  separate decision).
+- **Tests.** Backend +10 (`RegisterPoNumberDivergenceTests`); frontend: `poDocumentIdentification.test.ts` (+10), `RegisterPoModal.refusal.test.ts`
+  (+4, patterns updated), `correctPoSubmission.test.ts` (+5), `requestPrintModel.test.ts` (+7), `ocrDateAlias.test.ts` (new, 7),
+  `quotationValidityDateWiring.test.ts` (new, 5).
+- **Docs.** `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`, DEC-155, `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`
+  §3/§11, test script §3.11 (REQ-631 result) and §3.12, discount design doc §9.10 (REQ-631 result).
+- **Checks (actual, local):** backend 3352/3352; vitest 116 files / 1330 tests; `tsc -b` clean; `vite build` ok; EF
+  has-pending-model-changes: none.
+- **Pending, not passed:** browser verification of the three changes (§3.12), ECF and ECF11 recognition, the validity-date
+  extraction on a fresh import (capture the raw `headerSuggestions.dueDate` per import). Guided Tour impact: existing tour reviewed,
+  no changes needed.
 
 ## [v2.249.7] - 2026-11-03 — The document's own summary discount is a component of the reconciliation; the same discount applied twice is a residual, never an approval
 

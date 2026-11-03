@@ -1,6 +1,6 @@
 import type {
   RequestDetailsDto, RequestPoGroupDto, RequestStatusHistoryDto,
-  RequestAttachmentDto, SavedQuotationDto, RequestLineItemDto, ApprovalBatchSummary,
+  RequestAttachmentDto, SavedQuotationDto, RequestLineItemDto, ApprovalBatchSummary, ApprovalBatchItemSummary,
 } from '../../../../types';
 import { formatCurrencyAO, formatCalendarDate, formatDate, formatDateTime } from '../../../../lib/utils';
 import { documentTypeLabel, isSelectableDocumentType } from '../../../../lib/sourceDocumentType';
@@ -217,15 +217,89 @@ function mapGroup(g: RequestPoGroupDto, index: number, attachments: RequestAttac
   return { title: groupTitle(g, index), fields, payments };
 }
 
-function mapLineItem(li: RequestLineItemDto): PrintLineItem {
+// ── v2.249.8 — line values: the requester's estimate vs the approved value ──
+//
+// Finding of the manual TEST validation of v2.249.7 (REQ-03/11/2026-630): the "Itens" section printed "Preço unit. 0,00 / Total
+// 0,00" for both lines while the quotation, the batch and the P.O. group carried 61.560 AOA. Those two fields are the REQUEST
+// LINE's own `unitPrice` / `totalAmount` — what the requester typed at creation (a QUOTATION request is created with 0: the
+// requester asks for a quotation, no price is requested of them) — never the approved price: nothing in the approval or P.O.
+// flow writes them (LineItemFactory / the requester's line edit are the only writers). The approved value of a line lives in the
+// APPROVED batch's winning candidate snapshot (frozen at submission, own currency), or, for a legacy pre-candidate batch, in the
+// Buyer-selected quotation item. The print now (a) labels the requester's figures as an estimate and omits a 0 placeholder, and
+// (b) prints the approved values per line from that authoritative source: latest APPROVED batch holding the line, released items
+// excluded (a P.O.-group cancellation that returned the line to quotation), lines closed by a CANCEL_ITEMS cancellation marked
+// as historical, each line in its candidate's currency — never a group total divided over lines, never a cross-currency sum.
+export interface ApprovedLineValue {
+  batchNumber: number;
+  supplierName: string | null;
+  unitPrice: number;
+  lineTotal: number;
+  currency: string | null;
+  /** CANDIDATE = frozen ApprovalBatchItemCandidate snapshot; LEGACY_QUOTATION_ITEM = pre-candidate batch (Buyer-selected quotation item). */
+  source: 'CANDIDATE' | 'LEGACY_QUOTATION_ITEM';
+}
+
+function batchItems(b: ApprovalBatchSummary): ApprovalBatchItemSummary[] {
+  return Array.isArray(b.items) ? b.items : [];
+}
+
+/** The approved value of every line that an APPROVED batch still holds (released items excluded), keyed by request line id. */
+export function resolveApprovedLineValues(detail: RequestDetailsDto): Map<string, ApprovedLineValue> {
+  const out = new Map<string, ApprovedLineValue>();
+  const approved = (detail.approvalBatches ?? [])
+    .filter(b => b.status === 'APPROVED')
+    .slice()
+    .sort((a, b) => new Date(b.createdAtUtc).getTime() - new Date(a.createdAtUtc).getTime());   // latest first
+  for (const b of approved) {
+    for (const item of batchItems(b)) {
+      if (!item.requestLineItemId || out.has(item.requestLineItemId)) continue;
+      if (item.releasedAtUtc) continue;   // released by a P.O.-group cancellation: the line is back in quotation, this value is history
+      const candidates = Array.isArray(item.candidates) ? item.candidates : [];
+      const winner = (item.selectedCandidateId ? candidates.find(c => c.id === item.selectedCandidateId) : undefined) ?? candidates.find(c => c.isWinner);
+      if (winner) {
+        out.set(item.requestLineItemId, { batchNumber: b.batchNumber, supplierName: winner.supplierName ?? null, unitPrice: winner.unitPrice, lineTotal: winner.lineTotal, currency: winner.currency ?? null, source: 'CANDIDATE' });
+        continue;
+      }
+      if (candidates.length === 0 && item.selectedQuotationItemId) {
+        for (const q of detail.quotations ?? []) {
+          const qi = (q.items ?? []).find(x => x.id === item.selectedQuotationItemId);
+          if (!qi) continue;
+          out.set(item.requestLineItemId, { batchNumber: b.batchNumber, supplierName: q.supplierNameSnapshot ?? null, unitPrice: qi.unitPrice, lineTotal: qi.lineTotal, currency: q.currency ?? null, source: 'LEGACY_QUOTATION_ITEM' });
+          break;
+        }
+      }
+      // An approved item without a resolvable winner prints no approved value (never a fabricated one).
+    }
+  }
+  return out;
+}
+
+function positive(value: unknown): number | null {
+  return typeof value === 'number' && value > 0 ? value : null;
+}
+
+function mapLineItem(li: RequestLineItemDto, approved: ApprovedLineValue | undefined, requestCurrency: string | null | undefined): PrintLineItem {
+  const estimateCurrency = li.currencyCode ?? requestCurrency ?? undefined;
+  const estimatedUnit = positive((li as any).unitPrice);
+  const estimatedTotal = positive((li as any).totalPrice ?? (li as any).totalAmount);
+  const historical = li.quotationLifecycleStatus === 'CANCELLED_AFTER_APPROVAL';
+  const approvedSuffix = historical ? ' (histórico — P.O. cancelada)' : '';
   return {
     fields: compact([
       field('Nº', (li as any).lineNumber),
       field('Descrição', li.description),
       field('Quantidade', li.quantity),
       field('Unidade', (li as any).unit),
-      field('Preço unit.', money((li as any).unitPrice)),
-      field('Total', money((li as any).totalPrice ?? (li as any).totalAmount)),
+      // The requester's own figures, labelled as such and only when given — a 0 placeholder is not a price.
+      field('Preço unit. (estimativa do solicitante)', estimatedUnit != null ? money(estimatedUnit, estimateCurrency) : null),
+      field('Total (estimativa do solicitante)', estimatedTotal != null ? money(estimatedTotal, estimateCurrency) : null),
+      // The approved value, from the winning candidate snapshot of the APPROVED batch, in its own currency.
+      field(`Preço unit. aprovado${approvedSuffix}`, approved ? money(approved.unitPrice, approved.currency) : null),
+      field(`Total aprovado (c/ IVA)${approvedSuffix}`, approved ? money(approved.lineTotal, approved.currency) : null),
+      field('Fornecedor aprovado', approved?.supplierName ?? null),
+      field('Lote de aprovação', approved ? `#${approved.batchNumber}` : null),
+      // Neither an estimate nor an approved value: say so, instead of printing 0,00 as if the purchase cost nothing.
+      field('Valores', !approved && estimatedUnit == null && estimatedTotal == null ? 'Sem estimativa do solicitante; sem valor aprovado para esta linha' : null),
     ]),
   };
 }
@@ -357,7 +431,7 @@ export function buildRequestPrintModel(detail: RequestDetailsDto, projection: an
     general,
     description: detail.description && detail.description.trim() !== '' ? detail.description : null,
     workflow: mapWorkflow(projection),
-    lineItems: (detail.lineItems ?? []).map(mapLineItem),
+    lineItems: (() => { const approved = resolveApprovedLineValues(detail); return (detail.lineItems ?? []).map(li => mapLineItem(li, approved.get(li.id), detail.currencyCode)); })(),
     groups: (detail.poGroups ?? []).map((g, i) => mapGroup(g, i, detail.attachments ?? [])),
     quotations: (detail.quotations ?? []).map(mapQuotation),
     approvals: (detail.approvalBatches ?? []).map(mapApproval),

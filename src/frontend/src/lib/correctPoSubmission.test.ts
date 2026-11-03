@@ -206,7 +206,8 @@ describe('CorrectPoModal wiring (source-level — no DOM runtime in this suite)'
         expect(modalSrc).toMatch(/requestId, poGroupId, detailsUnavailable, groupMissing, file, comment/);
     });
     it('derives the requirement from the server decision and labels/disables accordingly', () => {
-        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation, documentRefused\)/);
+        // v2.249.8 — the reviewed set (reviewMismatches) = extraction-time divergences + the number divergence of the current input.
+        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!reviewMismatches\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation, documentRefused\)/);
         expect(modalSrc).toMatch(/Comentário \{justification\.required \? '\(Obrigatório\)' : '\(opcional\)'\}/);
         // v2.249.4 — one submit gate (submitDisabled) carries the requirement; the button reads it.
         expect((modalSrc.match(/\(justification\.required && !comment\.trim\(\)\)/g) || []).length).toBeGreaterThanOrEqual(1);
@@ -331,5 +332,42 @@ describe('CorrectPoModal wiring — v2.249.4 (source-level)', () => {
         expect(modalSrc).toMatch(/isDocumentBlockingKind\(decision\.kind\)\) setDocumentBlock/);
         expect(modalSrc).toMatch(/group\?\.currentPoAttachmentId && groupPoFiles\.find/);
         expect(modalSrc).toMatch(/skipUpload: reuseUpload/);
+    });
+});
+
+// ── v2.249.8 — the typed P.O. number vs the document's number (REQ-03/11/2026-630 finding) ──
+describe('validateCorrectPoSubmission / buildRegisterPoPayload — number divergence of the current input', () => {
+    const numberOnly = { hasMismatches: true, details: ['Número de P.O. divergente: introduzido "AAAAAA" (Identificado no documento: ECF10 2026/9630)'], extractedTotal: 500, extractedSupplier: 'OUTRO FORNECEDOR' };
+
+    it('a number divergence alone requires the explicit acknowledgement before anything is uploaded', () => {
+        expect(validateCorrectPoSubmission(input({ ocrResult: numberOnly, overrideConfirmed: false, purchaseOrderNumber: 'AAAAAA', purchaseOrderNumberSource: 'MANUAL', justification: { required: true, source: 'OCR_MISMATCH' } })))
+            .toBe(CORRECT_PO_MESSAGES.mismatchUnconfirmed);
+    });
+    it('acknowledged without a justification is refused with the divergence wording (the server refuses it too: "Ação Bloqueada")', () => {
+        expect(validateCorrectPoSubmission(input({ ocrResult: numberOnly, overrideConfirmed: true, comment: '  ', purchaseOrderNumber: 'AAAAAA', purchaseOrderNumberSource: 'MANUAL', justification: { required: true, source: 'OCR_MISMATCH' } })))
+            .toBe(CORRECT_PO_MESSAGES.mismatchJustification);
+    });
+    it('acknowledged and justified passes, and the payload carries the acknowledgement, the typed number and the divergence detail for the audit', () => {
+        const i = input({ ocrResult: numberOnly, overrideConfirmed: true, comment: 'Referência acordada com Finanças.', purchaseOrderNumber: 'AAAAAA', purchaseOrderNumberSource: 'MANUAL', justification: { required: true, source: 'OCR_MISMATCH' } });
+        expect(validateCorrectPoSubmission(i)).toBeNull();
+        const payload = buildRegisterPoPayload(i);
+        expect(payload.hasMismatches).toBe(true);
+        expect(payload.overrideConfirmed).toBe(true);
+        expect(payload.purchaseOrderNumber).toBe('AAAAAA');
+        expect(payload.purchaseOrderNumberSource).toBe('MANUAL');
+        expect(payload.mismatchDetails).toContain('Número de P.O. divergente: introduzido "AAAAAA"');
+        expect(payload.extractedTotalAmount).toBe(500);   // the business facts of the extraction travel unchanged
+    });
+    it('restoring the extracted number (no divergence left) needs no acknowledgement and no justification', () => {
+        const i = input({ ocrResult: { hasMismatches: false, details: [], extractedTotal: 500, extractedSupplier: 'OUTRO FORNECEDOR' }, overrideConfirmed: false, comment: '', purchaseOrderNumber: 'ECF10 2026/9630', purchaseOrderNumberSource: 'EXTRACTED', justification: { required: false, source: 'NONE' } });
+        expect(validateCorrectPoSubmission(i)).toBeNull();
+        expect(buildRegisterPoPayload(i).hasMismatches).toBe(false);
+    });
+    it('the modal submits the reviewed set (not the extraction-time set) and gates the button on it', () => {
+        expect(modalSrc).toMatch(/const numberDivergence = describePoNumberDivergence\(poNumber\.value, identification, detectedDocumentNumber\);/);
+        expect(modalSrc).toMatch(/const reviewMismatches = withNumberDivergence\(ocrResult, numberDivergence\);/);
+        expect(modalSrc).toMatch(/ocrResult: reviewMismatches, overrideConfirmed,/);
+        expect(modalSrc).toMatch(/\|\| \(!!reviewMismatches\?\.hasMismatches && !overrideConfirmed\)/);
+        expect(modalSrc).toMatch(/<PoNumberFieldBlock[^]*?divergence=\{numberDivergence\}/);
     });
 });

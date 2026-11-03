@@ -129,6 +129,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
             if (!prev) return prev;
             const next = { ...prev, [field]: value };
             if (field === 'currency' && value) next.extractedCurrency = undefined;
+            // v2.249.8 — the validity date typed by the Buyer is recorded as MANUAL (cleared value: no provenance).
+            if (field === 'dueDate') next.dueDateSource = value ? 'MANUAL' : undefined;
             if (field === 'discountAmount') next.totalAmount = recalculateQuotationTotal(next, ivaRates);
             return next;
         });

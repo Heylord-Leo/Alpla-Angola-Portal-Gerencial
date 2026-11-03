@@ -1,3 +1,4 @@
+import { resolveOcrDateAlias } from '../lib/ocrDateAlias';
 import { api } from '../lib/api';
 import { IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem, LookupDto } from '../types';
 import { resolveOcrLineDiscount, resolveOcrHeaderDiscount, ocrDocumentDiscountBaseline } from '../lib/quotationPricing';
@@ -24,33 +25,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
         return '';
     };
 
-    const resolveDateAlias = (val: string | undefined): string => {
-        if (!val) return '';
-        const trimmed = val.trim();
-        
-        // Already YYYY-MM-DD
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-
-        // Common format DD/MM/YYYY or DD-MM-YYYY
-        const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-        if (dmyMatch) {
-            const day = dmyMatch[1].padStart(2, '0');
-            const month = dmyMatch[2].padStart(2, '0');
-            const year = dmyMatch[3];
-            return `${year}-${month}-${day}`;
-        }
-
-        // Match YYYY/MM/DD
-        const ymdMatch = trimmed.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-        if (ymdMatch) {
-            const year = ymdMatch[1];
-            const month = ymdMatch[2].padStart(2, '0');
-            const day = ymdMatch[3].padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        }
-
-        return trimmed;
-    };
+    // v2.249.8 — pure, unit-tested date normalisation (lib/ocrDateAlias): no default, no timezone conversion, no duration arithmetic.
+    const resolveDateAlias = resolveOcrDateAlias;
 
     const resolveUnitAlias = (val: string | undefined): string => {
         if (!val) return 'UN';
@@ -250,6 +226,8 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             documentClassification: suggestions?.documentClassification ?? null,
             documentDate: resolveDateAlias(getSafeValue<string>(suggestions?.documentDate, '')),
             dueDate: resolveDateAlias(getSafeValue<string>(suggestions?.dueDate, '')),
+            // v2.249.8 — provenance of the validity date: what the extraction returned (verbatim, normalised) vs a Buyer entry.
+            dueDateSource: resolveDateAlias(getSafeValue<string>(suggestions?.dueDate, '')) ? 'EXTRACTED' : undefined,
             currency: resolveCurrencyAlias(extractedCurrency),
             extractedCurrency: extractedCurrency,
             discountAmount: getSafeValue<number>(suggestions?.discountAmount, 0),

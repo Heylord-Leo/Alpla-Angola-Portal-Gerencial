@@ -810,6 +810,10 @@ CRITICAL PRECISION RULES:
   A day greater than 12 proves the day-first reading (27/07 can only be 27 July). Apply the SAME
   day-first reading to dates where both numbers are 12 or less — 10/08/2026 is 10 August, because
   the document's convention does not change just because the value happens to be ambiguous.
+  dueDate is COPIED, never derived: on a quotation / proposal it is the printed validity date of the
+  offer ('Validade', 'Válido até'); on an invoice / proforma the printed payment due date. A validity
+  or payment term expressed only as a number of days is NOT a date — return null; never add days to
+  the document date, never use today's date.
 
   If a date is genuinely undecidable, or you cannot read it, return null. Never guess a US
   month-first reading, and never return a localized string like '10/08/2026' in these fields.
@@ -916,7 +920,7 @@ Output ONLY JSON with this structure:
     ""documentTitle"": ""The exact main heading of the document as printed (e.g. 'Encomenda a Fornecedor ECF 2026/107', 'PO Serviços ECF11 2026/421', 'Factura Pró-forma', 'Cotação', 'Proposta Comercial'), or null"",
     ""referencedDocumentNumbers"": [""other document numbers mentioned in the body: quotation/proposal numbers, previous or cancelled purchase orders ('em substituição da ECF …', 'anula a encomenda …'), invoice numbers. NEVER the document's own number. Empty array if none""],
     ""documentDate"": ""Date of the document, strictly YYYY-MM-DD. Numeric dates on these documents are day-first (dd/MM/yyyy). null if unreadable or genuinely undecidable."",
-    ""dueDate"": ""Payment due date, strictly YYYY-MM-DD, same day-first rule. null if the document states none."",
+    ""dueDate"": ""Strictly YYYY-MM-DD, same day-first rule. For an INVOICE / proforma / receipt: the payment due date printed on the document. For a QUOTATION / proposal / price offer: the validity (expiry) date of the offer exactly as PRINTED ('Validade', 'Válido até', 'Valid until', 'Data de vencimento da cotação'). null if the document prints no such DATE — NEVER compute one from a duration ('válido por 30 dias', 'validade: 30 dias', 'net 30') or from the document date, and never infer one."",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
     ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),

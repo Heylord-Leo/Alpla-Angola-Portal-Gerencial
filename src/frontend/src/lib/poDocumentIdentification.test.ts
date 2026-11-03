@@ -189,3 +189,73 @@ describe('describeDivergenceControls — a refused document shows divergences as
         expect(describeDivergenceControls(null, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });   // no verdict yet = not refused
     });
 });
+
+// ── v2.249.8 — the typed number vs the document's number (mirror of register-po rule (4)) ──
+import { describePoNumberDivergence, withNumberDivergence, normalizePoNumberLoose } from './poDocumentIdentification';
+
+describe('describePoNumberDivergence — REQ-03/11/2026-630 (ECF10 2026/9630 identified, "AAAAAA" typed)', () => {
+    const identified = readPoDocumentIdentification(serverVerdict({ reference: 'ECF10 2026/9630', canonical: 'ECF10-2026-9630', family: 'ECF10', familyLabel: 'Material diverso / escritório',
+        identityCandidates: [{ reference: 'ECF10 2026/9630', canonical: 'ECF10-2026-9630', family: 'ECF10', familyLabel: 'Material diverso / escritório', source: 'DOCUMENT_NUMBER' }], bodyReferences: [] }));
+    const uncertain: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, reasonCode: 'UNRECOGNISED_PREFIX', identityCandidates: [] };
+    const proforma: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, verdict: 'IDENTIFIED_OTHER_TYPE', isBlocked: true, requiresExplicitConfirmation: false };
+
+    it('a typed value that is not the identified reference is a divergence naming both numbers (server wording)', () => {
+        const d = describePoNumberDivergence('AAAAAA', identified, 'ECF10 2026/9630');
+        expect(d).toMatchObject({ divergent: true, typed: 'AAAAAA', documentNumber: 'ECF10 2026/9630', comparison: 'CANONICAL' });
+        expect(d.detail).toBe('Número de P.O. divergente: introduzido "AAAAAA" (Identificado no documento: ECF10 2026/9630)');
+    });
+    it('another ECF reference is a divergence too; the same identity in another formatting is not', () => {
+        expect(describePoNumberDivergence('ECF10 2026/9631', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        expect(describePoNumberDivergence('ECF11 2026/9630', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        for (const same of ['ECF10 2026/9630', 'ecf10 2026-9630', '  ECF10   2026/9630 ', 'ECF10 2026/09630'])
+            expect(describePoNumberDivergence(same, identified, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'CANONICAL', detail: null });
+    });
+    it('restoring the extracted number clears the divergence — nothing else is involved', () => {
+        expect(describePoNumberDivergence('AAAAAA', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        expect(describePoNumberDivergence('ECF10 2026/9630', identified, 'ECF10 2026/9630').divergent).toBe(false);
+    });
+    it('UNCERTAIN document with a letter-bearing, non-fiscal reading: loose comparison (case / whitespace insensitive)', () => {
+        expect(describePoNumberDivergence('ECF99 2026/9003', uncertain, 'ECF99 2026/9003').divergent).toBe(false);
+        expect(describePoNumberDivergence('ecf99   2026/9003', uncertain, 'ECF99 2026/9003')).toMatchObject({ divergent: false, comparison: 'LOOSE' });
+        const d = describePoNumberDivergence('TEST-MAQSIS-2026-9003', uncertain, 'ECF99 2026/9003');
+        expect(d).toMatchObject({ divergent: true, comparison: 'LOOSE' });
+        expect(d.detail).toBe('Número de P.O. divergente: introduzido "TEST-MAQSIS-2026-9003" (Lido no documento: ECF99 2026/9003)');
+    });
+    it('nothing to compare: blank input, no verdict, refused document, NIF-shaped or purely numeric reading, no reading', () => {
+        expect(describePoNumberDivergence('', identified, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', null, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', proforma, 'PP 2026/1')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, '5001713205')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, '123456')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, null)).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', NO_EXTRACTION_IDENTIFICATION, null).divergent).toBe(false);
+    });
+    it('normalizePoNumberLoose mirrors the server (trim, collapse whitespace, upper-case)', () => {
+        expect(normalizePoNumberLoose('  ecf99   2026/9003 ')).toBe('ECF99 2026/9003');
+        expect(normalizePoNumberLoose(null)).toBe('');
+    });
+});
+
+describe('withNumberDivergence — the reviewed set = extraction-time set + the number line', () => {
+    const divergent = describePoNumberDivergence('AAAAAA', readPoDocumentIdentification(serverVerdict()), 'ECF11 2026/421');
+    const none = describePoNumberDivergence('ECF11 2026/421', readPoDocumentIdentification(serverVerdict()), 'ECF11 2026/421');
+    it('adds the number line first and flags mismatches, keeping the extraction facts', () => {
+        const merged = withNumberDivergence({ hasMismatches: false, details: [], extractedTotal: 500, extractedSupplier: 'X' }, divergent);
+        expect(merged).toMatchObject({ hasMismatches: true, extractedTotal: 500, extractedSupplier: 'X' });
+        expect(merged!.details[0]).toContain('Número de P.O. divergente');
+    });
+    it('a number divergence without any extraction-time result still yields a reviewable set', () => {
+        expect(withNumberDivergence(null, divergent)).toMatchObject({ hasMismatches: true });
+    });
+    it('without a number divergence the extraction-time set is returned untouched (same reference), including null', () => {
+        const base = { hasMismatches: true, details: ['Total divergente: Identificado 400.00 (Esperado: 500.00)'] };
+        expect(withNumberDivergence(base, none)).toBe(base);
+        expect(withNumberDivergence(null, none)).toBeNull();
+    });
+    it('restoring the number removes only its line: the other divergences remain', () => {
+        const base = { hasMismatches: true, details: ['Total divergente: Identificado 400.00 (Esperado: 500.00)'] };
+        const withNumber = withNumberDivergence(base, divergent)!;
+        expect(withNumber.details).toHaveLength(2);
+        expect(withNumberDivergence(base, none)!.details).toEqual(base.details);
+    });
+});

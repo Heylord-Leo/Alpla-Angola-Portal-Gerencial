@@ -15,7 +15,7 @@ import { classifyRegisterPoError, validatePreviousPoReuse, isDocumentBlockingKin
 import {
     PoDocumentIdentification, PoNumberField, NO_EXTRACTION_IDENTIFICATION,
     readPoDocumentIdentification, readDetectedDocumentNumber, initialPoNumberField, applyExtractedNumber, userEditsPoNumber,
-    useSuggestedPoNumber, clearExtractedNumber, numberDecisionPending, keepCurrentPoNumber,
+    useSuggestedPoNumber, clearExtractedNumber, numberDecisionPending, keepCurrentPoNumber, describePoNumberDivergence, withNumberDivergence,
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
 import { describeDivergenceControls } from '../lib/poDocumentIdentification';
@@ -187,8 +187,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     // as before, an unresolved OCR divergence. Current-code corrections keep the comment optional.
     // v2.249.6 — a definitively refused document never demands the divergence justification (nothing can register it).
     const documentRefused = !!documentBlock || !!identification?.isBlocked;
-    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches, !!identification?.requiresExplicitConfirmation, documentRefused);
-    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!ocrResult?.hasMismatches || !!backendOcrMismatch);
+    // v2.249.8 — the P.O. NUMBER divergence of the CURRENT input (manual value, or the current number kept although the document
+    // reads another) joins the reviewed / gated / submitted divergence set, as register-po enforces it (400 OCR_MISMATCH until
+    // overrideConfirmed + Comment). The pending number decision (numberDecisionPending) is still asked first.
+    const numberDivergence = describePoNumberDivergence(poNumber.value, identification, detectedDocumentNumber);
+    const reviewMismatches = withNumberDivergence(ocrResult, numberDivergence);
+    const justification = resolveJustificationPolicy(requestData, poGroupId, !!reviewMismatches?.hasMismatches, !!identification?.requiresExplicitConfirmation, documentRefused);
+    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!reviewMismatches?.hasMismatches || !!backendOcrMismatch);
     const totalAmount = resolveExpectedTotalAmount(selectedGroup?.totalAmount);
     const expectedSupplierName = resolveExpectedSupplierName(selectedGroup?.supplierNameSnapshot);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
@@ -361,7 +366,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         // the resubmission skips the upload and names it (poAttachmentId), so no duplicate P.O. file is ever created.
         const reuseUpload = uploadedAttachmentIdRef.current != null && uploadedFileRef.current === file;
         const submission = {
-            requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult, overrideConfirmed,
+            requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult: reviewMismatches, overrideConfirmed,
             paymentCondition, advancePercent, paymentConditionSource, justification,
             previousPoNumberReuseComment: previousPoReuse ? reuseComment : undefined,
             skipUpload: reuseUpload,
@@ -431,7 +436,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         || numberDecisionPending(poNumber, selectedGroup?.purchaseOrderNumber)
         || !!identification?.isBlocked
         || (!!identification?.requiresExplicitConfirmation && !documentTypeConfirmed)
-        || (!!ocrResult?.hasMismatches && !overrideConfirmed)
+        || (!!reviewMismatches?.hasMismatches && !overrideConfirmed)
         || (!!backendOcrMismatch && !overrideConfirmed)
         || (!!duplicateWarning && (!overrideDuplicateConfirmed || !duplicateOverrideComment.trim()))
         || (justification.required && !comment.trim());
@@ -670,7 +675,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
 
                                             {/* v2.249.4 — document verdict (identified / uncertain + confirmation / other type = blocked) */}
                                             {!ocrLoading && (ocrResult || identification) && (
-                                                <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="correct" detectedNumber={detectedDocumentNumber} />
+                                                <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="correct" detectedNumber={detectedDocumentNumber} numberDivergence={numberDivergence} />
                                             )}
                                             {/* OCR Block */}
                                             {ocrLoading ? (
@@ -769,8 +774,8 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                         />
                                                     </div>
                                                 </motion.div>
-                                            ) : ocrResult ? (
-                                                ocrResult.hasMismatches ? (
+                                            ) : reviewMismatches ? (
+                                                reviewMismatches.hasMismatches ? (
                                                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '24px', backgroundColor: '#fff7ed', border: '2px solid #f97316', borderRadius: '8px' }}>
                                                         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                                                             <AlertTriangle size={24} color="#f97316" style={{ flexShrink: 0 }} />
@@ -780,7 +785,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                             </div>
                                                         </div>
                                                         <ul style={{ margin: '0 0 20px 0', paddingLeft: '36px', color: '#9a3412', fontSize: '0.85rem', fontWeight: 700 }}>
-                                                            {ocrResult.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
+                                                            {reviewMismatches.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
                                                         </ul>
                                                         {/* v2.249.6 — the acceptance control exists only when a registration is possible (never for a refused document) */}
                                                         {divergenceControls.mode === 'OVERRIDE' ? (
@@ -813,6 +818,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                     field={poNumber}
                                     currentNumber={selectedGroup?.purchaseOrderNumber}
                                     inputId="correctPoNumber"
+                                    divergence={numberDivergence}
                                     onChange={v => { setPoNumber(f => userEditsPoNumber(f, v, selectedGroup?.purchaseOrderNumber)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
                                     onUseSuggestion={() => { setPoNumber(f => useSuggestedPoNumber(f)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
                                     onKeepCurrent={() => { setPoNumber(f => keepCurrentPoNumber(f, selectedGroup?.purchaseOrderNumber)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}

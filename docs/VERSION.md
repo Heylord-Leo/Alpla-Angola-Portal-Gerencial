@@ -2,7 +2,23 @@
 
 ## Current Version
 
-v2.249.7
+v2.249.8
+
+## [v2.249.8] - 2026-11-03
+
+### The typed P.O. number is reviewed against the document on every input; Print View line values distinguish the requester's estimate from the approved value; the quotation validity date is copied, never derived
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema; the backend change is the extraction
+prompt text). Findings of the v2.249.7 TEST validation on REQ-03/11/2026-630: (1) both P.O. wizards evaluate the typed number
+against the document from the current input (`describePoNumberDivergence`, mirror of the server rule), with an inline warning, the
+existing acknowledgement + mandatory justification and the submit gate; restoring the extracted number clears only that
+divergence; server enforcement proven by 10 real-endpoint tests for the initial registration and the correction. (2) The Print View
+prints the requester's estimate only when given and the approved value per line from the APPROVED batch's selected candidate (own
+currency, released items excluded, historical label for cancelled lines). (3) The quotation validity date: provider prompt defines
+it per document type (copied, never derived), pure tested date alias, provenance (extracted / manual) shown in the wizard; the value
+is **not persisted**; the original discrepancy has **no confirmed cause**. The manual pre-allocation submission block passed on
+REQ-631 (v2.249.7). Pending: browser validation of the three changes, ECF/ECF11 recognition, validity-date extraction. See
+CHANGELOG and `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`.
 
 ## [v2.249.7] - 2026-11-03
 

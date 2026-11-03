@@ -1,3 +1,4 @@
+import { describeQuotationDueDateSource } from '../../../lib/ocrDateAlias';
 import React from 'react';
 import { OcrDraft, QuotationReconciliationDto } from '../../../types';
 import { QuotationValidationResult } from './hooks/useQuotationValidation';
@@ -102,8 +103,10 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.documentDate || 'Não especificada'}</p>
                     </div>
                     <div>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Data Validade</p>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.dueDate || 'Não especificada'}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Validade da cotação</p>
+                        <p data-testid="final-review-due-date" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.dueDate || 'Não especificada'}</p>
+                        {/* v2.249.8 — provenance + scope: the validity date is informational and is not saved with the quotation */}
+                        <p data-testid="final-review-due-date-source" style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>{draft.dueDate ? `${describeQuotationDueDateSource(draft.dueDateSource)} · não fica guardada com a cotação` : 'não fica guardada com a cotação'}</p>
                     </div>
                     <div>
                         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Moeda</p>

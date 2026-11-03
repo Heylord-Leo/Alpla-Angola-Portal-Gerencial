@@ -112,6 +112,9 @@ documento: ECF99 2026/9003 — série não reconhecida …"). Exact REQ-628 case
 `ECF99 2026/9003`): keeping the current number → server divergence requiring the explicit override; adopting the detected number →
 registered with the `PO_NUMBER_CORRECTED` audit; the document remains UNCERTAIN (explicit confirmation + justification). Tests:
 `REQ_628_*` in `RegisterPoDocumentIdentificationTests`; `poDocumentIdentification.test.ts` ("correction number decision").
+*v2.249.8:* both wizards now evaluate the same number rule **client-side from the current input** (`describePoNumberDivergence`,
+inline warning + acknowledgement + mandatory justification before any upload; restoring the extracted number clears it) and the
+server enforcement is proven for the initial registration too (`RegisterPoNumberDivergenceTests`) — see §11.
 
 **Synthetic documents (TEST).** `ECF99` stays unrecognised on purpose (uncertain, confirmation + justification; the existing ECF99
 history of REQ-628 is preserved). For future synthetic documents use the series that matches the **business meaning**: a material
@@ -241,3 +244,11 @@ See `docs/PO_GROUP_CANCELLATION_TEST_SCRIPT_v2.249.0.md` **§3.9** (Portuguese):
 The TEST validation of this version found that the correction wizard could still **delete** the registered P.O. file (the delete
 endpoint had no evidence rule for P.O. files), that saved quotations carried no lifecycle context and that "Menor valor" compared
 totals across different scopes. See `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md` (DEC-153) and the test script **§3.10**.
+
+## 11. Follow-up (v2.249.8)
+
+The TEST validation of v2.249.7 found that the registration wizard showed **no divergence for a typed number** that differed from
+the identified document number (the client compared amount / supplier only, once, at extraction; the server rule (4) was never
+exercised manually), that the Print View printed the requester's empty estimates as "Preço unit. 0,00 / Total 0,00", and that the
+quotation validity date shown by the wizard varied between imports. See
+`docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md` (DEC-155) and the test script **§3.12**.

@@ -2437,6 +2437,44 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
 
+## DEC-155 — The Typed P.O. Number Is Reviewed Against the Document on Every Input; Print View Line Values Are the Requester's Estimate and the Approved Candidate Value; The Quotation Validity Date Is Copied, Never Derived (v2.249.8)
+
+- **Date:** 2026-11-03
+- **Status:** Accepted (implemented in v2.249.8; browser validation of the three changes, ECF/ECF11 recognition and the validity-date extraction pending; the pre-allocation submission block passed on REQ-631 under v2.249.7)
+- **Context:** The manual TEST validation of v2.249.7 on `REQ-03/11/2026-630` left three findings. (1) In "Registrar P.O." the
+  Buyer replaced the identified number `ECF10 2026/9630` with "AAAAAA": the wizard showed only "Introduzido manualmente", no
+  divergence, optional comment, button enabled — the client computed its divergence set once at extraction over amount / supplier
+  only; the server rule (4) of `register-po` (number vs evidence, `400 OCR_MISMATCH` until override + justification) existed but was
+  never exercised manually. (2) The Print View printed "Preço unit. 0,00 / Total 0,00" for both lines of a request approved at
+  61.560,00: the fields are the request line's own values (a QUOTATION request is created with 0; the approval never writes them),
+  shown unlabelled as if they were prices. (3) The wizard's quotation validity date differed between imports of the same PDF
+  (30/11/2026 printed, 01/12/2026 once shown): the value is the provider's `dueDate` copied verbatim, and the prompt defined that
+  field as the *payment* due date; the value is wizard-only and never persisted.
+- **Decision:**
+    1. **The P.O. number divergence is a client-side mirror of the server rule, evaluated from the current input on every render**
+       (`describePoNumberDivergence`: canonical identity for an IDENTIFIED document, loose comparison for an UNCERTAIN one with a
+       letter-bearing non-fiscal reading, nothing to compare otherwise) and merged into the **reviewed set** that drives the panel,
+       the acknowledgement checkbox, the mandatory justification, the submit gate and the payload (`withNumberDivergence`). The
+       number field shows an inline warning naming the typed and the document numbers with "Usar número extraído"; restoring the
+       extracted number clears exactly that divergence. **Identification and registration consistency are separate questions**: an
+       identified P.O. keeps its verdict and states the mismatch. The server is unchanged and remains authoritative; its enforcement
+       is proven by real-endpoint tests on server-held evidence bound to the exact file, for the initial registration and the
+       correction (refusal leaves registration, group pointer / status / number and history unchanged).
+    2. **Print View line values**: the requester's `unitPrice` / `totalAmount` are printed only when given and labelled as the
+       requester's estimate (a 0 placeholder is omitted); the approved value of a line is derived from the latest APPROVED batch's
+       selected candidate snapshot (released items excluded; legacy batches from the Buyer-selected quotation item; CANCEL_ITEMS
+       lines labelled historical), each line in its own currency — never a group total divided over lines, never a cross-currency
+       sum, no request-line value rewritten, no snapshot recalculated.
+    3. **The quotation validity date is copied, never derived**: the provider prompt defines `dueDate` per document type (invoice:
+       payment due date; quotation / proposal: the printed validity date), strictly YYYY-MM-DD, `null` when only a duration is
+       printed, never computed from the document date or today. The wizard's date alias is a pure, tested function (no default, no
+       timezone conversion, ISO date-time sliced to its calendar day); the draft records the provenance (EXTRACTED / MANUAL) and both
+       the document step and the final review say so and state that the value is informational and not saved with the quotation.
+       The cause of the observed variance is **not claimed**: the deterministic path is proven stable, provider variance and a manual
+       entry remain hypotheses for the manual retest.
+- **Consequences:** see `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`. No migration. The validity date stays
+  unpersisted (persisting it is a separate decision with a migration). Older clients still meet the server's `OCR_MISMATCH`.
+
 ## DEC-154 — Line-Resolved Pricing Is a Precondition of Approval; Discounts Counted Once at the Line; Refused P.O. Documents Show Divergences as Diagnostics Only (v2.249.6, unreleased)
 
 - **Date:** 2026-11-02

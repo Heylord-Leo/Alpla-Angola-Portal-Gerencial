@@ -14,7 +14,7 @@ import {
     useSuggestedPoNumber, clearExtractedNumber,
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
-import { describeDivergenceControls } from '../lib/poDocumentIdentification';
+import { describeDivergenceControls, describePoNumberDivergence, withNumberDivergence } from '../lib/poDocumentIdentification';
 import { resolveOcrPaymentConditionProposal } from '../lib/poPaymentCondition';
 import { readUploadedAttachmentId } from '../lib/correctPoSubmission';
 import { cleanupTemporaryPoUpload } from '../lib/poEvidence';
@@ -165,6 +165,11 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     const expectedSupplierName = resolveExpectedSupplierName(requestData?.supplierName);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
     const expectedTotalAmount = resolveExpectedTotalAmount(requestData?.totalAmount);
+    // v2.249.8 — the P.O. NUMBER divergence is evaluated from the CURRENT input on every render (the extraction-time set covered
+    // only amount / supplier) and merged into the set the wizard reviews, gates and submits — the same rule register-po enforces
+    // (400 OCR_MISMATCH until overrideConfirmed + Comment). Restoring the extracted number clears exactly that line.
+    const numberDivergence = describePoNumberDivergence(purchaseOrderNumber, identification, detectedDocumentNumber);
+    const reviewMismatches = withNumberDivergence(ocrResult, numberDivergence);
 
     const runOcrValidation = async (selectedFile: File) => {
         setOcrLoading(true);
@@ -326,12 +331,12 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             return;
         }
 
-        // Frontend check
-        if (ocrResult?.hasMismatches && !overrideConfirmed) {
+        // Frontend check (v2.249.8: includes the P.O. number divergence of the current input)
+        if (reviewMismatches?.hasMismatches && !overrideConfirmed) {
             setFeedback({ type: 'error', message: 'Confirme estar ciente das divergências (avaliação prévia) antes de registrar.' });
             return;
         }
-        if (ocrResult?.hasMismatches && !comment.trim()) {
+        if (reviewMismatches?.hasMismatches && !comment.trim()) {
             setFeedback({ type: 'error', message: 'Um comentário justificativo é obrigatório quando há divergências (avaliação prévia).' });
             return;
         }
@@ -395,9 +400,9 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             const basePayload = {
                 poGroupId,
                 comment,
-                hasMismatches: ocrResult?.hasMismatches || false,
+                hasMismatches: reviewMismatches?.hasMismatches || false,
                 overrideConfirmed,
-                mismatchDetails: ocrResult?.details ? ocrResult.details.join('; ') : '',
+                mismatchDetails: reviewMismatches?.details ? reviewMismatches.details.join('; ') : '',
                 paymentConditionCode: paymentCondition,
                 advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
                 paymentConditionSource: paymentConditionSource || 'USER_SELECTED',
@@ -499,13 +504,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     // v2.249.4 — one gate for the submit button (server rules mirrored for UX; the server stays authoritative).
     // v2.249.6 — a definitively refused document (client verdict IDENTIFIED_OTHER_TYPE or server DOCUMENT_* refusal) shows its
     // divergences as diagnostics only: no acceptance checkbox, no mandatory justification, "escolha outro ficheiro".
-    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!ocrResult?.hasMismatches || !!backendOcrMismatch);
+    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!reviewMismatches?.hasMismatches || !!backendOcrMismatch);
     const documentRefused = !!documentBlock || !!identification?.isBlocked;
     const submitDisabled = isBlocked || !!priorEcfBlock || !!documentBlock || processing || !file || ocrLoading || !paymentCondition
         || !purchaseOrderNumber.trim()
         || !!identification?.isBlocked
         || (!!identification?.requiresExplicitConfirmation && (!documentTypeConfirmed || !comment.trim()))
-        || (!!ocrResult?.hasMismatches && (!overrideConfirmed || !comment.trim()))
+        || (!!reviewMismatches?.hasMismatches && (!overrideConfirmed || !comment.trim()))
         || (!!backendOcrMismatch && (!overrideConfirmed || !comment.trim()))
         || (!!duplicateWarning && (!overrideDuplicateConfirmed || !duplicateOverrideComment.trim()));
 
@@ -640,6 +645,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                             <PoNumberFieldBlock
                                 field={poNumber}
                                 inputId="registerPoNumber"
+                                divergence={numberDivergence}
                                 onChange={v => { setPoNumber(f => userEditsPoNumber(f, v)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
                                 onUseSuggestion={() => { setPoNumber(f => useSuggestedPoNumber(f)); setDuplicateWarning(null); setPreviousPoReuse(null); setReuseConfirmed(false); setReuseComment(''); }}
                             />
@@ -807,7 +813,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
                                     {/* v2.249.4 — document verdict (identified / uncertain + confirmation / other type = blocked) */}
                                     {!ocrLoading && (ocrResult || identification) && (
-                                        <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="register" detectedNumber={detectedDocumentNumber} />
+                                        <PoDocumentVerdictBlock identification={identification} hasBusinessMismatches={!!ocrResult?.hasMismatches || !!backendOcrMismatch} typeConfirmed={documentTypeConfirmed} onTypeConfirmedChange={setDocumentTypeConfirmed} idPrefix="register" detectedNumber={detectedDocumentNumber} numberDivergence={numberDivergence} />
                                     )}
                                     {/* OCR Block */}
                                     {ocrLoading ? (
@@ -984,8 +990,8 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                             </div>
                                             )}
                                         </motion.div>
-                                    ) : ocrResult ? (
-                                        ocrResult.hasMismatches ? (
+                                    ) : reviewMismatches ? (
+                                        reviewMismatches.hasMismatches ? (
                                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '24px', backgroundColor: '#fff7ed', border: '2px solid #f97316', borderRadius: '8px' }}>
                                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                                                     <AlertTriangle size={24} color="#f97316" style={{ flexShrink: 0 }} />
@@ -995,7 +1001,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                                     </div>
                                                 </div>
                                                 <ul style={{ margin: '0 0 20px 0', paddingLeft: '36px', color: '#9a3412', fontSize: '0.85rem', fontWeight: 700 }}>
-                                                    {ocrResult.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
+                                                    {reviewMismatches.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
                                                 </ul>
 
                                                 {/* v2.249.6 — the acceptance control exists only when a registration is possible (never for a refused document) */}

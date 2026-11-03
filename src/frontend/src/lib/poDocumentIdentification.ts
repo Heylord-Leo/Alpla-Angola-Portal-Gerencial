@@ -13,7 +13,7 @@
 //     → MANUAL (typed) — and, in the correction, CURRENT (the number the group has today, shown next to the proposed one).
 //     A new file clears what the previous extraction filled and never touches a manual/current value.
 // ─────────────────────────────────────────────────────────────────────────────
-import { PRIMAVERA_FAMILY_LABELS, parsePrimaveraPoReference, resolveAutoFillPoNumber } from './ocrPoValidation';
+import { PRIMAVERA_FAMILY_LABELS, looksLikeNif, parsePrimaveraPoReference, resolveAutoFillPoNumber } from './ocrPoValidation';
 
 export type PoDocumentVerdict = 'IDENTIFIED_PO' | 'IDENTIFIED_OTHER_TYPE' | 'UNCERTAIN';
 
@@ -202,6 +202,80 @@ export function poNumberSourceLabel(source: PoNumberSource): string {
 export function poNumberChanged(current: string | null | undefined, proposed: string): boolean {
     const norm = (v: string | null | undefined) => (v ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
     return norm(current) !== norm(proposed) && norm(proposed).length > 0;
+}
+
+// ── v2.249.8 — the NUMBER the Buyer submits vs the number the document carries (both wizards) ──
+//
+// Found in TEST on REQ-03/11/2026-630: after a successful extraction (ECF10 2026/9630 identified) the Buyer replaced the number
+// with "AAAAAA" and the wizard showed only the "Introduzido manualmente" badge — no divergence, optional comment, "Registar P.O."
+// enabled. The client's divergence set was computed ONCE, at extraction, over the amount and the supplier only; the number was never
+// compared. The server compares it (register-po rule (4): canonical identity for an IDENTIFIED document, loose comparison with the
+// raw number read for an UNCERTAIN one) and refuses with 400 OCR_MISMATCH until overrideConfirmed + Comment — so the submission
+// would have been refused, but only after the upload and without any warning on screen. This rule is the client-side mirror of the
+// server rule, evaluated from the CURRENT input on every render: typing the extracted number back clears exactly this divergence.
+// Document identification stays a separate question: an identified P.O. keeps its green verdict and still carries this warning.
+
+export type PoNumberComparison = 'CANONICAL' | 'LOOSE' | 'NONE';
+
+export interface PoNumberDivergence {
+    divergent: boolean;
+    /** The number as typed (trimmed). */
+    typed: string;
+    /** The number the server will compare against (identified reference, or the raw number the evidence read); null when none. */
+    documentNumber: string | null;
+    comparison: PoNumberComparison;
+    /** The divergence line, with the server's wording, for the divergence panel and the audit; null when not divergent. */
+    detail: string | null;
+}
+
+/** Mirror of the server's PrimaveraPoReference.NormalizeLoose: trim, collapse inner whitespace to one space, upper-case. */
+export function normalizePoNumberLoose(value: string | null | undefined): string {
+    return (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+const NO_NUMBER_DIVERGENCE = (typed: string, documentNumber: string | null, comparison: PoNumberComparison): PoNumberDivergence =>
+    ({ divergent: false, typed, documentNumber, comparison, detail: null });
+
+/**
+ * Same rule as register-po (4), over the current input:
+ *   • IDENTIFIED_PO → the typed number must parse to the SAME canonical identity (formatting differences are not divergences:
+ *     "ecf10 2026-9630" = "ECF10 2026/9630"); anything else, including a value that is no ECF reference at all, is a divergence;
+ *   • UNCERTAIN document whose extraction still read a letter-bearing, non-fiscal number (e.g. a synthetic "ECF99 2026/9003") →
+ *     loose comparison (case / whitespace insensitive);
+ *   • no extraction, NIF-shaped or purely numeric reading, refused document, blank input → nothing to compare (the required-number
+ *     rule and the document refusal are decided elsewhere).
+ */
+export function describePoNumberDivergence(typedNumber: string | null | undefined, identification: PoDocumentIdentification | null, detectedNumber: string | null | undefined): PoNumberDivergence {
+    const typed = (typedNumber ?? '').trim();
+    if (!typed || !identification || identification.isBlocked) return NO_NUMBER_DIVERGENCE(typed, null, 'NONE');
+    if (identification.verdict === 'IDENTIFIED_PO' && identification.canonical) {
+        const submitted = parsePrimaveraPoReference(typed);
+        const reference = identification.reference ?? identification.canonical;
+        if (submitted && submitted.canonical === identification.canonical) return NO_NUMBER_DIVERGENCE(typed, reference, 'CANONICAL');
+        return { divergent: true, typed, documentNumber: reference, comparison: 'CANONICAL', detail: `Número de P.O. divergente: introduzido "${typed}" (Identificado no documento: ${reference})` };
+    }
+    const read = (detectedNumber ?? '').trim();
+    if (!read || !/[A-Za-z]/.test(read) || looksLikeNif(read)) return NO_NUMBER_DIVERGENCE(typed, read || null, 'NONE');
+    if (normalizePoNumberLoose(read) === normalizePoNumberLoose(typed)) return NO_NUMBER_DIVERGENCE(typed, read, 'LOOSE');
+    return { divergent: true, typed, documentNumber: read, comparison: 'LOOSE', detail: `Número de P.O. divergente: introduzido "${typed}" (Lido no documento: ${read})` };
+}
+
+export interface ReviewMismatches {
+    hasMismatches: boolean;
+    details: string[];
+    extractedTotal?: number;
+    extractedSupplier?: string;
+}
+
+/**
+ * The divergence set the wizard reviews, gates and submits = the extraction-time set (amount / supplier / transport failure)
+ * PLUS the number divergence of the current input. Pure and recomputed on every render: restoring the extracted number removes
+ * only the number line; the other divergences (and their acknowledgement) are untouched. Null when there is nothing at all.
+ */
+export function withNumberDivergence<T extends ReviewMismatches>(ocrResult: T | null, divergence: PoNumberDivergence): T | ReviewMismatches | null {
+    if (!divergence.divergent || !divergence.detail) return ocrResult;
+    const base: ReviewMismatches = ocrResult ?? { hasMismatches: false, details: [] };
+    return { ...base, hasMismatches: true, details: [divergence.detail, ...base.details.filter(d => d !== divergence.detail)] };
 }
 
 // ── The review summary shown instead of the unconditional "Documento Validado" ──

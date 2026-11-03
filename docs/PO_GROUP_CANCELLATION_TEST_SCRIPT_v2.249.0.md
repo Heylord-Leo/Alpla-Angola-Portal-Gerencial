@@ -601,7 +601,9 @@ Evidência: `v2249-3.10-01.png` (modal sem remover), `-02.png` (409 por API), `-
    −6.840,00**; Total final considerado 61.560,00; **"Documento reconciliado dentro da tolerância — diferença residual de 0,00"**;
    **nenhuma justificativa de diferença residual**; "Recalcular resumo" devolve o mesmo. **Guardar** → cotação guardada **sem**
    justificativa, cartão sem chip, descontos por linha 5.000,00 / 1.000,00, total 61.560,00; o histórico **não** tem
-   `QUOTATION_RESIDUAL_JUSTIFIED`. *(Bloqueio antes de distribuir — ainda **não testado**, não reportar como passado: num K2 igual,
+   `QUOTATION_RESIDUAL_JUSTIFIED`. *(Bloqueio antes de distribuir — **PASSOU em TEST no REQ-631** (v2.249.7, operador): cotação guardada sem distribuir; ecrã de
+   submissão com zero itens elegíveis, explicação de que o desconto global exige distribuição, botão de submeter inativo. Descrição
+   esperada, num K2 igual,
    guardar **sem** distribuir: revisão final também com residual 0,00 e sem justificativa, mas aviso "… não poderá ser enviada para
    aprovação …"; cartão com chip "Desconto global não distribuído"; lote por API → 409 `QUOTATION_PRICING_NOT_LINE_RESOLVED`.)*
    **Por API (C.2)**: `POST /api/v1/requests/{id}/quotations/reconcile-preview` com o mesmo payload **sem** `ocrDocumentDiscountAmount`
@@ -665,6 +667,76 @@ chip + 409 por API), `-04.png` (J grupo/lote 345.775,50), `-05.png` (J2 lote par
 P.O. + condição de pagamento), `-10.txt` (diagnóstico), `-11.png` (REQ-630 revisão final: residual 0,00, desconto do resumo reconhecido −6.840,00),
 `-12.png` (REQ-630 cotação guardada sem justificativa; histórico sem `QUOTATION_RESIDUAL_JUSTIFIED`), `-13.png` (REQ-630 desconto
 aplicado duas vezes: "Desconto além do documento −6.840,00" + diferença +6.840,00 com justificativa obrigatória). `Resultado: ____`
+
+---
+
+### 3.12 Retoma v2.249.8 — número da P.O. divergente, valores dos itens na Vista de impressão, validade da cotação (BUYER / A) — 35 min
+
+> Achados da validação manual da v2.249.7 em **REQ-03/11/2026-630** (LUANDAY, P.O. `PO_TEST_LUANDAY_ECF10_2026_9630_REQ630.pdf`,
+> ECF10 2026/9630 já registada com o número correto). **Não** alterar o 630: usar um grupo em **Aguardando P.O.** de outro pedido
+> sintético (ou um novo pedido **M**, tipo Cotação, 1 linha, cotação, lote, aprovações) e um grupo **devolvido por Finanças** (§2.5)
+> para a correção. Build esperado **2.249.8+<sha>** (sem migração: só Deploy to TEST). Referência
+> `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`.
+
+**Número da P.O. divergente (registo e correção)**
+
+1. **[BUYER] “Registrar P.O.” com uma P.O. sintética identificada** (ex.: `ECF10 2026/96xx`, fornecedor e valor do grupo). Bloco verde
+   “Ordem de Compra identificada”; campo preenchido (“Extraído do documento”). **Escrever `AAAAAA`** no número. Esperado, de imediato
+   e sem carregar o ficheiro de novo: selo “Introduzido manualmente”; por baixo do campo a caixa âmbar **“Número introduzido diferente
+   do número do documento”** com “Introduzido: AAAAAA · Identificado no documento: ECF10 2026/96xx” e o botão “Usar número
+   extraído”; no bloco verde (que **continua verde** — a identificação não muda) a linha “O número introduzido (AAAAAA) difere do
+   número do documento …”; a caixa laranja **“Divergência Detectada”** lista “Número de P.O. divergente: introduzido "AAAAAA"
+   (Identificado no documento: ECF10 2026/96xx)” com a caixa “Estou ciente das divergências…”; **Comentário (Obrigatório)**; botão
+   **REGISTRAR P.O inativo** até marcar a caixa **e** escrever a justificativa.
+2. **[BUYER] Repor o número.** Carregar em “Usar número extraído” (ou escrever `ecf10 2026-96xx`, formato diferente da mesma
+   identidade) → a caixa âmbar, a linha do bloco verde e a linha da divergência **desaparecem**; se não houver outra divergência,
+   Comentário volta a “(opcional)” e o botão fica ativo. Se existir também uma divergência de valor/fornecedor, **só** a linha do
+   número desaparece e a caixa de divergências mantém-se com o resto.
+3. **[A — por API, C.2] Prova server-side (registo inicial).** Com o ficheiro extraído (`po-document-extract`) e carregado:
+   `POST /api/v1/requests/{id}/register-po` com `purchaseOrderNumber: "AAAAAA"`, `paymentConditionCode: POST_PAID`, `poAttachmentId`,
+   **sem** `overrideConfirmed` → **400** título `OCR_MISMATCH`, detalhe exatamente “Número de P.O. divergente: introduzido "AAAAAA"
+   (Identificado no documento: ECF10 2026/96xx)”; grupo continua **WAITING_PO**, sem número, sem “Documento P.O. atual”, sem condição
+   de pagamento, histórico sem `REGISTER_PO` novo. Com `overrideConfirmed: true` e **sem** comentário → **400** “Ação Bloqueada”,
+   nada escrito. Com `overrideConfirmed: true` e comentário → **200**, grupo PO_ISSUED com “AAAAAA”, histórico `REGISTER_PO` com
+   “Divergência OCR confirmada pelo comprador … Número de P.O. divergente …” **e** “Documento identificado como P.O. ECF10 2026/96xx”.
+   *(Só executar o passo com override num pedido sintético descartável; anotar o número usado.)*
+4. **[BUYER] “Corrigir P.O.”** num grupo devolvido por Finanças, com uma P.O. sintética identificada com **outro** número: caixa
+   “O documento indica um número diferente do atual — escolha antes de registar” (como na v2.249.4). (a) “Manter número atual” → a
+   caixa âmbar do número aparece por baixo do campo e a divergência do número entra na caixa “Divergência Detectada” com a caixa de
+   confirmação e **Comentário (Obrigatório)**; (b) escrever `AAAAAA` → o mesmo; (c) “Usar número detetado” → tudo desaparece. **Por
+   API**: `register-po` com o número atual ou “AAAAAA” **sem** override → **400** `OCR_MISMATCH`, número do grupo, ponteiro do
+   documento atual, estado `WAITING_PO_CORRECTION`, ficheiro anterior (não substituído) e histórico inalterados.
+5. **[BUYER] Inalterado:** proforma / cotação continua recusada (“Documento identificado como …”, diagnóstico, botão inativo, sem
+   caixa de divergência do número); documento não identificado continua a exigir “Confirmo que este documento é uma Ordem de
+   Compra” + justificativa; número duplicado continua a pedir a confirmação própria.
+
+**Vista de impressão — “Itens”**
+
+6. **[BUYER ou A] REQ-630 → Imprimir / Guardar como PDF.** Secção **Itens (2)**: **sem** “Preço unit. 0,00” nem “Total 0,00”; por
+   linha **“Preço unit. aprovado”** 5.000,00 / 500,00, **“Total aprovado (c/ IVA)”** 51.300,00 / 10.260,00, **“Fornecedor aprovado”**
+   LUANDAY, **“Lote de aprovação #1”** (moeda AOA em cada linha; nenhum total somado nas linhas). Grupos / Lotes continuam a mostrar
+   61.560,00. Num pedido com estimativa do solicitante > 0 (tipo Pagamento, ou linha criada com preço): “Preço unit. (estimativa do
+   solicitante)” / “Total (estimativa do solicitante)” ao lado dos valores aprovados. Num pedido com lote ainda em aprovação ou linha
+   libertada por cancelamento (RESTART_QUOTATION): sem valores aprovados nessa linha e “Valores: Sem estimativa do solicitante; sem
+   valor aprovado para esta linha”. Numa linha encerrada por CANCEL_ITEMS: “Preço unit. aprovado (histórico — P.O. cancelada)”.
+
+**Validade da cotação**
+
+7. **[BUYER] Importar de novo a cotação sintética do 630 (ou do K) num pedido novo** (não guardar): passo Documento, campo
+   **“Validade da Cotação (Data de Vencimento)”** com a linha “Lida do documento pela extração — confirme com a validade impressa.
+   Informativa: não fica guardada com a cotação.” Comparar com a validade **impressa** (30/11/2026). Repetir a importação **duas
+   vezes** e anotar os três valores. **Por API (C.2)**: na resposta de `ocr-extract` anotar `integration.headerSuggestions.dueDate.value`
+   em cada importação — é o valor **em bruto** do fornecedor de extração, antes de qualquer tratamento; se diferir entre importações,
+   a variação é do fornecedor (hipótese (a) do documento §3.2); se for sempre igual ao impresso e o campo mostrar outra data, anotar
+   e reportar (não esperado: o alias é determinístico). Alterar a data à mão → a linha passa a “Introduzida manualmente.”
+8. **[BUYER] Revisão final:** “Validade da cotação” com o valor tal como está no campo (sem conversão), e por baixo “lida do documento
+   pela extração · não fica guardada com a cotação” (ou “introduzida manualmente · …”). Guardar a cotação e **Editar**: o campo
+   volta vazio (comportamento existente: o valor não é guardado nem reidratado) — anotar, não é regressão.
+
+Evidência: `v2249-3.12-01.png` (registo: AAAAAA com caixa âmbar + divergência + botão inativo), `-02.png` (número reposto: tudo
+limpo), `-03.txt` (API: 400 OCR_MISMATCH / 400 Ação Bloqueada / estado inalterado), `-04.png` (correção: manter atual → divergência),
+`-05.png` (REQ-630 Itens impressos com valores aprovados), `-06.png` (validade: linha de proveniência + 3 valores anotados),
+`-07.txt` (dueDate em bruto por importação). `Resultado: ____`
 
 ---
 

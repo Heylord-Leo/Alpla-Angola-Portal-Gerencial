@@ -494,5 +494,6 @@ allocation's pre-filled per-line reason as the only "acknowledgement"). That wid
 | `tsc --noEmit` | clean |
 | `vite build` | ok (built in 32,00 s; pre-existing chunk-size warning only) |
 | EF `migrations has-pending-model-changes` | "No changes have been made to the model since the last migration."; `git status` for `Migrations/`: clean |
-| Browser; manual pre-allocation submission block; supported-ECF recognition | **NOT executed / pending** (not reported as passed) |
+| Browser; supported-ECF recognition | **NOT executed / pending** (not reported as passed) |
+| Manual pre-allocation submission block | **PASSED in TEST on REQ-631** (v2.249.7, operator): quotation with an undistributed global discount saved; submission screen with zero eligible items, the explanation that the global discount requires distribution, submit button disabled |
 | TEST/PROD | not accessed; REQ-595 / REQ-628 / REQ-629 / REQ-630 untouched; nothing committed, pushed or deployed |
