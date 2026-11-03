@@ -10,6 +10,7 @@ import { SavedQuotationDto } from '../../../types';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { describeQuotationItemAdjudication, describeQuotationLifecycle, describeQuotationSelectability, LIFECYCLE_TONE_STYLE } from '../../../lib/quotationLifecycle';
 import { compareQuotationsPerLine, describeCardComparison, describeItemComparison, describeScopeNotice } from '../../../lib/quotationComparison';
+import { describeQuotationPricingState } from '../../../lib/quotationPricing';
 
 interface RequestQuotationsProps {
     quotations: SavedQuotationDto[];
@@ -70,6 +71,8 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                 // v2.249.5 §9.2 — the historical label is display; SELECTION follows the reuse eligibility (an authorised reuse is selectable).
                 const selectability = describeQuotationSelectability(q);
                 const cardComparison = describeCardComparison(comparison.byQuotationId.get(q.id), q.currency);
+                // v2.249.6 — a quotation-level discount no line carries (REQ-595): visible here, refused at submission.
+                const pricingState = describeQuotationPricingState(q, q.currency);
                 const isLowest = cardComparison?.kind === 'LOWEST_TOTAL' && !isHistorical;
                 const toneStyle = lifecycle ? LIFECYCLE_TONE_STYLE[lifecycle.tone] : null;
 
@@ -124,6 +127,11 @@ export const RequestQuotations: React.FC<RequestQuotationsProps> = ({
                                         {cardComparison && !q.isSelected && !isHistorical && (
                                             <span data-testid="quotation-comparison-chip" style={chipStyle(cardComparison.kind === 'LOWEST_TOTAL' ? '#10b981' : '#ecfdf5', cardComparison.kind === 'LOWEST_TOTAL' ? '#fff' : '#047857')}>
                                                 {cardComparison.label}
+                                            </span>
+                                        )}
+                                        {pricingState && !isHistorical && (
+                                            <span data-testid="quotation-pricing-chip" title={pricingState.detail} style={{ ...chipStyle('#fffbeb', '#92400e'), border: '1px solid #f59e0b' }}>
+                                                {pricingState.label}
                                             </span>
                                         )}
                                     </div>

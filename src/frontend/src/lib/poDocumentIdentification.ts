@@ -230,6 +230,45 @@ export function describePoDocumentReview(identification: PoDocumentIdentificatio
     return { tone: 'success', title: 'Ordem de Compra identificada', message: `${id.reference} — ${id.family} (${id.familyLabel}). Fornecedor e valor correspondem ao grupo aprovado.`, needsTypeConfirmation: false };
 }
 
+// ── v2.249.6 — which controls the divergence block may show for the current document ──
+
+export type DivergenceControlsMode = 'OVERRIDE' | 'DIAGNOSTIC_ONLY' | 'NONE';
+
+export interface DivergenceControls {
+    /** OVERRIDE = the Buyer may accept the divergences (checkbox + mandatory justification); DIAGNOSTIC_ONLY = the document is
+     * definitively refused as a P.O. — the divergences are shown as information only, nothing on this screen can register it;
+     * NONE = nothing to show. */
+    mode: DivergenceControlsMode;
+    /** True when a justification comment is mandatory because of the divergences (never while the document is refused). */
+    commentRequired: boolean;
+    /** pt-PT title / sentence for the diagnostic-only presentation; null otherwise. */
+    diagnosticTitle: string | null;
+    diagnosticNote: string | null;
+}
+
+/**
+ * Found in TEST on REQ-21/10/2026-595: a proforma run through "Registrar P.O." was correctly refused (IDENTIFIED_OTHER_TYPE,
+ * button disabled) but the amount-divergence block still offered the "Estou ciente das divergências… sob minha responsabilidade"
+ * checkbox and demanded a justification — controls that only make sense when a registration is possible. A positively
+ * identified non-P.O. document (client verdict) or a server refusal of the file (DOCUMENT_NOT_PURCHASE_ORDER /
+ * DOCUMENT_IS_QUOTATION_EVIDENCE) therefore downgrades every divergence to diagnostic information: no acceptance control, no
+ * mandatory comment, and an explicit "escolha outro ficheiro". The genuinely UNCERTAIN document keeps its justified fallback.
+ */
+export function describeDivergenceControls(identification: PoDocumentIdentification | null, documentRefusedByServer: boolean, hasDivergences: boolean): DivergenceControls {
+    const refused = documentRefusedByServer || identification?.isBlocked === true;
+    if (refused) {
+        return {
+            mode: hasDivergences ? 'DIAGNOSTIC_ONLY' : 'NONE',
+            commentRequired: false,
+            diagnosticTitle: hasDivergences ? 'Informação de diagnóstico (não permite o registo)' : null,
+            diagnosticNote: hasDivergences
+                ? 'Diferenças entre o documento lido e o grupo aprovado, apresentadas apenas para análise. Este documento não é uma Ordem de Compra: nenhuma confirmação ou justificativa permite registá-lo. Escolha outro ficheiro.'
+                : null,
+        };
+    }
+    return { mode: hasDivergences ? 'OVERRIDE' : 'NONE', commentRequired: hasDivergences, diagnosticTitle: null, diagnosticNote: null };
+}
+
 /** Synthetic-document guidance for the test environment (never affects production validation). */
 export const SYNTHETIC_PO_GUIDANCE =
     'Documentos de teste devem usar uma das séries reconhecidas — ECF11 AAAA/NNN (Serviços), ECF10 AAAA/NNN (Materiais diversos) ou ECF AAAA/NNN (Material de stock) — com um sequencial fictício (ex.: ECF11 2026/9003). Um prefixo inventado como "ECF99" não é classificado: o documento fica "não identificado" e exige confirmação manual.';

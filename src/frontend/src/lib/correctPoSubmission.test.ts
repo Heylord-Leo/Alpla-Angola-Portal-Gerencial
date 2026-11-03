@@ -206,7 +206,7 @@ describe('CorrectPoModal wiring (source-level — no DOM runtime in this suite)'
         expect(modalSrc).toMatch(/requestId, poGroupId, detailsUnavailable, groupMissing, file, comment/);
     });
     it('derives the requirement from the server decision and labels/disables accordingly', () => {
-        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation\)/);
+        expect(modalSrc).toMatch(/resolveJustificationPolicy\(requestData, poGroupId, !!ocrResult\?\.hasMismatches, !!identification\?\.requiresExplicitConfirmation, documentRefused\)/);
         expect(modalSrc).toMatch(/Comentário \{justification\.required \? '\(Obrigatório\)' : '\(opcional\)'\}/);
         // v2.249.4 — one submit gate (submitDisabled) carries the requirement; the button reads it.
         expect((modalSrc.match(/\(justification\.required && !comment\.trim\(\)\)/g) || []).length).toBeGreaterThanOrEqual(1);

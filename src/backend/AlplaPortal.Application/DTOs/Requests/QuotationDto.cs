@@ -220,6 +220,19 @@ public class SavedQuotationDto
     public int? HistoricalBatchNumber { get; set; }
     /// <summary>RESTART_QUOTATION | CANCEL_ITEMS when the historical award was released by a P.O.-group cancellation.</summary>
     public string? HistoricalReleaseKind { get; set; }
+
+    // ── v2.249.6 — line-resolved pricing (QuotationLinePricingPolicy; read-only, derived from the persisted totals) ──
+    /// <summary>False when the quotation carries a global (quotation-level) discount no line reflects, or when the considered
+    /// lines do not add up to <see cref="TotalAmount"/>. Such a quotation cannot be submitted for approval (409
+    /// QUOTATION_PRICING_NOT_LINE_RESOLVED): candidates, group totals and approved amounts are per line.</summary>
+    public bool IsLinePricingResolved { get; set; } = true;
+    /// <summary>GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH | null.</summary>
+    public string? LinePricingReasonCode { get; set; }
+    /// <summary>v2.249.6 — explicit classification (QuotationLinePricingPolicy.Kinds): LINE_RESOLVED | ZERO_VALUE |
+    /// LEGACY_TOTAL_NOT_COMPUTED | GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH.</summary>
+    public string? LinePricingKind { get; set; }
+    /// <summary>Σ LineTotal of the MAPPED / SUBSTITUTE / EXTRA_ITEM lines — what approval would use.</summary>
+    public decimal ConsideredLineTotalSum { get; set; }
 }
 
 public class PurchaseHistoryInsightDto

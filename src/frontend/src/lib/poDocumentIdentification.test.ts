@@ -151,3 +151,41 @@ describe('correction number decision (REQ-628: current TEST-MAQSIS-2026-9003, re
         expect(numberDecisionPending(applyExtractedNumber(initialPoNumberField(null), uncertainEcf99, 'ECF99 2026/9003', []), null)).toBe(false);   // registration: no current number
     });
 });
+
+// ── v2.249.6 — divergence controls for a definitively refused document (REQ-21/10/2026-595: proforma in "Registrar P.O.") ──
+import { describeDivergenceControls } from './poDocumentIdentification';
+
+describe('describeDivergenceControls — a refused document shows divergences as diagnostics only', () => {
+    const proforma: PoDocumentIdentification = {
+        verdict: 'IDENTIFIED_OTHER_TYPE', reasonCode: 'OTHER_DOCUMENT_TYPE', reason: 'Documento identificado como Cotação / Factura pró-forma.',
+        identityCandidates: [], bodyReferences: [], otherTypeCode: 'PROFORMA', otherTypeLabel: 'Cotação / Factura pró-forma',
+        requiresExplicitConfirmation: false, isBlocked: true,
+    };
+    const uncertain: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION };
+    const identified: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, verdict: 'IDENTIFIED_PO', reasonCode: 'PO_IDENTIFIED', reason: 'ok', reference: 'ECF11 2026/421', requiresExplicitConfirmation: false, isBlocked: false };
+
+    it('client verdict IDENTIFIED_OTHER_TYPE with an amount divergence → diagnostic only, no override, no mandatory comment', () => {
+        const c = describeDivergenceControls(proforma, false, true);
+        expect(c.mode).toBe('DIAGNOSTIC_ONLY');
+        expect(c.commentRequired).toBe(false);
+        expect(c.diagnosticTitle).toContain('não permite o registo');
+        expect(c.diagnosticNote).toContain('Escolha outro ficheiro');
+    });
+
+    it('server refusal of the file (DOCUMENT_NOT_PURCHASE_ORDER / DOCUMENT_IS_QUOTATION_EVIDENCE) behaves the same, even with an IDENTIFIED client verdict', () => {
+        const c = describeDivergenceControls(identified, true, true);
+        expect(c.mode).toBe('DIAGNOSTIC_ONLY');
+        expect(c.commentRequired).toBe(false);
+    });
+
+    it('a refused document without divergences shows nothing', () => {
+        expect(describeDivergenceControls(proforma, false, false)).toMatchObject({ mode: 'NONE', commentRequired: false, diagnosticTitle: null });
+    });
+
+    it('the UNCERTAIN document keeps the justified fallback (override + mandatory comment) and so does an identified P.O. with divergences', () => {
+        expect(describeDivergenceControls(uncertain, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });
+        expect(describeDivergenceControls(identified, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });
+        expect(describeDivergenceControls(identified, false, false)).toMatchObject({ mode: 'NONE', commentRequired: false });
+        expect(describeDivergenceControls(null, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });   // no verdict yet = not refused
+    });
+});

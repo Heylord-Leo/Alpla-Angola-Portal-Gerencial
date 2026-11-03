@@ -152,6 +152,10 @@ export interface OcrHeaderSuggestions {
     extractedPoReference: string;
     paymentCondition: string | undefined;
     advancePercent: number | undefined;
+    /** v2.249.6 — ExtractionMapper status of the classification ("recommended" ≥ 0,70 confidence, else "suggested"). */
+    paymentConditionStatus: string | undefined;
+    /** v2.249.6 — the payment-terms text as printed on the document (e.g. "C001 - pagamento imediato s/desconto"). */
+    paymentConditionRawText: string | undefined;
 }
 
 /**
@@ -169,6 +173,8 @@ export function extractOcrHeaderSuggestions(ocrData: any): OcrHeaderSuggestions 
         extractedPoReference: suggestions?.purchaseOrderReference?.value || '',
         paymentCondition: suggestions?.paymentCondition?.value,
         advancePercent: suggestions?.paymentConditionAdvancePercent?.value,
+        paymentConditionStatus: suggestions?.paymentCondition?.status,
+        paymentConditionRawText: suggestions?.paymentConditionRawText?.value,
     };
 }
 

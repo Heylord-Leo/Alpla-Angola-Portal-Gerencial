@@ -1,5 +1,6 @@
 import { api } from '../lib/api';
 import { IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem, LookupDto } from '../types';
+import { resolveOcrLineDiscount, resolveOcrHeaderDiscount } from '../lib/quotationPricing';
 
 export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: CurrencyDto[], companies: LookupDto[] = []) {
 
@@ -284,48 +285,22 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     item.taxRate === undefined || item.taxRate === null
                 );
 
-                // --- Discount Cross-Validation & Recovery ---
-                // Portuguese invoices often show discount as % in the "Desc." column.
-                // The AI sometimes confuses the "Desc." (discount) and "IVA" (tax) columns,
-                // returning IVA% as discountPercent. We use totalPrice (from the "Valor" column)
-                // as the anchor of truth to detect and correct such errors.
+                // --- Discount resolution (v2.249.6: lib/quotationPricing.resolveOcrLineDiscount) ---
+                // The former "Strategy A" REPLACED the extracted discount by gross − totalPrice whenever they disagreed by more than 1,
+                // which silently zeroed a real line discount when the provider read the GROSS value into totalPrice. Now the extracted
+                // discount is kept and the line is flagged `discountUncertain` (the Buyer confirms it in the document step); only a line
+                // extracted WITHOUT any discount takes the discount the printed net line total implies — also flagged.
                 const rawQty = item.quantity || 1;
                 const rawPrice = item.unitPrice || 0;
-                const rawDiscountPct = item.discountPercent || 0;
-                const rawDiscountAmt = item.discountAmount || 0;
                 const rawTotalPrice = item.totalAmount || item.totalPrice || 0;
-                const grossLineTotal = rawQty * rawPrice;
-                
-                let resolvedDiscount = rawDiscountAmt;
-                let resolvedDiscountPct: number | undefined = rawDiscountPct > 0 ? rawDiscountPct : undefined;
-
-                if (rawTotalPrice > 0 && grossLineTotal > 0) {
-                    // Strategy A: Use totalPrice as anchor to reverse-engineer the actual discount
-                    const impliedDiscount = Math.round((grossLineTotal - rawTotalPrice) * 100) / 100;
-                    const impliedDiscountPct = Math.round((impliedDiscount / grossLineTotal) * 10000) / 100;
-
-                    // If the AI's discountAmount doesn't produce the right totalPrice, use the implied one
-                    const aiCalculatedTotal = Math.round((grossLineTotal - rawDiscountAmt) * 100) / 100;
-                    if (Math.abs(aiCalculatedTotal - rawTotalPrice) > 1) {
-                        console.warn(
-                            `[OCR] Item ${index + 1}: AI discount (${rawDiscountAmt}) produces total ${aiCalculatedTotal}, ` +
-                            `but document says ${rawTotalPrice}. Correcting discount to ${impliedDiscount} (${impliedDiscountPct}%).`
-                        );
-                        resolvedDiscount = Math.max(0, impliedDiscount);
-                        resolvedDiscountPct = impliedDiscountPct;
-                    }
-                } else if (rawDiscountPct > 0) {
-                    // Strategy B: No totalPrice available — calculate from percentage
-                    const expectedDiscount = Math.round(grossLineTotal * (rawDiscountPct / 100) * 100) / 100;
-                    if (Math.abs(resolvedDiscount - expectedDiscount) > 0.01) {
-                        console.warn(`[OCR] Item ${index + 1}: discountAmount (${resolvedDiscount}) doesn't match ${rawDiscountPct}% of ${rawQty}×${rawPrice} = ${expectedDiscount}. Using calculated value.`);
-                        resolvedDiscount = expectedDiscount;
-                    }
-                }
-
-                // Strategy C: If we only have discountAmount, calculate the percent
-                if (resolvedDiscount > 0 && !resolvedDiscountPct && grossLineTotal > 0) {
-                    resolvedDiscountPct = Math.round((resolvedDiscount / grossLineTotal) * 10000) / 100;
+                const resolvedLine = resolveOcrLineDiscount({
+                    quantity: rawQty, unitPrice: rawPrice,
+                    discountAmount: item.discountAmount || 0, discountPercent: item.discountPercent || 0, totalPrice: rawTotalPrice,
+                });
+                const resolvedDiscount = resolvedLine.discountAmount;
+                const resolvedDiscountPct = resolvedLine.discountPercent;
+                if (resolvedLine.discountUncertain) {
+                    console.warn(`[OCR] Item ${index + 1}: extracted discount ${item.discountAmount || 0} vs document line total ${rawTotalPrice} (implied ${resolvedLine.impliedDiscount}); kept ${resolvedDiscount} and flagged for confirmation (${resolvedLine.strategy}).`);
                 }
 
                 const baseItem = {
@@ -339,7 +314,9 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                     discountPercent: resolvedDiscountPct,
                     ivaRateId,
                     taxRate: item.taxRate,
-                    ivaUncertain
+                    ivaUncertain,
+                    discountUncertain: resolvedLine.discountUncertain,
+                    ocrImpliedDiscount: resolvedLine.impliedDiscount
                 };
 
                 const computedTotal = calculateItemTotal(baseItem);
@@ -364,6 +341,18 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
                 };
             })
         };
+
+        // v2.249.6 — the header "Desconto Comercial" counted ONCE: on Primavera-style documents the summary row is the SUM of
+        // the line discounts (REQ-21/10/2026-595: 37.530,00 + 30.160,00 = 67.690,00), not a second, document-level discount.
+        // Equal to the line sum → not applied as global; otherwise kept as a genuine global discount, which the wizard then asks
+        // the Buyer to distribute over the lines before the quotation can be sent for approval.
+        {
+            const headerDiscount = resolveOcrHeaderDiscount(draft.discountAmount || 0, draft.items.map(i => i.discountAmount || 0));
+            draft.ocrHeaderDiscountAmount = headerDiscount.headerDiscount;
+            draft.globalDiscountKind = headerDiscount.kind;
+            draft.globalDiscountNote = headerDiscount.note;
+            draft.discountAmount = headerDiscount.globalDiscount;
+        }
 
         // v2.229.10 monetary reconciliation: the document's DECLARED total is kept when the
         // line-derived recomputation agrees with it within per-line rounding (≤ 0.01 per line) —

@@ -2437,6 +2437,52 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
 
+## DEC-154 — Line-Resolved Pricing Is a Precondition of Approval; Discounts Counted Once at the Line; Refused P.O. Documents Show Divergences as Diagnostics Only (v2.249.6, unreleased)
+
+- **Date:** 2026-11-02
+- **Status:** Accepted (implemented locally, unreleased; awaiting manual validation)
+- **Context:** The manual TEST validation of v2.249.5 on `REQ-21/10/2026-595` (LUANDAY proforma with per-line commercial discounts,
+  payable 345.775,50) approved a batch and activated a P.O. group at **416.850,00** — the undiscounted line values with IVA — while
+  the quotation card showed 345.775,50. The quotation had been saved with the 67.690,00 discount at quotation level
+  (`Quotation.DiscountAmount`) and lines without discount; that discount enters only the quotation totals, whereas the candidate
+  snapshot, the group total and the approved amount are frozen per line and have no field for it. Separately, the P.O. wizard, after
+  correctly refusing the same proforma as a P.O., still showed the divergence-acceptance checkbox and demanded a justification, and
+  pre-selected "Pós-Pago" from the proforma's "C001 - pagamento imediato s/desconto".
+- **Decision:**
+    1. **A quotation is submittable for approval only when its pricing is line-resolved** — one pure rule
+       (`QuotationLinePricingPolicy`): no unallocated global discount (`GLOBAL_DISCOUNT_UNALLOCATED`) and considered lines
+       (MAPPED / SUBSTITUTE / EXTRA_ITEM) adding up to `TotalAmount` within 1,00 (`LINE_TOTAL_MISMATCH`; a never-computed total is
+       not judged). `CreateBatch` and `UpdateBatch` refuse `409 QUOTATION_PRICING_NOT_LINE_RESOLVED` before any write, for whole and
+       partial batches alike (the share of a document-level discount in a partial batch is undefined). The verdict is exposed on
+       `SavedQuotationDto` and shown on every Buyer surface; the batch modal never offers such lines.
+    2. **Nothing is redistributed silently.** A genuine document-level (summary-only) discount is moved to the lines only by the
+       Buyer's explicit action ("Distribuir pelas linhas": proportional to line nets, largest-remainder rounding, exact sum,
+       per-line reason pre-filled and editable; only considered lines with a positive net receive a share; refused above the
+       eligible net; zeroes the global discount so it can never be applied twice); the server recomputes from the lines and
+       refuses a global discount above the remaining net (`400 QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET`) or a line discount above
+       the gross. **When the document prints per-line discount amounts, those amounts are entered per line — the proportional
+       allocation is inappropriate there** (same total, different line values, and the line values are what approval freezes).
+       Candidate totals are never forced to a document total. Zero totals are classified explicitly (`ZERO_VALUE` vs
+       `LEGACY_TOTAL_NOT_COMPUTED`, the latter impossible for the current write path and kept submittable for compatibility).
+    3. **Discounts are counted once, at the line, and never dropped silently.** The draft keeps the extracted line discount and flags
+       the line for confirmation when the document's own line total contradicts it (the old "Strategy A" overwrite is gone); the
+       summary "Desconto Comercial" equal to the sum of the line discounts is the aggregate, not a second discount; the extraction
+       prompt states both rules.
+    4. **Historical snapshots are never recalculated** (candidates, group totals, approved amounts) and **submitted quotations are
+       never edited** (they are locked evidence); existing inconsistent requests follow the supported paths case by case (design
+       doc §6): a corrected replacement quotation — rework revision while the batch is in adjustment, or P.O.-group cancellation
+       / return to quotation and a new quotation on the released lines — followed by fresh approvals; never an automatic repair.
+    5. **A document definitively refused as a P.O.** (IDENTIFIED_OTHER_TYPE or a server `DOCUMENT_*` refusal) shows amount/supplier
+       divergences as **diagnostic information only** — no acceptance control, no mandatory justification, "escolha outro ficheiro" —
+       in both wizards; the UNCERTAIN document keeps the justified fallback; the server refusal is unchanged.
+    6. **The extraction's payment-condition classification is a proposal, not a selection:** never applied from a refused document,
+       never for immediate-payment wording ("pagamento imediato", "pronto pagamento", …), never on low confidence, and an advance
+       percentage is never inferred from such wording. The business meaning of Primavera condition C001 is left to the owner;
+       until decided, immediate-payment wording always requires the Buyer's own selection.
+- **Consequences:** see `docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md`. No migration; no configuration
+  change. Read-only diagnostic for the persisted REQ-595 facts: `scripts/db/quotation-discount-pricing-req595-readonly.sql`.
+  Known limitation kept: summary-only discounts are still not credited by the reconciliation calculator (residual to justify).
+
 ## DEC-153 — Registered P.O. Evidence Is Never Deleted; Quotation Lifecycle Context and Per-Item Price Comparison (v2.249.5)
 
 - **Date:** 2026-10-30

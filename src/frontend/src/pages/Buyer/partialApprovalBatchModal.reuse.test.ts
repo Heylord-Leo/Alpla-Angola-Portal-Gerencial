@@ -8,7 +8,7 @@ import src from './PartialApprovalBatchModal.tsx?raw';
 
 describe('PartialApprovalBatchModal — reuse-blocked candidates', () => {
     it('excludes reuse-blocked candidates before the batch-hold check', () => {
-        expect(src).toMatch(/import \{ isQuotationItemSelectableForApproval, isQuotationItemReuseBlocked \} from '\.\/batchEligibility'/);
+        expect(src).toMatch(/import \{ isQuotationItemSelectableForApproval, isQuotationItemReuseBlocked, isQuotationPricingLineResolved \} from '\.\/batchEligibility'/);
         expect(src).toMatch(/if \(mapped && isQuotationItemReuseBlocked\(qi\)\) \{ reuseBlockedCount\+\+; return; \}/);
         expect(src).toMatch(/if \(mapped && isQuotationItemSelectableForApproval\(qi\.id, group\)\) \{/);
     });

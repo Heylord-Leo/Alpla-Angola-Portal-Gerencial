@@ -18,6 +18,8 @@ import {
     useSuggestedPoNumber, clearExtractedNumber, numberDecisionPending, keepCurrentPoNumber,
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
+import { describeDivergenceControls } from '../lib/poDocumentIdentification';
+import { resolveOcrPaymentConditionProposal } from '../lib/poPaymentCondition';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
 import {
     resolveExpectedSupplierName,
@@ -89,6 +91,8 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const [advancePercent, setAdvancePercent] = useState<number>(50);
     const [paymentConditionSource, setPaymentConditionSource] = useState<'OCR_DETECTED' | 'USER_SELECTED' | ''>('');
     const [ocrDetectedPaymentCondition, setOcrDetectedPaymentCondition] = useState<string | null>(null);
+    /** v2.249.6 — the document's payment-terms text when the extraction's proposal was NOT applied (shown under the selector). */
+    const [paymentConditionHint, setPaymentConditionHint] = useState<string | null>(null);
 
     // Load request details on open
     useEffect(() => {
@@ -181,7 +185,10 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     // docs §G.19.3 — whether the Buyer's justification is mandatory is the BACKEND's decision for the legacy
     // request-level Finance return (requestData.legacyReturnCorrection, same predicate RegisterPo enforces) and,
     // as before, an unresolved OCR divergence. Current-code corrections keep the comment optional.
-    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches, !!identification?.requiresExplicitConfirmation);
+    // v2.249.6 — a definitively refused document never demands the divergence justification (nothing can register it).
+    const documentRefused = !!documentBlock || !!identification?.isBlocked;
+    const justification = resolveJustificationPolicy(requestData, poGroupId, !!ocrResult?.hasMismatches, !!identification?.requiresExplicitConfirmation, documentRefused);
+    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!ocrResult?.hasMismatches || !!backendOcrMismatch);
     const totalAmount = resolveExpectedTotalAmount(selectedGroup?.totalAmount);
     const expectedSupplierName = resolveExpectedSupplierName(selectedGroup?.supplierNameSnapshot);
     const expectedSupplierDisplay = resolveSupplierDisplay(expectedSupplierName);
@@ -209,6 +216,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
             // v2.249.4 — no extraction: the document is UNCERTAIN (explicit confirmation + manual number), never "validated".
             setIdentification(NO_EXTRACTION_IDENTIFICATION);
             setDetectedDocumentNumber(null);
+            setPaymentConditionHint(null);
             logger.log({
                 level: 'Error',
                 eventType: 'API_REQUEST_FAILED',
@@ -225,7 +233,8 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         // extraction itself worked — it must never be reported as an unreadable/unsupported document.
         try {
             const { extractedTotal, extractedSupplier, extractedSupplierNif, extractedPoNumber, extractedPoReference,
-                paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
+                paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent,
+                paymentConditionStatus: ocrPaymentConditionStatus, paymentConditionRawText: ocrPaymentConditionRawText } =
                 extractOcrHeaderSuggestions(ocrData);
 
             // v2.249.4 — document identity first: the server verdict and the facts it will re-evaluate; then the number the
@@ -239,17 +248,22 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
 
             setOcrResult({ hasMismatches, details, extractedTotal, extractedSupplier });
 
-            // OCR Payment Condition Detection
-            if (ocrPaymentCondition && ['POST_PAID', 'ADVANCE_FULL', 'ADVANCE_PARTIAL'].includes(ocrPaymentCondition)) {
-                setPaymentCondition(ocrPaymentCondition);
+            // v2.249.6 — payment condition proposal (lib/poPaymentCondition): never from a document refused as a P.O., never for the
+            // ambiguous "pagamento imediato" wording (no advance percentage is implied either), never on low confidence; otherwise
+            // pre-selected and still changeable. A stale OCR pre-selection from a previous file is cleared.
+            const paymentProposal = resolveOcrPaymentConditionProposal(
+                { code: ocrPaymentCondition, status: ocrPaymentConditionStatus, rawText: ocrPaymentConditionRawText, advancePercent: ocrAdvancePercent },
+                id.isBlocked);
+            if (paymentProposal.apply && paymentProposal.code) {
+                setPaymentCondition(paymentProposal.code);
                 setPaymentConditionSource('OCR_DETECTED');
-                setOcrDetectedPaymentCondition(ocrPaymentCondition);
-                if (ocrPaymentCondition === 'ADVANCE_PARTIAL' && ocrAdvancePercent) {
-                    setAdvancePercent(Math.max(1, Math.min(99, Math.round(Number(ocrAdvancePercent)))));
-                }
+                setOcrDetectedPaymentCondition(paymentProposal.code);
+                if (paymentProposal.code === 'ADVANCE_PARTIAL' && paymentProposal.advancePercent) setAdvancePercent(paymentProposal.advancePercent);
             } else {
                 setOcrDetectedPaymentCondition(null);
+                if (paymentConditionSource === 'OCR_DETECTED') { setPaymentCondition(''); setPaymentConditionSource(''); }
             }
+            setPaymentConditionHint(paymentProposal.hint);
         } catch (procErr: any) {
             setOcrResult({
                 hasMismatches: true,
@@ -761,13 +775,15 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                                                             <AlertTriangle size={24} color="#f97316" style={{ flexShrink: 0 }} />
                                                             <div>
-                                                                <h4 style={{ margin: '0 0 4px 0', color: '#c2410c', fontSize: '1rem', fontWeight: 800 }}>Divergência Detectada</h4>
-                                                                <p style={{ margin: 0, color: '#9a3412', fontSize: '0.85rem', fontWeight: 600 }}>Os dados extraídos do documento PDF não coincidem com o pedido atual:</p>
+                                                                <h4 style={{ margin: '0 0 4px 0', color: '#c2410c', fontSize: '1rem', fontWeight: 800 }}>{documentRefused ? divergenceControls.diagnosticTitle : 'Divergência Detectada'}</h4>
+                                                                <p style={{ margin: 0, color: '#9a3412', fontSize: '0.85rem', fontWeight: 600 }}>{documentRefused ? divergenceControls.diagnosticNote : 'Os dados extraídos do documento PDF não coincidem com o pedido atual:'}</p>
                                                             </div>
                                                         </div>
                                                         <ul style={{ margin: '0 0 20px 0', paddingLeft: '36px', color: '#9a3412', fontSize: '0.85rem', fontWeight: 700 }}>
                                                             {ocrResult.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
                                                         </ul>
+                                                        {/* v2.249.6 — the acceptance control exists only when a registration is possible (never for a refused document) */}
+                                                        {divergenceControls.mode === 'OVERRIDE' ? (
                                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#ffedd5', padding: '16px', borderRadius: '4px' }}>
                                                             <input
                                                                 type="checkbox"
@@ -780,6 +796,11 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                                                 Estou ciente das divergências listadas acima e confirmo a emissão da P.O corrigida sob minha responsabilidade.
                                                             </label>
                                                         </div>
+                                                        ) : (
+                                                        <div data-testid="divergence-diagnostic-only" style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: 600, backgroundColor: '#fff7ed', padding: '10px 12px', borderRadius: '4px', border: '1px dashed #fdba74' }}>
+                                                            Informação apenas para análise: este documento não pode ser registado como P.O. corrigida com nenhuma confirmação ou justificativa. Escolha outro ficheiro.
+                                                        </div>
+                                                        )}
                                                     </motion.div>
                                                 ) : null /* v2.249.4 — the verdict block above replaces the unconditional "Documento Validado" */
                                             ) : null}
@@ -895,7 +916,14 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                         ))}
                                     </div>
 
-                                    {paymentCondition === 'ADVANCE_PARTIAL' && (
+                                    {/* v2.249.6 — what the document said when the proposal was NOT applied (refused document / ambiguous / low confidence) */}
+                            {paymentConditionHint && (
+                                <p data-testid="payment-condition-hint" style={{ fontSize: '0.72rem', color: '#92400e', marginTop: '10px', fontWeight: 600, lineHeight: 1.4 }}>
+                                    {paymentConditionHint}
+                                </p>
+                            )}
+
+                            {paymentCondition === 'ADVANCE_PARTIAL' && (
                                         <div style={{ marginTop: '16px' }}>
                                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                                 Percentual de Adiantamento: {advancePercent}%

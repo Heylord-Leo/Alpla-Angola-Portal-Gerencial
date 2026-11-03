@@ -833,6 +833,10 @@ CRITICAL PRECISION RULES:
       CRITICAL: If no IVA/Taxa column exists for line items, or IVA is only shown in the document summary/totals and NOT per item, set taxRate=null (NOT 0).
       Only set taxRate=0 when the document EXPLICITLY shows 0% IVA (Isento) for that specific item.
     * If no discount column or value exists for a line, set discountPercent=0 and discountAmount=0.
+    * Some documents print the line discount as an AMOUNT column (e.g. 'Desconto', 'Desc. Comercial', 'Desconto Comercial' with
+      currency values such as 37 530,00) instead of a percentage. Then discountAmount = that printed amount (thousand separators
+      removed) and discountPercent = discountAmount ÷ (quantity × unitPrice) × 100, rounded to 2 decimals. NEVER drop a printed
+      line discount, and NEVER move it to the header discountAmount.
   SELF-VALIDATION: totalPrice should equal (quantity × unitPrice) - discountAmount. 
     If this does not match the printed 'Valor' column, re-examine which column is discount vs tax.
 
@@ -844,6 +848,10 @@ CRITICAL PRECISION RULES:
   This is a POSITIVE number representing the absolute discount value (e.g. if the summary shows 'Desconto Comercial -823 261,00', set discountAmount = 823261.00).
   If no global/commercial discount exists on the document, set discountAmount = 0.
   NOTE: Do NOT confuse this with per-item discounts in the 'Desc.' column — those are already captured per line item.
+  AGGREGATE RULE: when the summary row labelled 'Desconto Comercial' (or similar) equals the SUM of the per-line discounts you
+  extracted, it is only the total of those line discounts, NOT an additional document-level discount — set header
+  discountAmount = 0 in that case. Report a header discountAmount ONLY for a discount that is NOT already printed on the lines.
+  A discount must never be counted twice (once per line and again in the header).
 
 - PAYMENT CONDITION — CLASSIFICATION RULES:
   Look for payment terms text anywhere in the document (header, footer, terms section, notes).

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, AlertTriangle, Package, Send } from 'lucide-react';
 import { formatCurrencyAO } from '../../lib/utils';
 import { RequestLineItemDto, SavedQuotationDto, ExtraItemDecisionState, ExtraItemDecisionPayload, BatchItemInput } from '../../types';
-import { isQuotationItemSelectableForApproval, isQuotationItemReuseBlocked } from './batchEligibility';
+import { isQuotationItemSelectableForApproval, isQuotationItemReuseBlocked, isQuotationPricingLineResolved } from './batchEligibility';
+import { readLinePricingConflict } from '../../lib/quotationPricing';
 import { BatchExtraItemsDecisionPanel } from './BatchExtraItemsDecisionPanel';
 import { computeRelevantExtraLines, parseExtraItemDecisionError } from './batchExtraItemsLogic';
 import { validateReconciliationJustification } from '../../lib/reconciliationJustificationValidator';
@@ -79,6 +80,8 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
     const [pendingItems, setPendingItems] = useState<RequestLineItemDto[]>([]);
     // v2.249.2 — per pending line: how many of its quotation candidates are reuse-blocked (need an explicit authorization).
     const [pendingReuseBlocked, setPendingReuseBlocked] = useState<Record<string, number>>({});
+    /** v2.249.6 — per requested line, the suppliers whose quotation is not line-resolved (global discount not distributed). */
+    const [pendingPricingBlocked, setPendingPricingBlocked] = useState<Record<string, string[]>>({});
     const [extraItemDecisions, setExtraItemDecisions] = useState<Record<string, ExtraItemDecisionState>>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [pendingItemsError, setPendingItemsError] = useState<{ description: string; supplierName?: string | null }[] | null>(null);
@@ -100,6 +103,7 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         const newEligibleItems: EligibleItem[] = [];
         const newPendingItems: RequestLineItemDto[] = [];
         const newPendingReuseBlocked: Record<string, number> = {};
+        const pricingBlockedByItem: Record<string, string[]> = {};
 
         reqItems.forEach(reqItem => {
             const reqItemId = reqItem.id || (reqItem as any).lineItemId || (reqItem as any).requestLineItemId;
@@ -118,6 +122,9 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                     const mapped = qi.mappedRequestLineItemId === reqItemId &&
                         (qi.reconciliationStatus === 'MAPPED' || qi.reconciliationStatus === 'SUBSTITUTE');
                     if (mapped && isQuotationItemReuseBlocked(qi)) { reuseBlockedCount++; return; }
+                    // v2.249.6 — a quotation with an unallocated global discount (or inconsistent line totals) is never offered: the
+                    // server refuses it (409 QUOTATION_PRICING_NOT_LINE_RESOLVED) and the per-line values would misstate the price.
+                    if (mapped && !isQuotationPricingLineResolved(quotation)) { pricingBlockedByItem[reqItemId] = [...(pricingBlockedByItem[reqItemId] || []), quotation.supplierNameSnapshot || 'Fornecedor']; return; }
                     if (mapped && isQuotationItemSelectableForApproval(qi.id, group)) {
                         candidates.push({
                             quotationItemId: qi.id,
@@ -163,6 +170,7 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         setEligibleItems(newEligibleItems);
         setPendingItems(newPendingItems);
         setPendingReuseBlocked(newPendingReuseBlocked);
+        setPendingPricingBlocked(pricingBlockedByItem);
         setExtraItemDecisions({});
         setSubmitError(null);
         setPendingItemsError(null);
@@ -333,6 +341,13 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
         try {
             await onSubmit(submitData, Object.keys(extraItemDecisionsPayload).length > 0 ? extraItemDecisionsPayload : undefined);
         } catch (err) {
+            // v2.249.6 — the server's line-resolved pricing refusal (defence in depth: the modal already hides such quotations).
+            const pricingConflict = readLinePricingConflict(err);
+            if (pricingConflict) {
+                setSubmitError(pricingConflict.detail || 'Uma das cotações tem um desconto global não distribuído pelas linhas. Edite a cotação antes de a enviar para aprovação.');
+                setIsSubmitting(false);
+                return;
+            }
             const parsed = parseExtraItemDecisionError(err, relevantExtraLines);
             if (parsed.kind === 'pending') {
                 setPendingItemsError(parsed.pendingItems || []);
@@ -587,6 +602,12 @@ export const PartialApprovalBatchModal: React.FC<PartialApprovalBatchModalProps>
                                             {pendingReuseBlocked[item.id] > 0 && (
                                                 <span data-testid="pending-reuse-hint" style={{ fontSize: '0.7rem', color: '#92400E', textAlign: 'right' }}>
                                                     {pendingReuseBlocked[item.id]} cotação(ões) anterior(es) exige(m) autorização de reutilização (ferramentas clássicas → Reutilizar cotação) ou registe uma nova cotação.
+                                                </span>
+                                            )}
+                                            {/* v2.249.6 — the line IS quoted, but the quotation carries a global discount no line reflects: not submittable until distributed. */}
+                                            {(pendingPricingBlocked[item.id]?.length ?? 0) > 0 && (
+                                                <span data-testid="pending-pricing-hint" style={{ fontSize: '0.7rem', color: '#92400E', textAlign: 'right' }}>
+                                                    Cotação de {pendingPricingBlocked[item.id].join(', ')} com desconto global não distribuído pelas linhas (ou totais por linha divergentes): edite a cotação (Desconto Comercial Global → Distribuir pelas linhas) antes de a enviar para aprovação.
                                                 </span>
                                             )}
                                         </div>

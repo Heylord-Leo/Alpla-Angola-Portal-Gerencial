@@ -13,7 +13,7 @@ import type { PoDocumentIdentification, PoNumberSource } from './poDocumentIdent
  *   unresolved OCR divergence. Current-code corrections keep the comment optional.
  * - When mandatory, null/empty/whitespace is refused BEFORE the P.O. upload, so nothing is written.
  */
-export type JustificationSource = 'LEGACY_RETURN' | 'OCR_MISMATCH' | 'DOCUMENT_TYPE' | 'NONE';
+export type JustificationSource = 'LEGACY_RETURN' | 'OCR_MISMATCH' | 'DOCUMENT_TYPE' | 'DOCUMENT_REFUSED' | 'NONE';
 
 export interface JustificationPolicy {
     required: boolean;
@@ -44,7 +44,11 @@ export function resolveJustificationPolicy(
     hasMismatches: boolean,
     /** v2.249.4 — the document was not identified as a P.O. (UNCERTAIN): the explicit confirmation needs a justification. */
     documentTypeUncertain: boolean = false,
+    /** v2.249.6 — the document is definitively refused as a P.O. (IDENTIFIED_OTHER_TYPE or a server DOCUMENT_* refusal): no
+     * justification can register it, so none is demanded — the Buyer must choose another file. */
+    documentRefused: boolean = false,
 ): JustificationPolicy {
+    if (documentRefused) return { required: false, source: 'DOCUMENT_REFUSED' };
     const legacy = details?.legacyReturnCorrection;
     if (legacy && legacy.justificationRequired && legacy.poGroupId === poGroupId) {
         return { required: true, source: 'LEGACY_RETURN' };

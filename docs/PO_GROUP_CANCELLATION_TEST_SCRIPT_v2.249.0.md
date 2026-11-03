@@ -524,6 +524,113 @@ Evidência: `v2249-3.10-01.png` (modal sem remover), `-02.png` (409 por API), `-
 (substituído sem remover), `-05.png` (duplicado), `-06.png` (divergência), `-07.png` (cotações do A), `-08.png` (impressão), `-09.png`
 (cotações do H), `-10.png` (revisão anterior), `-11.png` (Contas a Pagar). `Resultado: ____`
 
+### 3.11 Retoma v2.249.6 — descontos comerciais nos valores aprovados e assistente de P.O. com documento recusado (BUYER / AREA / FINAL) — 55 min
+
+> Achados da validação manual da v2.249.5 em **REQ-21/10/2026-595** (LUANDAY, proforma PP ZL972200ZM2026/5044066758). **Não**
+> usar o pedido 595 nem alterar os seus dados. Dois pedidos sintéticos:
+> - **J** `TEST v2.249.0 – J – descontos por linha` (tipo Cotação, 2 linhas: "AGUA MESA PURA MB 6X1,5L" 150 CX e
+>   "AGUA MESA PURA MB 16X0,5L" 100 CX), com um documento com a estrutura do LUANDAY: **desconto impresso por linha 37.530,00 e
+>   30.160,00**, resumo "Desconto Comercial 67.690,00", IVA 5 %, total 345.775,50. Se o operador puder reutilizar o ficheiro
+>   `20261021_104430-LUANDAY.pdf` **no pedido J**, melhor: é o caso real. **Neste documento o desconto está nas linhas: os valores
+>   corretos por linha são os impressos (179.518,50 e 166.257,00 com IVA). Nunca usar “Distribuir pelas linhas” no J — a
+>   distribuição proporcional dá 35.550,04 / 32.139,96 (linhas 181.597,46 / 164.178,04), valores diferentes dos do documento
+>   apesar de o total (345.775,50) coincidir, e são os valores por linha que são aprovados e entram no grupo de P.O.**
+> - **K** `TEST v2.249.0 – K – desconto só no resumo` (tipo Cotação, 2 linhas: "ARTIGO K1" 10 UN e "ARTIGO K2" 3 UN), com um
+>   documento sintético **sem desconto nas linhas** (10 × 1.000,00 IVA 14 %; 3 × 2.000,00 IVA 5 %) e **só no resumo** "Desconto
+>   Comercial 1.000,00" (base 15.000,00; IVA 1.593,75; total 16.593,75). É o único caso em que a distribuição proporcional é
+>   adequada.
+> Build esperado **2.249.6+<sha>** (sem migração: só Deploy to TEST).
+
+**J — descontos impressos por linha (os valores do documento, exatamente uma vez)**
+
+1. **[BUYER] Importar cotação (OCR) no pedido J com o documento.** Passo Documento — anotar qual dos casos ocorreu (é a evidência
+   para as hipóteses H1/H2 do documento de desenho §1.3, **não** uma prova por si só):
+   **(a)** linhas com desconto 37.530,00 / 30.160,00 e resumo 67.690,00 → nota “O ‘Desconto Comercial’ do resumo do documento
+   (67690.00) corresponde à soma dos descontos das linhas … não aplicado como desconto global”, **Desconto Comercial Global = 0**,
+   totais das linhas **179.518,50 / 166.257,00**, Total **345.775,50**; **(b)** linhas **sem** desconto e resumo 67.690,00 → campo
+   Desconto Comercial Global = 67.690,00, nota âmbar “… as linhas vieram sem desconto. Verifique primeiro se o documento imprime
+   descontos por linha: nesse caso introduza em cada linha o valor impresso (não uma distribuição) …” e caixa âmbar com o botão
+   “Distribuir pelas linhas (proporcional ao valor líquido)” cujo texto diz **“Se o documento imprime descontos por linha … não use
+   esta distribuição”**; **(c)** alguma linha com “**Confirme o desconto** (documento: …)” a vermelho → Seguinte inativo até
+   editar/confirmar o desconto dessa linha.
+2. **[BUYER] Caso (b) ou (c) no J: corrigir pelas linhas, nunca distribuir.** Introduzir **37.530,00** na linha 1 e **30.160,00** na
+   linha 2 e pôr **Desconto Comercial Global = 0**. Esperado: linhas **179.518,50 / 166.257,00**, IVA total **16.465,50**, Total
+   **345.775,50** (sem justificativa residual: o total do documento coincide). Guardar. Cartão da cotação sem chip; **Enviar para
+   aprovação** oferece as duas linhas.
+3. **[BUYER — só para evidenciar o bloqueio] Guardar o J com o desconto global (sem corrigir).** Num **segundo** pedido J2 igual ao J,
+   deixar as linhas sem desconto e o Desconto Comercial Global = 67.690,00; Revisão final mostra “… não poderá ser enviada para
+   aprovação até o desconto estar refletido nas linhas …”; se o passo pedir justificativa de diferença residual (−71.074,50),
+   justificar (é o caminho que explica o REQ-595). Guardar. Cartão (página do pedido **e** fila do comprador → Cotações registadas):
+   chip âmbar **“Desconto global não distribuído”** (tooltip 67.690,00 / 345.775,50 / 416.850,00). **Enviar para aprovação**: as duas
+   linhas em “Pendente de cotação” com a nota “Cotação de LUANDAY com desconto global não distribuído …”; nenhuma opção oferecida.
+   **Por API (C.2)**: `POST /api/v1/requests/{id}/batches` com os dois itens → **409** `code: QUOTATION_PRICING_NOT_LINE_RESOLVED`,
+   `quotations[0].globalDiscount = 67690`, `consideredLineTotalSum = 416850`, `quotationTotal = 345775.5`; nenhum lote criado.
+   Depois **Editar** a cotação do J2 e corrigir como no passo 2 (valores impressos nas linhas, global 0) → chip desaparece.
+4. **[BUYER → AREA → FINAL] No J: enviar para aprovação, aprovar área (1 opção por linha) e aprovação final.** Esperado: histórico
+   “opção(ões) enviadas … 179.518,50 / 166.257,00”, grupo de P.O. LUANDAY **Total 345.775,50**, lote **Total aprovado 345.775,50**,
+   cartão da cotação 345.775,50. **Nunca** 416.850,00 e **nunca** 181.597,46 / 164.178,04.
+5. **[BUYER] Lote parcial no J2** (antes da correção do passo 3, ou num J3): enviar **só a linha 1** com o desconto global por
+   distribuir → mesmo 409 (a quota de um desconto global num lote parcial não está definida). Após corrigir pelas linhas, o lote só
+   com a linha 1 é aceite e o grupo vale **179.518,50** (o valor impresso dessa linha).
+
+**K — desconto só no resumo (distribuição proporcional explícita e os seus limites)**
+
+6. **[BUYER] Importar cotação no K.** Passo Documento: Desconto Comercial Global = 1.000,00, nota âmbar e caixa com o botão
+   **“Distribuir pelas linhas (proporcional ao valor líquido)”**. Antes de distribuir: linhas 11.400,00 / 6.300,00, Total
+   16.593,75. Carregar **uma vez** no botão → descontos por linha **625,00 / 375,00** (proporcional ao líquido 10.000 / 6.000; soma
+   exata 1.000,00), linhas **10.687,50 / 5.906,25**, Desconto Comercial Global = **0**, Total **16.593,75** (igual ao total com o
+   desconto global), nota “Desconto comercial global de 1.000,00 AOA distribuído por 2 linha(s) … Se o documento imprimir descontos
+   por linha, substitua estes valores pelos impressos”, motivo de ajuste de cada linha pré-preenchido e editável. **O botão
+   desaparece** (nada a distribuir) — não há segundo clique possível; confirmar que os descontos por linha ficam 625,00 / 375,00.
+   **IVA com taxas mistas:** comparar o **IVA total da cotação (1.593,75)** com o IVA impresso no documento K; se diferir, o
+   documento não distribui o desconto proporcionalmente ao líquido e a distribuição **não** é a leitura correta: introduzir os
+   descontos por linha conforme o documento (ou justificar). Guardar; sem chip; enviar, aprovar área e final → grupo **16.593,75**.
+7. **[BUYER] Limites da distribuição (no K, antes de guardar, ou num K2).** (i) Escrever **20.000,00** no Desconto Comercial Global
+   (líquido das linhas = 16.000,00) e carregar em Distribuir → **nada muda**, nota “O desconto global de 20.000,00 AOA excede o
+   valor líquido das linhas consideradas (16.000,00 AOA); nenhuma linha pode ficar com valor negativo …”, campo mantém 20.000,00.
+   Guardar com esse valor → **400** “Desconto global superior ao valor líquido” (`code: QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET`), nada
+   guardado (**por API (C.2)**: `POST /api/v1/requests/{id}/quotations` com `discountAmount: 20000` → 400, mesmo código; também no
+   `PUT` de uma cotação existente e no `reconcile-preview`). (ii) Escrever **16.000,00** → distribuição aceite, linhas a **0,00**
+   (desconto de 100 %), Total 0,00. (iii) Marcar a linha K2 como **Ignorada** na reconciliação e voltar ao passo Documento com
+   1.000,00 global → só a K1 recebe o desconto (1.000,00); as linhas ignoradas / não cotadas e as de valor zero nunca recebem
+   desconto. (iv) Desconto numa linha acima do bruto (ex.: 10.001,00 na K1) → ao guardar **400** “O desconto não pode exceder o
+   subtotal bruto no item 1”.
+
+**Assistente de P.O. com documento recusado e condição de pagamento (como na v2.249.6 inicial)**
+
+8. **[BUYER] Assistente “Registrar P.O.” com a proforma** (grupo WAITING_PO de qualquer pedido sintético): bloco vermelho “Documento
+   identificado como Cotação / Factura pró-forma … Escolha outro ficheiro”; o bloco de divergências passa a **“Informação de
+   diagnóstico (não permite o registo)”** com a frase “Diferenças … apresentadas apenas para análise … Escolha outro ficheiro.”,
+   **sem** a caixa “Estou ciente das divergências…”, e com a nota “Informação apenas para análise: este documento não pode ser
+   registado como P.O. com nenhuma confirmação ou justificativa.”; **Comentário (opcional)**; botão **REGISTRAR P.O** inativo.
+   **Condição de Pagamento**: nada pré-selecionado; por baixo dos botões a linha “Condição lida num documento que não é a P.O.
+   («C001 - pagamento imediato s/desconto»): não foi aplicada…”. Trocar o ficheiro por uma P.O. sintética (ECF11 2026/9xxx) → bloco
+   verde/âmbar normal, caixa de divergências (se houver) com checkbox, comentário obrigatório só se houver divergências, hint anterior
+   desaparece. **Por API**: `register-po` com `overrideConfirmed=true`, `documentTypeConfirmed=true`, comentário e
+   `paymentConditionCode=POST_PAID` para o ficheiro da proforma → **400** `DOCUMENT_NOT_PURCHASE_ORDER`; grupo, número, condição de
+   pagamento e histórico inalterados. *(O reconhecimento de identificadores ECF suportados continua **pendente** — não reportar como
+   passado neste passo.)*
+9. **[BUYER] Assistente “Corrigir P.O.”** (grupo devolvido por Finanças de um pedido sintético) com a proforma: mesmo comportamento
+   (diagnóstico, sem checkbox, comentário não obrigatório por divergência, botão inativo); com uma P.O. sintética cujo texto de
+   condições diga “pagamento a 30 dias” → **Pós-Pago** pré-selecionado com o selo “OCR Detectado”; com texto “pronto pagamento” ou
+   “pagamento imediato” → nada pré-selecionado e a linha “…‘Pagamento imediato’ não indica por si se o pagamento é antes do envio…
+   selecione a condição acordada” — **o comprador escolhe** (mapeamento de negócio da condição C001 por decidir).
+
+**Diagnóstico do REQ-595 (só leitura)**
+
+10. **[A — só leitura] `scripts/db/quotation-discount-pricing-req595-readonly.sql`** (operador de TEST). Anotar, com os resultados
+    #3/#4/#5 **e** o PDF real (pedir ao operador o `20261021_104430-LUANDAY.pdf` e comparar coluna a coluna), qual hipótese fica
+    **demonstrada**: H1 linhas OCR (#4) sem desconto; H2 #4 com desconto e `OcrOriginalDiscountAmount` (#3) = 0; H3 justificativas
+    de ajuste por linha / `QUOTATION_UPDATED` (#3/#5); H4 só se **também** o `OcrTotal` não tiver sido enviado — **a simples ausência
+    de uma linha `QUOTATION_RESIDUAL_JUSTIFIED` em #5 não prova H4** (pode faltar por outra razão). Enquanto os resultados não
+    discriminarem, H1–H4 ficam **em aberto**. Em #9/#10/#11 anotar o inventário de outros pedidos afetados. **Nenhuma** alteração de
+    dados; o tratamento do REQ-595 e dos restantes é decisão separada (documento §6).
+
+Evidência: `v2249-3.11-01.png` (J passo Documento), `-02.png` (J corrigido pelas linhas: 179.518,50 / 166.257,00), `-03.png` (J2
+chip + 409 por API), `-04.png` (J grupo/lote 345.775,50), `-05.png` (J2 lote parcial 179.518,50), `-06.png` (K distribuição
+625,00 / 375,00), `-07.png` (K limites: 20.000 recusado, 400 por API), `-08.png` (Registrar P.O. recusado), `-09.png` (Corrigir
+P.O. + condição de pagamento), `-10.txt` (diagnóstico). `Resultado: ____`
+
 ---
 
 ## 4. Rejeição de Finanças e correção (A) — 25 min — pedido **B**

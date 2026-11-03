@@ -199,6 +199,41 @@ public class RegisterPoDocumentIdentificationTests : IDisposable
         Assert.False(await ctx.RequestStatusHistories.AnyAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "REREGISTER_PO"));
     }
 
+    [Fact] // v2.249.6 — REQ-21/10/2026-595: the proforma (PP ZL972200ZM2026/5044066758) in "Registrar P.O." with every override and a payment condition.
+    public async Task REQ_595_a_proforma_refused_as_a_PO_is_refused_whatever_the_overrides_and_nothing_is_written_not_even_the_payment_condition()
+    {
+        await using var ctx = S.NewCtx();
+        var s = await S.SeedAsync(ctx, groupBStatus: "WAITING_PO");
+        var file = await AddFileAsync(ctx, s, HashB, name: "20261021_104430-LUANDAY.pdf", groupId: s.GroupB);
+        await EvidenceAsync(ctx, s.RequestId, HashB, "PP ZL972200ZM2026/5044066758", "Factura Pró-forma", "PROFORMA", 0.95m,
+            supplier: "LUANDAY - COMERCIO E SERVIÇOS, LDA", total: 345_775.50m, currency: "AOA");
+        var before = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == s.GroupB);
+        var historiesBefore = await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == s.RequestId);
+
+        var dto = new RegisterPoActionDto
+        {
+            PoGroupId = s.GroupB, PoAttachmentId = file, PurchaseOrderNumber = "PP ZL972200ZM2026/5044066758",
+            // every acceptance the old UI offered, plus the payment condition the proforma's "C001 - pagamento imediato" was mapped to
+            OverrideConfirmed = true, HasMismatches = true, DocumentTypeConfirmed = true, OverrideDuplicateConfirmed = true,
+            Comment = "Divergência de valor aceite sob minha responsabilidade; fornecedor coincide.",
+            PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PaymentConditionSource = "OCR_DETECTED",
+            ExtractedSupplierName = "LUANDAY - COMERCIO E SERVIÇOS, LDA", ExtractedTotalAmount = 345_775.50m,
+        };
+        var r = await Buyer(ctx, s.Owner).RegisterPo(s.RequestId, dto);
+
+        Assert.IsType<BadRequestObjectResult>(r);
+        Assert.Equal("DOCUMENT_NOT_PURCHASE_ORDER", Code(r));
+        Assert.Equal("OTHER_DOCUMENT_TYPE", (string)Problem(r).Extensions["reasonCode"]!);
+        ctx.ChangeTracker.Clear();
+        var after = await ctx.RequestPoGroups.AsNoTracking().SingleAsync(g => g.Id == s.GroupB);
+        Assert.Equal(before.Status, after.Status);
+        Assert.Equal(before.PurchaseOrderNumber, after.PurchaseOrderNumber);
+        Assert.Equal(before.PaymentConditionCode, after.PaymentConditionCode);
+        Assert.Null(after.CurrentPoAttachmentId);
+        Assert.Equal(historiesBefore, await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == s.RequestId));
+        Assert.False((await ctx.RequestAttachments.AsNoTracking().SingleAsync(a => a.Id == file)).IsDeleted);   // the temporary upload stays for the wizard's own clean-up
+    }
+
     [Fact]
     public async Task Uncertain_evidence_synthetic_ECF99_needs_explicit_confirmation_and_justification_and_is_audited()
     {

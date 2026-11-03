@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.249.5
+v2.249.6
+
+## [v2.249.6] - 2026-11-03
+
+### Line-resolved pricing as a precondition of approval, discounts counted once at the line, refused P.O. documents show diagnostics only
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Findings of the v2.249.5 TEST validation on
+REQ-21/10/2026-595: `QuotationLinePricingPolicy` (409 `QUOTATION_PRICING_NOT_LINE_RESOLVED` in CreateBatch/UpdateBatch before any
+write; kinds incl. `LEGACY_TOTAL_NOT_COMPUTED`), `400 QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET` on Save/Update/preview, line-discount
+resolution that never drops a printed discount, explicit bounded allocation of a summary-only discount (never for printed per-line
+discounts), `describeDivergenceControls` (DIAGNOSTIC_ONLY for refused P.O. documents), payment-condition proposal rule, read-only
+REQ-595 diagnostic. No approved amount recalculated; H1–H4 open; browser validation pending. See CHANGELOG and
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md`.
 
 ## [v2.249.5] - 2026-10-30
 

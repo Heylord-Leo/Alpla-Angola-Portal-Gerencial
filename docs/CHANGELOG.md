@@ -4,7 +4,74 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.5
+v2.249.6
+
+## [v2.249.6] - 2026-11-03 — Line-resolved pricing is a precondition of approval (quotation-level discounts never approved away), discounts counted once at the line, refused P.O. documents show divergences as diagnostics only
+
+PATCH, backend + frontend, **no migration** (one new pure Domain rule, DTO read-model fields, controller guards, frontend rules; no
+change to any existing migration file; TEST needs only Deploy to TEST on the v2.249.4 schema). No configuration change. Findings of
+the manual TEST validation of v2.249.5 on REQ-21/10/2026-595 (LUANDAY proforma with per-line commercial discounts, payable
+345.775,50, approved at 416.850,00) plus the pricing-boundary pass, reference
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md` (§1 trace and hypotheses, §1.4 decision incl. item 6
+boundaries, §6 existing requests), decision DEC-154, manual resume script §3.11 (synthetic fixtures **J** printed per-line
+discounts and **K** summary-only discount — never the real request).
+
+- **A quotation-level ("global") discount was approved away (confirmed, model-level).** `Quotation.DiscountAmount` enters only the
+  quotation's own totals; the candidate snapshot, the P.O. group total and the approved amount are frozen per line and carry no share
+  of it, so a quotation saved with the discount at quotation level was approved at the undiscounted line values while its card
+  showed the discounted total. New pure rule `QuotationLinePricingPolicy` (Domain): a quotation is line-resolved when it has no
+  unallocated global discount (`GLOBAL_DISCOUNT_UNALLOCATED`) and its considered lines (MAPPED / SUBSTITUTE / EXTRA_ITEM) add up to
+  `TotalAmount` within 1,00 (`LINE_TOTAL_MISMATCH`); every evaluation carries an explicit kind (`LINE_RESOLVED`, `ZERO_VALUE`,
+  `LEGACY_TOTAL_NOT_COMPUTED` — total 0 with positive lines, impossible for the current write path, kept submittable for
+  compatibility — or the two unresolved ones). `CreateBatch` and `UpdateBatch` refuse `409 QUOTATION_PRICING_NOT_LINE_RESOLVED`
+  **before any write**, whole or partial batch, create or rework, upstream of the EXTRA_ITEM include path (the only other snapshot
+  site). `SavedQuotationDto` exposes `isLinePricingResolved`, `linePricingReasonCode`, `linePricingKind`,
+  `consideredLineTotalSum` (details read, Save/Update responses; the details projection now carries the quotation's own totals).
+  Cards (request page, Buyer queue "Cotações registadas") show **"Desconto global não distribuído"**; the batch modal never offers
+  such a quotation's lines and explains the 409. **No approved amount, candidate, group total or submitted quotation is
+  recalculated or edited** (§6: corrected replacement quotation + fresh approvals; REQ-595 unchanged).
+- **How REQ-595's line discounts reached zero is not established** (H1 provider, H2 old wizard overwrite, H3 manual review, H4 no
+  OCR total): the reconciliation gate refuses that shape when an OCR header total is present (test-proven, residual −71.074,50), so a
+  human/data path was involved. Read-only, TEST-guarded diagnostic `scripts/db/quotation-discount-pricing-req595-readonly.sql`
+  (result sets #1–#11; a missing `QUOTATION_RESIDUAL_JUSTIFIED` row alone is not proof of H4; the operator's PDF must be compared
+  with the raw extraction rows). Hypotheses stay open until it runs.
+- **Discounts are counted once, at the line, and never dropped silently (wizard draft).** `lib/quotationPricing`:
+  `resolveOcrLineDiscount` keeps the extracted line discount and flags the line "Confirme o desconto" when the document's own line
+  total contradicts it (the old "Strategy A" overwrite in `useOcrProcessor` is gone; the step cannot advance until confirmed, like
+  uncertain IVA); `resolveOcrHeaderDiscount` treats a summary "Desconto Comercial" equal to the sum of the line discounts as the
+  aggregate, not a second discount. Extraction prompt gains the amount-column and aggregate rules (text only).
+- **A genuine summary-only discount is distributed explicitly, never automatically, within arithmetic boundaries.** Document step
+  warning + action "Distribuir pelas linhas (proporcional ao valor líquido)" (`applyGlobalDiscountAllocationToDraft`, pure):
+  largest-remainder shares that add up exactly, only to considered lines with a positive net (IGNORED / NOT_QUOTED / zero-value lines
+  never receive a share), refused above the eligible net (nothing changes, note says why — no line may go negative), per-line
+  adjustment reason pre-filled and editable, global discount zeroed so a repeat press can never apply it twice, every line and the
+  draft total recomputed with the server arithmetic. **The step states that a document printing per-line discount amounts must have
+  those amounts entered per line** — the proportional allocation gives different line values (LUANDAY: 35.550,04 / 32.139,96 instead
+  of the printed 37.530,00 / 30.160,00, same total) and the line values are what approval freezes; with mixed VAT rates the
+  allocation must be reconciled against the document's VAT/total, not only its aggregate discount. The final review warns while a
+  global discount remains.
+- **Server-side arithmetic boundaries.** `SaveQuotation`, `UpdateQuotation` and `reconcile-preview` refuse a global discount above
+  the net of the considered lines after their own discounts with `400 QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET` (nothing written)
+  instead of clamping it into a zero taxable base; a line discount above the line's gross is refused on save as on update; line
+  totals are always recomputed from quantity, price, line discount and IVA (the item DTO carries no line total; the DTO header
+  totals are never persisted, so a zero/omitted header cannot bypass the rule).
+- **A document definitively refused as a P.O. shows divergences as diagnostics only (confirmed defect).** Both wizards rendered the
+  amount/supplier divergence block with the "Estou ciente das divergências…" checkbox and a mandatory comment even when the document
+  was identified as a quotation/proforma. New `describeDivergenceControls` (`lib/poDocumentIdentification`): IDENTIFIED_OTHER_TYPE or
+  a server `DOCUMENT_NOT_PURCHASE_ORDER` / `DOCUMENT_IS_QUOTATION_EVIDENCE` refusal → "Informação de diagnóstico (não permite o
+  registo)", no acceptance checkbox, comment optional, "Escolha outro ficheiro"; UNCERTAIN keeps the justified fallback. Applied to
+  "Registrar P.O." and "Corrigir P.O." (`resolveJustificationPolicy(…, documentRefused)`), refusal decided before any divergence
+  message; selecting another file resets verdict, server block, acceptance and hint. Server refusal unchanged and re-tested with
+  every override flag plus a payment condition (nothing written).
+- **The extraction's payment-condition classification is a proposal, not a selection.** `lib/poPaymentCondition`: applied only
+  when the document is not refused, the wording is not immediate-payment ("pagamento imediato", "pronto pagamento", …) and the
+  confidence is high; otherwise nothing is pre-selected and the raw text is shown under the selector ("Condição lida no documento:
+  «…» … selecione a condição acordada"); an advance percentage is never inferred from such wording. The business mapping of
+  Primavera condition "C001 - pagamento imediato s/desconto" is **open** — until decided, immediate-payment wording requires the
+  Buyer's own selection.
+- **Checks (local, 2026-11-03):** backend 3312/3312, vitest 114 files / 1285 tests, `tsc --noEmit` clean, `vite build` ok, EF
+  `has-pending-model-changes`: none, migrations folder untouched. **Pending:** browser validation (script §3.11, fixtures J and K),
+  supported-ECF identifier recognition (not passed), REQ-595 diagnostic (operator, read-only).
 
 ## [v2.249.5] - 2026-10-30 — Registered P.O. evidence is never deleted (row-locked against register-po), saved-quotation lifecycle context, "Menor valor" per request item, selection follows reuse eligibility
 

@@ -1185,6 +1185,13 @@ public class RequestsController : BaseController
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
+                    // v2.249.6 — the quotation's own pricing components (global discount included) travel with the DTO so the
+                    // Buyer surfaces can explain a quotation-level discount the lines do not carry.
+                    TotalGrossAmount = q.TotalGrossAmount,
+                    TotalDiscountAmount = q.TotalDiscountAmount,
+                    DiscountAmount = q.DiscountAmount,
+                    TotalTaxableBase = q.TotalTaxableBase,
+                    TotalIvaAmount = q.TotalIvaAmount,
                     RevisesQuotationId = q.RevisesQuotationId,
                     SourceType = q.SourceType,
                     SourceFileName = q.SourceFileName,
@@ -1494,6 +1501,11 @@ public class RequestsController : BaseController
                 }
             }
         }
+
+        // ── v2.249.6 — line-resolved pricing (QuotationLinePricingPolicy): a quotation-level discount no line carries, or
+        // lines that do not add up to the quotation total, is surfaced here and refused by the batch endpoints (REQ-595).
+        if (request.Quotations != null)
+            foreach (var qDto in request.Quotations) WithLinePricing(qDto);
 
         // Compute DisplayWorkflowState (read-only, not persisted)
         request.DisplayWorkflowState = await _statusSyncService.ComputeDisplayWorkflowStateAsync(id);
@@ -4559,6 +4571,8 @@ public class RequestsController : BaseController
         decimal sumItemDiscounts = considered.Sum(i => i.DiscountAmount);
         decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, dto.Currency);
 
         var lineInputs = BuildReconciliationLineInputs(items, manualAdditionItemIds, ivaRates);
 
@@ -4832,6 +4846,9 @@ public class RequestsController : BaseController
 
         // Global (commercial) discount from DTO — reduces the taxable base further
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        // v2.249.6 — never clamp an excessive global discount into a zero taxable base: refuse it (nothing written).
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, quotation.Currency);
         decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
@@ -4896,7 +4913,7 @@ public class RequestsController : BaseController
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
 
-        return Ok(new SavedQuotationDto
+        return Ok(WithLinePricing(new SavedQuotationDto
         {
             Id = quotation.Id,
             RequestId = quotation.RequestId,
@@ -4957,7 +4974,43 @@ public class RequestsController : BaseController
                 ItemCatalogId = qi.ItemCatalogId,
                 ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
-        });
+        }));
+    }
+
+    /// <summary>
+    /// v2.249.6 — stamps the line-resolved pricing evaluation (QuotationLinePricingPolicy) on a saved-quotation DTO from the
+    /// DTO's own persisted totals and lines. Pure; used by the details read, SaveQuotation and UpdateQuotation responses.
+    /// </summary>
+    /// <summary>
+    /// v2.249.6 — write-path arithmetic boundary (SaveQuotation / UpdateQuotation / reconcile-preview): a quotation-level
+    /// discount larger than the net of the considered lines after their own discounts is refused instead of being clamped to a
+    /// zero taxable base. Nothing is written.
+    /// </summary>
+    private static BadRequestObjectResult GlobalDiscountExceedsNetProblem(decimal globalDiscount, decimal netAfterItemDiscounts, string? currency)
+    {
+        var pd = new ProblemDetails
+        {
+            Title = "Desconto global superior ao valor líquido",
+            Detail = $"O desconto comercial global ({globalDiscount:N2} {currency}) excede o valor líquido das linhas consideradas após os descontos por linha ({netAfterItemDiscounts:N2} {currency}). " +
+                     "Corrija o desconto global ou os descontos por linha (um desconto só pode ser aplicado uma vez). Nada foi guardado.",
+            Status = 400
+        };
+        pd.Extensions["code"] = QuotationLinePricingPolicy.GlobalDiscountExceedsNetCode;
+        pd.Extensions["globalDiscount"] = globalDiscount;
+        pd.Extensions["netAfterItemDiscounts"] = netAfterItemDiscounts;
+        return new BadRequestObjectResult(pd);
+    }
+
+    private static SavedQuotationDto WithLinePricing(SavedQuotationDto dto)
+    {
+        var evaluation = AlplaPortal.Domain.Services.QuotationLinePricingPolicy.Evaluate(
+            dto.TotalAmount, dto.DiscountAmount,
+            (dto.Items ?? new List<SavedQuotationItemDto>()).Select(i => new AlplaPortal.Domain.Services.QuotationLinePricingPolicy.LineFacts(i.ReconciliationStatus, i.LineTotal)));
+        dto.IsLinePricingResolved = evaluation.IsLineResolved;
+        dto.LinePricingKind = evaluation.Kind;
+        dto.LinePricingReasonCode = evaluation.ReasonCode;
+        dto.ConsideredLineTotalSum = evaluation.ConsideredLineTotalSum;
+        return dto;
     }
 
     /// <summary>
@@ -5312,6 +5365,9 @@ public class RequestsController : BaseController
 
         // Global (commercial) discount from DTO — reduces the taxable base further
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        // v2.249.6 — never clamp an excessive global discount into a zero taxable base: refuse it (nothing written).
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, quotation.Currency);
         decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
@@ -5385,7 +5441,7 @@ public class RequestsController : BaseController
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
 
-        return Ok(new SavedQuotationDto
+        return Ok(WithLinePricing(new SavedQuotationDto
         {
             Id = quotation.Id,
             RequestId = quotation.RequestId,
@@ -5445,7 +5501,7 @@ public class RequestsController : BaseController
                 ItemCatalogId = qi.ItemCatalogId,
                 ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
-        });
+        }));
     }
 
     [HttpDelete("{id}/quotations/{quotationId}")]

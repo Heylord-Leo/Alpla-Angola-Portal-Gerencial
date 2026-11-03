@@ -54,6 +54,10 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
     if (substituteCount > 0 || extraCount > 0) {
         warnings.push(`Foram adicionados itens substitutos ou extras. Eles passarão pela aprovação técnica.`);
     }
+    // v2.249.6 — a quotation-level discount is applied only to the quotation total; approval prices per line (REQ-595).
+    if ((draft.discountAmount || 0) > 0) {
+        warnings.push(`Desconto comercial global de ${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(draft.discountAmount || 0)} ${draft.currency || 'AOA'} não distribuído pelas linhas: a cotação pode ser guardada, mas não poderá ser enviada para aprovação até o desconto estar refletido nas linhas (passo Documento → "Distribuir pelas linhas").`);
+    }
 
     // Financial calculations explicitly including valid statuses
     let totalExcludingIgnored = 0;

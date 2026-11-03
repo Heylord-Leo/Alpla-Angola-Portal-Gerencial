@@ -127,6 +127,78 @@ public class ApprovalBatchController : BaseController
         return new ConflictObjectResult(pd);
     }
 
+    /// <summary>v2.249.6 — one quotation whose pricing is not line-resolved (see QuotationLinePricingPolicy).</summary>
+    internal sealed record LinePricingProblem(Guid QuotationId, string SupplierName, string? DocumentNumber, string Currency,
+        AlplaPortal.Domain.Services.QuotationLinePricingPolicy.Evaluation Evaluation);
+
+    /// <summary>
+    /// v2.249.6 — evaluates the line-resolved pricing rule for the quotations behind the submitted candidates and returns the
+    /// structured 409 when at least one fails; null when every quotation is line-resolved. Read-only (AsNoTracking); the
+    /// callers run it before their first write.
+    /// </summary>
+    private async Task<ObjectResult?> RefuseUnresolvedLinePricingAsync(IEnumerable<Guid> quotationIds)
+    {
+        var ids = quotationIds.Distinct().ToList();
+        if (ids.Count == 0) return null;
+
+        var rows = await _context.Quotations.AsNoTracking()
+            .Where(q => ids.Contains(q.Id))
+            .Select(q => new
+            {
+                q.Id, q.SupplierNameSnapshot, q.DocumentNumber, q.Currency, q.TotalAmount, q.DiscountAmount,
+                Lines = q.Items.Select(i => new { i.ReconciliationStatus, i.LineTotal }).ToList()
+            })
+            .ToListAsync();
+
+        var problems = new List<LinePricingProblem>();
+        foreach (var r in rows)
+        {
+            var evaluation = AlplaPortal.Domain.Services.QuotationLinePricingPolicy.Evaluate(
+                r.TotalAmount, r.DiscountAmount,
+                r.Lines.Select(l => new AlplaPortal.Domain.Services.QuotationLinePricingPolicy.LineFacts(l.ReconciliationStatus, l.LineTotal)));
+            if (!evaluation.IsLineResolved)
+                problems.Add(new LinePricingProblem(r.Id, r.SupplierNameSnapshot, r.DocumentNumber, r.Currency, evaluation));
+        }
+        return problems.Count == 0 ? null : PricingNotLineResolvedConflict(problems);
+    }
+
+    /// <summary>
+    /// Structured 409 QUOTATION_PRICING_NOT_LINE_RESOLVED: the quotation's own total (with its global discount) and the
+    /// per-line values approval would freeze disagree. The Buyer resolves it on the quotation; nothing was written.
+    /// </summary>
+    internal static ObjectResult PricingNotLineResolvedConflict(IReadOnlyList<LinePricingProblem> problems)
+    {
+        var lines = problems.Select(p =>
+        {
+            var doc = string.IsNullOrWhiteSpace(p.DocumentNumber) ? "s/n" : p.DocumentNumber;
+            var e = p.Evaluation;
+            return e.ReasonCode == AlplaPortal.Domain.Services.QuotationLinePricingPolicy.Reasons.GlobalDiscountUnallocated
+                ? $"Cotação {p.SupplierName} ({doc}): desconto comercial global de {e.GlobalDiscount:N2} {p.Currency} não refletido nas linhas (soma das linhas {e.ConsideredLineTotalSum:N2}; total da cotação {e.QuotationTotal:N2})."
+                : $"Cotação {p.SupplierName} ({doc}): a soma das linhas ({e.ConsideredLineTotalSum:N2} {p.Currency}) não coincide com o total da cotação ({e.QuotationTotal:N2}).";
+        });
+        var pd = new ProblemDetails
+        {
+            Title = "Cotação com desconto global não distribuído",
+            Detail = string.Join(" ", lines) + " Os valores enviados para aprovação, o total aprovado e o grupo de P.O. são calculados linha a linha. " +
+                     "Abra a cotação em Editar, distribua o desconto pelas linhas (Desconto Comercial Global → Distribuir pelas linhas) ou corrija as linhas e guarde. Nada foi enviado.",
+            Status = 409
+        };
+        pd.Extensions["code"] = AlplaPortal.Domain.Services.QuotationLinePricingPolicy.ConflictCode;
+        pd.Extensions["quotations"] = problems.Select(p => new
+        {
+            quotationId = p.QuotationId,
+            supplierName = p.SupplierName,
+            documentNumber = p.DocumentNumber,
+            currency = p.Currency,
+            reasonCode = p.Evaluation.ReasonCode,
+            globalDiscount = p.Evaluation.GlobalDiscount,
+            quotationTotal = p.Evaluation.QuotationTotal,
+            consideredLineTotalSum = p.Evaluation.ConsideredLineTotalSum,
+            difference = p.Evaluation.Difference
+        }).ToList();
+        return new ConflictObjectResult(pd);
+    }
+
     /// <summary>
     /// Phase B area-approval authorization for batch actions: admin, active manager of
     /// the request's department/plant (specific or global — D1), or the legacy nominee
@@ -479,6 +551,13 @@ public class ApprovalBatchController : BaseController
         {
             return ReuseNotAuthorizedConflict(reuseBlocked);
         }
+
+        // ── 5h. v2.249.6 — line-resolved pricing (QuotationLinePricingPolicy): a quotation whose global discount no line
+        // reflects (or whose lines do not add up to its total) is refused BEFORE any write, whatever the batch composition —
+        // candidates, group totals and the approved amount are frozen per line (REQ-21/10/2026-595: 416.850,00 approved for a
+        // 345.775,50 quotation). Nothing is redistributed here; the Buyer resolves it on the quotation.
+        var pricingRefusal = await RefuseUnresolvedLinePricingAsync(quotationItemMap.Values.Select(qi => qi.QuotationId));
+        if (pricingRefusal != null) return pricingRefusal;
 
         // ── 5.1. Phase B routing guard: a batch enters WAITING_AREA_APPROVAL, so at
         // least one area manager must be resolvable for the request's department/plant.
@@ -1415,6 +1494,11 @@ public class ApprovalBatchController : BaseController
         {
             return ReuseNotAuthorizedConflict(reuseBlocked);
         }
+
+        // ── 3.2. v2.249.6 — line-resolved pricing of every quotation contributing a candidate (same rule as CreateBatch; a
+        // rework must not re-admit a quotation-level discount the lines do not carry).
+        var pricingRefusal = await RefuseUnresolvedLinePricingAsync(quotationItemMap.Values.Select(qi => qi.QuotationId));
+        if (pricingRefusal != null) return pricingRefusal;
 
         // ── 4. Apply changes ──
         // Remove items no longer in the batch (their candidate snapshots cascade away with them)

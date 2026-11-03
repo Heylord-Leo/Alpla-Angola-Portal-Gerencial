@@ -1,3 +1,5 @@
+import { evaluateQuotationLinePricing } from '../../lib/quotationPricing';
+
 // Shared eligibility helpers for the batch/lote partial-approval flow.
 // Used by BuyerItemsList.tsx and PartialApprovalBatchModal.tsx to decide which
 // quotation item candidates can be selected for a new ApprovalBatch.
@@ -43,6 +45,15 @@ export function isQuotationItemSelectableForApproval(quotationItemId: string, gr
  */
 export function isQuotationItemReuseBlocked(quotationItem: any): boolean {
     return !!quotationItem?.isReuseBlocked;
+}
+
+/**
+ * v2.249.6 — line-resolved pricing (server QuotationLinePricingPolicy, 409 QUOTATION_PRICING_NOT_LINE_RESOLVED): a quotation
+ * whose global discount no line carries (or whose lines do not add up to its total) cannot be submitted — the batch modal must
+ * not offer its lines as candidates. Prefers the server flags; derives from the figures for older payloads.
+ */
+export function isQuotationPricingLineResolved(quotation: any): boolean {
+    return evaluateQuotationLinePricing(quotation ?? {}).isLineResolved;
 }
 
 /**

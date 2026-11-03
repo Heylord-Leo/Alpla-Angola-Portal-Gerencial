@@ -325,6 +325,15 @@ export interface SavedQuotationDto {
     historicalItemCount?: number;
     historicalBatchNumber?: number | null;
     historicalReleaseKind?: string | null;
+    // v2.249.6 — line-resolved pricing (server QuotationLinePricingPolicy; see lib/quotationPricing)
+    /** False when a quotation-level discount no line carries (or the lines do not add up to totalAmount): not submittable. */
+    isLinePricingResolved?: boolean;
+    /** GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH | null */
+    linePricingReasonCode?: string | null;
+    /** v2.249.6 — LINE_RESOLVED | ZERO_VALUE | LEGACY_TOTAL_NOT_COMPUTED | GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH. */
+    linePricingKind?: string | null;
+    /** Σ lineTotal of the MAPPED / SUBSTITUTE / EXTRA_ITEM lines — what approval would use. */
+    consideredLineTotalSum?: number;
 }
 
 export interface RequestPoGroupDto {
@@ -1049,6 +1058,11 @@ export interface OcrDraftItem {
     itemCatalogCode?: string | null; // Optional catalog code for display/traceability
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
     ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
+    /** v2.249.6 — the extracted line discount and the document's own line total disagree (or the discount was implied from the
+     * line total): the Buyer must confirm the discount before advancing. Cleared when the discount is edited. */
+    discountUncertain?: boolean;
+    /** v2.249.6 — gross − printed line total at extraction (null when the document gave no line total); hint only. */
+    ocrImpliedDiscount?: number | null;
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
     mappedRequestLineItemId?: string | null; // ID of the RequestLineItem this quotation item corresponds to
     reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE';
@@ -1164,6 +1178,13 @@ export interface OcrDraft {
     supplierBankIban?: string;
     supplierBankSwift?: string;
     supplierPaymentTerms?: string;
+    /** v2.249.6 — how the header "Desconto Comercial" of the document was resolved at extraction: NONE | AGGREGATE_OF_LINES (sum of
+     * the line discounts, not applied as global) | DOCUMENT_LEVEL (kept as global discount — must be distributed before submission). */
+    globalDiscountKind?: 'NONE' | 'AGGREGATE_OF_LINES' | 'DOCUMENT_LEVEL' | null;
+    /** v2.249.6 — pt-PT sentence explaining the header-discount resolution (shown in the document step). */
+    globalDiscountNote?: string | null;
+    /** v2.249.6 — the header discount as extracted, before resolution. */
+    ocrHeaderDiscountAmount?: number | null;
 }
 
 export interface LookupDto {

@@ -14,6 +14,8 @@ import {
     useSuggestedPoNumber, clearExtractedNumber,
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
+import { describeDivergenceControls } from '../lib/poDocumentIdentification';
+import { resolveOcrPaymentConditionProposal } from '../lib/poPaymentCondition';
 import { readUploadedAttachmentId } from '../lib/correctPoSubmission';
 import { cleanupTemporaryPoUpload } from '../lib/poEvidence';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
@@ -110,6 +112,8 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     const [advancePercent, setAdvancePercent] = useState<number>(50);
     const [paymentConditionSource, setPaymentConditionSource] = useState<'OCR_DETECTED' | 'USER_SELECTED' | ''>('');
     const [ocrDetectedPaymentCondition, setOcrDetectedPaymentCondition] = useState<string | null>(null);
+    /** v2.249.6 — the document's payment-terms text when the extraction's proposal was NOT applied (shown under the selector). */
+    const [paymentConditionHint, setPaymentConditionHint] = useState<string | null>(null);
 
     // Reset state on open/close
     useEffect(() => {
@@ -131,6 +135,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             setAdvancePercent(50);
             setPaymentConditionSource('');
             setOcrDetectedPaymentCondition(null);
+            setPaymentConditionHint(null);
         }
     }, [show]);
 
@@ -184,6 +189,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
             // v2.249.4 — no extraction: UNCERTAIN (explicit confirmation + manual number), never "validated".
             setIdentification(NO_EXTRACTION_IDENTIFICATION);
             setDetectedDocumentNumber(null);
+            setPaymentConditionHint(null);
             logger.log({
                 level: 'Error',
                 eventType: 'API_REQUEST_FAILED',
@@ -200,7 +206,8 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
         // extraction itself worked — it must never be reported as an unreadable/unsupported document.
         try {
             const { extractedTotal, extractedSupplier, extractedSupplierNif, extractedPoNumber,
-                extractedPoReference, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent } =
+                extractedPoReference, paymentCondition: ocrPaymentCondition, advancePercent: ocrAdvancePercent,
+                paymentConditionStatus: ocrPaymentConditionStatus, paymentConditionRawText: ocrPaymentConditionRawText } =
                 extractOcrHeaderSuggestions(ocrData);
 
             // ── Primavera-aware PO number (positive identification, never numeric guessing) ──
@@ -245,17 +252,22 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 extractedSupplier
             });
 
-            // OCR Payment Condition Detection
-            if (ocrPaymentCondition && ['POST_PAID', 'ADVANCE_FULL', 'ADVANCE_PARTIAL'].includes(ocrPaymentCondition)) {
-                setPaymentCondition(ocrPaymentCondition);
+            // v2.249.6 — payment condition proposal (lib/poPaymentCondition): never from a document refused as a P.O., never for the
+            // ambiguous "pagamento imediato" wording (no advance percentage is implied either), never on low confidence; otherwise
+            // pre-selected and still changeable. A stale OCR pre-selection from a previous file is cleared.
+            const paymentProposal = resolveOcrPaymentConditionProposal(
+                { code: ocrPaymentCondition, status: ocrPaymentConditionStatus, rawText: ocrPaymentConditionRawText, advancePercent: ocrAdvancePercent },
+                id.isBlocked);
+            if (paymentProposal.apply && paymentProposal.code) {
+                setPaymentCondition(paymentProposal.code);
                 setPaymentConditionSource('OCR_DETECTED');
-                setOcrDetectedPaymentCondition(ocrPaymentCondition);
-                if (ocrPaymentCondition === 'ADVANCE_PARTIAL' && ocrAdvancePercent) {
-                    setAdvancePercent(Math.max(1, Math.min(99, Math.round(Number(ocrAdvancePercent)))));
-                }
+                setOcrDetectedPaymentCondition(paymentProposal.code);
+                if (paymentProposal.code === 'ADVANCE_PARTIAL' && paymentProposal.advancePercent) setAdvancePercent(paymentProposal.advancePercent);
             } else {
                 setOcrDetectedPaymentCondition(null);
+                if (paymentConditionSource === 'OCR_DETECTED') { setPaymentCondition(''); setPaymentConditionSource(''); }
             }
+            setPaymentConditionHint(paymentProposal.hint);
 
         } catch (procErr: any) {
             setOcrResult({
@@ -305,6 +317,12 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
         if (!purchaseOrderNumber.trim()) {
             setFeedback({ type: 'error', message: 'O número da P.O é obrigatório.' });
+            return;
+        }
+
+        // v2.249.6 — a document refused as a P.O. is decided FIRST: no divergence acceptance or justification applies to it.
+        if (documentBlock || identification?.isBlocked) {
+            setFeedback({ type: 'error', message: 'O documento foi identificado como cotação / proforma / factura e não pode ser registado como P.O. Escolha outro ficheiro.' });
             return;
         }
 
@@ -479,6 +497,10 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     };
 
     // v2.249.4 — one gate for the submit button (server rules mirrored for UX; the server stays authoritative).
+    // v2.249.6 — a definitively refused document (client verdict IDENTIFIED_OTHER_TYPE or server DOCUMENT_* refusal) shows its
+    // divergences as diagnostics only: no acceptance checkbox, no mandatory justification, "escolha outro ficheiro".
+    const divergenceControls = describeDivergenceControls(identification, !!documentBlock, !!ocrResult?.hasMismatches || !!backendOcrMismatch);
+    const documentRefused = !!documentBlock || !!identification?.isBlocked;
     const submitDisabled = isBlocked || !!priorEcfBlock || !!documentBlock || processing || !file || ocrLoading || !paymentCondition
         || !purchaseOrderNumber.trim()
         || !!identification?.isBlocked
@@ -940,13 +962,14 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                                                 <ShieldAlert size={24} color="#ef4444" style={{ flexShrink: 0 }} />
                                                 <div>
-                                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '1rem', fontWeight: 800 }}>Divergência Detectada (SISTEMA CENTRAL)</h4>
-                                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.85rem', fontWeight: 600 }}>O sistema central rejeitou a validação da P.O pelo(s) motivo(s):</p>
+                                                    <h4 style={{ margin: '0 0 4px 0', color: '#b91c1c', fontSize: '1rem', fontWeight: 800 }}>{documentRefused ? divergenceControls.diagnosticTitle : 'Divergência Detectada (SISTEMA CENTRAL)'}</h4>
+                                                    <p style={{ margin: 0, color: '#991b1b', fontSize: '0.85rem', fontWeight: 600 }}>{documentRefused ? divergenceControls.diagnosticNote : 'O sistema central rejeitou a validação da P.O pelo(s) motivo(s):'}</p>
                                                 </div>
                                             </div>
                                             <p style={{ margin: '0 0 20px 0', color: '#991b1b', fontSize: '0.85rem', fontWeight: 700 }}>
                                                 {backendOcrMismatch.details}
                                             </p>
+                                            {divergenceControls.mode === 'OVERRIDE' && (
                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#fee2e2', padding: '16px', borderRadius: '4px' }}>
                                                 <input 
                                                     type="checkbox" 
@@ -959,6 +982,7 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                                     Estou ciente das divergências reportadas e confirmo a emissão sob minha responsabilidade.
                                                 </label>
                                             </div>
+                                            )}
                                         </motion.div>
                                     ) : ocrResult ? (
                                         ocrResult.hasMismatches ? (
@@ -966,14 +990,16 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
                                                     <AlertTriangle size={24} color="#f97316" style={{ flexShrink: 0 }} />
                                                     <div>
-                                                        <h4 style={{ margin: '0 0 4px 0', color: '#c2410c', fontSize: '1rem', fontWeight: 800 }}>Divergência Detectada</h4>
-                                                        <p style={{ margin: 0, color: '#9a3412', fontSize: '0.85rem', fontWeight: 600 }}>Os dados extraídos do documento PDF não coincidem com o pedido atual:</p>
+                                                        <h4 style={{ margin: '0 0 4px 0', color: '#c2410c', fontSize: '1rem', fontWeight: 800 }}>{documentRefused ? divergenceControls.diagnosticTitle : 'Divergência Detectada'}</h4>
+                                                        <p style={{ margin: 0, color: '#9a3412', fontSize: '0.85rem', fontWeight: 600 }}>{documentRefused ? divergenceControls.diagnosticNote : 'Os dados extraídos do documento PDF não coincidem com o pedido atual:'}</p>
                                                     </div>
                                                 </div>
                                                 <ul style={{ margin: '0 0 20px 0', paddingLeft: '36px', color: '#9a3412', fontSize: '0.85rem', fontWeight: 700 }}>
                                                     {ocrResult.details.map((d, i) => <li key={i} style={{ marginBottom: '4px' }}>{d}</li>)}
                                                 </ul>
 
+                                                {/* v2.249.6 — the acceptance control exists only when a registration is possible (never for a refused document) */}
+                                                {divergenceControls.mode === 'OVERRIDE' ? (
                                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', backgroundColor: '#ffedd5', padding: '16px', borderRadius: '4px' }}>
                                                     <input 
                                                         type="checkbox" 
@@ -986,6 +1012,11 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                                         Estou ciente das divergências listadas acima e confirmo a emissão da P.O. sob minha responsabilidade. (Esta ação será registrada em sistema).
                                                     </label>
                                                 </div>
+                                                ) : (
+                                                <div data-testid="divergence-diagnostic-only" style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: 600, backgroundColor: '#fff7ed', padding: '10px 12px', borderRadius: '4px', border: '1px dashed #fdba74' }}>
+                                                    Informação apenas para análise: este documento não pode ser registado como P.O. com nenhuma confirmação ou justificativa. Escolha outro ficheiro.
+                                                </div>
+                                                )}
                                             </motion.div>
                                         ) : null /* v2.249.4 — the verdict block above replaces the unconditional "Documento Validado" */
                                     ) : null}
@@ -1042,6 +1073,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                                 ))}
                             </div>
 
+                            {/* v2.249.6 — what the document said when the proposal was NOT applied (refused document / ambiguous / low confidence) */}
+                            {paymentConditionHint && (
+                                <p data-testid="payment-condition-hint" style={{ fontSize: '0.72rem', color: '#92400e', marginTop: '10px', fontWeight: 600, lineHeight: 1.4 }}>
+                                    {paymentConditionHint}
+                                </p>
+                            )}
+
                             {paymentCondition === 'ADVANCE_PARTIAL' && (
                                 <div style={{ marginTop: '16px' }}>
                                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
@@ -1075,18 +1113,18 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
 
                         <div style={{ marginBottom: '32px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                Comentário {(ocrResult?.hasMismatches || identification?.requiresExplicitConfirmation) ? '(Obrigatório)' : '(opcional)'}
+                                Comentário {(divergenceControls.commentRequired || (!documentRefused && identification?.requiresExplicitConfirmation)) ? '(Obrigatório)' : '(opcional)'}
                             </label>
                             <textarea
                                 value={comment}
                                 onChange={(e) => setComment(e.target.value)}
-                                placeholder={ocrResult?.hasMismatches ? "Justifique o motivo de ignorar a divergência..." : "Digite alguma observação sobre a emissão, se necessário..."}
+                                placeholder={divergenceControls.commentRequired ? "Justifique o motivo de ignorar a divergência..." : "Digite alguma observação sobre a emissão, se necessário..."}
                                 rows={3}
                                 style={{
                                     ...inputStyle,
                                     height: 'auto',
                                     padding: '16px',
-                                    borderColor: ocrResult?.hasMismatches && !comment.trim() ? '#f97316' : 'var(--color-border)'
+                                    borderColor: divergenceControls.commentRequired && !comment.trim() ? '#f97316' : 'var(--color-border)'
                                 }}
                             />
                         </div>

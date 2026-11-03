@@ -52,6 +52,7 @@ import { buildManualQuotationDraftItems } from './QuotationWizard/manualQuotatio
 import { createBuyerQuotationWizardController } from './QuotationWizard/buyerQuotationWizardController';
 import type { WizardOcrError } from './QuotationWizard/wizardOcrError';
 import { compareQuotationsPerLine } from '../../lib/quotationComparison';
+import { describeQuotationPricingState } from '../../lib/quotationPricing';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -2055,6 +2056,10 @@ export function BuyerItemsList() {
                                                                                     {formatCurrencyAO(q.totalAmount)}
                                                                                 </div>
                                                                                 <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.quotedItemCount ?? q.itemCount} ITENS COTADOS{(q.notQuotedItemCount ?? 0) > 0 ? ` · ${q.notQuotedItemCount} NÃO COTADO(S)` : ''} • {formatDate(q.createdAtUtc)}</div>
+                                                                                {/* v2.249.6 — global discount not distributed over the lines: not submittable until the Buyer resolves it */}
+                                                                                {(() => { const ps = describeQuotationPricingState(q, q.currency); return ps ? (
+                                                                                    <div data-testid="quotation-pricing-chip" title={ps.detail} style={{ marginTop: '4px', display: 'inline-block', fontSize: '0.62rem', fontWeight: 800, color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #f59e0b', borderRadius: '10px', padding: '2px 8px' }}>{ps.label}</div>
+                                                                                ) : null; })()}
                                                                             </div>
                                                                             <div style={{ color: 'var(--color-text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
                                                                                 <ChevronDown size={20} />
