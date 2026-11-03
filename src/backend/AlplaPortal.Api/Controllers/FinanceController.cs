@@ -1826,6 +1826,17 @@ public class FinanceController : BaseController
     [HttpPost("{id:guid}/return")]
     public async Task<IActionResult> ReturnForAdjustment(Guid id, [FromBody] FinanceActionRequestDto requestDto)
     {
+        // Phase 1 P.O. cancellation: the reason is validated SERVER-side (it used to be a UI-only rule) and the return is
+        // classified. Absent kind = PO_CORRECTION for new returns; rows returned before this version keep NULL ("não
+        // classificado") and are never reinterpreted.
+        if (string.IsNullOrWhiteSpace(requestDto.Notes))
+            return BadRequest(new ProblemDetails { Title = "Motivo obrigatório", Detail = "Indique o motivo da devolução para Compras.", Status = 400, Extensions = { ["code"] = "RETURN_NOTES_REQUIRED" } });
+        var returnKind = string.IsNullOrWhiteSpace(requestDto.ReturnKind) ? PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection : requestDto.ReturnKind.Trim();
+        if (!PoGroupCancellationConstants.FinanceReturnKinds.All.Contains(returnKind))
+            return BadRequest(new ProblemDetails { Title = "Tipo de devolução inválido", Detail = "Indique PO_CORRECTION ou ORDER_CANCELLATION_REQUESTED.", Status = 400, Extensions = { ["code"] = "RETURN_KIND_INVALID" } });
+        var returnReasonCode = string.IsNullOrWhiteSpace(requestDto.ReturnReasonCode) ? null : requestDto.ReturnReasonCode.Trim();
+        if (returnReasonCode != null && !PoGroupCancellationConstants.FinanceReturnReasonCodes.IsValid(returnReasonCode))
+            return BadRequest(new ProblemDetails { Title = "Motivo estruturado inválido", Detail = "Código de motivo da devolução desconhecido.", Status = 400, Extensions = { ["code"] = "RETURN_REASON_CODE_INVALID" } });
         // v2.230.0: Return for Adjustment is now GROUP-scoped. It moves ONE RequestPoGroup back to
         // WAITING_PO_CORRECTION and lets StatusAggregationService derive the request scalar — a
         // further-ahead sibling group (e.g. already PAYMENT_COMPLETED) is never touched or regressed.
@@ -1983,6 +1994,10 @@ public class FinanceController : BaseController
         // to that Buyer's personal correction workload. Only RegisterPo (re-registration) rewrites it.
         group.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection;
         group.UpdatedAtUtc = DateTime.UtcNow;
+        group.LastFinanceReturnKind = returnKind;
+        group.LastFinanceReturnReasonCode = returnReasonCode;
+        group.LastFinanceReturnedAtUtc = DateTime.UtcNow;
+        group.LastFinanceReturnedByUserId = CurrentUserId;
         r.UpdatedAtUtc = DateTime.UtcNow;
 
         // docs §G.20 D1 — kept as a variable: the notification event is correlated to THIS row (the Finance return),
@@ -1997,7 +2012,7 @@ public class FinanceController : BaseController
             PreviousStatusId = r.StatusId,
             NewStatusId = r.StatusId, // scalar is recomputed by aggregation below, not set here
             Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
-                + $" Grupo devolvido por Finanças para correção da P.O (GroupId: {group.Id}). Motivo: {requestDto.Notes}",
+                + $" Grupo devolvido por Finanças ({PoGroupCancellationConstants.FinanceReturnKinds.Label(returnKind)}{(returnReasonCode != null ? " / " + PoGroupCancellationConstants.FinanceReturnReasonCodes.Label(returnReasonCode) : "")}) (GroupId: {group.Id}). Motivo: {requestDto.Notes}",
             CreatedAtUtc = DateTime.UtcNow
         };
         _context.RequestStatusHistories.Add(returnHistory);
@@ -2033,7 +2048,8 @@ public class FinanceController : BaseController
                 PoGroupId = group.Id,
                 AreaApproverId = r.AreaApproverId,
                 FinalApproverId = r.FinalApproverId,
-                PlantId = r.PlantId
+                PlantId = r.PlantId,
+                FinanceReturnKind = returnKind
             });
         }
         catch (Exception ex)

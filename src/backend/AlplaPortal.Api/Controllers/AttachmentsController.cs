@@ -79,6 +79,21 @@ public class AttachmentsController : BaseController
         }
     }
 
+    /// <summary>
+    /// v2.249.2 — the quotation-document window as the quotation write endpoints see it: the request scalar window
+    /// (RequestWorkflowHelper.CanMutateQuotation) OR the item-level window (QuotationWindowPolicy via
+    /// QuotationWindowEvaluator: released / never-quoted lines not held by an active/approved batch, batch-model
+    /// requests only). v2.249.1 documented this gate for the PROFORMA / QUOTATION upload but the controller was not
+    /// changed; this is the actual implementation. Request.Status must be loaded.
+    /// </summary>
+    public static async Task<bool> QuotationDocumentWindowOpenAsync(ApplicationDbContext context, Request request)
+    {
+        if (RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code)) return true;
+        var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(
+            context, request.Id, request.RequestType?.Code, request.Status!.Code, request.IsCancelled);
+        return window.IsOpen;
+    }
+
     [HttpPost("upload/{requestId}")]
     public async Task<IActionResult> Upload(Guid requestId, [FromForm] List<IFormFile> files, [FromForm] IFormFile? file, [FromForm] string typeCode, [FromForm] Guid? poGroupId = null)
     {
@@ -146,13 +161,14 @@ public class AttachmentsController : BaseController
         switch (typeCodeStr)
         {
             case AttachmentConstants.Types.Proforma:
-                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
-                detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                // v2.249.2 — scalar window OR item-level window (lines released to quotation / partial submission).
+                isUploadable = await QuotationDocumentWindowOpenAsync(_context, request);
+                detail = "O documento Proforma só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.Quotation:
                 // Quotation/orçamento documents follow the same window as the quotation flow itself.
-                isUploadable = RequestWorkflowHelper.CanMutateQuotation(statusCode);
-                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação.";
+                isUploadable = await QuotationDocumentWindowOpenAsync(_context, request);
+                detail = "O documento de Cotação só pode ser carregado nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
                 isUploadable = new[] { "APPROVED", RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.PaymentCompleted, RequestConstants.Statuses.InFollowup, RequestConstants.Statuses.WaitingPoCorrection, RequestConstants.Statuses.PoPartiallyUploaded }.Contains(statusCode);
@@ -165,7 +181,28 @@ public class AttachmentsController : BaseController
                         isUploadable = true;
                     }
                 }
+                // Phase 1 P.O. cancellation (D4): a replacement P.O. document for lines whose previous ECF annulment is
+                // not yet confirmed by Finance is refused here too (RegisterPo is the state writer and locks; this is
+                // the defensive front door so the Buyer cannot even upload the file).
+                if (isUploadable && poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation)
+                {
+                    var prior = await new AlplaPortal.Infrastructure.Services.Purchasing.PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(poGroupId.Value, lockRows: false);
+                    if (prior.Blocked)
+                    {
+                        var priorPd = new ProblemDetails { Title = "Registo de P.O bloqueado", Detail = prior.Message, Status = 409 };
+                        priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+                        priorPd.Extensions["cancellations"] = prior.Cancellations;
+                        return Conflict(priorPd);
+                    }
+                }
                 detail = "O documento P.O só pode ser carregado a partir do estágio de Aprovação ou quando devolvido para correção.";
+                break;
+            case AttachmentConstants.Types.PoCancellation:
+                // Phase 1 P.O. cancellation: optional evidence of the external ECF annulment, attached to the group by the
+                // responsible Buyer (or an administrator) — before, during or after the cancellation.
+                isUploadable = poGroupId.HasValue && request.RequestType?.Code == RequestConstants.Types.Quotation
+                    && (CurrentUserRoles.Contains(RoleConstants.Buyer) || CurrentUserRoles.Contains(RoleConstants.SystemAdministrator));
+                detail = "A evidência de anulação da ECF só pode ser carregada por um comprador num grupo P.O de um pedido de cotação.";
                 break;
             case AttachmentConstants.Types.PaymentSchedule:
                 isUploadable = new[] { RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentScheduled }.Contains(statusCode);
@@ -468,6 +505,30 @@ public class AttachmentsController : BaseController
                 fileHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
             }
 
+            // v2.249.4 — a P.O. file that is byte-identical to a QUOTATION / PROFORMA document of this request is quotation
+            // evidence, not a purchase order: refused at the front door (RegisterPo repeats the check). Nothing was saved to
+            // the database yet; the physical copy is removed.
+            if (typeCodeStr == AttachmentConstants.Types.PurchaseOrder && !string.IsNullOrEmpty(fileHash))
+            {
+                var quotationTwin = await _context.RequestAttachments.AsNoTracking()
+                    .Where(a => a.RequestId == requestId && !a.IsDeleted && a.FileHash == fileHash
+                                && (a.AttachmentTypeCode == AttachmentConstants.Types.Quotation || a.AttachmentTypeCode == AttachmentConstants.Types.Proforma))
+                    .Select(a => new { a.FileName, a.AttachmentTypeCode })
+                    .FirstOrDefaultAsync();
+                if (quotationTwin != null)
+                {
+                    try { System.IO.File.Delete(filePath); } catch { /* best effort: the row was never written */ }
+                    var pd = new ProblemDetails
+                    {
+                        Title = "Documento não é uma P.O.",
+                        Detail = $"O ficheiro '{f.FileName}' é o mesmo documento de {(quotationTwin.AttachmentTypeCode == AttachmentConstants.Types.Proforma ? "proforma" : "cotação")} já registado neste pedido ('{quotationTwin.FileName}'). Uma cotação não pode ser carregada como Ordem de Compra.",
+                        Status = 400
+                    };
+                    pd.Extensions["code"] = "DOCUMENT_IS_QUOTATION_EVIDENCE";
+                    return BadRequest(pd);
+                }
+            }
+
             // Sanitized name for display/audit
             var sanitizedDisplayFileName = SanitizeFileName(f.FileName);
 
@@ -632,12 +693,13 @@ public class AttachmentsController : BaseController
         switch (attachment.AttachmentTypeCode)
         {
             case AttachmentConstants.Types.Proforma:
-                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
-                detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                // v2.249.2 — same window as the upload (scalar OR item-level).
+                isDeletable = await QuotationDocumentWindowOpenAsync(_context, attachment.Request);
+                detail = "O documento Proforma só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.Quotation:
-                isDeletable = RequestWorkflowHelper.CanMutateQuotation(attachment.Request.Status!.Code);
-                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação.";
+                isDeletable = await QuotationDocumentWindowOpenAsync(_context, attachment.Request);
+                detail = "O documento de Cotação só pode ser removido nos estágios de Rascunho, Reajuste ou Cotação, ou enquanto existirem itens pendentes de cotação.";
                 break;
             case AttachmentConstants.Types.PurchaseOrder:
             {
@@ -655,10 +717,14 @@ public class AttachmentsController : BaseController
                         .Where(g => g.Id == attachment.RequestPoGroupId.Value)
                         .Select(g => g.Status)
                         .FirstOrDefaultAsync();
-                    poGroupOk = owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPoCorrection;
+                    // v2.249.5 — a temporary, unregistered upload of a group still WAITING_PO (abandoned registration
+                    // attempt) may be cleaned up too; registered evidence is refused below by PoEvidenceProtection,
+                    // whatever the group status.
+                    poGroupOk = owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPoCorrection
+                             || owningGroupStatus == RequestConstants.PoGroupStatuses.WaitingPo;
                 }
                 isDeletable = poScalarOk || poGroupOk;
-                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado, ou enquanto o grupo P.O correspondente está devolvido para correção.";
+                detail = "O documento P.O só pode ser removido enquanto o pedido está no status Aprovado, ou enquanto o grupo P.O correspondente aguarda registo ou está devolvido para correção.";
                 break;
             }
             case AttachmentConstants.Types.PaymentSchedule:
@@ -696,6 +762,63 @@ public class AttachmentsController : BaseController
             });
         }
 
+        // v2.249.2 — evidence protection (§7): a PROFORMA / QUOTATION document linked to a quotation that was EVER
+        // submitted for approval (candidate or winner of any batch — active, approved, cancelled or released) stays
+        // referenced by that approval evidence and is never removed, whatever the request/item window says.
+        if (attachment.AttachmentTypeCode == AttachmentConstants.Types.Proforma || attachment.AttachmentTypeCode == AttachmentConstants.Types.Quotation)
+        {
+            var linked = await _context.Quotations.AsNoTracking().Include(q => q.Items)
+                .Where(q => q.RequestId == attachment.RequestId && q.ProformaAttachmentId == attachment.Id)
+                .ToListAsync();
+            foreach (var q in linked)
+            {
+                var lockState = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateAsync(_context, q);
+                if (lockState.IsSubmitted)
+                {
+                    var pd = new ProblemDetails
+                    {
+                        Title = "Documento de cotação submetida",
+                        Detail = "Este documento pertence a uma cotação que já foi submetida para aprovação e faz parte da evidência do lote; não pode ser removido. " + lockState.Reason,
+                        Status = 409
+                    };
+                    pd.Extensions["code"] = AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.ReasonCode;
+                    pd.Extensions["quotationId"] = q.Id;
+                    return Conflict(pd);
+                }
+            }
+        }
+
+        // v2.249.5 — REGISTERED P.O. EVIDENCE IS NEVER DELETED (soft or hard). Found in TEST on REQ-628: the correction modal
+        // offered "Remover P.O atual" while the group was WAITING_PO_CORRECTION and this endpoint soft-deleted the file
+        // registered the day before (row kept with IsDeleted=1, bytes kept, but hidden from every list and from download).
+        // Replacement is supersession by RegisterPo. Protected = voided, superseded, the group's current document, or
+        // (legacy groups with no pointer) any registration of the owning group at/after the upload. Only a temporary,
+        // never-registered upload (abandoned wizard attempt) remains deletable.
+        // The decision and the write run in ONE transaction with the row locked (PoDocumentRowLock, SQL Server UPDLOCK/HOLDLOCK):
+        // a register-po of this same file waits for this commit and then refuses (PO_DOCUMENT_CONCURRENT_CHANGE); a register-po
+        // that committed first is seen here after the lock (pointer → 409). Returning early disposes the transaction → rollback.
+        await using var evidenceTx = attachment.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder && _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync()
+            : null;
+        if (attachment.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder)
+        {
+            var stillThere = await AlplaPortal.Infrastructure.Services.Purchasing.PoDocumentRowLock.LockAndReloadAsync(_context, attachment);
+            if (!stillThere || attachment.IsDeleted) return NoContent();   // already removed by a concurrent clean-up — idempotent, nothing written
+            var protection = await EvaluatePoEvidenceProtectionAsync(_context, attachment);
+            if (protection.IsProtected)
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Evidência de P.O. protegida",
+                    Detail = protection.Detail,
+                    Status = 409
+                };
+                pd.Extensions["code"] = AlplaPortal.Domain.Services.PoEvidenceProtection.ErrorCode;
+                pd.Extensions["reasonCode"] = protection.ReasonCode;
+                return Conflict(pd);
+            }
+        }
+
         attachment.IsDeleted = true;
 
         // Record removal in history
@@ -722,8 +845,36 @@ public class AttachmentsController : BaseController
         }
 
         await _context.SaveChangesAsync();
+        if (evidenceTx != null) await evidenceTx.CommitAsync();
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// v2.249.5 — loads the facts <see cref="AlplaPortal.Domain.Services.PoEvidenceProtection"/> needs for ONE P.O. file: the
+    /// owning group's current pointer and the REGISTER_PO / REREGISTER_PO history rows of the request (group read from the
+    /// history comment; rows naming no group count for every group). Same rule the details read model exposes (IsPoEvidence).
+    /// </summary>
+    internal static async Task<AlplaPortal.Domain.Services.PoEvidenceProtection.Verdict> EvaluatePoEvidenceProtectionAsync(ApplicationDbContext context, RequestAttachment attachment)
+    {
+        var groups = await context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == attachment.RequestId)
+            .Select(g => new { g.Id, g.CurrentPoAttachmentId })
+            .ToListAsync();
+        var groupIds = groups.Select(g => g.Id).ToList();
+        Guid? pointer = attachment.RequestPoGroupId.HasValue
+            ? groups.FirstOrDefault(g => g.Id == attachment.RequestPoGroupId.Value)?.CurrentPoAttachmentId
+            : groups.Select(g => g.CurrentPoAttachmentId).FirstOrDefault(p => p == attachment.Id);
+        var registrationActions = AlplaPortal.Domain.Services.PoEvidenceProtection.RegistrationActions;
+        var rows = await context.RequestStatusHistories.AsNoTracking()
+            .Where(h => h.RequestId == attachment.RequestId && registrationActions.Contains(h.ActionTaken))
+            .Select(h => new { h.CreatedAtUtc, h.Comment })
+            .ToListAsync();
+        var registrations = rows.Select(h => new AlplaPortal.Domain.Services.PoEvidenceProtection.Registration(
+            h.CreatedAtUtc, AlplaPortal.Domain.Services.PoEvidenceProtection.GroupFromHistoryComment(h.Comment, groupIds)));
+        return AlplaPortal.Domain.Services.PoEvidenceProtection.Evaluate(
+            new AlplaPortal.Domain.Services.PoEvidenceProtection.FileFacts(attachment.Id, attachment.RequestPoGroupId, attachment.UploadedAtUtc, attachment.VoidedAtUtc, attachment.SupersededAtUtc),
+            pointer, registrations);
     }
 
     private string SanitizeFileName(string fileName)

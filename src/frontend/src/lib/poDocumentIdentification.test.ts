@@ -1,0 +1,261 @@
+import { describe, it, expect } from 'vitest';
+import {
+    NO_EXTRACTION_IDENTIFICATION, readPoDocumentIdentification, readDetectedDocumentNumber,
+    initialPoNumberField, applyExtractedNumber, userEditsPoNumber, useSuggestedPoNumber, clearExtractedNumber,
+    poNumberSourceLabel, poNumberChanged, describePoDocumentReview, numberDecisionPending, keepCurrentPoNumber, type PoDocumentIdentification,
+} from './poDocumentIdentification';
+
+// v2.249.4 — the shared P.O. document identification (both wizards) and the number field state machine.
+
+function serverVerdict(over: Partial<any> = {}) {
+    return { integration: { headerSuggestions: {
+        documentNumber: { value: 'ECF11 2026/421' }, currencyCode: { value: 'AOA' },
+        documentTitle: { value: 'PO Serviços ECF11 2026/421' },
+        referencedDocumentNumbers: ['ECF10 2026/364'],
+        documentClassification: { suggestedType: 'OTHER', confidence: 0.4, titleFound: 'PO Serviços ECF11 2026/421' },
+        purchaseOrderIdentification: {
+            verdict: 'IDENTIFIED_PO', reasonCode: 'PO_IDENTIFIED', reason: 'Ordem de Compra identificada: ECF11 2026/421 (ECF11 — Serviços).',
+            family: 'ECF11', familyLabel: 'Serviços', reference: 'ECF11 2026/421', canonical: 'ECF11-2026-421',
+            identityCandidates: [{ reference: 'ECF11 2026/421', canonical: 'ECF11-2026-421', family: 'ECF11', familyLabel: 'Serviços', source: 'DOCUMENT_NUMBER' }],
+            bodyReferences: [{ reference: 'ECF10 2026/364', canonical: 'ECF10-2026-364', family: 'ECF10', familyLabel: 'Material diverso / escritório', source: 'BODY_REFERENCE' }],
+            ...over,
+        },
+    } } };
+}
+
+describe('readPoDocumentIdentification — the server verdict is the source of truth', () => {
+    it('reads IDENTIFIED_PO with family, label, number and body references', () => {
+        const id = readPoDocumentIdentification(serverVerdict());
+        expect(id.verdict).toBe('IDENTIFIED_PO');
+        expect(id.family).toBe('ECF11'); expect(id.familyLabel).toBe('Serviços'); expect(id.reference).toBe('ECF11 2026/421');
+        expect(id.bodyReferences.map(b => b.reference)).toEqual(['ECF10 2026/364']);
+        expect(id.isBlocked).toBe(false); expect(id.requiresExplicitConfirmation).toBe(false);
+    });
+    it('IDENTIFIED_OTHER_TYPE is blocked; UNCERTAIN requires the explicit confirmation', () => {
+        expect(readPoDocumentIdentification(serverVerdict({ verdict: 'IDENTIFIED_OTHER_TYPE', otherTypeLabel: 'Cotação / Factura pró-forma' })).isBlocked).toBe(true);
+        const u = readPoDocumentIdentification(serverVerdict({ verdict: 'UNCERTAIN', reasonCode: 'UNRECOGNISED_IDENTIFIER', reference: null }));
+        expect(u.requiresExplicitConfirmation).toBe(true); expect(u.isBlocked).toBe(false);
+    });
+    it('an unknown verdict string degrades to UNCERTAIN, never to a success', () => {
+        expect(readPoDocumentIdentification(serverVerdict({ verdict: 'SOMETHING_NEW' })).verdict).toBe('UNCERTAIN');
+    });
+    it('without a server verdict: a parsed ECF reference is a P.O., anything else is UNCERTAIN (never "validated")', () => {
+        expect(readPoDocumentIdentification({ integration: { headerSuggestions: { documentNumber: { value: 'ECF10 2026/219' } } } }).verdict).toBe('IDENTIFIED_PO');
+        const u = readPoDocumentIdentification({ integration: { headerSuggestions: { documentNumber: { value: 'ECF99 2026/9003' } } } });
+        expect(u.verdict).toBe('UNCERTAIN'); expect(u.reasonCode).toBe('NO_IDENTIFIER');
+        expect(readPoDocumentIdentification(null).verdict).toBe('UNCERTAIN');
+    });
+});
+
+describe('readDetectedDocumentNumber — the raw number for review; no extraction facts are ever sent to the server', () => {
+    it('returns the raw document number, or null', () => {
+        expect(readDetectedDocumentNumber(serverVerdict())).toBe('ECF11 2026/421');
+        expect(readDetectedDocumentNumber({ integration: { headerSuggestions: { documentNumber: { value: ' ECF99 2026/9003 ' } } } })).toBe('ECF99 2026/9003');
+        expect(readDetectedDocumentNumber({})).toBeNull();
+    });
+});
+
+describe('P.O. number field — extraction fills an empty field, never a manual or current value', () => {
+    const identified: PoDocumentIdentification = readPoDocumentIdentification(serverVerdict());
+
+    it('registration: empty → EXTRACTED; typing → MANUAL; a new file clears an extracted value but keeps a manual one', () => {
+        let f = initialPoNumberField(null);
+        expect(f.source).toBe('EMPTY');
+        f = applyExtractedNumber(f, identified, 'ECF11 2026/421', []);
+        expect(f).toMatchObject({ value: 'ECF11 2026/421', source: 'EXTRACTED', suggestion: 'ECF11 2026/421', suggestionFamilyLabel: 'Serviços' });
+        f = userEditsPoNumber(f, 'ECF11 2026/422');
+        expect(f.source).toBe('MANUAL');
+        f = applyExtractedNumber(f, identified, 'ECF11 2026/421', []);
+        expect(f.value).toBe('ECF11 2026/422');                       // never overwritten
+        expect(f.suggestion).toBe('ECF11 2026/421');                  // offered beside the field
+        f = useSuggestedPoNumber(f);
+        expect(f).toMatchObject({ value: 'ECF11 2026/421', source: 'EXTRACTED' });
+        f = clearExtractedNumber(f);
+        expect(f).toMatchObject({ value: '', source: 'EMPTY', suggestion: null });
+        const manual = clearExtractedNumber(userEditsPoNumber(initialPoNumberField(null), 'ECF10 2026/7'));
+        expect(manual).toMatchObject({ value: 'ECF10 2026/7', source: 'MANUAL' });
+    });
+
+    it('correction: starts as CURRENT; extraction never replaces it silently, only suggests; typing the current number back is CURRENT again', () => {
+        const current = 'TEST-MAQSIS-2026-9003';
+        let f = initialPoNumberField(current);
+        expect(f).toMatchObject({ value: current, source: 'CURRENT' });
+        f = applyExtractedNumber(f, identified, 'ECF11 2026/421', []);
+        expect(f.value).toBe(current); expect(f.source).toBe('CURRENT'); expect(f.suggestion).toBe('ECF11 2026/421');
+        expect(poNumberChanged(current, f.value)).toBe(false);
+        f = useSuggestedPoNumber(f);
+        expect(f.source).toBe('EXTRACTED'); expect(poNumberChanged(current, f.value)).toBe(true);
+        f = userEditsPoNumber(f, ' test-maqsis-2026-9003 ', current);
+        expect(f.source).toBe('MANUAL');
+        f = userEditsPoNumber(f, current, current);
+        expect(f.source).toBe('CURRENT');
+        expect(clearExtractedNumber(useSuggestedPoNumber(applyExtractedNumber(initialPoNumberField(current), identified, null, [])), current)).toMatchObject({ value: current, source: 'CURRENT' });
+    });
+
+    it('a NIF-shaped document number never fills the field', () => {
+        const f = applyExtractedNumber(initialPoNumberField(null), readPoDocumentIdentification({ integration: { headerSuggestions: { documentNumber: { value: '5001713205' } } } }), '5001713205', ['5001713205']);
+        expect(f.value).toBe(''); expect(f.suggestion).toBeNull();
+    });
+
+    it('labels', () => {
+        expect(poNumberSourceLabel('EXTRACTED')).toBe('Extraído do documento');
+        expect(poNumberSourceLabel('MANUAL')).toBe('Introduzido manualmente');
+        expect(poNumberSourceLabel('CURRENT')).toBe('Número atual (sem alteração)');
+    });
+});
+
+describe('describePoDocumentReview — never an unconditional "Documento Validado"', () => {
+    const identified = readPoDocumentIdentification(serverVerdict());
+    it('success only for an identified P.O. without business mismatches', () => {
+        expect(describePoDocumentReview(identified, false).tone).toBe('success');
+        const withMismatch = describePoDocumentReview(identified, true);
+        expect(withMismatch.tone).toBe('warning'); expect(withMismatch.needsTypeConfirmation).toBe(false);
+    });
+    it('UNCERTAIN (synthetic ECF99 / no extraction) is a warning that needs the explicit type confirmation', () => {
+        const r = describePoDocumentReview(NO_EXTRACTION_IDENTIFICATION, false);
+        expect(r.tone).toBe('warning'); expect(r.needsTypeConfirmation).toBe(true);
+        expect(describePoDocumentReview(null, false).needsTypeConfirmation).toBe(true);
+    });
+    it('a quotation / proforma / invoice is blocked', () => {
+        const r = describePoDocumentReview(readPoDocumentIdentification(serverVerdict({ verdict: 'IDENTIFIED_OTHER_TYPE', otherTypeLabel: 'Cotação / Factura pró-forma', reason: 'não pode ser registado como P.O.' })), false);
+        expect(r.tone).toBe('blocked'); expect(r.title).toContain('Cotação / Factura pró-forma');
+    });
+});
+
+describe('correction number decision (REQ-628: current TEST-MAQSIS-2026-9003, replacement PDF reads ECF99 2026/9003)', () => {
+    const current = 'TEST-MAQSIS-2026-9003';
+    const uncertainEcf99 = readPoDocumentIdentification({ integration: { headerSuggestions: { documentNumber: { value: 'ECF99 2026/9003' }, purchaseOrderIdentification: { verdict: 'UNCERTAIN', reasonCode: 'UNRECOGNISED_IDENTIFIER', reason: 'série não reconhecida', identityCandidates: [], bodyReferences: [] } } } });
+    it('the detected number is offered even though the ECF99 series is not recognised, and the decision is pending while the field still holds the current number', () => {
+        const f = applyExtractedNumber(initialPoNumberField(current), uncertainEcf99, 'ECF99 2026/9003', []);
+        expect(f.value).toBe(current); expect(f.source).toBe('CURRENT');
+        expect(f.suggestion).toBe('ECF99 2026/9003'); expect(f.suggestionFamilyLabel).toBeNull();   // visible for review, unrecognised series
+        expect(numberDecisionPending(f, current)).toBe(true);
+        expect(uncertainEcf99.requiresExplicitConfirmation).toBe(true);                             // the type still needs the explicit confirmation
+    });
+    it('resolved by using the detected number, by typing another number, or by explicitly keeping the current one', () => {
+        const f = applyExtractedNumber(initialPoNumberField(current), uncertainEcf99, 'ECF99 2026/9003', []);
+        expect(numberDecisionPending(useSuggestedPoNumber(f), current)).toBe(false);
+        expect(useSuggestedPoNumber(f)).toMatchObject({ value: 'ECF99 2026/9003', source: 'EXTRACTED' });
+        expect(numberDecisionPending(userEditsPoNumber(f, 'ECF10 2026/9003', current), current)).toBe(false);
+        const kept = keepCurrentPoNumber(f, current);
+        expect(kept).toMatchObject({ value: current, source: 'CURRENT', currentConfirmed: true });
+        expect(numberDecisionPending(kept, current)).toBe(false);
+    });
+    it('typing the current number back is not a decision; a new file reopens it; no decision when the document reads the same number or nothing', () => {
+        const f = applyExtractedNumber(initialPoNumberField(current), uncertainEcf99, 'ECF99 2026/9003', []);
+        expect(numberDecisionPending(userEditsPoNumber(useSuggestedPoNumber(f), current, current), current)).toBe(true);
+        expect(numberDecisionPending(clearExtractedNumber(keepCurrentPoNumber(f, current), current), current)).toBe(false);   // no suggestion any more
+        expect(numberDecisionPending(applyExtractedNumber(clearExtractedNumber(keepCurrentPoNumber(f, current), current), uncertainEcf99, 'ECF99 2026/9003', []), current)).toBe(true); // reopened
+        expect(numberDecisionPending(applyExtractedNumber(initialPoNumberField(current), null, current, []), current)).toBe(false);
+        expect(numberDecisionPending(applyExtractedNumber(initialPoNumberField(current), null, null, []), current)).toBe(false);
+        expect(numberDecisionPending(applyExtractedNumber(initialPoNumberField(null), uncertainEcf99, 'ECF99 2026/9003', []), null)).toBe(false);   // registration: no current number
+    });
+});
+
+// ── v2.249.6 — divergence controls for a definitively refused document (REQ-21/10/2026-595: proforma in "Registrar P.O.") ──
+import { describeDivergenceControls } from './poDocumentIdentification';
+
+describe('describeDivergenceControls — a refused document shows divergences as diagnostics only', () => {
+    const proforma: PoDocumentIdentification = {
+        verdict: 'IDENTIFIED_OTHER_TYPE', reasonCode: 'OTHER_DOCUMENT_TYPE', reason: 'Documento identificado como Cotação / Factura pró-forma.',
+        identityCandidates: [], bodyReferences: [], otherTypeCode: 'PROFORMA', otherTypeLabel: 'Cotação / Factura pró-forma',
+        requiresExplicitConfirmation: false, isBlocked: true,
+    };
+    const uncertain: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION };
+    const identified: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, verdict: 'IDENTIFIED_PO', reasonCode: 'PO_IDENTIFIED', reason: 'ok', reference: 'ECF11 2026/421', requiresExplicitConfirmation: false, isBlocked: false };
+
+    it('client verdict IDENTIFIED_OTHER_TYPE with an amount divergence → diagnostic only, no override, no mandatory comment', () => {
+        const c = describeDivergenceControls(proforma, false, true);
+        expect(c.mode).toBe('DIAGNOSTIC_ONLY');
+        expect(c.commentRequired).toBe(false);
+        expect(c.diagnosticTitle).toContain('não permite o registo');
+        expect(c.diagnosticNote).toContain('Escolha outro ficheiro');
+    });
+
+    it('server refusal of the file (DOCUMENT_NOT_PURCHASE_ORDER / DOCUMENT_IS_QUOTATION_EVIDENCE) behaves the same, even with an IDENTIFIED client verdict', () => {
+        const c = describeDivergenceControls(identified, true, true);
+        expect(c.mode).toBe('DIAGNOSTIC_ONLY');
+        expect(c.commentRequired).toBe(false);
+    });
+
+    it('a refused document without divergences shows nothing', () => {
+        expect(describeDivergenceControls(proforma, false, false)).toMatchObject({ mode: 'NONE', commentRequired: false, diagnosticTitle: null });
+    });
+
+    it('the UNCERTAIN document keeps the justified fallback (override + mandatory comment) and so does an identified P.O. with divergences', () => {
+        expect(describeDivergenceControls(uncertain, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });
+        expect(describeDivergenceControls(identified, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });
+        expect(describeDivergenceControls(identified, false, false)).toMatchObject({ mode: 'NONE', commentRequired: false });
+        expect(describeDivergenceControls(null, false, true)).toMatchObject({ mode: 'OVERRIDE', commentRequired: true });   // no verdict yet = not refused
+    });
+});
+
+// ── v2.249.8 — the typed number vs the document's number (mirror of register-po rule (4)) ──
+import { describePoNumberDivergence, withNumberDivergence, normalizePoNumberLoose } from './poDocumentIdentification';
+
+describe('describePoNumberDivergence — REQ-03/11/2026-630 (ECF10 2026/9630 identified, "AAAAAA" typed)', () => {
+    const identified = readPoDocumentIdentification(serverVerdict({ reference: 'ECF10 2026/9630', canonical: 'ECF10-2026-9630', family: 'ECF10', familyLabel: 'Material diverso / escritório',
+        identityCandidates: [{ reference: 'ECF10 2026/9630', canonical: 'ECF10-2026-9630', family: 'ECF10', familyLabel: 'Material diverso / escritório', source: 'DOCUMENT_NUMBER' }], bodyReferences: [] }));
+    const uncertain: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, reasonCode: 'UNRECOGNISED_PREFIX', identityCandidates: [] };
+    const proforma: PoDocumentIdentification = { ...NO_EXTRACTION_IDENTIFICATION, verdict: 'IDENTIFIED_OTHER_TYPE', isBlocked: true, requiresExplicitConfirmation: false };
+
+    it('a typed value that is not the identified reference is a divergence naming both numbers (server wording)', () => {
+        const d = describePoNumberDivergence('AAAAAA', identified, 'ECF10 2026/9630');
+        expect(d).toMatchObject({ divergent: true, typed: 'AAAAAA', documentNumber: 'ECF10 2026/9630', comparison: 'CANONICAL' });
+        expect(d.detail).toBe('Número de P.O. divergente: introduzido "AAAAAA" (Identificado no documento: ECF10 2026/9630)');
+    });
+    it('another ECF reference is a divergence too; the same identity in another formatting is not', () => {
+        expect(describePoNumberDivergence('ECF10 2026/9631', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        expect(describePoNumberDivergence('ECF11 2026/9630', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        for (const same of ['ECF10 2026/9630', 'ecf10 2026-9630', '  ECF10   2026/9630 ', 'ECF10 2026/09630'])
+            expect(describePoNumberDivergence(same, identified, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'CANONICAL', detail: null });
+    });
+    it('restoring the extracted number clears the divergence — nothing else is involved', () => {
+        expect(describePoNumberDivergence('AAAAAA', identified, 'ECF10 2026/9630').divergent).toBe(true);
+        expect(describePoNumberDivergence('ECF10 2026/9630', identified, 'ECF10 2026/9630').divergent).toBe(false);
+    });
+    it('UNCERTAIN document with a letter-bearing, non-fiscal reading: loose comparison (case / whitespace insensitive)', () => {
+        expect(describePoNumberDivergence('ECF99 2026/9003', uncertain, 'ECF99 2026/9003').divergent).toBe(false);
+        expect(describePoNumberDivergence('ecf99   2026/9003', uncertain, 'ECF99 2026/9003')).toMatchObject({ divergent: false, comparison: 'LOOSE' });
+        const d = describePoNumberDivergence('TEST-MAQSIS-2026-9003', uncertain, 'ECF99 2026/9003');
+        expect(d).toMatchObject({ divergent: true, comparison: 'LOOSE' });
+        expect(d.detail).toBe('Número de P.O. divergente: introduzido "TEST-MAQSIS-2026-9003" (Lido no documento: ECF99 2026/9003)');
+    });
+    it('nothing to compare: blank input, no verdict, refused document, NIF-shaped or purely numeric reading, no reading', () => {
+        expect(describePoNumberDivergence('', identified, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', null, 'ECF10 2026/9630')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', proforma, 'PP 2026/1')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, '5001713205')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, '123456')).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', uncertain, null)).toMatchObject({ divergent: false, comparison: 'NONE' });
+        expect(describePoNumberDivergence('AAAAAA', NO_EXTRACTION_IDENTIFICATION, null).divergent).toBe(false);
+    });
+    it('normalizePoNumberLoose mirrors the server (trim, collapse whitespace, upper-case)', () => {
+        expect(normalizePoNumberLoose('  ecf99   2026/9003 ')).toBe('ECF99 2026/9003');
+        expect(normalizePoNumberLoose(null)).toBe('');
+    });
+});
+
+describe('withNumberDivergence — the reviewed set = extraction-time set + the number line', () => {
+    const divergent = describePoNumberDivergence('AAAAAA', readPoDocumentIdentification(serverVerdict()), 'ECF11 2026/421');
+    const none = describePoNumberDivergence('ECF11 2026/421', readPoDocumentIdentification(serverVerdict()), 'ECF11 2026/421');
+    it('adds the number line first and flags mismatches, keeping the extraction facts', () => {
+        const merged = withNumberDivergence({ hasMismatches: false, details: [], extractedTotal: 500, extractedSupplier: 'X' }, divergent);
+        expect(merged).toMatchObject({ hasMismatches: true, extractedTotal: 500, extractedSupplier: 'X' });
+        expect(merged!.details[0]).toContain('Número de P.O. divergente');
+    });
+    it('a number divergence without any extraction-time result still yields a reviewable set', () => {
+        expect(withNumberDivergence(null, divergent)).toMatchObject({ hasMismatches: true });
+    });
+    it('without a number divergence the extraction-time set is returned untouched (same reference), including null', () => {
+        const base = { hasMismatches: true, details: ['Total divergente: Identificado 400.00 (Esperado: 500.00)'] };
+        expect(withNumberDivergence(base, none)).toBe(base);
+        expect(withNumberDivergence(null, none)).toBeNull();
+    });
+    it('restoring the number removes only its line: the other divergences remain', () => {
+        const base = { hasMismatches: true, details: ['Total divergente: Identificado 400.00 (Esperado: 500.00)'] };
+        const withNumber = withNumberDivergence(base, divergent)!;
+        expect(withNumber.details).toHaveLength(2);
+        expect(withNumberDivergence(base, none)!.details).toEqual(base.details);
+    });
+});

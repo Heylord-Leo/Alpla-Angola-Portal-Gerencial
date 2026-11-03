@@ -376,6 +376,9 @@ public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGro
         builder.Property(g => g.Status).IsRequired().HasMaxLength(50);
         builder.Property(g => g.PurchaseOrderNumber).HasMaxLength(100);
         builder.Property(g => g.TotalAmount).HasColumnType("decimal(18,2)");
+        // Phase 1 P.O. cancellation: Finance return classification (NULL = legacy, not classified)
+        builder.Property(g => g.LastFinanceReturnKind).HasMaxLength(40);
+        builder.Property(g => g.LastFinanceReturnReasonCode).HasMaxLength(60);
         builder.Property(g => g.AdvancePaymentPercent).HasColumnType("decimal(9,4)");
 
         // ── Post-Payment Completion Workflow (Release 1 foundation) ──
@@ -485,6 +488,9 @@ public class ApprovalBatchItemConfiguration : IEntityTypeConfiguration<ApprovalB
                .OnDelete(DeleteBehavior.NoAction);
 
         builder.Property(i => i.WinnerSelectionJustification).HasMaxLength(2000);
+        // Phase 1 P.O. cancellation: release markers (batch stays APPROVED)
+        builder.Property(i => i.ReleaseKind).HasMaxLength(40);
+        builder.HasIndex(i => i.PoGroupCancellationId).HasDatabaseName("IX_ApprovalBatchItem_PoGroupCancellationId");
 
         builder.HasMany(i => i.Candidates)
                .WithOne(c => c.ApprovalBatchItem)
@@ -706,8 +712,9 @@ public class QuotationReuseAuthorizationConfiguration : IEntityTypeConfiguration
         builder.Property(a => a.Reason).IsRequired().HasMaxLength(1000);
         builder.Property(a => a.RevocationReason).HasMaxLength(1000);
 
+        // v2.249.2 — inverse navigation Request.QuotationReuseAuthorizations (same FK/column; no schema change).
         builder.HasOne(a => a.Request)
-               .WithMany()
+               .WithMany(r => r.QuotationReuseAuthorizations)
                .HasForeignKey(a => a.RequestId)
                .OnDelete(DeleteBehavior.NoAction);
 

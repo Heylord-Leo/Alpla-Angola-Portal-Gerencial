@@ -2,6 +2,7 @@ import React from 'react';
 import { Trash2, AlertCircle, CheckCircle2, AlertTriangle, Hash, Calendar, Info } from 'lucide-react';
 import { OcrDraft, OcrDraftItem, RequestDetailsDto } from '../../../types';
 import { useQuotationWizardState } from './hooks/useQuotationWizardState';
+import { ocrErrorTechnicalLine, type WizardOcrError } from './wizardOcrError';
 import { SupplierAutocomplete } from '../../../components/SupplierAutocomplete';
 import { formatCurrencyAO, formatDate } from '../../../lib/utils';
 import { ConfirmationDialog } from '../../../components/common/ConfirmationDialog';
@@ -76,6 +77,10 @@ interface WizardStepDocumentsOcrProps {
     draft: OcrDraft | null;
     isProcessingOcr: boolean;
     onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    /** v2.249.2 — failure of the current upload/OCR attempt, shown inline in this step. */
+    ocrError?: WizardOcrError | null;
+    onRetryOcr?: () => void;
+    onDismissOcrError?: () => void;
     onReplaceConfirm: () => void;
     wizardState: ReturnType<typeof useQuotationWizardState>;
     ivaRates: any[];
@@ -89,6 +94,9 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
     draft,
     isProcessingOcr,
     onUpload,
+    ocrError = null,
+    onRetryOcr,
+    onDismissOcrError,
     onReplaceConfirm,
     wizardState,
     ivaRates,
@@ -96,7 +104,10 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
     currencies,
     request
 }) => {
-    const { updateDraftHeader, updateDraftItem, removeDraftItem } = wizardState;
+    const { updateDraftHeader, updateDraftItem, removeDraftItem, distributeGlobalDiscountToLines } = wizardState;
+    // v2.249.6 — a global discount is applied only to the quotation total; approval, group and approved amounts are per line.
+    const hasUnallocatedGlobalDiscount = !!draft && (draft.discountAmount || 0) > 0;
+    const uncertainDiscountCount = draft ? draft.items.filter((i: OcrDraftItem) => i.discountUncertain).length : 0;
 
     // Purely derived — no state, no effects. Recomputes on every render from the current
     // supplier and the request's current quotation list, so it naturally updates/disappears
@@ -158,6 +169,49 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                 </p>
             </div>
             
+            {/* v2.249.2 — the failure of the current attempt lives HERE, in the active step (not on the page behind the wizard):
+                business rule vs provider vs network, what to do, a retry that never duplicates the upload, and a sanitized
+                technical line. Rendered before the drop zone so it is the first thing in the scroll area on narrow layouts. */}
+            {!draft && ocrError && (
+                <div
+                    role="alert"
+                    aria-live="assertive"
+                    data-testid="wizard-ocr-error"
+                    data-error-kind={ocrError.kind}
+                    style={{
+                        position: 'sticky', top: 0, zIndex: 1,
+                        display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 8,
+                        background: ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#FFF7ED' : '#FEF2F2',
+                        border: `1px solid ${ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#FED7AA' : '#FECACA'}`,
+                        color: ocrError.kind === 'BUSINESS' || ocrError.kind === 'AUTH' ? '#9A3412' : '#991B1B',
+                    }}
+                >
+                    <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: '0.9rem' }}>{ocrError.title}</div>
+                        <div style={{ fontSize: '0.84rem', overflowWrap: 'anywhere' }}>{ocrError.message}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'inherit', opacity: 0.9 }}>{ocrError.guidance}</div>
+                        <div style={{ fontSize: '0.72rem', opacity: 0.75, overflowWrap: 'anywhere' }}>
+                            Ficheiro: {ocrError.fileName} · {ocrErrorTechnicalLine(ocrError)}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                            {ocrError.retryable && onRetryOcr && (
+                                <button type="button" onClick={onRetryOcr} disabled={isProcessingOcr}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid currentColor', background: 'transparent', color: 'inherit', fontWeight: 700, fontSize: '0.8rem', cursor: isProcessingOcr ? 'not-allowed' : 'pointer' }}>
+                                    {isProcessingOcr ? 'A tentar novamente…' : 'Tentar novamente'}
+                                </button>
+                            )}
+                            {onDismissOcrError && (
+                                <button type="button" onClick={onDismissOcrError} disabled={isProcessingOcr}
+                                    style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid transparent', background: 'transparent', color: 'inherit', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'underline', cursor: isProcessingOcr ? 'not-allowed' : 'pointer' }}>
+                                    Escolher outro ficheiro
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {!draft ? (
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
                     <p style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '16px' }}>Faça upload da cotação (PDF ou Imagem) para iniciar a extração OCR automática.</p>
@@ -299,7 +353,7 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
 
                         {/* Due Date */}
                         <div>
-                            <label style={labelStyle}>Data de Vencimento da Cotação</label>
+                            <label style={labelStyle}>Validade da Cotação (Data de Vencimento)</label>
                             <div style={{ position: 'relative' }}>
                                 <Calendar style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, color: '#94a3b8' }} />
                                 <input
@@ -309,6 +363,12 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                     style={{ ...(!draft.dueDate ? inputError : inputBase), paddingLeft: '34px' }}
                                 />
                             </div>
+                            {/* v2.249.8 — provenance of the validity date (extraction vs Buyer) and its scope: informational, never persisted. */}
+                            {draft.dueDate && (
+                                <div data-testid="quotation-due-date-source" style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '4px', fontWeight: 600 }}>
+                                    {draft.dueDateSource === 'EXTRACTED' ? 'Lida do documento pela extração — confirme com a validade impressa.' : draft.dueDateSource === 'MANUAL' ? 'Introduzida manualmente.' : 'Origem não registada.'} Informativa: não fica guardada com a cotação.
+                                </div>
+                            )}
                             {!draft.dueDate && (
                                 <div style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px', fontWeight: 600 }}>
                                     Informe a data de vencimento da cotação antes de avançar.
@@ -437,12 +497,22 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                                             </td>
 
                                             <td style={{ padding: '8px 12px' }}>
-                                                <FormattedNumberInput
-                                                    value={item.discountAmount}
-                                                    onChange={val => updateDraftItem(idx, 'discountAmount', val, ivaRates)}
-                                                    style={{ ...inlineInputStyle, textAlign: 'right' }}
-                                                    currencyCode={draft.currency}
-                                                />
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                    <FormattedNumberInput
+                                                        value={item.discountAmount}
+                                                        onChange={val => updateDraftItem(idx, 'discountAmount', val, ivaRates)}
+                                                        style={{ ...inlineInputStyle, textAlign: 'right', ...(item.discountUncertain ? { borderBottomColor: '#ef4444', borderBottomWidth: '2px', backgroundColor: 'rgba(239,68,68,0.04)' } : {}) }}
+                                                        currencyCode={draft.currency}
+                                                    />
+                                                    {/* v2.249.6 — the extracted discount and the document's own line total disagree: confirm, never silently rewritten */}
+                                                    {item.discountUncertain && (
+                                                        <span data-testid="discount-uncertain" title={item.ocrImpliedDiscount != null ? `O total da linha impresso no documento implica um desconto de ${formatCurrencyAO(item.ocrImpliedDiscount)} ${draft.currency || ''}; o valor extraído foi mantido. Confirme ou corrija.` : 'Confirme o desconto desta linha.'}
+                                                              style={{ fontSize: '9px', color: '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                            <AlertCircle style={{ width: 10, height: 10, flexShrink: 0 }} />
+                                                            Confirme o desconto{item.ocrImpliedDiscount != null ? ` (documento: ${formatCurrencyAO(item.ocrImpliedDiscount)})` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
 
                                             <td style={{ padding: '8px 12px' }}>
@@ -488,16 +558,46 @@ export const WizardStepDocumentsOcr: React.FC<WizardStepDocumentsOcrProps> = ({
                         </div>
                     </div>
 
+                    {/* v2.249.6 — how the document's header "Desconto Comercial" was read (aggregate of the lines vs document-level) */}
+                    {draft.globalDiscountNote && (
+                        <div data-testid="global-discount-note" style={{ fontSize: '0.75rem', fontWeight: 600, color: draft.globalDiscountKind === 'DOCUMENT_LEVEL' ? '#92400e' : '#475569', padding: '8px 12px', backgroundColor: draft.globalDiscountKind === 'DOCUMENT_LEVEL' ? '#fffbeb' : '#f8fafc', border: `1px dashed ${draft.globalDiscountKind === 'DOCUMENT_LEVEL' ? '#f59e0b' : '#cbd5e1'}`, borderRadius: '6px' }}>
+                            {draft.globalDiscountNote}
+                        </div>
+                    )}
+                    {uncertainDiscountCount > 0 && (
+                        <div data-testid="discount-uncertain-banner" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', padding: '8px 12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px' }}>
+                            {uncertainDiscountCount} linha(s) com desconto por confirmar: o desconto extraído não coincide com o total da linha impresso no documento. Confirme ou corrija o desconto dessas linhas antes de avançar (nada foi alterado automaticamente).
+                        </div>
+                    )}
+
                     {/* Totals Panel */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
-                        <div style={{ width: '220px' }}>
-                            <label style={labelStyle}>Desconto Comercial Global</label>
-                            <FormattedNumberInput
-                                value={draft.discountAmount}
-                                onChange={val => updateDraftHeader('discountAmount', val, ivaRates)}
-                                style={{ ...inputBase, textAlign: 'right' }}
-                                currencyCode={draft.currency}
-                            />
+                        <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ width: '220px' }}>
+                                <label style={labelStyle}>Desconto Comercial Global</label>
+                                <FormattedNumberInput
+                                    value={draft.discountAmount}
+                                    onChange={val => updateDraftHeader('discountAmount', val, ivaRates)}
+                                    style={{ ...inputBase, textAlign: 'right', ...(hasUnallocatedGlobalDiscount ? { borderColor: '#f59e0b' } : {}) }}
+                                    currencyCode={draft.currency}
+                                />
+                            </div>
+                            {/* v2.249.6 — a global discount never reaches the per-line values approval uses: the Buyer distributes it explicitly */}
+                            {hasUnallocatedGlobalDiscount && (
+                                <div data-testid="global-discount-unallocated" role="alert" style={{ padding: '10px 12px', backgroundColor: '#fffbeb', border: '2px solid #f59e0b', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', lineHeight: 1.4 }}>
+                                        Um desconto global entra só no total da cotação. Os valores enviados para aprovação, o total aprovado e o grupo de P.O. são calculados <strong>linha a linha</strong>: enquanto o desconto não estiver nas linhas, a cotação pode ser guardada mas <strong>não pode ser enviada para aprovação</strong>.
+                                    </div>
+                                    <button type="button" data-testid="distribute-global-discount"
+                                            onClick={() => distributeGlobalDiscountToLines(ivaRates)}
+                                            style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: '6px', border: '1px solid #d97706', backgroundColor: '#fff', color: '#92400e', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}>
+                                        Distribuir pelas linhas (proporcional ao valor líquido)
+                                    </button>
+                                    <div style={{ fontSize: '0.68rem', color: '#78350f' }}>
+                                        <strong>Se o documento imprime descontos por linha (valor por artigo), não use esta distribuição:</strong> introduza em cada linha o valor impresso — uma distribuição proporcional dá valores por linha diferentes dos do documento, e esses valores é que são aprovados e entram no grupo de P.O. A distribuição só é adequada a um desconto que exista apenas no resumo do documento; soma exatamente o desconto global, nunca atinge linhas ignoradas / não cotadas ou de valor zero, é recusada se exceder o valor líquido das linhas, e os descontos por linha e o motivo de ajuste pré-preenchido ficam editáveis.
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div style={{ backgroundColor: '#eff6ff', color: '#1e3a8a', padding: '16px', borderRadius: '8px', border: '1px solid #bfdbfe', minWidth: '300px' }}>

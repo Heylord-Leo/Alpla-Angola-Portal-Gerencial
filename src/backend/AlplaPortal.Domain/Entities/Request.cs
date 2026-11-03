@@ -209,4 +209,11 @@ public class Request
 
     // ── Partial Quotation Approval ──
     public ICollection<ApprovalBatch> ApprovalBatches { get; set; } = new List<ApprovalBatch>();
+
+    /// <summary>
+    /// v2.249.2 — explicit reuse authorizations (DEC-147 / D3) of this request's quotation items. Loaded together
+    /// with the batches by every surface that feeds <c>BuyerQueueProjectionBuilder</c>, so the coverage projection
+    /// applies the SAME reuse rule as <c>QuotationItemEligibilityService</c> (inverse navigation only — same FK).
+    /// </summary>
+    public ICollection<QuotationReuseAuthorization> QuotationReuseAuthorizations { get; set; } = new List<QuotationReuseAuthorization>();
 }

@@ -48,6 +48,20 @@ public class SaveQuotationRequestDto
 
     // Financial Integrity Fields (Per-Quotation)
     public decimal? OcrTotal { get; set; }
+    /// <summary>
+    /// v2.249.7 — document-level (summary-only) discount the extraction read in the document's summary, net of IVA: the
+    /// IMMUTABLE OCR baseline of the header for the discount (counterpart of <see cref="OcrTotal"/>). Null/0 when the document
+    /// shows no summary discount or when that figure is the aggregate of the printed line discounts (those travel in the line
+    /// baseline, <see cref="SaveQuotationItemDto.OcrOriginalDiscountAmount"/>; the server classifies the figure as AGGREGATE_OF_LINES
+    /// from the baseline and credits nothing). Reconciliation credits a document-level figure as a document component — whether the
+    /// Buyer keeps it as <see cref="DiscountAmount"/> or distributes it over the lines — so a redistribution of the document's own
+    /// discount is never an unexplained difference; and, once declared, any discount the quotation carries beyond what the document
+    /// grants (the same discount applied twice) or short of it is a residual to justify explicitly. Like OcrTotal it is not
+    /// persisted and not server-verified (no header extraction evidence is stored): declaring it can only tighten the gate, never
+    /// loosen it (an inflated figure is credited only up to the baselined net and the final must still land on the header); omitting
+    /// it restores the pre-v2.249.7 semantics where the Buyer's discount buckets are explained adjustments.
+    /// </summary>
+    public decimal? OcrDocumentDiscountAmount { get; set; }
     public bool FinancialIntegrityOverride { get; set; }
     public string? OverrideJustification { get; set; }
 
@@ -140,6 +154,21 @@ public class QuotationReconciliationDto
     /// an automatically recognized component, never a buyer-entered justification.</summary>
     public decimal DocumentSummaryIvaCredit { get; set; }
 
+    /// <summary>v2.249.7 — the extracted document-level (summary) discount as received, net of IVA (0 when none).</summary>
+    public decimal OcrDocumentDiscount { get; set; }
+    /// <summary>v2.249.7 — NONE | DOCUMENT_LEVEL | AGGREGATE_OF_LINES (an aggregate of the line discounts is never credited twice).</summary>
+    public string OcrDocumentDiscountKind { get; set; } = "NONE";
+    /// <summary>v2.249.7 — signed (≤ 0) effect of the document's own summary discount (net + the IVA that follows it) on the
+    /// reconstructed document total; a document component credited against the residual, never a Buyer adjustment.</summary>
+    public decimal DocumentSummaryDiscountCredit { get; set; }
+    /// <summary>v2.249.7 — discount the quotation carries beyond the OCR line baseline (lines + global), at final rates; ≤ 0.</summary>
+    public decimal DocumentDiscountCarried { get; set; }
+    /// <summary>v2.249.7 — discount the document grants on the considered lines (0 for an aggregate of line discounts); ≤ 0.</summary>
+    public decimal DocumentDiscountExpected { get; set; }
+    /// <summary>v2.249.7 — Carried − Expected: the Buyer's deviation from the document's own discount (negative = more discount
+    /// than the document, e.g. the same discount applied twice). Part of the residual; justified explicitly or not at all.</summary>
+    public decimal DocumentDiscountDeviation { get; set; }
+
     public decimal IgnoredImpact { get; set; }
     public decimal QuantityImpact { get; set; }
     public decimal UnitPriceImpact { get; set; }
@@ -149,8 +178,8 @@ public class QuotationReconciliationDto
     public decimal ManualAdditionsImpact { get; set; }
     public decimal ExplainedLineAdjustments { get; set; }
 
-    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments −
-    /// FinalConsideredTotal − DocumentSummaryIvaCredit).</summary>
+    /// <summary>Signed document residual (OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal −
+    /// DocumentSummaryDiscountCredit − DocumentDiscountDeviation − DocumentSummaryIvaCredit).</summary>
     public decimal ResidualVariance { get; set; }
     public decimal ToleranceApplied { get; set; }
     public bool ResidualExceedsTolerance { get; set; }
@@ -194,6 +223,10 @@ public class SavedQuotationDto
     public bool IsSelected { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public int ItemCount { get; set; }
+    /// <summary>v2.249.4 — lines the supplier actually quoted (reconciliation status other than NOT_QUOTED / IGNORED). "Itens: N" means this.</summary>
+    public int QuotedItemCount { get; set; }
+    /// <summary>v2.249.4 — requested lines recorded as NOT_QUOTED / IGNORED on this document (placeholders, not purchases).</summary>
+    public int NotQuotedItemCount { get; set; }
     /// <summary>§7 — true when any line of this quotation was ever submitted for approval (selected item or candidate of any batch). Locks ordinary edit/delete; the revision/rework flow remains.</summary>
     public bool IsSubmittedForApproval { get; set; }
     public int? SubmittedBatchNumber { get; set; }
@@ -205,6 +238,30 @@ public class SavedQuotationDto
     public string? SupplierRegistrationStatus { get; set; }
 
     public List<SavedQuotationItemDto> Items { get; set; } = new();
+
+    // ── v2.249.5 — lifecycle context (QuotationAdjudicationProjection; read-only, derived from batches/lines/reuse rule) ──
+    /// <summary>OPEN | IN_APPROVAL | AWARDED | NOT_AWARDED | PARTIALLY_HISTORICAL | HISTORICAL_CANCELLED | REJECTED.</summary>
+    public string? LifecycleStatus { get; set; }
+    /// <summary>Quoted items currently awarded (active approved batch item, not released).</summary>
+    public int ActiveAwardedItemCount { get; set; }
+    /// <summary>Quoted items whose award/candidacy was cancelled (released by a P.O.-group cancellation or batch cancelled).</summary>
+    public int HistoricalItemCount { get; set; }
+    public int? HistoricalBatchNumber { get; set; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS when the historical award was released by a P.O.-group cancellation.</summary>
+    public string? HistoricalReleaseKind { get; set; }
+
+    // ── v2.249.6 — line-resolved pricing (QuotationLinePricingPolicy; read-only, derived from the persisted totals) ──
+    /// <summary>False when the quotation carries a global (quotation-level) discount no line reflects, or when the considered
+    /// lines do not add up to <see cref="TotalAmount"/>. Such a quotation cannot be submitted for approval (409
+    /// QUOTATION_PRICING_NOT_LINE_RESOLVED): candidates, group totals and approved amounts are per line.</summary>
+    public bool IsLinePricingResolved { get; set; } = true;
+    /// <summary>GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH | null.</summary>
+    public string? LinePricingReasonCode { get; set; }
+    /// <summary>v2.249.6 — explicit classification (QuotationLinePricingPolicy.Kinds): LINE_RESOLVED | ZERO_VALUE |
+    /// LEGACY_TOTAL_NOT_COMPUTED | GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH.</summary>
+    public string? LinePricingKind { get; set; }
+    /// <summary>Σ LineTotal of the MAPPED / SUBSTITUTE / EXTRA_ITEM lines — what approval would use.</summary>
+    public decimal ConsideredLineTotalSum { get; set; }
 }
 
 public class PurchaseHistoryInsightDto
@@ -278,6 +335,17 @@ public class SavedQuotationItemDto
     public Guid? ReuseAuthorizationId { get; set; }
     /// <summary>Batch that consumed the reuse authorization (provenance after consumption).</summary>
     public Guid? ReuseConsumedFromBatchId { get; set; }
+
+    // ── v2.249.5 — per-item adjudication history (QuotationAdjudicationProjection) ──
+    /// <summary>NOT_QUOTED | NOT_SUBMITTED | IN_APPROVAL | AWARDED | CANDIDATE_NOT_AWARDED | AWARD_CANCELLED | CANDIDATE_CANCELLED | REJECTED.</summary>
+    public string? AdjudicationStatus { get; set; }
+    public int? AdjudicationBatchNumber { get; set; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS for AWARD_CANCELLED / CANDIDATE_CANCELLED released by a P.O.-group cancellation.</summary>
+    public string? AdjudicationReleaseKind { get; set; }
+    /// <summary>What the request LINE did afterwards: REQUOTED_WITH_OTHER | PENDING_REQUOTE | CLOSED_AFTER_APPROVAL | AWARDED_HERE.</summary>
+    public string? LineCurrentState { get; set; }
+    /// <summary>Supplier of the line's current winning quotation when REQUOTED_WITH_OTHER.</summary>
+    public string? LineCurrentSupplierName { get; set; }
 }
 
 /// <summary>Buyer request to authorize reuse of specific quotation items previously used in a CANCELLED batch (Option C).</summary>

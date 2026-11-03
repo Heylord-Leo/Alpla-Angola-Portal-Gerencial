@@ -52,6 +52,50 @@ public class BuyerWorkspaceDto
     public List<BuyerWorkspaceQuotationDto> Quotations { get; set; } = new();
     public List<BuyerWorkspaceBatchDto> Batches { get; set; } = new();
     public List<BuyerWorkspaceSupplierDto> Suppliers { get; set; } = new();
+    // ── Phase 1 P.O. cancellation / return to quotation ──
+    public List<BuyerWorkspacePoGroupDto> PoGroups { get; set; } = new();
+    public ActiveApprovedTotalsDto? ActiveApprovedTotals { get; set; }
+
+    // ── v2.249.2 — quotation window as the SERVER sees it (scalar window OR item-level window, QuotationWindowPolicy) ──
+    /// <summary>True when a new quotation can be registered now (SaveQuotation / ocr-extract / upload would be accepted for the
+    /// open lines). The UI must not re-derive this from the request scalar.</summary>
+    public bool QuotationWindowOpen { get; set; }
+    /// <summary>Why the item-level window is closed when it is (CLOSED_*), null when open or when the scalar window applies.</summary>
+    public string? QuotationWindowClosedReasonCode { get; set; }
+    /// <summary>Request line ids that accept a new quotation right now.</summary>
+    public List<Guid> OpenLineItemIds { get; set; } = new();
+}
+
+/// <summary>One P.O. group of the request as the Buyer sees it, with the server-decided actions (correct / cancel) and blocks.</summary>
+public class BuyerWorkspacePoGroupDto
+{
+    public Guid Id { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int? SupplierId { get; set; }
+    public string? SupplierName { get; set; }
+    public string? CurrencyCode { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? PurchaseOrderNumber { get; set; }
+    public int? ApprovalBatchNumber { get; set; }
+    public string? PaymentConditionCode { get; set; }
+    public int? PlantId { get; set; }
+    public List<int> LineNumbers { get; set; } = new();
+    /// <summary>v2.249.4 — lines the group covered BEFORE a cancellation released them (empty unless cancelled with RESTART_QUOTATION).</summary>
+    public List<int> HistoricalLineNumbers { get; set; } = new();
+    public DateTime CreatedAtUtc { get; set; }
+    public string? RowVersion { get; set; }
+    public Guid? PoResponsibleBuyerId { get; set; }
+    public LastFinanceReturnDto? LastFinanceReturn { get; set; }
+    public PoGroupCancellationDto? Cancellation { get; set; }
+    /// <summary>v2.249.2 — WAITING_PO only: the group awaits its FIRST P.O. (registration on the request page). Never "correction".</summary>
+    public bool CanRegisterPo { get; set; }
+    /// <summary>WAITING_PO_CORRECTION only (returned by Finance): the correction tool applies. v2.249.2: no longer true for WAITING_PO.</summary>
+    public bool CanCorrectPo { get; set; }
+    public bool CanCancel { get; set; }
+    public string? CancelBlockCode { get; set; }
+    public string? CancelBlockMessage { get; set; }
+    public bool FinanceConfirmationWouldBeRequired { get; set; }
+    public PriorEcfConfirmationDto? PriorEcfConfirmation { get; set; }
 }
 
 public class BuyerWorkspaceCoverageDto
@@ -97,7 +141,10 @@ public class BuyerWorkspaceQuotationDto
     public string? SupplierName { get; set; }
     public string? DocumentNumber { get; set; }
     public DateTime? DocumentDate { get; set; }
+    /// <summary>v2.249.4 — lines the supplier actually quoted (NOT_QUOTED / IGNORED placeholders excluded).</summary>
     public int ItemsQuotedCount { get; set; }
+    /// <summary>v2.249.4 — requested lines recorded as not quoted / ignored on this document.</summary>
+    public int ItemsNotQuotedCount { get; set; }
     public string? Currency { get; set; }
     public decimal TotalAmount { get; set; }
     public int DocumentCount { get; set; }   // proforma attachment presence (0/1)
@@ -106,6 +153,11 @@ public class BuyerWorkspaceQuotationDto
     public bool IsSubmittedForApproval { get; set; }
     public int? SubmittedBatchNumber { get; set; }
     public string? SubmissionLockReason { get; set; }
+    /// <summary>v2.249.2 — items of this quotation that were candidates/winners of a released or cancelled batch item and need an
+    /// explicit reuse authorization before entering a new batch (DEC-147 / D3). Guidance only; the authorization lives in the classic tools.</summary>
+    public int ReuseBlockedItemCount { get; set; }
+    /// <summary>v2.249.2 — items with an active, unconsumed reuse authorization (selectable again).</summary>
+    public int ReuseAuthorizedItemCount { get; set; }
 }
 
 public class BuyerWorkspaceBatchDto
@@ -126,6 +178,11 @@ public class BuyerWorkspaceBatchDto
     /// exists. Read-only display detail; null for batches with no open V2 cycle (legacy or never
     /// adjusted). Does NOT expose resolutions/field-changes/candidate-reviews (later phases).</summary>
     public BuyerWorkspaceBatchAdjustmentDto? Adjustment { get; set; }
+    // ── Phase 1 P.O. cancellation (D5/D7): batch stays APPROVED; released items shown explicitly ──
+    public int ReleasedItemCount { get; set; }
+    public List<int> ReleasedLineNumbers { get; set; } = new();
+    public List<CurrencyAmountDto> ActiveTotalsByCurrency { get; set; } = new();
+    public List<CurrencyAmountDto> ReleasedTotalsByCurrency { get; set; } = new();
 }
 
 /// <summary>Adjustment V2 (Phase 3) — read-only projection of one OPEN adjustment cycle for the

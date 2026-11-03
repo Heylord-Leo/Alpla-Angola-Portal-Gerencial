@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace AlplaPortal.Application.DTOs.Requests;
@@ -123,6 +124,47 @@ public class OcrHeaderSuggestionsDto
     /// behalf. Null when the extraction could not identify the document.
     /// </summary>
     public OcrDocumentClassificationDto? DocumentClassification { get; set; }
+
+    // ── v2.249.4 — P.O. document identification (shared by "Registrar P.O." and "Corrigir P.O.") ──
+    /// <summary>The document's main heading as printed.</summary>
+    public OcrValueDto<string>? DocumentTitle { get; set; }
+    /// <summary>Other document numbers mentioned in the body (never the document's own number).</summary>
+    public List<string>? ReferencedDocumentNumbers { get; set; }
+    /// <summary>
+    /// Server-side verdict of <c>PurchaseOrderDocumentIdentifier</c>: is this a purchase order, and which one. The same
+    /// pure rule is re-applied by <c>register-po</c> over the facts the client submits, so the UI shows what the server
+    /// will enforce.
+    /// </summary>
+    public OcrPurchaseOrderIdentificationDto? PurchaseOrderIdentification { get; set; }
+}
+
+/// <summary>v2.249.4 — DTO mirror of <c>PoDocumentIdentification</c> (Domain).</summary>
+public class OcrPurchaseOrderIdentificationDto
+{
+    /// <summary>IDENTIFIED_PO | IDENTIFIED_OTHER_TYPE | UNCERTAIN.</summary>
+    public string Verdict { get; set; } = string.Empty;
+    public string ReasonCode { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string? Family { get; set; }
+    public string? FamilyLabel { get; set; }
+    public string? Reference { get; set; }
+    public string? Canonical { get; set; }
+    public List<OcrPurchaseOrderCandidateDto> IdentityCandidates { get; set; } = new();
+    public List<OcrPurchaseOrderCandidateDto> BodyReferences { get; set; } = new();
+    public string? OtherTypeCode { get; set; }
+    public string? OtherTypeLabel { get; set; }
+    public bool RequiresExplicitConfirmation { get; set; }
+    public bool IsBlocked { get; set; }
+}
+
+public class OcrPurchaseOrderCandidateDto
+{
+    public string Reference { get; set; } = string.Empty;
+    public string Canonical { get; set; } = string.Empty;
+    public string Family { get; set; } = string.Empty;
+    public string FamilyLabel { get; set; } = string.Empty;
+    /// <summary>DOCUMENT_NUMBER | TITLE | BODY_REFERENCE.</summary>
+    public string Source { get; set; } = string.Empty;
 }
 
 public class OcrLineItemSuggestionDto

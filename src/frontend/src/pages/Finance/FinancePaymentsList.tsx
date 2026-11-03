@@ -3,7 +3,8 @@ import { api } from '../../lib/api';
 import { FinanceObligationsResponseDto, FinanceObligationDto, FinanceObligationContainerDto, FinanceCurrencyAmountDto } from '../../types';
 import { useSearchParams } from 'react-router-dom';
 import { Check, Clock, Search, X, CalendarClock, AlertTriangle, FileText, CreditCard, AlertCircle, CheckCircle2, Eye, MessageSquare, StickyNote, XCircle, RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { FinanceActionModal, FinanceActionType } from '../../components/modals/FinanceActionModal';
+import { FinanceActionModal, FinanceActionType, FinanceActionPayload } from '../../components/modals/FinanceActionModal';
+import { PoCancellationReviewPanel } from '../../components/Finance/PoCancellationReviewPanel';
 import { logger } from '../../lib/logger';
 import { FeedbackType } from '../../components/ui/Feedback';
 import { PageContainer } from '../../components/ui/PageContainer';
@@ -137,7 +138,7 @@ export default function FinancePaymentsList() {
         setFeedback({ type: 'success', message: null });
     };
 
-    const handleConfirmAction = async (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => {
+    const handleConfirmAction = async (action: FinanceActionType, payload: FinanceActionPayload) => {
         if (!actionModal.requestId) return;
         setProcessing(true);
         setFeedback({ type: 'success', message: null });
@@ -164,7 +165,8 @@ export default function FinancePaymentsList() {
                 if (isAdvance) await api.requests.confirmAdvancePayment(actionModal.requestId, { requestPoGroupId: actionModal.groupId!, actualPaidAmount: actualPaidAmount || 0, paidDate: paidDate!, comment: payload.notes || 'Adiantamento liquidado via portal', paymentProofAttachmentId: attachmentId });
                 else await api.finance.markAsPaid(actionModal.requestId, actionModal.groupId!, attachmentId!, actualPaidAmount!, paidDate!, payload.notes || 'Liquidado via portal');
             } else if (action === 'RETURN' && payload.notes) {
-                await api.finance.returnForAdjustment(actionModal.requestId, payload.notes, actionModal.groupId ?? undefined);
+                // Phase 1 P.O. cancellation: forward the return classification (kind + optional structured reason).
+                await api.finance.returnForAdjustment(actionModal.requestId, payload.notes, actionModal.groupId ?? undefined, payload.returnKind, payload.returnReasonCode);
             } else if (action === 'NOTE' && payload.notes) {
                 await api.finance.addNote(actionModal.requestId, payload.notes);
             } else if (action === 'CANCEL_SCHEDULE' && payload.notes) {
@@ -293,6 +295,10 @@ export default function FinancePaymentsList() {
                 </div>
                 );
             })()}
+
+            {/* ── Phase 1 P.O. cancellation (D12): ECF confirmations pending/rejected for Finance, above the obligations.
+                   Self-contained (own fetch of GET finance/po-cancellations?status=OPEN; refetches after each decision). ── */}
+            <PoCancellationReviewPanel plantId={plantId} onDecision={(msg) => setFeedback({ type: 'success', message: msg })} />
 
             {/* ── Obligation containers ── */}
             {data.pagedResult.items.length === 0 ? (

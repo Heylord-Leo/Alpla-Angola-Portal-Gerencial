@@ -2436,3 +2436,223 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
 - **Decision:** Replaced the blanket check with `Test-ResponsibleUserIdSafety` (`scripts/db/migration-range.ps1`, pure/DB-independent, unit-tested): (1) a **position layer** attributes every occurrence to its owning migration (nearest preceding EF idempotent guard marker) and rejects any occurrence from a migration positioned after the column-dropping migration outright; (2) a **pattern layer** rejects only genuinely dangerous SQL shapes (`ADD`, `CREATE INDEX` on it, `ADD CONSTRAINT`/FK against it, `ALTER COLUMN`, `UPDATE`/`INSERT` writing into `Departments.ResponsibleUserId` itself) regardless of position. Added `Test-ModelSnapshotNoLegacyProperty` as a companion static check confirming the current EF model no longer defines the property, scoped to the entity's block so an unrelated same-named-substring property elsewhere (e.g. `Request.CurrentResponsibleUserId`) is never a false positive.
 - **Consequences:** the real, legitimate incremental script now passes; a future migration that tried to recreate, repopulate, index, or reference the dropped column after its removal is still caught, at the specific offending migration. All other DEC-145 protections (strict prefix validation, exact-set MigrationId comparison, `QUOTED_IDENTIFIER` handling, abort-before-`sqlcmd`) are unchanged.
 - **Related:** [[DEC-145]], `scripts/db/migration-range.Tests.ps1` (29 tests), `scripts/db/apply-migrations.ps1`.
+
+## DEC-155 — The Typed P.O. Number Is Reviewed Against the Document on Every Input; Print View Line Values Are the Requester's Estimate and the Approved Candidate Value; The Quotation Validity Date Is Copied, Never Derived (v2.249.8)
+
+- **Date:** 2026-11-03
+- **Status:** Accepted (implemented in v2.249.8; browser validation of the three changes, ECF/ECF11 recognition and the validity-date extraction pending; the pre-allocation submission block passed on REQ-631 under v2.249.7)
+- **Context:** The manual TEST validation of v2.249.7 on `REQ-03/11/2026-630` left three findings. (1) In "Registrar P.O." the
+  Buyer replaced the identified number `ECF10 2026/9630` with "AAAAAA": the wizard showed only "Introduzido manualmente", no
+  divergence, optional comment, button enabled — the client computed its divergence set once at extraction over amount / supplier
+  only; the server rule (4) of `register-po` (number vs evidence, `400 OCR_MISMATCH` until override + justification) existed but was
+  never exercised manually. (2) The Print View printed "Preço unit. 0,00 / Total 0,00" for both lines of a request approved at
+  61.560,00: the fields are the request line's own values (a QUOTATION request is created with 0; the approval never writes them),
+  shown unlabelled as if they were prices. (3) The wizard's quotation validity date differed between imports of the same PDF
+  (30/11/2026 printed, 01/12/2026 once shown): the value is the provider's `dueDate` copied verbatim, and the prompt defined that
+  field as the *payment* due date; the value is wizard-only and never persisted.
+- **Decision:**
+    1. **The P.O. number divergence is a client-side mirror of the server rule, evaluated from the current input on every render**
+       (`describePoNumberDivergence`: canonical identity for an IDENTIFIED document, loose comparison for an UNCERTAIN one with a
+       letter-bearing non-fiscal reading, nothing to compare otherwise) and merged into the **reviewed set** that drives the panel,
+       the acknowledgement checkbox, the mandatory justification, the submit gate and the payload (`withNumberDivergence`). The
+       number field shows an inline warning naming the typed and the document numbers with "Usar número extraído"; restoring the
+       extracted number clears exactly that divergence. **Identification and registration consistency are separate questions**: an
+       identified P.O. keeps its verdict and states the mismatch. The server is unchanged and remains authoritative; its enforcement
+       is proven by real-endpoint tests on server-held evidence bound to the exact file, for the initial registration and the
+       correction (refusal leaves registration, group pointer / status / number and history unchanged).
+    2. **Print View line values**: the requester's `unitPrice` / `totalAmount` are printed only when given and labelled as the
+       requester's estimate (a 0 placeholder is omitted); the approved value of a line is derived from the latest APPROVED batch's
+       selected candidate snapshot (released items excluded; legacy batches from the Buyer-selected quotation item; CANCEL_ITEMS
+       lines labelled historical), each line in its own currency — never a group total divided over lines, never a cross-currency
+       sum, no request-line value rewritten, no snapshot recalculated.
+    3. **The quotation validity date is copied, never derived**: the provider prompt defines `dueDate` per document type (invoice:
+       payment due date; quotation / proposal: the printed validity date), strictly YYYY-MM-DD, `null` when only a duration is
+       printed, never computed from the document date or today. The wizard's date alias is a pure, tested function (no default, no
+       timezone conversion, ISO date-time sliced to its calendar day); the draft records the provenance (EXTRACTED / MANUAL) and both
+       the document step and the final review say so and state that the value is informational and not saved with the quotation.
+       The cause of the observed variance is **not claimed**: the deterministic path is proven stable, provider variance and a manual
+       entry remain hypotheses for the manual retest.
+- **Consequences:** see `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`. No migration. The validity date stays
+  unpersisted (persisting it is a separate decision with a migration). Older clients still meet the server's `OCR_MISMATCH`.
+
+## DEC-154 — Line-Resolved Pricing Is a Precondition of Approval; Discounts Counted Once at the Line; Refused P.O. Documents Show Divergences as Diagnostics Only (v2.249.6, unreleased)
+
+- **Date:** 2026-11-02
+- **Status:** Accepted (implemented locally, unreleased; awaiting manual validation)
+- **Context:** The manual TEST validation of v2.249.5 on `REQ-21/10/2026-595` (LUANDAY proforma with per-line commercial discounts,
+  payable 345.775,50) approved a batch and activated a P.O. group at **416.850,00** — the undiscounted line values with IVA — while
+  the quotation card showed 345.775,50. The quotation had been saved with the 67.690,00 discount at quotation level
+  (`Quotation.DiscountAmount`) and lines without discount; that discount enters only the quotation totals, whereas the candidate
+  snapshot, the group total and the approved amount are frozen per line and have no field for it. Separately, the P.O. wizard, after
+  correctly refusing the same proforma as a P.O., still showed the divergence-acceptance checkbox and demanded a justification, and
+  pre-selected "Pós-Pago" from the proforma's "C001 - pagamento imediato s/desconto".
+- **Decision:**
+    1. **A quotation is submittable for approval only when its pricing is line-resolved** — one pure rule
+       (`QuotationLinePricingPolicy`): no unallocated global discount (`GLOBAL_DISCOUNT_UNALLOCATED`) and considered lines
+       (MAPPED / SUBSTITUTE / EXTRA_ITEM) adding up to `TotalAmount` within 1,00 (`LINE_TOTAL_MISMATCH`; a never-computed total is
+       not judged). `CreateBatch` and `UpdateBatch` refuse `409 QUOTATION_PRICING_NOT_LINE_RESOLVED` before any write, for whole and
+       partial batches alike (the share of a document-level discount in a partial batch is undefined). The verdict is exposed on
+       `SavedQuotationDto` and shown on every Buyer surface; the batch modal never offers such lines.
+    2. **Nothing is redistributed silently.** A genuine document-level (summary-only) discount is moved to the lines only by the
+       Buyer's explicit action ("Distribuir pelas linhas": proportional to line nets, largest-remainder rounding, exact sum,
+       per-line reason pre-filled and editable; only considered lines with a positive net receive a share; refused above the
+       eligible net; zeroes the global discount so it can never be applied twice); the server recomputes from the lines and
+       refuses a global discount above the remaining net (`400 QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET`) or a line discount above
+       the gross. **When the document prints per-line discount amounts, those amounts are entered per line — the proportional
+       allocation is inappropriate there** (same total, different line values, and the line values are what approval freezes).
+       Candidate totals are never forced to a document total. Zero totals are classified explicitly (`ZERO_VALUE` vs
+       `LEGACY_TOTAL_NOT_COMPUTED`, the latter impossible for the current write path and kept submittable for compatibility).
+    3. **Discounts are counted once, at the line, and never dropped silently.** The draft keeps the extracted line discount and flags
+       the line for confirmation when the document's own line total contradicts it (the old "Strategy A" overwrite is gone); the
+       summary "Desconto Comercial" equal to the sum of the line discounts is the aggregate, not a second discount; the extraction
+       prompt states both rules.
+    4. **Historical snapshots are never recalculated** (candidates, group totals, approved amounts) and **submitted quotations are
+       never edited** (they are locked evidence); existing inconsistent requests follow the supported paths case by case (design
+       doc §6): a corrected replacement quotation — rework revision while the batch is in adjustment, or P.O.-group cancellation
+       / return to quotation and a new quotation on the released lines — followed by fresh approvals; never an automatic repair.
+    5. **A document definitively refused as a P.O.** (IDENTIFIED_OTHER_TYPE or a server `DOCUMENT_*` refusal) shows amount/supplier
+       divergences as **diagnostic information only** — no acceptance control, no mandatory justification, "escolha outro ficheiro" —
+       in both wizards; the UNCERTAIN document keeps the justified fallback; the server refusal is unchanged.
+    6. **The extraction's payment-condition classification is a proposal, not a selection:** never applied from a refused document,
+       never for immediate-payment wording ("pagamento imediato", "pronto pagamento", …), never on low confidence, and an advance
+       percentage is never inferred from such wording. The business meaning of Primavera condition C001 is left to the owner;
+       until decided, immediate-payment wording always requires the Buyer's own selection.
+- **Consequences:** see `docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md`. No migration; no configuration
+  change. Read-only diagnostic for the persisted REQ-595 facts: `scripts/db/quotation-discount-pricing-req595-readonly.sql`.
+  ~~Known limitation kept: summary-only discounts are still not credited by the reconciliation calculator (residual to justify).~~
+  Resolved by the amendment below.
+- **Amendment (2026-11-03, v2.249.7 — REQ-03/11/2026-630, fixture K blocked at the final review; design doc §9):**
+    1. **The document's own summary discount is a document component of the reconciliation, like the summary IVA.** The
+       extraction's document-level discount is an immutable header baseline (`OcrDraft.ocrDocumentDiscountAmount` →
+       `SaveQuotationRequestDto.OcrDocumentDiscountAmount`, DTO-only like `OcrTotal`, not persisted, no migration) and
+       `QuotationReconciliationCalculator` credits it (`DocumentSummaryDiscountCredit`: the discount, never beyond the baselined
+       net, plus the IVA that follows it — proportional to every baselined line's net, the server's own rule for a quotation-level
+       discount; lines without an extracted rate take their reduced net into the summary-IVA credit). The residual of a document
+       whose discount exists only in its summary is therefore **zero whether the Buyer keeps the discount at quotation level or
+       distributes it over the lines**: the allocation is a redistribution of the same discount, not a commercial change, and its
+       audit is the per-line change against the immutable baseline with the pre-filled reason.
+    2. **A summary figure equal (within 1,00) to the sum of the extracted line discounts is their aggregate** and is never credited a
+       second time (fixture J unchanged); beyond that it is a document-level discount on top of the line discounts.
+    3. **No numeric guard, no tolerance change, no fixture-specific rule:** a summary discount the header is not net of, an omitted
+       OCR line, a payload without the baseline (older client) or a summary discount above the baselined net still surface as a
+       residual to justify.
+    4. **Once the document's summary figure is declared, the quotation's discount must match the document's (review 2026-11-03,
+       design doc §9.9).** The discount carried beyond the OCR line baseline (line changes + global, at the final rates on the
+       considered lines) is compared with what the document grants on those lines (proportional share of its summary discount; 0
+       for an aggregate already in the lines; an ignored line takes its share away) and the deviation is part of the residual: the
+       same discount applied twice, or applied short, is justified explicitly (residual justification, audited with carried /
+       granted / deviation) or refused — never acknowledged by a pre-filled per-line reason. The declared figure can therefore only
+       tighten the gate (an inflated figure is credited only up to the baselined net and the final must still land on the header);
+       omitting it keeps the previous semantics; the wizard declares the figure for an aggregate summary too. `NONE` (no summary
+       discount read) is unchanged — extending the rule there is a separate decision.
+    5. **The header baseline is client-supplied and not server-verifiable** (no header extraction evidence is stored for quotations;
+       `OcrTotal` and the line baselines are in the same class). Not a new bypass: a fabricated figure alone explains nothing, and a
+       client able to shape the payload could already silence the gate by omitting or altering `OcrTotal`. Server-held header
+       evidence (mirror of `PoDocumentExtraction`, migration) is the follow-up that would close it — design doc §9.8.
+    6. The residual-justified audit row records the document discount, its kind, its credit, the summary-IVA credit and the
+       carried / granted / deviation figures next to the signed residual.
+
+## DEC-153 — Registered P.O. Evidence Is Never Deleted; Quotation Lifecycle Context and Per-Item Price Comparison (v2.249.5)
+
+- **Date:** 2026-10-30
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** The manual TEST validation of v2.249.4 on `REQ-28/10/2026-628` found (1) the correction wizard's "Remover P.O atual"
+  soft-deleted the registered P.O. file of a group returned for correction (the delete endpoint gated P.O. files by status only),
+  (2) the saved-quotation list showed a cancelled adjudication (TREVOTECH) like an open quotation, and (3) "MENOR VALOR" compared
+  the total of a 1-item re-quotation with the total of a cancelled 2-item adjudication.
+- **Decision:**
+    1. **Registered P.O. evidence is never deleted, soft or hard, whatever the request/group status** — one pure rule
+       (`PoEvidenceProtection`): voided, superseded, the group's current document, or (legacy groups without pointer) a
+       `REGISTER_PO`/`REREGISTER_PO` of the owning group recorded at/after the upload (rows naming no group count for every group).
+       `DELETE /api/v1/attachments/{id}` answers `409 PO_EVIDENCE_PROTECTED`; the details DTO exposes `isPoEvidence` with the same
+       rule. Replacement is **supersession by `RegisterPo`** (DEC-152), never deletion. Only a temporary, never-registered upload
+       (refused or abandoned wizard attempt) remains deletable inside the status window (owning group `WAITING_PO` added), and the
+       wizards clean up only that upload (clear file / cancel), never after a successful registration. The deletion that happened in
+       TEST was a soft delete (row hidden, bytes kept); un-hiding it is a separate, explicitly authorized repair.
+    2. **Lifecycle context is derived, per item, from stored relationships only** (`QuotationAdjudicationProjection`: batches with
+       items + candidates, release stamps, request lines, the DEC-147/D3 reuse rule) and exposed as `adjudicationStatus` /
+       `lineCurrentState` per item and `lifecycleStatus` per quotation. The historical adjudication status is kept apart from the
+       current reuse eligibility (`isReuseBlocked` / `isReuseAuthorized`, unchanged). A cancellation of one item's award never
+       classifies the whole quotation; a NOT_QUOTED placeholder is never called "Ignorada". A historical quotation cannot be selected
+       from the card.
+    3. **"Menor valor" is a per-request-item comparison** on the unit price among current candidates sharing currency and unit
+       (ties mark every lowest candidate; different quantities flagged, not compared away); a card-level "Menor valor" exists only on
+       identical line scope / quantities / units / currency; otherwise a per-item indicator plus a scope notice. Display only: the
+       Area approver's per-item award rules (`WizardStepAward`) are untouched; candidate batches keep suppressing the card claim.
+- **Consequences:** see `docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`. No migration. The legacy history heuristic is
+  protective by design (a false positive keeps a file; it never loses one).
+- **Amendment (2026-10-30, boundary pass, same release — doc §9):**
+    1. `register-po` and `DELETE` of a P.O. file are serialized on the file row (`PoDocumentRowLock`: `UPDLOCK, HOLDLOCK` inside the
+       transaction, then re-read). A registration never commits with a file deleted meanwhile (`409 PO_DOCUMENT_CONCURRENT_CHANGE`,
+       nothing written); a delete never commits against a file registered meanwhile (409 `PO_EVIDENCE_PROTECTED`). Proven on SQL Server.
+    2. A group that has a pointer never falls back to the timestamp heuristic: a live file that is not the pointer, not superseded and
+       not voided is a temporary upload (deletable). The heuristic (legacy groups only) keeps its 1 s tolerance: a tie is protected.
+    3. Selection from the card follows the D3 reuse eligibility, not the historical label: an explicitly authorised reuse is
+       selectable; a quotation whose every item is reuse-blocked is refused by the server (`409 QUOTATION_REUSE_NOT_AUTHORIZED`).
+    4. Unequal quantities never yield an unqualified "Menor valor": the line becomes informational (`QUANTITY_DIFFERS`), the card
+       claim keeps requiring identical lines, quantities, units and currency.
+    5. A wizard clean-up the server refuses as registered evidence is "kept", never a failure: a registration that succeeded while
+       the client saw a network error is neither undone nor misrepresented.
+
+## DEC-152 — P.O. Document Identification, Correction Number and Document Supersession (v2.249.4)
+
+- **Date:** 2026-10-29
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** The manual TEST validation of v2.249.3 on `REQ-28/10/2026-628` registered the supplier's quotation PDF as the
+  P.O. (the only check was supplier + amount), the correction wizard could not change the P.O. number (the quotation number
+  survived the correction), a corrected P.O. left two "P.O." files with no current one, a cancelled group still carried an active
+  final-invoice obligation, and the Print View showed date-only fields one day earlier on a UTC+1 browser.
+- **Decision:**
+    1. **One pure identification rule** (`PurchaseOrderDocumentIdentifier`) for both P.O. wizards, computed by the request-scoped
+       `po-document-extract` endpoint — which PERSISTS the server's own reading (`PoDocumentExtraction`, bound to the request and to the
+       SHA-256 the server computes) — and re-derived by `register-po` from that evidence alone, looked up by the registered file's
+       server-computed hash (the DTO carries no extraction facts; no evidence for the exact file = UNCERTAIN): the document's identity
+       is its own number + heading;
+       only `ECF11` (Serviços), `ECF10` (Materiais diversos) and `ECF` (Material de stock) are recognised, longest family first
+       with word boundaries (no substring classification: `ECF99` is never generic `ECF`); body references never identify.
+       Verdicts: IDENTIFIED_PO; IDENTIFIED_OTHER_TYPE (positively a quotation / proforma / invoice without any P.O. identity →
+       refused server-side, no override — matching supplier/amount prove nothing); UNCERTAIN (several identities, conflict, body
+       references only, unrecognised prefix, no identifier, no extraction → explicit Buyer confirmation + justification, audited —
+       the existing override policy, never a blanket block). A submitted number that differs from the identified reference is an
+       OCR divergence under the existing override. Extraction-independent guard: a P.O. file byte-identical to a QUOTATION /
+       PROFORMA document of the request is refused at upload and at registration.
+    2. **A correction always states the P.O. number** it confirms or replaces (`400 PO_NUMBER_REQUIRED`); the UI shows the current
+       number and the number detected in the replacement document separately and, when they differ, requires an explicit choice
+       (use detected / type another / keep current) before submission; the server treats a kept number that differs from what its
+       evidence read as an OCR divergence (override + justification); a changed number is audited (`PO_NUMBER_CORRECTED`: old → new,
+       source, files).
+    3. **Document supersession is a state of its own** (`SupersededAtUtc/By`, `RequestPoGroup.CurrentPoAttachmentId`, additive
+       migration `20261029140552_AddPoDocumentSupersessionAndExtraction`), distinct from voiding (DEC-150) and deletion: a replaced P.O. file stays listed and downloadable
+       as history, is never the current document and is never labelled as a cancelled ECF. One reader rule (`PoDocumentSelection`).
+    4. **A CANCELLED P.O. group (DEC-151) has no active final-invoice obligation**: derived in the obligations read model
+       (`CANCELLED`, expected/remaining null, historical total kept, excluded from the rollup) and enforced on the short-close and
+       invoice write endpoints; cached columns are never rewritten (evidence).
+    5. **Date-only business fields are calendar dates** (`formatCalendarDate`: string slicing, no timezone) and **offsetless backend
+       instants are UTC** in the shared instant formatters (`parseBackendInstant`): the backend serializes `datetime2` as
+       `DateTimeKind.Unspecified`; neither the calendar day of a date-only field nor the UTC time of an audit timestamp shifts with the
+       browser offset.
+    6. Finance review chronology is derived (a review older than the current declaration is the *previous* review);
+       `NotifyOnPoCancelled` is exposed on the supported AP configuration path. Synthetic test documents should use a recognised
+       series with a fictitious sequential; `ECF99` stays unrecognised on purpose.
+- **Consequences:** see `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`. The server does not re-run OCR at registration: it trusts only the
+  evidence it persisted itself for the exact bytes being registered; a file never extracted can still be registered after the explicit,
+  audited confirmation. `Down` of the migration must never run.
+
+## DEC-151 — P.O. Group Cancellation / Return to Quotation After Final Approval (phase 1)
+
+- **Date:** 2026-10-28
+- **Status:** Accepted (implemented, unreleased)
+- **Context:** A P.O. group whose order was cancelled after final approval (REQ-27/09/2026-483, Finance return "PEDIDO
+  CANCELADO", ECF annulled outside the Portal) had no supported exit: `PoGroupStatuses.Cancelled` was never written, batch
+  cancel refuses APPROVED, request cancel refuses after Buyer processing, correction cannot change supplier or amount.
+- **Decision:** see `docs/PO_GROUP_CANCELLATION.md` §2 (D1–D16). Key invariants: the group becomes CANCELLED and is never
+  mutated again; the quotation, the APPROVED batch (items marked released), the voided P.O. file and the history are
+  preserved; the Buyer's ECF declaration and Finance's confirmation are separate human statements (the Portal never claims
+  to annul or verify Primavera documents); a replacement P.O. is blocked server-side (RegisterPo transaction +
+  UPDLOCK/HOLDLOCK on the cancellation rows, same check on P.O. upload and advance endpoints) until Finance confirms;
+  historical approved totals are never rewritten and active figures are per currency; legacy returns are "não classificado",
+  never inferred; PAYMENT-type requests are out of phase 1.
+- **Consequences:** additive migration `20261028082044_AddPoGroupCancellation`; new `IPoGroupCancellationService`,
+  `IPriorEcfConfirmationGuard`; events PO_GROUP_CANCELLED / PO_CANCELLATION_CONFIRMED / PO_CANCELLATION_DECLARATION_REJECTED;
+  `QuotationItemEligibilityService` treats released approved items like cancelled-batch items (DEC-147);
+  `DepartmentalAmountResolver` gains the `ActiveApproved` source. Rollback is application-only; `Down` must never run.

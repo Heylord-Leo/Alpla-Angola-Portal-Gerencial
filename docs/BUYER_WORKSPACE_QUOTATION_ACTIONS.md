@@ -444,3 +444,11 @@ not persisted; new history/field-change rows use existing tables).
 limited to the persisted pointers and action codes listed above; the legacy request-level approval path keeps its own
 history codes (`AREA_APPROVED`…), covered by the explicit list but not re-verified live; the REQ-271 duplicate-account
 explanation (§6) is unconfirmed until the session diagnostics are run.
+
+## 9. "Cancelar P.O." — cancellation / return to quotation after final approval (working tree, unreleased, 2026-10-28)
+
+The Workspace tab "Grupos P.O." lists the request's P.O. groups with the last Finance return (kind "não classificado" for
+returns made before the feature), the server-decided actions "Corrigir P.O." / "Cancelar P.O." (`canCancel` +
+`cancelBlockMessage`, e.g. the ORDERED investigation message), the cancellation record (Buyer declaration and Finance
+confirmation shown apart), and the D4 banner when the replacement P.O. is blocked. Header action `CANCEL_PO_GROUP` appears
+beside `CORRECT_PO` for returned groups. Full reference: `docs/PO_GROUP_CANCELLATION.md`.

@@ -208,6 +208,9 @@ public static class RequestConstants
         public const string NotQuotedAccepted = "NOT_QUOTED_ACCEPTED";
         /// <summary>Buyer closed this item without quotation (reason + justification recorded in history). Terminal.</summary>
         public const string ClosedNotQuoted = "CLOSED_NOT_QUOTED";
+        /// <summary>Phase 1 P.O. cancellation (CANCEL_ITEMS): approved line closed because its P.O. group was cancelled.
+        /// Terminal for the quotation lifecycle; the line keeps its selected quotation item and group pointer as evidence.</summary>
+        public const string CancelledAfterApproval = "CANCELLED_AFTER_APPROVAL";
     }
 
     /// <summary>
@@ -414,6 +417,13 @@ public static class RequestConstants
         public const string DivergenceDetected = "DIVERGENCE_DETECTED";
         /// <summary>Cumulative coverage complete, or Finance approved a short close.</summary>
         public const string Satisfied = "SATISFIED";
+
+        /// <summary>
+        /// DERIVED ONLY (never persisted): the P.O. group itself is CANCELLED (DEC-151), so no operation-invoice
+        /// obligation is active any more. Neither blocking nor satisfied — the group is history. The cached column
+        /// keeps its pre-cancellation value as historical evidence and is not compared for drift (v2.249.4).
+        /// </summary>
+        public const string Cancelled = "CANCELLED";
 
         /// <summary>States in which the operation-invoice dimension counts as done.</summary>
         public static readonly string[] SatisfiedStates =

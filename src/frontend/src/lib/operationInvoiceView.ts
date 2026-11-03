@@ -26,7 +26,9 @@ const AGGREGATE_STATUS_LABELS: Record<string, StatusPresentation> = {
     PENDING_VALIDATION: { label: 'Fatura em Validação', severity: 'info' },
     PARTIALLY_INVOICED: { label: 'Parcialmente Faturado', severity: 'warning' },
     SATISFIED: { label: 'Fatura Final Completa', severity: 'success' },
-    DIVERGENCE_DETECTED: { label: 'Divergência em Análise', severity: 'error' }
+    DIVERGENCE_DETECTED: { label: 'Divergência em Análise', severity: 'error' },
+    // v2.249.4 — derived only: the P.O. group was cancelled (DEC-151); nothing is owed, nothing can be proposed.
+    CANCELLED: { label: 'Grupo Cancelado — sem obrigação', severity: 'muted' }
 };
 
 /**
@@ -180,9 +182,15 @@ export function coverageView(obligation: OperationInvoiceObligationDto): Coverag
     };
 }
 
+/** v2.249.4 — a cancelled group (DEC-151) is history: never allocatable, never proposable, never "classification pending". */
+export function isCancelledGroupObligation(obligation: OperationInvoiceObligationDto): boolean {
+    return obligation.groupCancelled === true || obligation.derivedStatus === 'CANCELLED';
+}
+
 /** Groups the allocation wizard may target: backend obligation eligibility, mirrored for UX only. */
 export function isGroupAllocatable(obligation: OperationInvoiceObligationDto): boolean {
-    return obligation.requiresOperationInvoice &&
+    return !isCancelledGroupObligation(obligation) &&
+        obligation.requiresOperationInvoice &&
         obligation.derivedStatus !== 'NOT_REQUIRED' &&
         obligation.derivedStatus !== 'UNCLASSIFIED';
 }
@@ -195,6 +203,7 @@ export function isGroupAllocatable(obligation: OperationInvoiceObligationDto): b
  * short-close, completion — can proceed until Finance classifies it.
  */
 export function isClassificationPending(obligation: OperationInvoiceObligationDto): boolean {
+    if (isCancelledGroupObligation(obligation)) return false;
     return obligation.derivedStatus === 'UNCLASSIFIED' || !obligation.sourceDocumentType;
 }
 

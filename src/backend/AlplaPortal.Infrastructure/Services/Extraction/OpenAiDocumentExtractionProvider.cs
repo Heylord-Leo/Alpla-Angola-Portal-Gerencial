@@ -810,6 +810,10 @@ CRITICAL PRECISION RULES:
   A day greater than 12 proves the day-first reading (27/07 can only be 27 July). Apply the SAME
   day-first reading to dates where both numbers are 12 or less — 10/08/2026 is 10 August, because
   the document's convention does not change just because the value happens to be ambiguous.
+  dueDate is COPIED, never derived: on a quotation / proposal it is the printed validity date of the
+  offer ('Validade', 'Válido até'); on an invoice / proforma the printed payment due date. A validity
+  or payment term expressed only as a number of days is NOT a date — return null; never add days to
+  the document date, never use today's date.
 
   If a date is genuinely undecidable, or you cannot read it, return null. Never guess a US
   month-first reading, and never return a localized string like '10/08/2026' in these fields.
@@ -833,6 +837,10 @@ CRITICAL PRECISION RULES:
       CRITICAL: If no IVA/Taxa column exists for line items, or IVA is only shown in the document summary/totals and NOT per item, set taxRate=null (NOT 0).
       Only set taxRate=0 when the document EXPLICITLY shows 0% IVA (Isento) for that specific item.
     * If no discount column or value exists for a line, set discountPercent=0 and discountAmount=0.
+    * Some documents print the line discount as an AMOUNT column (e.g. 'Desconto', 'Desc. Comercial', 'Desconto Comercial' with
+      currency values such as 37 530,00) instead of a percentage. Then discountAmount = that printed amount (thousand separators
+      removed) and discountPercent = discountAmount ÷ (quantity × unitPrice) × 100, rounded to 2 decimals. NEVER drop a printed
+      line discount, and NEVER move it to the header discountAmount.
   SELF-VALIDATION: totalPrice should equal (quantity × unitPrice) - discountAmount. 
     If this does not match the printed 'Valor' column, re-examine which column is discount vs tax.
 
@@ -844,6 +852,10 @@ CRITICAL PRECISION RULES:
   This is a POSITIVE number representing the absolute discount value (e.g. if the summary shows 'Desconto Comercial -823 261,00', set discountAmount = 823261.00).
   If no global/commercial discount exists on the document, set discountAmount = 0.
   NOTE: Do NOT confuse this with per-item discounts in the 'Desc.' column — those are already captured per line item.
+  AGGREGATE RULE: when the summary row labelled 'Desconto Comercial' (or similar) equals the SUM of the per-line discounts you
+  extracted, it is only the total of those line discounts, NOT an additional document-level discount — set header
+  discountAmount = 0 in that case. Report a header discountAmount ONLY for a discount that is NOT already printed on the lines.
+  A discount must never be counted twice (once per line and again in the header).
 
 - PAYMENT CONDITION — CLASSIFICATION RULES:
   Look for payment terms text anywhere in the document (header, footer, terms section, notes).
@@ -905,8 +917,10 @@ Output ONLY JSON with this structure:
     ""billedCompanyName"": ""Name of company being billed (the CUSTOMER). Typically 'AlplaPLASTICO' or 'AlplaSOPRO'. Look for keywords PLASTICO vs SOPRO."",
     ""billedCompanyTaxId"": ""Fiscal number printed inside the CUSTOMER block only, or null. This is where an ALPLA 'Nº Contribuinte' belongs on a supplier invoice."",
     ""documentNumber"": ""string. For Primavera PURCHASE ORDERS (titles like 'Encomenda a Fornecedor ECF', 'Encomenda Mat Escritório/Diversos ECF10', 'PO Serviços ECF11') this MUST be the full ECF reference exactly as printed, e.g. 'ECF11 2026/421' — NEVER a NIF/tax number and never any other prominent numeric field."",
+    ""documentTitle"": ""The exact main heading of the document as printed (e.g. 'Encomenda a Fornecedor ECF 2026/107', 'PO Serviços ECF11 2026/421', 'Factura Pró-forma', 'Cotação', 'Proposta Comercial'), or null"",
+    ""referencedDocumentNumbers"": [""other document numbers mentioned in the body: quotation/proposal numbers, previous or cancelled purchase orders ('em substituição da ECF …', 'anula a encomenda …'), invoice numbers. NEVER the document's own number. Empty array if none""],
     ""documentDate"": ""Date of the document, strictly YYYY-MM-DD. Numeric dates on these documents are day-first (dd/MM/yyyy). null if unreadable or genuinely undecidable."",
-    ""dueDate"": ""Payment due date, strictly YYYY-MM-DD, same day-first rule. null if the document states none."",
+    ""dueDate"": ""Strictly YYYY-MM-DD, same day-first rule. For an INVOICE / proforma / receipt: the payment due date printed on the document. For a QUOTATION / proposal / price offer: the validity (expiry) date of the offer exactly as PRINTED ('Validade', 'Válido até', 'Valid until', 'Data de vencimento da cotação'). null if the document prints no such DATE — NEVER compute one from a duration ('válido por 30 dias', 'validade: 30 dias', 'net 30') or from the document date, and never infer one."",
     ""currency"": ""string (e.g. EUR, USD, AOA)"",
     ""totalAmount"": number (Zwischensumme / Subtotal after all discounts, before tax),
     ""grandTotal"": number (Final total INCLUDING tax/IVA - this is what the buyer actually pays),
@@ -965,6 +979,9 @@ Output ONLY JSON with this structure:
                     BilledCompanyName = header.TryGetProperty("billedCompanyName", out var bcn) ? bcn.GetString() : null,
                     BilledCompanyTaxId = header.TryGetProperty("billedCompanyTaxId", out var bct) ? bct.GetString() : null,
                     DocumentNumber = header.TryGetProperty("documentNumber", out var dn) ? dn.GetString() : null,
+                    // v2.249.4 — identity evidence for the P.O. document identifier (title + body references).
+                    DocumentTitle = header.TryGetProperty("documentTitle", out var dti) && dti.ValueKind == JsonValueKind.String ? dti.GetString() : null,
+                    ReferencedDocumentNumbers = ReadStringArray(header, "referencedDocumentNumbers"),
                     DocumentDate = header.TryGetProperty("documentDate", out var dd) ? dd.GetString() : null,
                     // The prompt asks for it and the envelope declares it, but nothing ever read it
                     // here — so the due date arrived null on every document and the user retyped a

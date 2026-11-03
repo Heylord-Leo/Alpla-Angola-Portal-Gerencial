@@ -6,8 +6,13 @@ import { Z_INDEX } from '../../constants/ui';
 import { Feedback, FeedbackType } from '../ui/Feedback';
 import { CurrencyInput } from '../CurrencyInput';
 import { formatBusinessDateOnly } from '../../lib/financePaymentsView';
+import { FINANCE_RETURN_KIND_LABELS, FINANCE_RETURN_REASON_CODES, FINANCE_RETURN_REASON_LABELS } from '../../lib/poGroupCancellation';
 
 export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | 'CANCEL_SCHEDULE' | null;
+
+/** Phase 1 P.O. cancellation: classification of a Finance return (PO_CORRECTION default | ORDER_CANCELLATION_REQUESTED). */
+export type FinanceReturnKindOption = 'PO_CORRECTION' | 'ORDER_CANCELLATION_REQUESTED';
+export interface FinanceActionPayload { date?: string; notes?: string; file?: File | null; amount?: string; returnKind?: FinanceReturnKindOption; returnReasonCode?: string }
 
 export interface CancelScheduleContext {
     supplierName: string;
@@ -24,7 +29,7 @@ interface FinanceActionModalProps {
     expectedAmount?: number;
     cancelScheduleContext?: CancelScheduleContext;
     onClose: () => void;
-    onConfirm: (action: FinanceActionType, payload: { date?: string; notes?: string; file?: File | null; amount?: string }) => void;
+    onConfirm: (action: FinanceActionType, payload: FinanceActionPayload) => void;
     processing: boolean;
     feedback: { type: FeedbackType; message: string | null };
     onCloseFeedback: () => void;
@@ -48,6 +53,8 @@ export function FinanceActionModal({
     const [date, setDate] = useState('');
     const [file, setFile] = useState<File | null>(null);
     const [amount, setAmount] = useState('');
+    const [returnKind, setReturnKind] = useState<FinanceReturnKindOption>('PO_CORRECTION');
+    const [returnReasonCode, setReturnReasonCode] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleClearFile = () => {
@@ -60,6 +67,8 @@ export function FinanceActionModal({
             setNotes('');
             setDate('');
             setFile(null);
+            setReturnKind('PO_CORRECTION');
+            setReturnReasonCode('');
             // Pre-fill amount from expectedAmount when opening PAY modal
             if (action === 'PAY' && expectedAmount && expectedAmount > 0) {
                 setAmount(expectedAmount.toFixed(2));
@@ -88,7 +97,9 @@ export function FinanceActionModal({
             case 'PAY': return 'Informe o montante efetivamente pago e anexe o comprovante de pagamento.';
             case 'RETURN': return isAdvance
                 ? 'Descreva o motivo da devolução. O adiantamento pendente/agendado deste grupo P.O será CANCELADO e o Comprador deverá re-registrar a P.O. antes de novo agendamento.'
-                : 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
+                : returnKind === 'ORDER_CANCELLATION_REQUESTED'
+                    ? 'Descreva o motivo. O Comprador é informado de que a P.O. NÃO deve ser corrigida: cabe-lhe cancelar a P.O. (devolver os itens à cotação ou encerrá-los) e declarar o estado da ECF para confirmação de Finanças.'
+                    : 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             case 'CANCEL_SCHEDULE': return 'Esta ação cancela o agendamento atual deste grupo. O documento de cronograma anexado será marcado como sem efeito.';
             default: return '';
@@ -321,6 +332,37 @@ export function FinanceActionModal({
                             </div>
                         )}
 
+                        {/* Phase 1 P.O. cancellation: classify the return so the Buyer sees "Corrigir P.O." vs
+                            "Pedido cancelado — não corrigir" on the group (RequestPoGroup.LastFinanceReturnKind).
+                            The free-text reason stays mandatory; the structured reason is optional. */}
+                        {action === 'RETURN' && (
+                            <div style={{ marginBottom: '24px' }} data-tour="finance-return-kind">
+                                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Tipo de devolução
+                                </label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {(['PO_CORRECTION', 'ORDER_CANCELLATION_REQUESTED'] as FinanceReturnKindOption[]).map(k => (
+                                        <label key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: `2px solid ${returnKind === k ? 'var(--color-primary)' : 'var(--color-border)'}`, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700 }}>
+                                            <input type="radio" name="finance-return-kind" value={k} checked={returnKind === k} onChange={() => setReturnKind(k)} style={{ marginTop: '2px' }} />
+                                            <span>
+                                                {k === 'PO_CORRECTION' ? 'Corrigir P.O.' : 'Pedido cancelado — não corrigir'}
+                                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                                                    {k === 'PO_CORRECTION' ? 'O Comprador corrige e volta a registar a P.O. deste grupo.' : `${FINANCE_RETURN_KIND_LABELS.ORDER_CANCELLATION_REQUESTED}: o Comprador deve cancelar a P.O. em vez de a corrigir.`}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <label style={{ display: 'block', marginTop: '16px', marginBottom: '8px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
+                                    Motivo estruturado (opcional)
+                                </label>
+                                <select value={returnReasonCode} onChange={(e) => setReturnReasonCode(e.target.value)} style={{ ...inputStyle, padding: '10px 12px' }}>
+                                    <option value="">— Sem classificação —</option>
+                                    {FINANCE_RETURN_REASON_CODES.map(c => <option key={c} value={c}>{FINANCE_RETURN_REASON_LABELS[c]}</option>)}
+                                </select>
+                            </div>
+                        )}
+
                         {action === 'CANCEL_SCHEDULE' && cancelScheduleContext && (
                             <div style={{ marginBottom: '24px', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
@@ -393,7 +435,9 @@ export function FinanceActionModal({
                             </button>
                             <button
                                 disabled={isConfirmDisabled}
-                                onClick={() => onConfirm(action, { date, notes, file, amount })}
+                                onClick={() => onConfirm(action, action === 'RETURN'
+                                    ? { date, notes, file, amount, returnKind, returnReasonCode: returnReasonCode || undefined }
+                                    : { date, notes, file, amount })}
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',

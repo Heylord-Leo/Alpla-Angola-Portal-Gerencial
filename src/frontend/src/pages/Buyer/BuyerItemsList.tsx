@@ -50,6 +50,9 @@ import { buildManualQuotationDraftItems } from './QuotationWizard/manualQuotatio
 // Stage 2A-R: reusable stateless wizard-handler facade (single-source orchestration). It also owns the
 // edit-draft rehydration (incl. parseClassificationEvidence) and the manual/OCR open logic.
 import { createBuyerQuotationWizardController } from './QuotationWizard/buyerQuotationWizardController';
+import type { WizardOcrError } from './QuotationWizard/wizardOcrError';
+import { compareQuotationsPerLine } from '../../lib/quotationComparison';
+import { describeQuotationPricingState } from '../../lib/quotationPricing';
 
 
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
@@ -207,6 +210,9 @@ export function BuyerItemsList() {
     const [draftProformaFiles, setDraftProformaFiles] = useState<Record<string, File>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingOcr, setIsProcessingOcr] = useState<Record<string, boolean>>({});
+    // v2.249.2 — inline document-step failure + current-attempt document (same contract as the Workspace host).
+    const [wizardOcrError, setWizardOcrError] = useState<WizardOcrError | null>(null);
+    const wizardPendingUploadRef = useRef<{ file: File; attachmentId: string } | null>(null);
     const [ocrErrors, setOcrErrors] = useState<Record<string, string | null>>({});
         const [editingQuotationId, setEditingQuotationId] = useState<Record<string, string | null>>({});
     const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
@@ -421,6 +427,8 @@ export function BuyerItemsList() {
         mapOcrResultToDraft,
         onSaved: () => loadData(),
         onFeedback: setFeedback,
+        setOcrError: setWizardOcrError,
+        pendingUploadRef: wizardPendingUploadRef,
     });
 
     // Exact-file duplicate check (reconnects the existing, already-proven fileDuplicateWarning
@@ -1891,17 +1899,13 @@ export function BuyerItemsList() {
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                                     {/* Real Quotations (New Step 7: Improved Visualization & Comparison) */}
                                                     {(() => {
-                                                        // Subtle visual cue for lowest total in same currency (Step 7.3)
-                                                        const lowestByCurrency: Record<string, number> = {};
-                                                        group.quotations.forEach((q: SavedQuotationDto) => {
-                                                            if (!lowestByCurrency[q.currency] || q.totalAmount < lowestByCurrency[q.currency]) {
-                                                                lowestByCurrency[q.currency] = q.totalAmount;
-                                                            }
-                                                        });
+                                                        // v2.249.5 — "menor valor" only when totals are comparable (identical line scope,
+                                                        // quantities, units and currency; historical adjudications excluded) — lib/quotationComparison.
+                                                        const quotationComparison = compareQuotationsPerLine(group.quotations);
 
                                                         return group.quotations.map((q: SavedQuotationDto) => {
                                                             const isExpanded = !!expandedQuotations[q.id];
-                                                            const isLowest = group.quotations.length > 1 && q.totalAmount === lowestByCurrency[q.currency];
+                                                            const isLowest = !!quotationComparison.byQuotationId.get(q.id)?.lowestTotal;
                                                             // Option C: items of this quotation used in a CANCELLED batch
                                                             const reuseBlockedCount = (q.items || []).filter((qi: any) => qi.isReuseBlocked).length;
                                                             const reuseAuthorizedCount = (q.items || []).filter((qi: any) => qi.isReuseAuthorized).length;
@@ -2051,7 +2055,11 @@ export function BuyerItemsList() {
                                                                                     <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{q.currency}</span>
                                                                                     {formatCurrencyAO(q.totalAmount)}
                                                                                 </div>
-                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.itemCount} ITENS • {formatDate(q.createdAtUtc)}</div>
+                                                                                <div style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>{q.quotedItemCount ?? q.itemCount} ITENS COTADOS{(q.notQuotedItemCount ?? 0) > 0 ? ` · ${q.notQuotedItemCount} NÃO COTADO(S)` : ''} • {formatDate(q.createdAtUtc)}</div>
+                                                                                {/* v2.249.6 — global discount not distributed over the lines: not submittable until the Buyer resolves it */}
+                                                                                {(() => { const ps = describeQuotationPricingState(q, q.currency); return ps ? (
+                                                                                    <div data-testid="quotation-pricing-chip" title={ps.detail} style={{ marginTop: '4px', display: 'inline-block', fontSize: '0.62rem', fontWeight: 800, color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #f59e0b', borderRadius: '10px', padding: '2px 8px' }}>{ps.label}</div>
+                                                                                ) : null; })()}
                                                                             </div>
                                                                             <div style={{ color: 'var(--color-text-muted)', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
                                                                                 <ChevronDown size={20} />
@@ -2732,6 +2740,9 @@ export function BuyerItemsList() {
                 onReconcilePreview={wizardController.handleReconcilePreview}
                 isProcessingOcr={!!(wizardActiveRequest && isProcessingOcr[wizardActiveRequest.requestId])}
                 onUploadFile={handleUploadFileForWizard}
+                ocrError={wizardOcrError}
+                onRetryOcr={() => void wizardController.retryWizardUpload()}
+                onDismissOcrError={wizardController.dismissOcrError}
                 onCancelWizard={wizardController.onCancelWizard}
                 onReplaceDocument={wizardController.handleReplaceDocumentForWizard}
                 ivaRates={ivaRates}

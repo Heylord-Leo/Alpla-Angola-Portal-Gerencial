@@ -86,4 +86,35 @@ public record WorkflowEvent
     public string? Justification { get; init; }
     /// <summary>Server UTC instant of the persisted change (rendered in the application timezone with an explicit label).</summary>
     public DateTime? OccurredAtUtc { get; init; }
+
+    // ── Phase 1 P.O. group cancellation (PO_GROUP_CANCELLED / PO_CANCELLATION_CONFIRMED / _REJECTED) ──
+    public Guid? PoCancellationId { get; init; }
+    /// <summary>RESTART_QUOTATION | CANCEL_ITEMS.</summary>
+    public string? PoCancellationKind { get; init; }
+    public string? PoCancellationReasonCode { get; init; }
+    /// <summary>The Buyer's declared ECF status (NOT_APPLICABLE | PENDING_EXTERNAL | DECLARED_CANCELLED | UNKNOWN).</summary>
+    public string? EcfStatus { get; init; }
+    public string? EcfReference { get; init; }
+    public bool FinanceConfirmationRequired { get; init; }
+    public string? PreviousPoNumber { get; init; }
+    /// <summary>Set by the orchestrator after resolution (D13 bookkeeping): who was addressed and whether e-mail was queued.</summary>
+    public Action<PoCancellationRecipientOutcome>? OnRecipientsResolved { get; init; }
+    /// <summary>FINANCE_RETURNED: PO_CORRECTION | ORDER_CANCELLATION_REQUESTED (null = not classified).</summary>
+    public string? FinanceReturnKind { get; init; }
+}
+
+/// <summary>
+/// Phase 1 P.O. cancellation — explicit recipient policy outcome of PO_GROUP_CANCELLED, recorded on the cancellation.
+/// Finance counts cover ACTIVE users with the Finance role scoped to the group's plant (never a wider set):
+/// Eligible = resolved users (in-app notice written for each); WithEmail = those with a non-blank address;
+/// EmailQueued = those for whom an outbox row is queued (policy: always, independent of the company AP switch);
+/// Policy = QUEUED | NO_ELIGIBLE_FINANCE_USERS | ELIGIBLE_USERS_WITHOUT_EMAIL | NO_PLANT_IN_APP_ONLY.
+/// Delivery (SENT / FAILED / DEAD_LETTER) is a later fact of the outbox worker, read from EmailOutbox by correlation.
+/// </summary>
+public sealed record PoCancellationRecipientOutcome(int FinanceEligible, int FinanceWithEmail, int FinanceEmailQueued, string FinanceEmailPolicy, bool BuyerResolved, bool BuyerEmailQueued)
+{
+    public const string PolicyQueued = "QUEUED";
+    public const string PolicyNoEligibleUsers = "NO_ELIGIBLE_FINANCE_USERS";
+    public const string PolicyUsersWithoutEmail = "ELIGIBLE_USERS_WITHOUT_EMAIL";
+    public const string PolicyNoPlantInAppOnly = "NO_PLANT_IN_APP_ONLY";
 }

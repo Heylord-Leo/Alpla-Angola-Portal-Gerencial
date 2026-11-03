@@ -222,6 +222,21 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                             <p style={{ marginTop: '-4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                                 Aviso de revisão ("P.O. registada") — não significa pagamento autorizado ou pronto. Predefinição: desligado.
                             </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                    id="notifyPoCancelled"
+                                    type="checkbox"
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                    checked={formData.notifyOnPoCancelled}
+                                    onChange={e => setFormData({ ...formData, notifyOnPoCancelled: e.target.checked })}
+                                />
+                                <label htmlFor="notifyPoCancelled" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-main)', cursor: 'pointer' }}>
+                                    Notificar Contas a Pagar quando uma P.O. é cancelada ou devolvida a cotação (PO_GROUP_CANCELLED)
+                                </label>
+                            </div>
+                            <p style={{ marginTop: '-4px', fontSize: '0.65rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                Aviso adicional à caixa de Contas a Pagar (com CC). Os utilizadores Finance da planta recebem sempre o e-mail de confirmação da anulação, independentemente deste interruptor. Predefinição: desligado.
+                            </p>
                         </div>
 
                         {/* Finance-role users (individual e-mail) */}
@@ -299,6 +314,7 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Pago</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }} title="Notificar Contas a Pagar quando uma P.O. é registada">P.O.</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }} title="E-mail individual aos utilizadores Finance">Finance</th>
+                                    <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }} title="Notificar Contas a Pagar quando uma P.O. é cancelada">P.O. canc.</th>
                                     <th style={{ textAlign: 'center', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Estado</th>
                                     <th style={{ textAlign: 'right', padding: '10px 8px', fontWeight: 800, fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>Ações</th>
                                 </tr>
@@ -322,6 +338,9 @@ export function ApNotificationsPanel({ feedback: _feedback, setFeedback, compani
                                         </td>
                                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                                             {config.notifyFinanceUsersByEmail ? '✅' : '—'}
+                                        </td>
+                                        <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                            {config.notifyOnPoCancelled ? '✅' : '—'}
                                         </td>
                                         <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                                             <span style={{

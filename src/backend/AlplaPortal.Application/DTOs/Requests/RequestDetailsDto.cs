@@ -117,6 +117,8 @@ public class RequestDetailsDto
     /// never set it: their comment stays optional.
     /// </summary>
     public LegacyFinanceReturnCorrectionDto? LegacyReturnCorrection { get; set; }
+    /// <summary>D5: active approved figures per currency (historical ApprovedTotalAmount is never rewritten).</summary>
+    public ActiveApprovedTotalsDto? ActiveApprovedTotals { get; set; }
     public List<RequestAttachmentDto> Attachments { get; set; } = new();
     public List<RequestStatusHistoryDto> StatusHistory { get; set; } = new();
     public List<SavedQuotationDto> Quotations { get; set; } = new();
@@ -212,6 +214,11 @@ public class RequestApprovalBatchItemDto
     /// <summary>True for historical items decided by the Buyer under the pre-candidate model
     /// (zero candidate rows, winner already populated).</summary>
     public bool IsLegacyBuyerSelectedWinner { get; set; }
+
+    /// <summary>v2.249.2 — set when a P.O.-group cancellation released this item from its APPROVED batch
+    /// (RESTART_QUOTATION | CANCEL_ITEMS). A released item holds neither its line nor its candidates.</summary>
+    public DateTime? ReleasedAtUtc { get; set; }
+    public string? ReleaseKind { get; set; }
 
     /// <summary>Frozen candidate snapshots (empty for legacy items — never synthesized).</summary>
     public List<ApprovalBatchItemCandidateDto> Candidates { get; set; } = new();
@@ -338,6 +345,20 @@ public class RequestAttachmentDto
     // ── Void (correction workflows, e.g. Finance cancel-schedule) ──
     public DateTime? VoidedAtUtc { get; set; }
     public string? VoidReason { get; set; }
+
+    // ── v2.249.4 — group ownership + supersession ──
+    public Guid? RequestPoGroupId { get; set; }
+    /// <summary>Replaced by a later P.O. file of the same group (correction). History, never the current document.</summary>
+    public DateTime? SupersededAtUtc { get; set; }
+    public Guid? SupersededByAttachmentId { get; set; }
+    /// <summary>True for the ONE current P.O. document of its group (<c>PoDocumentSelection</c>). False for every other file.</summary>
+    public bool IsCurrentPo { get; set; }
+    /// <summary>
+    /// v2.249.5 — true when this P.O. file is REGISTERED EVIDENCE (current document, superseded, voided, or registered before the
+    /// group had a pointer): the server refuses its deletion (409 PO_EVIDENCE_PROTECTED). False only for a temporary upload
+    /// that no registration ever used. Null for non-P.O. files.
+    /// </summary>
+    public bool? IsPoEvidence { get; set; }
 }
 
 public class RequestStatusHistoryDto

@@ -76,6 +76,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<ApprovalBatchAdjustmentFieldChange> ApprovalBatchAdjustmentFieldChanges => Set<ApprovalBatchAdjustmentFieldChange>();
     public DbSet<ApprovalBatchCandidateReview> ApprovalBatchCandidateReviews => Set<ApprovalBatchCandidateReview>();
     public DbSet<QuotationReuseAuthorization> QuotationReuseAuthorizations => Set<QuotationReuseAuthorization>();
+    // Phase 1 P.O. group cancellation / return to quotation after final approval
+    public DbSet<RequestPoGroupCancellation> RequestPoGroupCancellations => Set<RequestPoGroupCancellation>();
+    public DbSet<RequestPoGroupCancellationItem> RequestPoGroupCancellationItems => Set<RequestPoGroupCancellationItem>();
+    public DbSet<RequestPoGroupCancellationEcfEvent> RequestPoGroupCancellationEcfEvents => Set<RequestPoGroupCancellationEcfEvent>();
+    /// <summary>v2.249.4 — server-held P.O. document extraction evidence (bound to request + file hash).</summary>
+    public DbSet<PoDocumentExtraction> PoDocumentExtractions => Set<PoDocumentExtraction>();
 
     // Dashboard V2 B9.1 — canonical operational stage tracking (persistence foundation; no capture yet).
     public DbSet<OperationalStageState> OperationalStageStates => Set<OperationalStageState>();

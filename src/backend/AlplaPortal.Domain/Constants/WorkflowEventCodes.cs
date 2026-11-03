@@ -48,6 +48,11 @@ public static class WorkflowEventCodes
     /// <summary>§8 — a Buyer took over a QUOTATION request assigned to another Buyer (previous Buyer, new Buyer, requester and request participants are notified).</summary>
     public const string BuyerTransferred = "BUYER_TRANSFERRED";
 
+    // ── Phase 1 P.O. group cancellation / return to quotation after final approval ──
+    public const string PoGroupCancelled = "PO_GROUP_CANCELLED";
+    public const string PoCancellationConfirmed = "PO_CANCELLATION_CONFIRMED";
+    public const string PoCancellationDeclarationRejected = "PO_CANCELLATION_DECLARATION_REJECTED";
+
     // --- Buy-to-Pay (Advance Payment / Reconciliation) ---
     public const string PaymentConditionDefined = "PAYMENT_CONDITION_DEFINED";
     public const string AdvancePaymentRequired = "ADVANCE_PAYMENT_REQUIRED";

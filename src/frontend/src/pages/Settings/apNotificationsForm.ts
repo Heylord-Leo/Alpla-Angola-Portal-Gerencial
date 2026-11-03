@@ -18,6 +18,8 @@ export interface ApConfig {
     notifyOnPoRegistered: boolean;
     /** Also e-mail Finance-role users individually (plant-scoped). In-app notifications are unaffected. Default false. */
     notifyFinanceUsersByEmail: boolean;
+    /** v2.249.4 — notify the AP address when a P.O. group is cancelled / returned to quotation (DEC-151). Default false. */
+    notifyOnPoCancelled?: boolean;
     createdAtUtc: string;
     updatedAtUtc: string;
 }
@@ -31,6 +33,7 @@ export interface ApConfigForm {
     notifyOnCompleted: boolean;
     notifyOnPoRegistered: boolean;
     notifyFinanceUsersByEmail: boolean;
+    notifyOnPoCancelled: boolean;
 }
 
 /** New-configuration defaults: scheduling/completion ON (existing behaviour), the two new switches OFF. */
@@ -43,7 +46,8 @@ export function defaultApForm(): ApConfigForm {
         notifyOnScheduled: true,
         notifyOnCompleted: true,
         notifyOnPoRegistered: false,
-        notifyFinanceUsersByEmail: false
+        notifyFinanceUsersByEmail: false,
+        notifyOnPoCancelled: false
     };
 }
 
@@ -57,7 +61,8 @@ export function formFromConfig(config: ApConfig): ApConfigForm {
         notifyOnScheduled: config.notifyOnScheduled,
         notifyOnCompleted: config.notifyOnCompleted,
         notifyOnPoRegistered: config.notifyOnPoRegistered === true,
-        notifyFinanceUsersByEmail: config.notifyFinanceUsersByEmail === true
+        notifyFinanceUsersByEmail: config.notifyFinanceUsersByEmail === true,
+        notifyOnPoCancelled: config.notifyOnPoCancelled === true
     };
 }
 
@@ -70,6 +75,7 @@ export interface ApConfigPayload {
     notifyOnCompleted: boolean;
     notifyOnPoRegistered: boolean;
     notifyFinanceUsersByEmail: boolean;
+    notifyOnPoCancelled: boolean;
 }
 
 /** API payload. `companyId` is sent only on create (it cannot change on update). */
@@ -81,7 +87,8 @@ export function toApConfigPayload(form: ApConfigForm, mode: 'create' | 'update')
         notifyOnScheduled: form.notifyOnScheduled,
         notifyOnCompleted: form.notifyOnCompleted,
         notifyOnPoRegistered: form.notifyOnPoRegistered,
-        notifyFinanceUsersByEmail: form.notifyFinanceUsersByEmail
+        notifyFinanceUsersByEmail: form.notifyFinanceUsersByEmail,
+        notifyOnPoCancelled: form.notifyOnPoCancelled
     };
     if (mode === 'create') payload.companyId = form.companyId;
     return payload;

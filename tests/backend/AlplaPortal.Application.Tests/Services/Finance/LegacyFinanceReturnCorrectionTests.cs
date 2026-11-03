@@ -46,7 +46,8 @@ public class LegacyFinanceReturnCorrectionTests
 {
     private const int S_PO_ISSUED = 9, S_WAITING_PO_CORRECTION = 12, S_PO_PARTIAL = 13, S_PAYMENT_SCHEDULED = 14, S_PAYMENT_COMPLETED = 15, S_ADVANCE = 16;
 
-    private static ApplicationDbContext NewCtx() => new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    // Phase 1 P.O. cancellation: RegisterPo now runs inside an explicit transaction; InMemory needs this warning suppressed (as the Finance return tests do).
+    private static ApplicationDbContext NewCtx() => new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)).Options);
 
     private sealed class Seed { public Guid RequestId, GroupId, BuyerId, FinanceId, ProofId; }
 
@@ -152,7 +153,8 @@ public class LegacyFinanceReturnCorrectionTests
         return controller;
     }
 
-    private static RegisterPoActionDto Dto(Guid groupId, string? comment) => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/156", Comment = comment };
+    // v2.249.4 — no extraction evidence in these seeds → UNCERTAIN document: the explicit type confirmation travels with the DTO; the Comment stays under each test's control (the legacy-justification rule is evaluated first).
+    private static RegisterPoActionDto Dto(Guid groupId, string? comment) => new() { PoGroupId = groupId, PaymentConditionCode = RequestConstants.PaymentConditions.PostPaid, PurchaseOrderNumber = "ECF11 2026/156", Comment = comment, DocumentTypeConfirmed = true };
 
     private static async Task<(int Histories, int Payments, int Attachments, int Outbox, int ApLogs)> CountsAsync(ApplicationDbContext ctx, Guid requestId) =>
         (await ctx.RequestStatusHistories.CountAsync(h => h.RequestId == requestId), await ctx.RequestPayments.CountAsync(p => p.RequestId == requestId),
@@ -231,7 +233,11 @@ public class LegacyFinanceReturnCorrectionTests
         await using var ctx = NewCtx(); var s = await SeedAsync(ctx, "PAYMENT");
         var g = await ctx.RequestPoGroups.SingleAsync(x => x.Id == s.GroupId); g.Status = RequestConstants.PoGroupStatuses.WaitingPoCorrection; await ctx.SaveChangesAsync(); ctx.ChangeTracker.Clear();
         var (orchestrator, _) = RealOrchestrator(ctx);
-        Assert.IsType<OkObjectResult>(await BuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, Dto(s.GroupId, null)));
+        // v2.249.4 — the legacy-return justification rule does not apply here (current-code return), but the document rule does:
+        // without server-held extraction evidence the file is UNCERTAIN and the explicit confirmation needs a justification.
+        var noJustification = await BuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, Dto(s.GroupId, null));
+        Assert.Equal("DOCUMENT_TYPE_CONFIRMATION_REQUIRED", Assert.IsType<ProblemDetails>(Assert.IsType<BadRequestObjectResult>(noJustification).Value).Extensions["code"]);
+        Assert.IsType<OkObjectResult>(await BuyerController(ctx, s.BuyerId, orchestrator).RegisterPo(s.RequestId, Dto(s.GroupId, "Documento conferido manualmente (sem extração registada no teste).")));
         Assert.Single(await ctx.RequestStatusHistories.Where(h => h.RequestId == s.RequestId && h.ActionTaken == "REREGISTER_PO").ToListAsync());
     }
 

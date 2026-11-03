@@ -56,6 +56,8 @@ public class OperationInvoiceShortClosesController : BaseController
     /// <summary>Typed business codes — the UI branches on codes, never on Portuguese.</summary>
     public const string GroupInvalidCode = "OI_SHORTCLOSE_GROUP_INVALID";
     public const string NotEligibleCode = "OI_SHORTCLOSE_NOT_ELIGIBLE";
+    /// <summary>v2.249.4 — the group is CANCELLED (DEC-151); no short-close action exists for it.</summary>
+    public const string GroupCancelledCode = "OI_GROUP_CANCELLED";
     public const string NothingRemainingCode = "OI_SHORTCLOSE_NOTHING_REMAINING";
     public const string ActiveExistsCode = "OI_SHORTCLOSE_ACTIVE_EXISTS";
     public const string NotDecidableCode = "OI_SHORTCLOSE_NOT_DECIDABLE";
@@ -107,6 +109,10 @@ public class OperationInvoiceShortClosesController : BaseController
         var group = await _context.RequestPoGroups
             .FirstOrDefaultAsync(g => g.Id == groupId && g.RequestId == requestId);
         if (group == null) return NotFound(Problem404("Grupo não encontrado."));
+
+        // v2.249.4 — a CANCELLED group (DEC-151) has no balance to close: refused before any eligibility reading.
+        var cancelledProblem = GuardGroupNotCancelled(group);
+        if (cancelledProblem != null) return cancelledProblem;
 
         // Same obligation-eligibility rule as allocations: classified, owing an invoice, in an
         // accepting state, and not parked in PO correction.
@@ -286,6 +292,8 @@ public class OperationInvoiceShortClosesController : BaseController
 
         var (shortClose, group, loadProblem) = await LoadShortCloseAsync(requestId, groupId, shortCloseId);
         if (loadProblem != null) return loadProblem;
+        var cancelledGroupProblem = GuardGroupNotCancelled(group!);
+        if (cancelledGroupProblem != null) return cancelledGroupProblem;
 
         // Idempotent retry: approving what is already APPROVED is the same decision arriving twice.
         if (string.Equals(shortClose!.Status, RequestConstants.ShortCloseStatuses.Approved,
@@ -394,6 +402,8 @@ public class OperationInvoiceShortClosesController : BaseController
 
         var (shortClose, group, loadProblem) = await LoadShortCloseAsync(requestId, groupId, shortCloseId);
         if (loadProblem != null) return loadProblem;
+        var cancelledGroupProblem = GuardGroupNotCancelled(group!);
+        if (cancelledGroupProblem != null) return cancelledGroupProblem;
 
         // Decider roles OR the proposer withdrawing — checked against the loaded row, so the
         // role guard cannot run before the row exists.
@@ -503,6 +513,25 @@ public class OperationInvoiceShortClosesController : BaseController
             return (null, null, NotFound(Problem404("Proposta de encerramento não encontrada.")));
 
         return (shortClose, group, null);
+    }
+
+    /// <summary>
+    /// v2.249.4 — a CANCELLED P.O. group (DEC-151) is history: no proposal may be opened or decided on it. A proposal
+    /// that was already PROPOSED when the group was cancelled stays as it is (evidence); it can neither be approved nor
+    /// withdrawn through this API, and the read model no longer offers either action.
+    /// </summary>
+    private IActionResult? GuardGroupNotCancelled(RequestPoGroup group)
+    {
+        if (!string.Equals(group.Status, RequestConstants.PoGroupStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+            return null;
+        var problem = new ProblemDetails
+        {
+            Title = "Grupo cancelado",
+            Detail = "Este grupo P.O. foi cancelado: não existe obrigação de fatura final ativa nem saldo a encerrar.",
+            Status = 409
+        };
+        problem.Extensions["code"] = GroupCancelledCode;
+        return Conflict(problem);
     }
 
     private IActionResult NotDecidable()

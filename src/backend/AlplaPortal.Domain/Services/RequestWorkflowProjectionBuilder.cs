@@ -137,7 +137,17 @@ public static class RequestWorkflowProjectionBuilder
     // Per-unit guidance. Labels reuse the SAME strings the legacy single-status header
     // (frontend lib/utils.ts getRequestGuidance) shows today so single-unit requests remain
     // string-identical — the compatibility rule of this release.
-    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status, bool allItemsReceived = false)
+    /// <summary>v2.249.2 — the returned-group guidance follows the STORED Finance return kind (never the reason text):
+    /// correction keeps the historical wording (string-identical to lib/utils.ts); cancellation-requested names the
+    /// advisory; legacy (null) is neutral. The action type stays CORRECT_PO (the capability is unchanged; the kind is advisory).</summary>
+    public static string ReturnedGroupGuidanceLabel(string? lastFinanceReturnKind) => lastFinanceReturnKind switch
+    {
+        PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection => "Corrigir P.O devolvida por Finanças e re-registrar",
+        PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested => "P.O devolvida por Finanças — cancelamento solicitado: cancelar a P.O (voltar a cotar ou encerrar itens) ou, se discutível, corrigir",
+        _ => "Rever a P.O devolvida por Finanças (corrigir ou cancelar)",
+    };
+
+    private static (string Role, string ActionType, string Label, int Priority) GroupGuidance(string status, bool allItemsReceived = false, string? lastFinanceReturnKind = null)
     {
         // v2.245.0 / v2.245.3: a PRE-confirmation receiving group (PAYMENT_COMPLETED or IN_FOLLOWUP) whose
         // items are ALL physically received is not "pending items" and is no longer "move to receiving" — it
@@ -156,7 +166,7 @@ public static class RequestWorkflowProjectionBuilder
         RequestConstants.PoGroupStatuses.WaitingPo
             => ("Comprador", "REGISTER_PO", "Prosseguir com a emissão ou inserção da P.O", 30),
         RequestConstants.PoGroupStatuses.WaitingPoCorrection
-            => ("Comprador", "CORRECT_PO", "Corrigir P.O devolvida por Finanças e re-registrar", 25),
+            => ("Comprador", "CORRECT_PO", ReturnedGroupGuidanceLabel(lastFinanceReturnKind), 25),
         RequestConstants.PoGroupStatuses.AdvancePaymentRequired
             => ("Financeiro", "SCHEDULE_ADVANCE", "Agendar o adiantamento", 40),
         RequestConstants.PoGroupStatuses.AdvancePaymentScheduled
@@ -322,7 +332,7 @@ public static class RequestWorkflowProjectionBuilder
         var allItemsReceived = (group.Status == RequestConstants.PoGroupStatuses.InFollowup
                                 || group.Status == RequestConstants.PoGroupStatuses.PaymentCompleted)
             && OperationalReceiptFacts.AreAllGroupItemsReceived(group, winningQuotationItems);
-        var guidance = GroupGuidance(group.Status, allItemsReceived);
+        var guidance = GroupGuidance(group.Status, allItemsReceived, group.LastFinanceReturnKind);
         var label = string.IsNullOrWhiteSpace(group.SupplierNameSnapshot)
             ? "Grupo sem fornecedor definido"
             : $"Grupo {group.SupplierNameSnapshot}";

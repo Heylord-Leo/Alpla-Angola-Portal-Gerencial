@@ -19,6 +19,7 @@ import {
     acceptedDivergence,
     mapOperationInvoiceError,
     isClassificationPending,
+    isCancelledGroupObligation,
     hasRegistrableObligation,
     REGISTER_BLOCKED_BY_CLASSIFICATION,
     CLASSIFICATION_PENDING_CARD_TEXT
@@ -124,7 +125,11 @@ export function OperationInvoiceSection({
     useEffect(() => { void refresh(); }, [refresh]);
 
     const relevantObligations = useMemo(
-        () => (obligations?.obligations ?? []).filter(o => o.requiresOperationInvoice),
+        () => (obligations?.obligations ?? []).filter(o => o.requiresOperationInvoice && !isCancelledGroupObligation(o)),
+        [obligations]);
+    // v2.249.4 — cancelled P.O. groups (DEC-151) are history: shown apart, read-only, outside every active figure.
+    const cancelledObligations = useMemo(
+        () => (obligations?.obligations ?? []).filter(isCancelledGroupObligation),
         [obligations]);
 
     // v2.245.8: the register action exists only when some obligation could actually receive the
@@ -149,7 +154,7 @@ export function OperationInvoiceSection({
     // Groups can exist without owing an invoice; requests can predate groups entirely. The section
     // only renders when the capability is on AND there is something to say.
     if (!coverageEnabled) return null;
-    if (!loading && !loadError && relevantObligations.length === 0 && invoices.length === 0) return null;
+    if (!loading && !loadError && relevantObligations.length === 0 && cancelledObligations.length === 0 && invoices.length === 0) return null;
 
     return (
         <div style={{
@@ -177,7 +182,8 @@ export function OperationInvoiceSection({
                     <FileText size={16} /> Fatura Final — Cobertura
                 </span>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)' }}>
-                    {relevantObligations.length > 0 && `${relevantObligations.length} grupo(s)`}
+                    {relevantObligations.length > 0 && `${relevantObligations.length} grupo(s) ativo(s)`}
+                    {cancelledObligations.length > 0 && ` · ${cancelledObligations.length} cancelado(s)`}
                     {invoices.length > 0 && ` · ${invoices.length} fatura(s)`}
                 </span>
             </button>
@@ -215,6 +221,16 @@ export function OperationInvoiceSection({
                             onClassify={() => setClassifyGroup(obligation)}
                         />
                     ))}
+
+                    {/* ── v2.249.4: cancelled groups — history only (no obligation, no balance, no actions) ── */}
+                    {cancelledObligations.length > 0 && (
+                        <div data-testid="cancelled-groups-history" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                Histórico — grupos P.O. cancelados (sem obrigação de fatura final)
+                            </span>
+                            {cancelledObligations.map(o => <CancelledGroupHistoryCard key={o.groupId} obligation={o} />)}
+                        </div>
+                    )}
 
                     {/* ── Invoice list ── */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -523,6 +539,39 @@ function GroupCoverageCard({
                     Existe uma Fatura Final em validação para este grupo.
                 </div>
             )}
+        </div>
+    );
+}
+
+/**
+ * v2.249.4 — a CANCELLED P.O. group (DEC-151). The read model reports it with no active obligation (expected / remaining
+ * null, status CANCELLED, excluded from the rollup); the historical finish line is shown as such. No action is offered:
+ * the write endpoints refuse a cancelled group (OI_GROUP_CANCELLED).
+ */
+function CancelledGroupHistoryCard({ obligation }: { obligation: OperationInvoiceObligationDto }) {
+    const status = aggregateStatusPresentation(obligation.derivedStatus, false);
+    const currency = obligation.expectedCurrency ?? obligation.currency;
+    return (
+        <div data-testid="cancelled-group-card" style={{
+            border: '1px dashed var(--color-border)', borderRadius: '10px', padding: '12px 16px',
+            display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: '#f8fafc', opacity: 0.92
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{obligation.supplierName || 'Fornecedor —'}</span>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                        {obligation.purchaseOrderNumber ? `P.O. ${obligation.purchaseOrderNumber} (cancelada)` : 'Sem P.O.'}
+                        {currency ? ` · ${currency}` : ''}
+                    </span>
+                </div>
+                <StatusChip label={status.label} severity={status.severity} />
+            </div>
+            <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', fontSize: '0.78rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                <span>Valor esperado antes do cancelamento (histórico): <strong>{obligation.historicalExpectedAmount != null ? formatMoney(obligation.historicalExpectedAmount, currency) : '—'}</strong></span>
+                <span>Obrigação ativa: <strong>nenhuma</strong></span>
+                <span>Itens (histórico): <strong>{obligation.historicalLineItemCount || obligation.lineItemCount || 0}</strong></span>
+            </div>
+            <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>{obligation.explanation}</div>
         </div>
     );
 }

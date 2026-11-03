@@ -21,7 +21,9 @@ public sealed record RequestAmountFacts(
     int BatchCount,
     int ApprovedBatchCount,
     decimal ApprovedBatchSum,
-    int BatchFinalApprovalHistoryCount);
+    int BatchFinalApprovalHistoryCount,
+    // Phase 1 P.O. cancellation: items released from APPROVED batches (their value is no longer live).
+    int ReleasedBatchItemCount = 0);
 
 /// <summary>Where the resolved request-level amount comes from.</summary>
 public enum RequestAmountSource
@@ -31,6 +33,10 @@ public enum RequestAmountSource
     /// <summary>Positive approved total whose currency was NOT recorded (legacy batch approvals); currency derived from
     /// current consistent data under the evidence rules of <see cref="DepartmentalAmountResolver"/>.</summary>
     DerivedApproved,
+    /// <summary>Phase 1 P.O. cancellation (D5): a group was cancelled after approval (or an approved batch had items
+    /// released), so the recorded total no longer describes what is alive; the amount is the live group sum in the
+    /// recorded currency.</summary>
+    ActiveApproved,
     /// <summary>No usable positive approved total: the requester's estimate under the estimate comparability rules.</summary>
     EstimateFallback,
     /// <summary>No amount can be stated in a single currency with sufficient evidence; excluded from any ratio.</summary>
@@ -87,6 +93,14 @@ public static class DepartmentalAmountResolver
                     return Unresolved(approved, "valor aprovado registado, mas os grupos P.O. ativos estão noutra moeda");
                 if (requestCurrency != null && !string.Equals(requestCurrency, recorded, StringComparison.Ordinal))
                     return Unresolved(approved, "valor aprovado registado numa moeda diferente da moeda do pedido");
+                // D5: a cancelled group or a released approved item means the recorded total counts value that is no longer
+                // alive (and, after a restart, would count the item twice). Report what is live, in the recorded currency.
+                if (f.CancelledGroupCount > 0 || f.ReleasedBatchItemCount > 0)
+                {
+                    if (groupCurrencies.Count == 0)
+                        return Unresolved(approved, "grupos P.O. cancelados e nenhum grupo ativo — valor aprovado histórico apenas");
+                    return new RequestAmountResolution(RequestAmountSource.ActiveApproved, f.LiveGroupSum, recorded, null);
+                }
                 return new RequestAmountResolution(RequestAmountSource.RecordedApproved, approved, recorded, null);
             }
 

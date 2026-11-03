@@ -23,9 +23,14 @@ export function canManageWorkspaceQuotations(
     buyerRole: string,
     requestBuyerId: string | null | undefined,
     currentUserId: string | null | undefined,
+    // v2.249.2 — the SERVER's window (scalar OR item-level, BuyerWorkspaceDto.quotationWindowOpen). When provided it
+    // replaces the scalar mirror: after a P.O.-group cancellation with a sibling group past the P.O. gate the scalar is
+    // PO_PARTIALLY_UPLOADED-like yet PUT/DELETE accept the unsubmitted quotations of the released lines.
+    quotationWindowOpen?: boolean | null,
 ): boolean {
     if (!requestStatusCode || !roles || !roles.includes(buyerRole)) return false;
     if (!requestBuyerId || !currentUserId || requestBuyerId !== currentUserId) return false;
+    if (typeof quotationWindowOpen === 'boolean') return quotationWindowOpen;
     return QUOTATION_MUTABLE_REQUEST_STATUSES.includes(requestStatusCode);
 }
 

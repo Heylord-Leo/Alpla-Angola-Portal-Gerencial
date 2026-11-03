@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { OcrDraft, OcrDraftItem } from '../../../../types';
+import { applyGlobalDiscountAllocationToDraft, computeDraftQuotationTotal } from '../../../../lib/quotationPricing';
 import { isLineItemEligibleForQuotation } from '../../batchEligibility';
 import { validateReconciliationJustification } from '../../../../lib/reconciliationJustificationValidator';
 import { hasMaterialOcrChange, isFractionalForIntegerUnit } from '../../../../lib/lineReconciliation';
@@ -54,6 +55,9 @@ export interface UseQuotationWizardStateReturn {
     addDraftItem: () => void;
     removeDraftItem: (index: number, ivaRates: any[]) => void;
     toggleNotQuotedPlaceholder: (requestItem: any) => void;
+    /** v2.249.6 — explicit Buyer action: distributes the draft's global discount over the considered lines (proportional to each
+     * line's net, exact sum), zeroes the global field and recomputes every total. Returns the number of lines that received a share. */
+    distributeGlobalDiscountToLines: (ivaRates: any[]) => number;
     setIsFinalReviewConfirmed: React.Dispatch<React.SetStateAction<boolean>>;
 
     /**
@@ -89,24 +93,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
     // that stage — that filtering only belongs to the backend's post-reconciliation Financial
     // Integrity comparison and to WizardStepFinalReview's separately-computed "Total Final
     // Considerado", not to this running draft total.
-    const recalculateQuotationTotal = (d: OcrDraft, rates: any[]) => {
-        let gross = 0;
-        let ivaTotal = 0;
-        d.items.forEach(item => {
-            const itemGrossRaw = Math.round(((item.quantity || 0) * (item.unitPrice || 0)) * 100) / 100;
-            const itemDiscount = item.discountAmount || 0;
-            const itemNet = Math.max(0, itemGrossRaw - itemDiscount);
-            gross += itemNet;
-            const selectedIva = rates.find(r => r.id === item.ivaRateId);
-            const ivaPercent = selectedIva ? selectedIva.ratePercent : 0;
-            ivaTotal += Math.round(itemNet * (ivaPercent / 100) * 100) / 100;
-        });
-        const discount = d.discountAmount || 0;
-        const taxableBase = Math.max(0, gross - discount);
-        const discountRatio = gross > 0 ? (taxableBase / gross) : 1;
-        const adjustedIva = Math.round(ivaTotal * discountRatio * 100) / 100;
-        return Math.max(0, Math.round((taxableBase + adjustedIva) * 100) / 100);
-    };
+    const recalculateQuotationTotal = (d: OcrDraft, rates: any[]) => computeDraftQuotationTotal(d, rates);
 
     const openWizard = (mode: 'NEW' | 'EDIT', initialDraft: OcrDraft | null = null, quotationId?: string, source: QuotationWizardSource = 'MANUAL', reworkBatchIdArg?: string, revisesQuotationIdArg?: string) => {
         setIsEditing(mode === 'EDIT');
@@ -142,6 +129,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
             if (!prev) return prev;
             const next = { ...prev, [field]: value };
             if (field === 'currency' && value) next.extractedCurrency = undefined;
+            // v2.249.8 — the validity date typed by the Buyer is recorded as MANUAL (cleared value: no provenance).
+            if (field === 'dueDate') next.dueDateSource = value ? 'MANUAL' : undefined;
             if (field === 'discountAmount') next.totalAmount = recalculateQuotationTotal(next, ivaRates);
             return next;
         });
@@ -152,6 +141,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
             if (!prev) return prev;
             const items = [...prev.items];
             const item = { ...items[itemIndex], [field]: value };
+            // v2.249.6 — the Buyer editing the discount is the confirmation the uncertainty asked for.
+            if (field === 'discountAmount') item.discountUncertain = false;
             
             const safeQty = item.quantity || 0;
             const safePrice = item.unitPrice || 0;
@@ -257,6 +248,21 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         });
     };
 
+    // v2.249.6 — explicit allocation of the global discount (lib/quotationPricing.applyGlobalDiscountAllocationToDraft). Never
+    // automatic: the Buyer presses "Distribuir pelas linhas" in the document step; the pure transform zeroes the global discount
+    // (a repeat press finds nothing to allocate — the discount is never applied twice), refuses an amount above the eligible net
+    // and never touches IGNORED / NOT_QUOTED or zero-value lines; the backend recomputes every total from the lines on save.
+    const distributeGlobalDiscountToLines = (ivaRates: any[]): number => {
+        let allocatedLines = 0;
+        setDraft(prev => {
+            if (!prev) return prev;
+            const outcome = applyGlobalDiscountAllocationToDraft(prev, ivaRates);
+            allocatedLines = outcome.allocatedLineCount;
+            return outcome.draft;
+        });
+        return allocatedLines;
+    };
+
     const canGoNext = (request: any, ivaRates: any[] = [], units: any[] = []): boolean => {
         switch (currentStep) {
             case 'OVERVIEW': return true;
@@ -269,6 +275,8 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
                 const hasCurrency = !!draft.currency;
                 const hasItems = draft.items.length > 0;
                 const noUncertainIva = draft.items.every(i => !i.ivaUncertain);
+                // v2.249.6 — a line whose extracted discount disagrees with the document's line total must be confirmed first.
+                const noUncertainDiscount = draft.items.every(i => !i.discountUncertain);
                 const allItemsValid = draft.items.every(i => i.totalPrice !== undefined && i.totalPrice >= 0);
                 // A classification that contradicts the document must be answered before advancing —
                 // the same rule the backend enforces, asked at the step where the choice was made.
@@ -277,7 +285,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
                     classificationConflict.acknowledged,
                     classificationConflict.justification);
                 return hasDocNum && hasDocDate && hasDueDate && hasDocType && hasCurrency && hasItems
-                    && noUncertainIva && allItemsValid && classificationSettled;
+                    && noUncertainIva && noUncertainDiscount && allItemsValid && classificationSettled;
             }
             case 'RECONCILIATION': {
                 if (!draft || !request) return false;
@@ -362,6 +370,7 @@ export function useQuotationWizardState(): UseQuotationWizardStateReturn {
         addDraftItem,
         removeDraftItem,
         toggleNotQuotedPlaceholder,
+        distributeGlobalDiscountToLines,
         setIsFinalReviewConfirmed,
         classificationConflict,
         setClassificationConflict,

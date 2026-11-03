@@ -2,7 +2,114 @@
 
 ## Current Version
 
-v2.248.2
+v2.249.8
+
+## [v2.249.8] - 2026-11-03
+
+### The typed P.O. number is reviewed against the document on every input; Print View line values distinguish the requester's estimate from the approved value; the quotation validity date is copied, never derived
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema; the backend change is the extraction
+prompt text). Findings of the v2.249.7 TEST validation on REQ-03/11/2026-630: (1) both P.O. wizards evaluate the typed number
+against the document from the current input (`describePoNumberDivergence`, mirror of the server rule), with an inline warning, the
+existing acknowledgement + mandatory justification and the submit gate; restoring the extracted number clears only that
+divergence; server enforcement proven by 10 real-endpoint tests for the initial registration and the correction. (2) The Print View
+prints the requester's estimate only when given and the approved value per line from the APPROVED batch's selected candidate (own
+currency, released items excluded, historical label for cancelled lines). (3) The quotation validity date: provider prompt defines
+it per document type (copied, never derived), pure tested date alias, provenance (extracted / manual) shown in the wizard; the value
+is **not persisted**; the original discrepancy has **no confirmed cause**. The manual pre-allocation submission block passed on
+REQ-631 (v2.249.7). Pending: browser validation of the three changes, ECF/ECF11 recognition, validity-date extraction. See
+CHANGELOG and `docs/PO_NUMBER_DIVERGENCE_PRINT_ITEMS_VALIDITY_DATE_v2.249.8.md`.
+
+## [v2.249.7] - 2026-11-03
+
+### The document's summary discount is a component of the reconciliation; the same discount applied twice is a residual, never an approval
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Finding of the v2.249.6 TEST validation on
+REQ-03/11/2026-630 (fixture K blocked at the final review with residual −6.840 after "Distribuir pelas linhas"): immutable header
+baseline `ocrDocumentDiscountAmount` (DTO-only like `OcrTotal`) credited by `QuotationReconciliationCalculator`
+(`DocumentSummaryDiscountCredit`, aggregate guard, no numeric guard) so a summary-only discount reconciles to 0 kept or distributed;
+`DocumentDiscountDeviation` makes the same discount applied twice a residual (+6.840) that needs the explicit residual justification,
+and every candidate-snapshot path refuses the unresolved doubled quotation writing nothing. The header baseline is client-supplied and
+not server-verifiable (same class as `OcrTotal`; not a new bypass; server-held header evidence = follow-up with migration). Browser
+validation, the manual pre-allocation submission block and supported-ECF recognition remain pending. See CHANGELOG and
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md` §9.
+
+## [v2.249.6] - 2026-11-03
+
+### Line-resolved pricing as a precondition of approval, discounts counted once at the line, refused P.O. documents show diagnostics only
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Findings of the v2.249.5 TEST validation on
+REQ-21/10/2026-595: `QuotationLinePricingPolicy` (409 `QUOTATION_PRICING_NOT_LINE_RESOLVED` in CreateBatch/UpdateBatch before any
+write; kinds incl. `LEGACY_TOTAL_NOT_COMPUTED`), `400 QUOTATION_GLOBAL_DISCOUNT_EXCEEDS_NET` on Save/Update/preview, line-discount
+resolution that never drops a printed discount, explicit bounded allocation of a summary-only discount (never for printed per-line
+discounts), `describeDivergenceControls` (DIAGNOSTIC_ONLY for refused P.O. documents), payment-condition proposal rule, read-only
+REQ-595 diagnostic. No approved amount recalculated; H1–H4 open; browser validation pending. See CHANGELOG and
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md`.
+
+## [v2.249.5] - 2026-10-30
+
+### Registered P.O. evidence never deleted (row-locked), quotation lifecycle context, "Menor valor" per item, selection follows reuse eligibility
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Findings of the v2.249.4 TEST validation
+on REQ-28/10/2026-628 plus the boundary pass: `PoEvidenceProtection` (409 `PO_EVIDENCE_PROTECTED`, `isPoEvidence`, no "Remover P.O
+atual", temporary-upload cleanup treated as "kept" on refusal), `PoDocumentRowLock` (register-po vs delete serialized, 409
+`PO_DOCUMENT_CONCURRENT_CHANGE`), `QuotationAdjudicationProjection` (lifecycle fields on saved quotations/items, card chip, SITUAÇÃO
+column, Print View), select-from-card guard (409 `QUOTATION_REUSE_NOT_AUTHORIZED`), `lib/quotationComparison` (per-item unit price,
+unequal quantities indicative only, card claim only on identical scope). See CHANGELOG and
+`docs/PO_EVIDENCE_AND_QUOTATION_LIFECYCLE_v2.249.5.md`.
+
+## [v2.249.4] - 2026-10-29
+
+### P.O. document validation, correction number, superseded P.O. files, cancelled-group invoice obligations, Print View dates
+
+PATCH, backend + frontend, **additive migration `20261029140552_AddPoDocumentSupersessionAndExtraction`** (Apply TEST Migrations
+before Deploy to TEST). Nine findings of the v2.249.3 TEST validation on REQ-28/10/2026-628: the correction wizard can now change
+the P.O. number (explicit decision when the document reads another number); both P.O. wizards identify the document from
+server-held extraction evidence (`POST …/po-document-extract`, `PoDocumentExtractions`) — a quotation/proforma/invoice is refused,
+an uncertain document needs the Buyer's explicit confirmation + justification; replaced P.O. files are marked superseded and the
+group points at its current document; a CANCELLED group carries no active final-invoice obligation; date-only fields keep their
+calendar day in the Print View; quoted vs not-quoted item counts; previous Finance review labelled; `NotifyOnPoCancelled`
+configurable. See CHANGELOG and `docs/PO_DOCUMENT_VALIDATION_v2.249.4.md`.
+
+## [v2.249.3] - 2026-10-29
+
+### Import wizard: OCR extraction on the item-level quotation window; failures shown inside the wizard
+
+PATCH, no migration. `POST …/ocr-extract` now honours the item-level window (scalar window OR released/pending lines of a
+batch-model request), is Buyer/SysAdmin only, and suggests reconciliation targets among the OPEN lines only; the document
+step of the import wizard reports upload/OCR failures inline (business rule vs provider vs network), resets its loading
+state, builds no draft from a failed/empty extraction and retries OCR without uploading the document again. See CHANGELOG.
+
+## [v2.249.2] - 2026-10-28
+
+### Restart-quotation flow after a P.O.-group cancellation — reuse rule, quotation entry, return-kind guidance, group actions, delivery state
+
+PATCH, no migration (inverse navigation only; EF reports no pending model changes). The DEC-147 / D3 reuse rule becomes one pure
+Domain policy shared by the batch endpoint and the Buyer queue/Workspace coverage, so a released line with only historical
+candidates is "Pendente de cotação" and keeps the quotation entries; the QUOTATION/PROFORMA upload (actually implemented now),
+PUT/DELETE quotation and the queue admission honour the item-level window; Finance-return wording and navigation follow the
+stored return kind (queue, Workspace, Para Minha Ação, Finance row, request page, Print View); "Registrar P.O." vs "Corrigir P.O."
+are separate group actions and `PO_REGISTRATION_PENDING` replaces "Concluído para Compras" while a first P.O. is pending; the
+cancellation card re-reads the outbox delivery state on demand. See CHANGELOG.
+
+## [v2.249.1] - 2026-10-28
+
+### Buyer Workspace — quotation entry after a partial submission / for released items; item action menu
+
+PATCH, no migration. Item-level quotation window (`QuotationWindowPolicy`) shared by the Buyer queue projection and the quotation
+write endpoints: pending lines not held by an active/approved batch stay quotable while another batch is in approval or after a
+P.O.-group cancellation with sibling groups past the P.O. gate; the request scalar is never changed. The "Itens & Cobertura" row
+menu uses the shared portal `KebabMenu`, now viewport-aware. See CHANGELOG.
+
+## [v2.249.0] - 2026-10-28
+
+### P.O. group cancellation / return to quotation after final approval (phase 1)
+
+MINOR with the additive migration `20261028082044_AddPoGroupCancellation` (apply before deploying; never run `Down`). Buyer
+cancels an approved P.O. group (restart quotation with new approvals, or close items); Buyer ECF declaration and separate Finance
+confirmation; replacement P.O. blocked until confirmation; Finance return kind; explicit recipient policy with durable outbox
+delivery (Finance users of the plant, Buyer, requester, approvers, AP mailbox); active approved amounts per currency; Workspace
+"Grupos P.O." tab and Finance "Cancelamentos a confirmar" panel. See `docs/PO_GROUP_CANCELLATION.md` and DEC-151.
 
 ## [v2.248.2] - 2026-10-22
 

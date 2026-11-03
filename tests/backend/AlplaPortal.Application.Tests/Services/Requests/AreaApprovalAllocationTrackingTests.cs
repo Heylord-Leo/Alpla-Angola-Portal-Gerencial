@@ -25,6 +25,9 @@ namespace AlplaPortal.Application.Tests.Services.Requests;
 /// rowcount-based concurrency failure. Tests are skipped when LocalDB is unavailable and
 /// clean up after themselves inside a rolled-back state (unique ids + explicit deletes).
 /// </summary>
+// Test isolation: every class that touches the shared LocalDB sandbox runs in the serialized "IntegrationTests"
+// collection (drift-aware rebuilds and lock-race tests of other classes must never overlap with this one).
+[Collection("IntegrationTests")]
 public class AreaApprovalAllocationTrackingTests
 {
     private static bool CanConnect() => IntegrationTestDatabase.CanConnect();

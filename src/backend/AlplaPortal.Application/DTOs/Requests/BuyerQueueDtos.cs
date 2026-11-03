@@ -94,6 +94,9 @@ public class BuyerPoCorrectionGroupDto
     public int? SupplierId { get; set; }
     public string? SupplierName { get; set; }
     public string? PurchaseOrderNumber { get; set; }
+    /// <summary>v2.249.2 — RequestPoGroup.LastFinanceReturnKind: PO_CORRECTION | ORDER_CANCELLATION_REQUESTED | null (legacy).</summary>
+    public string? ReturnKind { get; set; }
+    public string? ReturnKindLabel { get; set; }
 }
 
 /// <summary>Request-level paginated queue page. TotalCount counts REQUESTS, never line-items.</summary>

@@ -44,7 +44,7 @@ import { PaymentSourceDocumentsSection } from './components/PaymentSourceDocumen
 import { PaymentSourceDocumentsSummaryDto } from '../../types/paymentSourceDocument';
 import { RequestFinancialSummary } from './components/RequestFinancialSummary';
 import { RequestStatusActionPanels } from './components/RequestStatusActionPanels';
-import { RequestGroupDisplaySummary } from './components/RequestGroupDisplaySummary';
+import { RequestGroupDisplaySummary, RequestGroupCancellationChips } from './components/RequestGroupDisplaySummary';
 import { OperationInvoiceSection } from './components/OperationInvoiceSection';
 import { RequestCompletionSection } from './components/RequestCompletionSection';
 import { RequestLineItemsSection } from './components/RequestLineItemsSection';
@@ -633,6 +633,10 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
             {requestTypeCode === 'QUOTATION' && (
                 <RequestGroupDisplaySummary poGroups={poGroups || []} fallbackStatusName={statusFullName || ''} />
             )}
+            {/* Phase 1 P.O. cancellation: "P.O. cancelada" chips + prior-ECF block notice (renders nothing otherwise). */}
+            {requestTypeCode === 'QUOTATION' && (
+                <RequestGroupCancellationChips poGroups={poGroups || []} />
+            )}
 
             {/* v2.230.0 — Progresso por Grupo (multi-unit requests) + superseded-batch diagnostics.
                 Single-unit requests without warnings render nothing here (compatibility rule). */}
@@ -1015,8 +1019,8 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                 onCloseFeedback={() => setModalFeedback(prev => ({ ...prev, message: null }))}
             />
 
-            {/* Register PO Modal */}
-            {poGroupIdForUpload && (
+            {/* Register PO Modal — v2.249.4: never while the correction modal owns poGroupIdForUpload (both used to render). */}
+            {poGroupIdForUpload && !showCorrectPoModal && (
                 (() => {
                     const group = poGroups.find(g => g.id === poGroupIdForUpload);
                     if (!group) return null;

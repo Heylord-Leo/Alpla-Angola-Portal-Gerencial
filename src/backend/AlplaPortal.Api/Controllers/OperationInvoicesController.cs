@@ -370,8 +370,10 @@ public class OperationInvoicesController : BaseController
         var roleProblem = GuardMutationRole();
         if (roleProblem != null) return roleProblem;
 
+        // v2.249.4 — a CANCELLED group (DEC-151) bears no obligation even if its cached flag still says so.
         var hasObligationBearingGroup = await _context.RequestPoGroups
-            .AnyAsync(g => g.RequestId == requestId && g.RequiresOperationInvoice);
+            .AnyAsync(g => g.RequestId == requestId && g.RequiresOperationInvoice
+                           && g.Status != RequestConstants.PoGroupStatuses.Cancelled);
         if (!hasObligationBearingGroup)
         {
             var problem = new ProblemDetails
@@ -1695,7 +1697,8 @@ public class OperationInvoicesController : BaseController
             // decides who may go further (Buyer: hard block; Finance: divergence candidate).
             // AcceptsUploadIn keeps its original meaning for its own consumers untouched.
             if (!group.RequiresOperationInvoice ||
-                string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection, StringComparison.OrdinalIgnoreCase))
+                string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(group.Status, RequestConstants.PoGroupStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
             {
                 var problem = new ProblemDetails
                 {
@@ -2067,6 +2070,7 @@ public class OperationInvoicesController : BaseController
         var belongs = await _context.RequestPoGroups
             .AnyAsync(g => g.RequestId == requestId &&
                            g.RequiresOperationInvoice &&
+                           g.Status != RequestConstants.PoGroupStatuses.Cancelled &&
                            g.SupplierId == supplierId);
         if (belongs) return null;
 
@@ -2162,6 +2166,8 @@ public class OperationInvoicesController : BaseController
             if (group.RequestId != requestId ||
                 !group.RequiresOperationInvoice ||
                 string.Equals(group.Status, RequestConstants.PoGroupStatuses.WaitingPoCorrection,
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(group.Status, RequestConstants.PoGroupStatuses.Cancelled,
                     StringComparison.OrdinalIgnoreCase))
             {
                 var problem = new ProblemDetails

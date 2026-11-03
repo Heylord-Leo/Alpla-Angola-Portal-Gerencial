@@ -23,10 +23,12 @@ public class FinanceObligationProjectionTests
     private static FinanceObligationProjectionBuilder.GroupInput Group(
         string status, decimal total = 1000m, string currency = "AOA",
         IReadOnlyList<string>? actions = null,
-        IReadOnlyList<FinanceObligationProjectionBuilder.PaymentInput>? payments = null) =>
+        IReadOnlyList<FinanceObligationProjectionBuilder.PaymentInput>? payments = null,
+        string? returnKind = null) =>
         new(Guid.NewGuid(), 5, "Fornecedor X", "5000000000", "5000000000", status, "ECF10 2026/1", currency, total,
             actions ?? Array.Empty<string>(),
-            payments ?? Array.Empty<FinanceObligationProjectionBuilder.PaymentInput>());
+            payments ?? Array.Empty<FinanceObligationProjectionBuilder.PaymentInput>(),
+            returnKind);
 
     private static FinanceObligationProjectionBuilder.PaymentInput ScheduledPayment(DateTime scheduled, decimal amount = 800m) =>
         new(1, "FINAL_BALANCE", "SCHEDULED", amount, null, scheduled, null, false, "AOA");
@@ -125,7 +127,8 @@ public class FinanceObligationProjectionTests
     [Fact]
     public void WaitingPoCorrection_NoFinanceAction_ReturnedMessage()
     {
-        var o = FinanceObligationProjectionBuilder.Build(Req(), Group(RequestConstants.Statuses.WaitingPoCorrection), Today);
+        // v2.249.2 — "Devolvido para correção da P.O." is the wording of the stored PO_CORRECTION kind (legacy null → neutral).
+        var o = FinanceObligationProjectionBuilder.Build(Req(), Group(RequestConstants.Statuses.WaitingPoCorrection, returnKind: "PO_CORRECTION"), Today);
         Assert.Equal(FinanceActionClasses.NoFinanceAction, o.ActionClass);
         Assert.Equal("Devolvido para correção da P.O.", o.NextActionLabel);
     }

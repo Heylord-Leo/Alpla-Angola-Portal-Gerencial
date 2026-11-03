@@ -34,12 +34,6 @@ public sealed class CanonicalAlertProjection
 
     private const int MaxAlerts = 100;
 
-    private static readonly string[] BuyerActiveRequestStatusCodes =
-    {
-        RequestConstants.Statuses.Draft, RequestConstants.Statuses.WaitingQuotation,
-        RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.AreaAdjustment,
-        RequestConstants.Statuses.WaitingFinalApproval, RequestConstants.Statuses.FinalAdjustment,
-    };
 
     private static readonly string[] OwedMoneyPaymentTypes =
     {
@@ -112,13 +106,14 @@ public sealed class CanonicalAlertProjection
 
         var candidates = await scoped
             .Where(r => r.RequestType!.Code == RequestConstants.Types.Quotation
-                        && BuyerActiveRequestStatusCodes.Contains(r.Status!.Code)
                         && r.NeedByDateUtc != null && r.NeedByDateUtc < candidateCutoff)
+            .Where(BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWork) // v2.249.2 — shared bound (released lines admitted)
             .Include(r => r.RequestType).Include(r => r.Status).Include(r => r.NeedLevel).Include(r => r.Buyer)
             .Include(r => r.LineItems).ThenInclude(li => li.LineItemStatus)
             .Include(r => r.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
             .Include(r => r.PoGroups)
             .Include(r => r.Quotations).ThenInclude(qq => qq.Items)
+            .Include(r => r.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(r => r.Attachments)
             .AsSplitQuery().AsNoTracking()
             .ToListAsync();

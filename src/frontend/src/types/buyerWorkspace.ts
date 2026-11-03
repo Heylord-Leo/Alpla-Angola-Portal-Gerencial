@@ -1,5 +1,6 @@
 // Buyer Request Workspace (Phase 3A) — TS mirror of BuyerWorkspaceDto.cs. Read-only; server-derived.
 import type { BuyerNextAction } from './buyerQueue';
+import type { ActiveApprovedTotalsDto, LastFinanceReturnDto, PoGroupCancellationDto, PriorEcfConfirmationDto } from './index';
 
 export interface BuyerWorkspaceCoverage {
   totalItems: number;
@@ -35,7 +36,9 @@ export interface BuyerWorkspaceQuotation {
   supplierName?: string | null;
   documentNumber?: string | null;
   documentDate?: string | null;
+  /** v2.249.4 — quoted lines only (NOT_QUOTED / IGNORED placeholders excluded). */
   itemsQuotedCount: number;
+  itemsNotQuotedCount?: number;
   currency?: string | null;
   totalAmount: number;
   documentCount: number;
@@ -44,6 +47,10 @@ export interface BuyerWorkspaceQuotation {
   isSubmittedForApproval?: boolean;
   submittedBatchNumber?: number | null;
   submissionLockReason?: string | null;
+  /** v2.249.2 — items needing an explicit reuse authorization before entering a new batch (DEC-147 / D3). */
+  reuseBlockedItemCount?: number;
+  /** v2.249.2 — items with an active reuse authorization. */
+  reuseAuthorizedItemCount?: number;
 }
 
 export interface BuyerWorkspaceBatchAdjustmentReason {
@@ -83,6 +90,43 @@ export interface BuyerWorkspaceBatch {
   areaDecisionAtUtc?: string | null;
   /** Adjustment V2 (Phase 3): the batch's OPEN structured adjustment cycle, or null when none. */
   adjustment?: BuyerWorkspaceBatchAdjustment | null;
+  // ── Phase 1 P.O. cancellation (D5/D7): the batch stays APPROVED; released items are shown explicitly ──
+  releasedItemCount?: number;
+  releasedLineNumbers?: number[];
+  /** Per currency — NEVER summed across currencies. */
+  activeTotalsByCurrency?: CurrencyAmount[];
+  releasedTotalsByCurrency?: CurrencyAmount[];
+}
+
+/** One P.O. group of the request as the Buyer sees it, with the server-decided actions (correct / cancel) and blocks. */
+export interface BuyerWorkspacePoGroup {
+  id: string;
+  status: string;
+  supplierId?: number | null;
+  supplierName?: string | null;
+  currencyCode?: string | null;
+  totalAmount: number;
+  purchaseOrderNumber?: string | null;
+  approvalBatchNumber?: number | null;
+  paymentConditionCode?: string | null;
+  plantId?: number | null;
+  lineNumbers: number[];
+  /** v2.249.4 — lines the group covered before a cancellation released them (empty unless cancelled with RESTART_QUOTATION). */
+  historicalLineNumbers?: number[];
+  createdAtUtc: string;
+  rowVersion?: string | null;
+  poResponsibleBuyerId?: string | null;
+  lastFinanceReturn?: LastFinanceReturnDto | null;
+  cancellation?: PoGroupCancellationDto | null;
+  /** v2.249.2 — WAITING_PO: the group awaits its FIRST P.O. (registration on the request page). */
+  canRegisterPo?: boolean;
+  /** WAITING_PO_CORRECTION only (returned by Finance). v2.249.2: never true for WAITING_PO. */
+  canCorrectPo: boolean;
+  canCancel: boolean;
+  cancelBlockCode?: string | null;
+  cancelBlockMessage?: string | null;
+  financeConfirmationWouldBeRequired: boolean;
+  priorEcfConfirmation?: PriorEcfConfirmationDto | null;
 }
 
 export interface CurrencyAmount {
@@ -141,4 +185,11 @@ export interface BuyerWorkspace {
   quotations: BuyerWorkspaceQuotation[];
   batches: BuyerWorkspaceBatch[];
   suppliers: BuyerWorkspaceSupplier[];
+  // ── Phase 1 P.O. cancellation / return to quotation ──
+  poGroups?: BuyerWorkspacePoGroup[];
+  activeApprovedTotals?: ActiveApprovedTotalsDto | null;
+  // ── v2.249.2 — quotation window as the SERVER sees it (scalar window OR item-level window) ──
+  quotationWindowOpen?: boolean;
+  quotationWindowClosedReasonCode?: string | null;
+  openLineItemIds?: string[];
 }

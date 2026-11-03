@@ -1,3 +1,4 @@
+import { describeQuotationDueDateSource } from '../../../lib/ocrDateAlias';
 import React from 'react';
 import { OcrDraft, QuotationReconciliationDto } from '../../../types';
 import { QuotationValidationResult } from './hooks/useQuotationValidation';
@@ -54,6 +55,10 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
     if (substituteCount > 0 || extraCount > 0) {
         warnings.push(`Foram adicionados itens substitutos ou extras. Eles passarão pela aprovação técnica.`);
     }
+    // v2.249.6 — a quotation-level discount is applied only to the quotation total; approval prices per line (REQ-595).
+    if ((draft.discountAmount || 0) > 0) {
+        warnings.push(`Desconto comercial global de ${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(draft.discountAmount || 0)} ${draft.currency || 'AOA'} não distribuído pelas linhas: a cotação pode ser guardada, mas não poderá ser enviada para aprovação até o desconto estar refletido nas linhas (passo Documento → "Distribuir pelas linhas").`);
+    }
 
     // Financial calculations explicitly including valid statuses
     let totalExcludingIgnored = 0;
@@ -98,8 +103,10 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                         <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.documentDate || 'Não especificada'}</p>
                     </div>
                     <div>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Data Validade</p>
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.dueDate || 'Não especificada'}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Validade da cotação</p>
+                        <p data-testid="final-review-due-date" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-main)', margin: 0 }}>{draft.dueDate || 'Não especificada'}</p>
+                        {/* v2.249.8 — provenance + scope: the validity date is informational and is not saved with the quotation */}
+                        <p data-testid="final-review-due-date-source" style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0' }}>{draft.dueDate ? `${describeQuotationDueDateSource(draft.dueDateSource)} · não fica guardada com a cotação` : 'não fica guardada com a cotação'}</p>
                     </div>
                     <div>
                         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600, margin: '0 0 4px 0' }}>Moeda</p>
@@ -208,6 +215,12 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                     <Row label="Total do cabeçalho OCR" value={reconciliation.ocrHeaderTotal} />
                                     <Row label="Soma das linhas OCR" value={reconciliation.ocrLineSumTotal} />
                                     <Row label="Reconstruído dos componentes OCR" value={reconciliation.reconstructedOcrLineSum} />
+                                    {/* v2.249.7 — the document's own summary discount (read by the extraction), net of IVA. */}
+                                    {(reconciliation.ocrDocumentDiscount ?? 0) > 0 && (
+                                        <Row label={reconciliation.ocrDocumentDiscountKind === 'AGGREGATE_OF_LINES'
+                                            ? 'Desconto do resumo (soma dos descontos das linhas)'
+                                            : 'Desconto do resumo do documento (s/ IVA)'} value={reconciliation.ocrDocumentDiscount} />
+                                    )}
                                     <Row label="Diferença estrutural (cabeçalho − linhas)" value={reconciliation.structuralHeaderDifference} />
                                     <Row label="Diferença de componentes OCR" value={reconciliation.ocrLineComponentDifference} />
                                 </div>
@@ -225,6 +238,16 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                         distinguishes the document's own tax from buyer adjustments. */}
                                     {reconciliation.documentSummaryIvaCredit !== 0 && (
                                         <Row label="IVA de resumo reconhecido" value={reconciliation.documentSummaryIvaCredit} />
+                                    )}
+                                    {/* v2.249.7 — the document's own summary discount (with the IVA that follows it) is a document
+                                        component, not a Buyer adjustment: distributing it over the lines is the same discount. */}
+                                    {(reconciliation.documentSummaryDiscountCredit ?? 0) !== 0 && (
+                                        <Row label="Desconto do resumo reconhecido (c/ IVA)" value={reconciliation.documentSummaryDiscountCredit} />
+                                    )}
+                                    {/* v2.249.7 — the quotation carries more (negative) or less (positive) discount than the document grants:
+                                        the same discount applied twice is the typical case; it is part of the residual and needs an explicit reason. */}
+                                    {(reconciliation.documentDiscountDeviation ?? 0) !== 0 && (
+                                        <Row label={(reconciliation.documentDiscountDeviation ?? 0) < 0 ? 'Desconto além do documento (c/ IVA)' : 'Desconto aquém do documento (c/ IVA)'} value={reconciliation.documentDiscountDeviation} />
                                     )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--color-border)', margin: '4px 0' }} />
                                     <Row label="Total final considerado" value={reconciliation.finalConsideredTotal} strong />

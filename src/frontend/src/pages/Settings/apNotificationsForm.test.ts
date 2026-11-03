@@ -4,7 +4,7 @@ import { defaultApForm, formFromConfig, toApConfigPayload, validateApForm, type 
 const existing: ApConfig = {
     id: 7, companyId: 1, companyName: 'AlplaPLASTICO', email: 'alpla-plasticos-accounts@alpla.com',
     ccEmails: 'aovia-treasury@alpla.com', label: null, isActive: true,
-    notifyOnScheduled: true, notifyOnCompleted: true, notifyOnPoRegistered: false, notifyFinanceUsersByEmail: false,
+    notifyOnScheduled: true, notifyOnCompleted: true, notifyOnPoRegistered: false, notifyFinanceUsersByEmail: false, notifyOnPoCancelled: false,
     createdAtUtc: '2026-01-01T00:00:00Z', updatedAtUtc: '2026-01-01T00:00:00Z'
 };
 
@@ -41,7 +41,7 @@ describe('Accounts Payable e-mail form (Master Data)', () => {
         const p = toApConfigPayload(f, 'update');
         expect(p).toEqual({
             email: 'alpla-plasticos-accounts@alpla.com', ccEmails: 'aovia-treasury@alpla.com', label: null,
-            notifyOnScheduled: true, notifyOnCompleted: true, notifyOnPoRegistered: false, notifyFinanceUsersByEmail: true
+            notifyOnScheduled: true, notifyOnCompleted: true, notifyOnPoRegistered: false, notifyFinanceUsersByEmail: true, notifyOnPoCancelled: false
         });
         expect('companyId' in p).toBe(false);
 
@@ -63,5 +63,17 @@ describe('Accounts Payable e-mail form (Master Data)', () => {
         expect(validateApForm({ ...defaultApForm(), companyId: 0, email: 'ap@alpla.com' }, 'create')).toBe('Selecione uma empresa.');
         expect(validateApForm({ ...defaultApForm(), email: 'nope' }, 'update')).toBe('O e-mail principal não tem um formato válido.');
         expect(validateApForm({ ...defaultApForm(), email: 'ap@alpla.com', ccEmails: 'a@x;b' }, 'update')).toBe("O endereço CC 'b' não é um e-mail válido.");
+    });
+});
+
+// ── v2.249.4 — NotifyOnPoCancelled (DEC-151 AP notice) through the same supported path ──
+describe('Accounts Payable e-mail form — P.O. cancellation switch', () => {
+    it('defaults to OFF, is read from the API (missing = OFF) and is sent on create and update', () => {
+        expect(defaultApForm().notifyOnPoCancelled).toBe(false);
+        expect(formFromConfig({ ...existing, notifyOnPoCancelled: true }).notifyOnPoCancelled).toBe(true);
+        const legacy = { ...existing } as Partial<ApConfig>; delete legacy.notifyOnPoCancelled;
+        expect(formFromConfig(legacy as ApConfig).notifyOnPoCancelled).toBe(false);
+        expect(toApConfigPayload({ ...formFromConfig(existing), notifyOnPoCancelled: true }, 'update').notifyOnPoCancelled).toBe(true);
+        expect(toApConfigPayload({ ...defaultApForm(), companyId: 2, email: 'ap@alpla.com' }, 'create').notifyOnPoCancelled).toBe(false);
     });
 });

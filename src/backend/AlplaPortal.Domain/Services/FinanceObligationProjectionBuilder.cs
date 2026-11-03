@@ -37,7 +37,9 @@ public static class FinanceObligationProjectionBuilder
         string? CurrencyCode,
         decimal TotalAmount,
         System.Collections.Generic.IReadOnlyList<string> FinanceActions,
-        System.Collections.Generic.IReadOnlyList<PaymentInput> Payments);
+        System.Collections.Generic.IReadOnlyList<PaymentInput> Payments,
+        // v2.249.2 — RequestPoGroup.LastFinanceReturnKind of a WAITING_PO_CORRECTION group (null = legacy, unclassified).
+        string? LastFinanceReturnKind = null);
 
     public sealed record RequestInput(
         System.Guid RequestId,
@@ -173,7 +175,7 @@ public static class FinanceObligationProjectionBuilder
         // Server-authoritative execution flow (same rule MarkAsPaid enforces) — never inferred by the client.
         var paymentFlow = FinancePaymentFlows.Resolve(group.GroupStatus,
             group.Payments.Select(p => (p.PaymentType, p.PaymentStatus)));
-        var nextAction = NextActionLabel(actionClass, group.GroupStatus, advance);
+        var nextAction = NextActionLabel(actionClass, group.GroupStatus, advance, group.LastFinanceReturnKind);
         var operationalState = OperationalStateLabel(actionClass, group.GroupStatus, advance, isOverdue);
 
         return new FinanceObligation(
@@ -238,7 +240,16 @@ public static class FinanceObligationProjectionBuilder
 
     // Next action — corporate Finance verbs. Overdue is signalled in the due-date column, so the
     // next-action stays the plain imperative ("Efetuar pagamento").
-    private static string? NextActionLabel(string actionClass, string groupStatus, bool advance)
+    /// <summary>v2.249.2 — the "Devolvido…" next action names the STORED return kind: correction keeps the historical
+    /// wording, cancellation-requested says so, legacy (null) stays neutral — never inferred from reason text.</summary>
+    public static string ReturnedNextActionLabel(string? lastFinanceReturnKind) => lastFinanceReturnKind switch
+    {
+        PoGroupCancellationConstants.FinanceReturnKinds.PoCorrection => "Devolvido para correção da P.O.",
+        PoGroupCancellationConstants.FinanceReturnKinds.OrderCancellationRequested => "Devolvido — cancelamento solicitado (não corrigir)",
+        _ => "Devolvido para Compras (tipo não classificado)",
+    };
+
+    private static string? NextActionLabel(string actionClass, string groupStatus, bool advance, string? lastFinanceReturnKind = null)
     {
         return actionClass switch
         {
@@ -251,7 +262,7 @@ public static class FinanceObligationProjectionBuilder
             FinanceActionClasses.NoFinanceAction => groupStatus switch
             {
                 RequestConstants.PoGroupStatuses.WaitingPo => "Aguardando emissão da P.O. pelo Comprador",
-                RequestConstants.Statuses.WaitingPoCorrection => "Devolvido para correção da P.O.",
+                RequestConstants.Statuses.WaitingPoCorrection => ReturnedNextActionLabel(lastFinanceReturnKind),
                 _ => "Sem ação financeira"
             },
             _ => null

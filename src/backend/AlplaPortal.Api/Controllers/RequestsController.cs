@@ -1134,7 +1134,9 @@ public class RequestsController : BaseController
                     CreatedAtUtc = g.CreatedAtUtc,
                     CreatedByUserId = g.CreatedByUserId,
                     LineItemCount = g.LineItems.Count,
-                    AttachmentCount = g.PoAttachments.Count
+                    AttachmentCount = g.PoAttachments.Count(a => !a.IsDeleted),
+                    // v2.249.4 — raw pointer stamped by RegisterPo; resolved (fallback for pre-version groups) after materialization.
+                    CurrentPoAttachmentId = g.CurrentPoAttachmentId
                 }).OrderBy(g => g.CreatedAtUtc).ToList(),
 
                 Attachments = r.Attachments.Where(a => !a.IsDeleted).Select(a => new RequestAttachmentDto
@@ -1147,7 +1149,10 @@ public class RequestsController : BaseController
                     UploadedAtUtc = a.UploadedAtUtc,
                     UploadedByName = a.UploadedByUser!.FullName,
                     VoidedAtUtc = a.VoidedAtUtc,
-                    VoidReason = a.VoidReason
+                    VoidReason = a.VoidReason,
+                    RequestPoGroupId = a.RequestPoGroupId,
+                    SupersededAtUtc = a.SupersededAtUtc,
+                    SupersededByAttachmentId = a.SupersededByAttachmentId
                 }).ToList(),
 
                 StatusHistory = r.StatusHistories.Select(sh => new RequestStatusHistoryDto
@@ -1180,12 +1185,23 @@ public class RequestsController : BaseController
                     DocumentDate = q.DocumentDate,
                     Currency = q.Currency,
                     TotalAmount = q.TotalAmount,
+                    // v2.249.6 — the quotation's own pricing components (global discount included) travel with the DTO so the
+                    // Buyer surfaces can explain a quotation-level discount the lines do not carry.
+                    TotalGrossAmount = q.TotalGrossAmount,
+                    TotalDiscountAmount = q.TotalDiscountAmount,
+                    DiscountAmount = q.DiscountAmount,
+                    TotalTaxableBase = q.TotalTaxableBase,
+                    TotalIvaAmount = q.TotalIvaAmount,
                     RevisesQuotationId = q.RevisesQuotationId,
                     SourceType = q.SourceType,
                     SourceFileName = q.SourceFileName,
                     IsSelected = q.IsSelected,
                     CreatedAtUtc = q.CreatedAtUtc,
                     ItemCount = q.Items.Count,
+                    // v2.249.4 — "Itens" of a quotation = lines the supplier quoted; NOT_QUOTED / IGNORED rows are reconciliation
+                    // placeholders of the requested items (they record that the item was NOT offered), never purchases.
+                    QuotedItemCount = q.Items.Count(qi => qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.NotQuoted && qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.Ignored),
+                    NotQuotedItemCount = q.Items.Count(qi => qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.NotQuoted || qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored),
                     Items = q.Items.Select(qi => new SavedQuotationItemDto
                     {
                         Id = qi.Id,
@@ -1247,6 +1263,10 @@ public class RequestsController : BaseController
                         WinnerSelectedAtUtc = bi.WinnerSelectedAtUtc,
                         WinnerSelectionJustification = bi.WinnerSelectionJustification,
                         IsLegacyBuyerSelectedWinner = !bi.Candidates.Any() && bi.SelectedQuotationItemId != null,
+                        // v2.249.2 — P.O.-group cancellation release stamp: a released item no longer holds its line nor its
+                        // candidates (the submission modal must not treat them as "held"; the reuse rule governs them instead).
+                        ReleasedAtUtc = bi.ReleasedAtUtc,
+                        ReleaseKind = bi.ReleaseKind,
                         Candidates = bi.Candidates.Select(c => new ApprovalBatchItemCandidateDto
                         {
                             Id = c.Id,
@@ -1482,6 +1502,11 @@ public class RequestsController : BaseController
             }
         }
 
+        // ── v2.249.6 — line-resolved pricing (QuotationLinePricingPolicy): a quotation-level discount no line carries, or
+        // lines that do not add up to the quotation total, is surfaced here and refused by the batch endpoints (REQ-595).
+        if (request.Quotations != null)
+            foreach (var qDto in request.Quotations) WithLinePricing(qDto);
+
         // Compute DisplayWorkflowState (read-only, not persisted)
         request.DisplayWorkflowState = await _statusSyncService.ComputeDisplayWorkflowStateAsync(id);
 
@@ -1496,6 +1521,7 @@ public class RequestsController : BaseController
             .Include(r => r.LineItems.Where(li => !li.IsDeleted))
             .Include(r => r.ApprovalBatches)
                 .ThenInclude(b => b.Items)
+                    .ThenInclude(i => i.Candidates) // v2.249.5 — adjudication history per quotation item
             .Include(r => r.PoGroups)
             .AsSplitQuery()
             .FirstOrDefaultAsync();
@@ -1518,6 +1544,116 @@ public class RequestsController : BaseController
                 PoGroupId = legacyReturnVerdict.GroupId.Value,
                 JustificationRequired = true,
                 Reason = legacyReturnVerdict.Reason
+            };
+        }
+
+        // ── v2.249.4 — the CURRENT P.O. document per group (one rule: PoDocumentSelection) and the "current" flag on the
+        // attachments, so no reader (page, Finance drawer, Print View, correction modal) picks a superseded file. ──
+        foreach (var gDto in request.PoGroups)
+        {
+            gDto.CurrentPoAttachmentId = AlplaPortal.Domain.Services.PoDocumentSelection.ResolveCurrentPoAttachmentId(
+                gDto.Id,
+                gDto.CurrentPoAttachmentId,
+                request.Attachments.Select(a => new AlplaPortal.Domain.Services.PoDocumentSelection.Candidate(a.Id, a.RequestPoGroupId, a.AttachmentTypeCode, a.UploadedAtUtc, false, a.VoidedAtUtc, a.SupersededAtUtc)));
+        }
+        var currentPoIds = request.PoGroups.Where(g => g.CurrentPoAttachmentId.HasValue).Select(g => g.CurrentPoAttachmentId!.Value).ToHashSet();
+        foreach (var aDto in request.Attachments) aDto.IsCurrentPo = currentPoIds.Contains(aDto.Id);
+
+        // v2.249.5 — registered P.O. evidence flag (same rule the delete endpoint enforces: PoEvidenceProtection), so no UI
+        // offers a "remove" action the server will refuse. Legacy groups (no pointer) are covered by the registration history.
+        if (request.Attachments.Any(a => a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
+        {
+            var poGroupIds = request.PoGroups.Select(g => g.Id).ToList();
+            var registrationActions = AlplaPortal.Domain.Services.PoEvidenceProtection.RegistrationActions;
+            var registrationRows = await _context.RequestStatusHistories.AsNoTracking()
+                .Where(h => h.RequestId == id && registrationActions.Contains(h.ActionTaken))
+                .Select(h => new { h.CreatedAtUtc, h.Comment })
+                .ToListAsync();
+            var registrations = registrationRows.Select(h => new AlplaPortal.Domain.Services.PoEvidenceProtection.Registration(
+                h.CreatedAtUtc, AlplaPortal.Domain.Services.PoEvidenceProtection.GroupFromHistoryComment(h.Comment, poGroupIds))).ToList();
+            foreach (var aDto in request.Attachments.Where(a => a.AttachmentTypeCode == AttachmentConstants.Types.PurchaseOrder))
+            {
+                Guid? pointer = aDto.RequestPoGroupId.HasValue
+                    ? request.PoGroups.FirstOrDefault(g => g.Id == aDto.RequestPoGroupId.Value)?.CurrentPoAttachmentId
+                    : (currentPoIds.Contains(aDto.Id) ? aDto.Id : (Guid?)null);
+                aDto.IsPoEvidence = AlplaPortal.Domain.Services.PoEvidenceProtection.Evaluate(
+                    new AlplaPortal.Domain.Services.PoEvidenceProtection.FileFacts(aDto.Id, aDto.RequestPoGroupId, aDto.UploadedAtUtc, aDto.VoidedAtUtc, aDto.SupersededAtUtc),
+                    pointer, registrations).IsProtected;
+            }
+        }
+
+        // ── v2.249.5 — lifecycle context of each saved quotation / item (QuotationAdjudicationProjection): what already
+        // happened (awarded, award cancelled by a P.O.-group cancellation and the line re-quoted with another supplier, …)
+        // separated from the CURRENT reuse eligibility above. Derived only from batches (items + candidates), lines and the
+        // reuse rule; nothing is persisted. Found in TEST on REQ-628 (TREVOTECH listed like an open quotation).
+        if (displayEntity != null && request.Quotations != null && request.Quotations.Count > 0)
+        {
+            var reuseAuthRows = await _context.QuotationReuseAuthorizations.AsNoTracking()
+                .Where(a => a.RequestId == id)
+                .Select(a => new { a.Id, a.QuotationItemId, a.SourceApprovalBatchId, a.AuthorizedAtUtc, a.IsActive, a.ConsumedAtUtc, a.RevokedAtUtc, a.ConsumedByApprovalBatchId })
+                .ToListAsync();
+            var projection = AlplaPortal.Domain.Services.QuotationAdjudicationProjection.Project(
+                request.Quotations.Select(q => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.QuotationFacts(q.Id, q.SupplierNameSnapshot)).ToList(),
+                request.Quotations.SelectMany(q => q.Items.Select(qi => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.QuotationItemFacts(qi.Id, q.Id, qi.MappedRequestLineItemId, qi.ReconciliationStatus))).ToList(),
+                displayEntity.ApprovalBatches.Select(b => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.BatchFacts(
+                    b.Id, b.BatchNumber, b.Status, b.CreatedAtUtc,
+                    b.Items.Select(bi => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.BatchItemFacts(
+                        bi.RequestLineItemId, bi.SelectedQuotationItemId, bi.Candidates.Select(c => c.QuotationItemId).ToList(), bi.ReleasedAtUtc, bi.ReleaseKind)).ToList())).ToList(),
+                displayEntity.LineItems.Select(li => new AlplaPortal.Domain.Services.QuotationAdjudicationProjection.LineFacts(li.Id, li.LineNumber, li.QuotationLifecycleStatus, li.SelectedQuotationItemId)).ToList(),
+                QuotationReuseEligibilityPolicy.FinishedUsesFromLoaded(displayEntity.ApprovalBatches),
+                reuseAuthRows.Select(a => new QuotationReuseEligibilityPolicy.AuthorizationFacts(a.Id, a.QuotationItemId, a.SourceApprovalBatchId, a.AuthorizedAtUtc, a.IsActive, a.ConsumedAtUtc, a.RevokedAtUtc, a.ConsumedByApprovalBatchId)).ToList());
+            foreach (var qDto in request.Quotations)
+            {
+                if (!projection.TryGetValue(qDto.Id, out var qp)) continue;
+                qDto.LifecycleStatus = qp.LifecycleStatus;
+                qDto.ActiveAwardedItemCount = qp.ActiveAwardedItemCount;
+                qDto.HistoricalItemCount = qp.HistoricalItemCount;
+                qDto.HistoricalBatchNumber = qp.HistoricalBatchNumber;
+                qDto.HistoricalReleaseKind = qp.HistoricalReleaseKind;
+                foreach (var qiDto in qDto.Items)
+                {
+                    var ip = qp.Items.FirstOrDefault(x => x.QuotationItemId == qiDto.Id);
+                    if (ip == null) continue;
+                    qiDto.AdjudicationStatus = ip.AdjudicationStatus;
+                    qiDto.AdjudicationBatchNumber = ip.BatchNumber;
+                    qiDto.AdjudicationReleaseKind = ip.ReleaseKind;
+                    qiDto.LineCurrentState = ip.LineState;
+                    qiDto.LineCurrentSupplierName = ip.LineCurrentSupplierName;
+                }
+            }
+        }
+
+        // ── Phase 1 P.O. cancellation: per-group cancellation record, last Finance return (never inferred), the D4
+        // replacement-P.O. block and the D5 active approved totals (historical totals untouched). ──
+        if (displayEntity != null)
+        {
+            var cancellationSvc = HttpContext?.RequestServices?.GetService(typeof(IPoGroupCancellationService)) as IPoGroupCancellationService;
+            var priorGuard = new PriorEcfConfirmationGuard(_context);
+            var groupRows = await _context.RequestPoGroups.AsNoTracking().Where(g => g.RequestId == id).Select(g => new { g.Id, g.RowVersion, g.Status }).ToListAsync();
+            foreach (var gDto in request.PoGroups)
+            {
+                var row = groupRows.FirstOrDefault(x => x.Id == gDto.Id);
+                gDto.RowVersion = row != null ? Convert.ToBase64String(row.RowVersion ?? Array.Empty<byte>()) : null;
+                if (cancellationSvc != null)
+                {
+                    var actor = new PoGroupCancellationActor(CurrentUserId, CurrentUserRoles);
+                    gDto.Cancellation = await cancellationSvc.GetAsync(gDto.Id, actor);
+                    gDto.LastFinanceReturn = await cancellationSvc.GetLastFinanceReturnAsync(gDto.Id);
+                    // v2.249.4 — lines the cancelled group covered before the release (live links are gone after RESTART_QUOTATION).
+                    if (gDto.Cancellation != null) gDto.HistoricalLineItemCount = Math.Max(gDto.LineItemCount, gDto.Cancellation.Items.Count);
+                }
+                if (gDto.Status == RequestConstants.PoGroupStatuses.WaitingPo || gDto.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                    gDto.PriorEcfConfirmation = await priorGuard.EvaluateForGroupAsync(gDto.Id, lockRows: false);
+            }
+            var activeTotals = ActiveApprovedTotals.ForRequest(displayEntity.PoGroups, displayEntity.ApprovalBatches);
+            var (activeAmount, activeCurrency) = ActiveApprovedTotals.Scalar(activeTotals);
+            request.ActiveApprovedTotals = new ActiveApprovedTotalsDto
+            {
+                ActiveByCurrency = activeTotals.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+                ActiveAmount = activeAmount, ActiveCurrency = activeCurrency,
+                HistoricalApprovedTotalAmount = displayEntity.ApprovedTotalAmount, HistoricalApprovedCurrencyCode = displayEntity.ApprovedCurrencyCode,
+                CancelledGroupCount = displayEntity.PoGroups.Count(g => g.Status == RequestConstants.PoGroupStatuses.Cancelled),
+                ReleasedItemCount = displayEntity.ApprovalBatches.SelectMany(b => b.Items).Count(bi => bi.ReleasedAtUtc.HasValue),
             };
         }
 
@@ -3344,15 +3480,31 @@ public class RequestsController : BaseController
         
         if (request == null) return NotFound("Pedido não encontrado.");
 
-        // Rule: OCR extraction is only allowed during the quotation phase
+        // v2.249.2 — OCR extraction is Buyer work (classic Buyer tools and the Workspace wizard are its only callers); the
+        // same actors as the explicit reuse authorization. Scope is already enforced by GetScopedRequestsQuery above.
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem extrair cotações por OCR.", Status = 403 });
+
+        // Rule: OCR extraction is allowed in the quotation phase (request scalar window) OR — v2.249.2, the gate v2.249.1
+        // documented but did not implement — on the item-level window (QuotationWindowPolicy: released / never-quoted lines
+        // not held by an active/approved batch, batch-model requests only), e.g. a line released by a P.O.-group cancellation
+        // while a sibling group keeps the scalar past the P.O. gate. The scalar is never changed; a pending Finance
+        // confirmation never gates this (it gates the replacement P.O. only).
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? ocrItemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível realizar extração OCR neste status do pedido.", 
-                Status = 409 
-            });
+            var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(
+                _context, request.Id, null, request.Status!.Code, request.IsCancelled);
+            if (!window.IsOpen)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Não é possível realizar extração OCR neste status do pedido.",
+                    Status = 409
+                });
+            }
+            ocrItemWindow = window;
         }
 
         try
@@ -3419,9 +3571,14 @@ public class RequestsController : BaseController
 
             _context.OcrExtractedItems.AddRange(ocrItems);
 
-            // Generate reconciliation records against requester items
+            // Generate reconciliation records against requester items.
+            // v2.249.2 — never against a COMMITTED line (approved/bought or closed after approval) and, on the item-level
+            // window, only against the OPEN lines: the suggestions can only target lines a new quotation may actually map to
+            // (SaveQuotation refuses the rest), so a historical sibling line is never proposed, let alone overwritten.
             var requesterItems = request.LineItems
                 .Where(li => !li.IsDeleted)
+                .Where(li => !AlplaPortal.Domain.Services.QuotationWindowPolicy.IsCommittedLifecycle(li.QuotationLifecycleStatus))
+                .Where(li => ocrItemWindow == null || ocrItemWindow.IsLineOpen(li.Id))
                 .OrderBy(li => li.LineNumber)
                 .ToList();
 
@@ -3669,6 +3826,76 @@ public class RequestsController : BaseController
         };
     }
 
+    /// <summary>
+    /// v2.249.4 — extraction of a PURCHASE-ORDER document for the P.O. registration / correction wizards. Unlike
+    /// <c>direct-ocr</c> (anonymous, stateless) this is request-scoped, Buyer / SysAdmin only, and PERSISTS what the provider
+    /// read as <see cref="PoDocumentExtraction"/>, bound to the request and to the SHA-256 the server computes over the bytes
+    /// it read. <c>register-po</c> identifies the document from that evidence alone (looked up by the registered attachment's
+    /// own server-computed hash); nothing the client submits can supply or alter it. Returns the same envelope as
+    /// <c>direct-ocr</c> so the wizards render one shape. A provider failure persists nothing and answers 500 PORTAL_ERROR.
+    /// </summary>
+    [HttpPost("{id:guid}/po-document-extract")]
+    public async Task<ActionResult<OcrExtractionResultDto>> PoDocumentExtract(Guid id, IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest("Nenhum arquivo enviado.");
+
+        var scoped = await GetScopedRequestsQuery();
+        var exists = await scoped.AsNoTracking().AnyAsync(r => r.Id == id);
+        if (!exists) return NotFound("Pedido não encontrado.");
+        if (!CurrentUserRoles.Contains(RoleConstants.Buyer) && !CurrentUserRoles.Contains(RoleConstants.SystemAdministrator))
+            return StatusCode(403, new ProblemDetails { Title = "Acesso Negado", Detail = "Apenas compradores podem validar documentos de P.O.", Status = 403 });
+
+        byte[] bytes;
+        using (var buffer = new MemoryStream()) { await file.CopyToAsync(buffer); bytes = buffer.ToArray(); }
+        var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        var safeFileName = Path.GetFileName(file.FileName ?? "documento.pdf");
+        if (safeFileName.Length > 255) safeFileName = safeFileName.Substring(safeFileName.Length - 255);
+
+        ExtractionResultDto internalResult;
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            internalResult = await _extractionService.ExtractAsync(stream, safeFileName, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during P.O. document extraction for request {RequestId}", id);
+            await LogOcrExecutionAsync(safeFileName, id, null, ex);
+            return StatusCode(500, new OcrExtractionResultDto { Success = false, Status = new OcrStatusDto { Code = "PORTAL_ERROR", QualityScore = 0 } });
+        }
+
+        var legacyResult = ExtractionMapper.MapToLegacyOcrResult(internalResult, safeFileName);
+        var ident = legacyResult.Integration?.HeaderSuggestions?.PurchaseOrderIdentification;
+        var h = internalResult.Header;
+        static string? Trunc(string? v, int max) => string.IsNullOrEmpty(v) ? v : v.Length <= max ? v : v.Substring(0, max);
+        _context.PoDocumentExtractions.Add(new PoDocumentExtraction
+        {
+            RequestId = id,
+            FileHash = fileHash,
+            FileName = safeFileName,
+            ExtractedByUserId = CurrentUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            Success = internalResult.Success,
+            ProviderStatusCode = Trunc(legacyResult.Status?.Code, 40),
+            Verdict = Trunc(ident?.Verdict, 40),
+            ReasonCode = Trunc(ident?.ReasonCode, 60),
+            Reference = Trunc(ident?.Reference, 100),
+            Family = Trunc(ident?.Family, 10),
+            DocumentNumber = Trunc(h?.DocumentNumber, 200),
+            DocumentTitle = Trunc(h?.DocumentTitle ?? h?.DocumentClassificationTitleFound, 300),
+            ClassificationType = Trunc(h?.DocumentClassificationType, 40),
+            ClassificationConfidence = h?.DocumentClassificationConfidence is decimal c ? Math.Clamp(c, 0m, 1m) : null,
+            ReferencedDocumentNumbersJson = h?.ReferencedDocumentNumbers is { Count: > 0 } refs ? System.Text.Json.JsonSerializer.Serialize(refs) : null,
+            SupplierName = Trunc(h?.SupplierName, 255),
+            SupplierTaxId = Trunc(h?.SupplierTaxId, 50),
+            CurrencyCode = Trunc(h?.Currency, 10),
+            GrandTotal = h?.GrandTotal ?? h?.TotalAmount,
+        });
+        await _context.SaveChangesAsync();
+        await LogOcrExecutionAsync(safeFileName, id, internalResult, null);
+        return Ok(legacyResult);
+    }
+
     [AllowAnonymous]
     [HttpPost("direct-ocr")]
     public async Task<ActionResult<OcrExtractionResultDto>> DirectOcrExtract(IFormFile file, [FromQuery] string? sourceContext = null)
@@ -3707,6 +3934,50 @@ public class RequestsController : BaseController
                 }
             });
         }
+    }
+
+    /// <summary>
+    /// v2.249.2 — resolution of every request-line reference carried by a quotation payload, evaluated BEFORE any tracked
+    /// mutation of SaveQuotation / UpdateQuotation:
+    ///  • <c>Invalid</c>: payload lines whose <c>MappedRequestLineItemId</c> is not a non-deleted line of THIS request
+    ///    (foreign request, unknown id, deleted line). The whole operation is refused; nothing is remapped or dropped, and the
+    ///    message never says whether the id exists elsewhere.
+    ///  • <c>Committed</c>: this request's referenced lines whose lifecycle is COMMITTED
+    ///    (QuotationWindowPolicy.CommittedLifecycleStatuses) — refused per line by the callers in the scalar window.
+    /// Any reconciliation status counts: a reference is a reference.
+    /// </summary>
+    private sealed record MappedLineResolution(HashSet<Guid> Committed, List<SaveQuotationItemDto> Invalid);
+
+    private async Task<MappedLineResolution> ResolveMappedLinesAsync(Guid requestId, IEnumerable<SaveQuotationItemDto>? items)
+    {
+        var list = (items ?? Enumerable.Empty<SaveQuotationItemDto>()).ToList();
+        var mapped = list.Where(i => i.MappedRequestLineItemId.HasValue).Select(i => i.MappedRequestLineItemId!.Value).Distinct().ToList();
+        if (mapped.Count == 0) return new MappedLineResolution(new HashSet<Guid>(), new List<SaveQuotationItemDto>());
+        var owned = await _context.RequestLineItems.AsNoTracking()
+            .Where(li => li.RequestId == requestId && mapped.Contains(li.Id) && !li.IsDeleted)
+            .Select(li => new { li.Id, li.QuotationLifecycleStatus })
+            .ToListAsync();
+        var ownedIds = owned.Select(o => o.Id).ToHashSet();
+        var committed = owned
+            .Where(o => AlplaPortal.Domain.Services.QuotationWindowPolicy.IsCommittedLifecycle(o.QuotationLifecycleStatus))
+            .Select(o => o.Id).ToHashSet();
+        var invalid = list.Where(i => i.MappedRequestLineItemId.HasValue && !ownedIds.Contains(i.MappedRequestLineItemId!.Value)).ToList();
+        return new MappedLineResolution(committed, invalid);
+    }
+
+    /// <summary>400 for foreign / unknown / deleted request-line references (existing "Validação de Item" convention; no
+    /// information about other requests is disclosed).</summary>
+    private static BadRequestObjectResult InvalidLineReference(IReadOnlyList<SaveQuotationItemDto> invalid)
+    {
+        var numbers = string.Join(", ", invalid.Select(i => i.LineNumber).Distinct().OrderBy(n => n));
+        var pd = new ProblemDetails
+        {
+            Title = "Validação de Item",
+            Detail = $"Item(ns) {numbers}: o item do pedido referenciado não pertence a este pedido ou já não existe. Nenhuma alteração foi guardada.",
+            Status = 400
+        };
+        pd.Extensions["code"] = "REQUEST_LINE_REFERENCE_INVALID";
+        return new BadRequestObjectResult(pd);
     }
 
     /// <summary>
@@ -4050,9 +4321,13 @@ public class RequestsController : BaseController
         });
     }
 
+    /// <summary>v2.249.7 — the immutable OCR header-discount baseline of the payload (counterpart of OcrTotal), never negative.</summary>
+    private static decimal OcrDocumentDiscountBaseline(SaveQuotationRequestDto dto)
+        => Round2(Math.Max(0m, dto.OcrDocumentDiscountAmount ?? 0m));
+
     private QuotationReconciliationResult ComputeReconciliation(
         decimal ocrHeaderTotal, List<ReconciliationLineInput> lineInputs, List<QuotationItem> allItems,
-        decimal globalDiscount, decimal netAfterItemDiscounts)
+        decimal globalDiscount, decimal netAfterItemDiscounts, decimal ocrDocumentDiscount)
     {
         // Single source of truth for the considered total + global-discount effect: the exact same
         // QuotationIntegrityCalculator used elsewhere (refinement 4 — identical allocation & IVA rules).
@@ -4065,7 +4340,7 @@ public class RequestsController : BaseController
 
         return QuotationReconciliationCalculator.Compute(
             ocrHeaderTotal, lineInputs, integrity.QuotationConsideredTotal, globalDiscountEffect,
-            QuotationReconciliationCalculator.ToleranceAmount);
+            QuotationReconciliationCalculator.ToleranceAmount, ocrDocumentDiscount);
     }
 
     private static QuotationReconciliationDto MapReconciliation(QuotationReconciliationResult r) => new()
@@ -4086,6 +4361,12 @@ public class RequestsController : BaseController
         ManualAdditionsImpact = r.ManualAdditionsImpact,
         ExplainedLineAdjustments = r.ExplainedLineAdjustments,
         DocumentSummaryIvaCredit = r.DocumentSummaryIvaCredit,
+        OcrDocumentDiscount = r.OcrDocumentDiscount,
+        OcrDocumentDiscountKind = r.OcrDocumentDiscountKind,
+        DocumentSummaryDiscountCredit = r.DocumentSummaryDiscountCredit,
+        DocumentDiscountCarried = r.DocumentDiscountCarried,
+        DocumentDiscountExpected = r.DocumentDiscountExpected,
+        DocumentDiscountDeviation = r.DocumentDiscountDeviation,
         ResidualVariance = r.ResidualVariance,
         ToleranceApplied = r.ToleranceApplied,
         ResidualExceedsTolerance = r.ResidualExceedsTolerance,
@@ -4187,7 +4468,11 @@ public class RequestsController : BaseController
                     $"Reconciliação financeira da cotação ({quotation.SupplierNameSnapshot}). " +
                     $"Total documento OCR (cabeçalho)={result.OcrHeaderTotal:N2}; soma linhas OCR={result.OcrLineSumTotal:N2}; " +
                     $"reconstruído dos componentes OCR={result.ReconstructedOcrLineSum:N2}; diferença estrutural={result.StructuralHeaderDifference:N2}; " +
-                    $"diferença de componentes={result.OcrLineComponentDifference:N2}; residual (com sinal)={result.ResidualVariance:N2}; " +
+                    $"diferença de componentes={result.OcrLineComponentDifference:N2}; " +
+                    $"desconto do resumo do documento={result.OcrDocumentDiscount:N2} ({result.OcrDocumentDiscountKind}); crédito do desconto do resumo={result.DocumentSummaryDiscountCredit:N2}; " +
+                    $"IVA de resumo reconhecido={result.DocumentSummaryIvaCredit:N2}; desconto transportado pela cotação={result.DocumentDiscountCarried:N2}; " +
+                    $"desconto concedido pelo documento={result.DocumentDiscountExpected:N2}; desvio de desconto face ao documento={result.DocumentDiscountDeviation:N2}; " +
+                    $"residual (com sinal)={result.ResidualVariance:N2}; " +
                     $"tolerância={result.ToleranceApplied:N2}. Ajustes explicados: ignorados={result.IgnoredImpact:N2}, quantidade={result.QuantityImpact:N2}, " +
                     $"preço={result.UnitPriceImpact:N2}, desconto={result.DiscountImpact:N2}, IVA={result.IvaImpact:N2}, " +
                     $"desconto global={result.GlobalDiscountImpact:N2}, adições manuais={result.ManualAdditionsImpact:N2}. " +
@@ -4300,6 +4585,8 @@ public class RequestsController : BaseController
         decimal sumItemDiscounts = considered.Sum(i => i.DiscountAmount);
         decimal netAfterItemDiscounts = Round2(Math.Max(0, totalGross - sumItemDiscounts));
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, dto.Currency);
 
         var lineInputs = BuildReconciliationLineInputs(items, manualAdditionItemIds, ivaRates);
 
@@ -4319,7 +4606,7 @@ public class RequestsController : BaseController
             return BadRequest(pd);
         }
 
-        var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, items, globalDiscount, netAfterItemDiscounts);
+        var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, items, globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
         return Ok(MapReconciliation(reconciliation));
     }
 
@@ -4356,21 +4643,54 @@ public class RequestsController : BaseController
         // candidate). The exception is scoped by an explicit reworkBatchId; the global scalar rule is
         // unchanged. See EvaluateReworkRevisionAsync.
         var isReworkRevision = false;
+        // v2.249.1 — item-level window (QuotationWindowPolicy): when the scalar is outside the quotation window
+        // but the batch-model request still has lines OPEN for quotation (pending, not held by any active or
+        // approved batch — e.g. released by a P.O.-group cancellation while a sibling group is already past the
+        // P.O. gate, or never quoted after a partial submission whose batch already produced a P.O.), a NEW
+        // quotation may be added for THOSE lines only. Lines held by a batch, approved, closed or cancelled are
+        // refused per line (409); replacing an existing quotation is not allowed on this path. The scalar is
+        // never changed here.
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? itemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
             var (reworkAllowed, reworkError) = await EvaluateReworkRevisionAsync(request, reworkBatchId, revisesQuotationId, replaceQuotationId, dto, actorId);
             if (reworkError != null) return reworkError;
-            if (!reworkAllowed)
+            if (reworkAllowed)
             {
-                return Conflict(new ProblemDetails
-                {
-                    Title = "Ação Bloqueada",
-                    Detail = "Não é possível adicionar cotações neste status do pedido.",
-                    Status = 409
-                });
+                isReworkRevision = true;
             }
-            isReworkRevision = true;
+            else
+            {
+                var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request);
+                if (!window.IsOpen)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Ação Bloqueada",
+                        Detail = "Não é possível adicionar cotações neste status do pedido.",
+                        Status = 409
+                    });
+                }
+                if (replaceQuotationId.HasValue)
+                {
+                    return Conflict(new ProblemDetails
+                    {
+                        Title = "Ação Bloqueada",
+                        Detail = "Neste estado do pedido só é possível adicionar cotações para os itens ainda pendentes; a substituição de uma cotação existente não é permitida.",
+                        Status = 409
+                    });
+                }
+                itemWindow = window;
+            }
         }
+
+        // v2.249.2 — every request-line reference must be a non-deleted line of THIS request (foreign / unknown / deleted →
+        // 400, whole payload refused, nothing tracked or persisted yet at this point). Committed lines (approved/bought or
+        // closed after approval) never receive a MAPPED/SUBSTITUTE quotation line, in the scalar window too (the sibling
+        // group may keep the scalar at WAITING_QUOTATION); a mixed payload is refused as a whole below.
+        var mappedLines = await ResolveMappedLinesAsync(id, dto.Items);
+        if (mappedLines.Invalid.Count > 0) return InvalidLineReference(mappedLines.Invalid);
+        var committedLineIds = mappedLines.Committed;
 
         // Basic Validation
         if (dto.SupplierId <= 0) return BadRequest(new ProblemDetails { Title = "Validação de Cotação", Detail = "O fornecedor é obrigatório.", Status = 400 });
@@ -4441,6 +4761,21 @@ public class RequestsController : BaseController
             }
 
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
+
+            // v2.249.1 — on the item-level window path every mapped line must target an OPEN request line;
+            // v2.249.2 — in the scalar window a COMMITTED line (approved/bought, closed after approval) is refused the same way.
+            if (item.MappedRequestLineItemId.HasValue
+                && (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
+                    || item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
+                && (itemWindow != null ? !itemWindow.IsLineOpen(item.MappedRequestLineItemId.Value) : committedLineIds.Contains(item.MappedRequestLineItemId.Value)))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Item já comprometido",
+                    Detail = $"Item {item.LineNumber}: o item do pedido associado já está num lote ativo, aprovado ou encerrado e não aceita novas cotações. Neste estado só os itens pendentes de cotação podem ser cotados.",
+                    Status = 409
+                });
+            }
 
             // Integer-unit final quantity must be a whole number (invalid-input check, before materiality).
             var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);
@@ -4525,6 +4860,9 @@ public class RequestsController : BaseController
 
         // Global (commercial) discount from DTO — reduces the taxable base further
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        // v2.249.6 — never clamp an excessive global discount into a zero taxable base: refuse it (nothing written).
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, quotation.Currency);
         decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
@@ -4546,7 +4884,7 @@ public class RequestsController : BaseController
         if (isOcrQuotation)
         {
             var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
-            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
             var itemsById = quotation.Items.ToDictionary(i => i.Id);
             var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
             if (gateError != null) return gateError;
@@ -4589,7 +4927,7 @@ public class RequestsController : BaseController
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
 
-        return Ok(new SavedQuotationDto
+        return Ok(WithLinePricing(new SavedQuotationDto
         {
             Id = quotation.Id,
             RequestId = quotation.RequestId,
@@ -4650,7 +4988,43 @@ public class RequestsController : BaseController
                 ItemCatalogId = qi.ItemCatalogId,
                 ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
-        });
+        }));
+    }
+
+    /// <summary>
+    /// v2.249.6 — stamps the line-resolved pricing evaluation (QuotationLinePricingPolicy) on a saved-quotation DTO from the
+    /// DTO's own persisted totals and lines. Pure; used by the details read, SaveQuotation and UpdateQuotation responses.
+    /// </summary>
+    /// <summary>
+    /// v2.249.6 — write-path arithmetic boundary (SaveQuotation / UpdateQuotation / reconcile-preview): a quotation-level
+    /// discount larger than the net of the considered lines after their own discounts is refused instead of being clamped to a
+    /// zero taxable base. Nothing is written.
+    /// </summary>
+    private static BadRequestObjectResult GlobalDiscountExceedsNetProblem(decimal globalDiscount, decimal netAfterItemDiscounts, string? currency)
+    {
+        var pd = new ProblemDetails
+        {
+            Title = "Desconto global superior ao valor líquido",
+            Detail = $"O desconto comercial global ({globalDiscount:N2} {currency}) excede o valor líquido das linhas consideradas após os descontos por linha ({netAfterItemDiscounts:N2} {currency}). " +
+                     "Corrija o desconto global ou os descontos por linha (um desconto só pode ser aplicado uma vez). Nada foi guardado.",
+            Status = 400
+        };
+        pd.Extensions["code"] = QuotationLinePricingPolicy.GlobalDiscountExceedsNetCode;
+        pd.Extensions["globalDiscount"] = globalDiscount;
+        pd.Extensions["netAfterItemDiscounts"] = netAfterItemDiscounts;
+        return new BadRequestObjectResult(pd);
+    }
+
+    private static SavedQuotationDto WithLinePricing(SavedQuotationDto dto)
+    {
+        var evaluation = AlplaPortal.Domain.Services.QuotationLinePricingPolicy.Evaluate(
+            dto.TotalAmount, dto.DiscountAmount,
+            (dto.Items ?? new List<SavedQuotationItemDto>()).Select(i => new AlplaPortal.Domain.Services.QuotationLinePricingPolicy.LineFacts(i.ReconciliationStatus, i.LineTotal)));
+        dto.IsLinePricingResolved = evaluation.IsLineResolved;
+        dto.LinePricingKind = evaluation.Kind;
+        dto.LinePricingReasonCode = evaluation.ReasonCode;
+        dto.ConsideredLineTotalSum = evaluation.ConsideredLineTotalSum;
+        return dto;
     }
 
     /// <summary>
@@ -4742,16 +5116,30 @@ public class RequestsController : BaseController
         
         if (request == null) return NotFound("Pedido não encontrado.");
 
-        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes
+        // Status Rule Check: Only explicitly editable statuses allow quotation persistence changes.
+        // v2.249.2 — OR the item-level window (QuotationWindowPolicy): a quotation registered for lines released to
+        // quotation / still pending after a partial submission can be edited while it is not submitted (§7 lock below);
+        // on that path every MAPPED/SUBSTITUTE line of the payload must target an OPEN request line (409 per line).
+        AlplaPortal.Domain.Services.QuotationWindowPolicy.Evaluation? updateItemWindow = null;
         if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível alterar cotações neste status do pedido.", 
-                Status = 409 
-            });
+            var window = await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request);
+            if (!window.IsOpen)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Ação Bloqueada",
+                    Detail = "Não é possível alterar cotações neste status do pedido.",
+                    Status = 409
+                });
+            }
+            updateItemWindow = window;
         }
+        // v2.249.2 — request-line ownership (foreign / unknown / deleted → 400, whole payload refused before any tracked
+        // mutation) and committed lines (refused in the scalar window too) — see SaveQuotation.
+        var mappedLines = await ResolveMappedLinesAsync(requestId, dto.Items);
+        if (mappedLines.Invalid.Count > 0) return InvalidLineReference(mappedLines.Invalid);
+        var committedLineIds = mappedLines.Committed;
 
         var quotation = await _context.Quotations
             .Include(q => q.Items)
@@ -4865,6 +5253,21 @@ public class RequestsController : BaseController
 
             if (item.UnitPrice < 0) return BadRequest(new ProblemDetails { Title = "Validação de Item", Detail = "O preço unitário não pode ser negativo.", Status = 400 });
 
+            // v2.249.2 — item-level window: every mapped line must target an OPEN request line; scalar window: a COMMITTED
+            // line is refused the same way (same rule as SaveQuotation).
+            if (item.MappedRequestLineItemId.HasValue
+                && (item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Mapped
+                    || item.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Substitute)
+                && (updateItemWindow != null ? !updateItemWindow.IsLineOpen(item.MappedRequestLineItemId.Value) : committedLineIds.Contains(item.MappedRequestLineItemId.Value)))
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Item já comprometido",
+                    Detail = $"Item {item.LineNumber}: o item do pedido associado já está num lote ativo, aprovado ou encerrado e não aceita alterações de cotação. Neste estado só os itens pendentes de cotação podem ser cotados.",
+                    Status = 409
+                });
+            }
+
             var precisionError = ValidateFinalQuantityPrecision(item, unitAllowsDecimal);
             if (precisionError != null) return precisionError;
 
@@ -4976,6 +5379,9 @@ public class RequestsController : BaseController
 
         // Global (commercial) discount from DTO — reduces the taxable base further
         decimal globalDiscount = Round2(Math.Max(0, dto.DiscountAmount));
+        // v2.249.6 — never clamp an excessive global discount into a zero taxable base: refuse it (nothing written).
+        if (QuotationLinePricingPolicy.GlobalDiscountExceedsNet(netAfterItemDiscounts, globalDiscount))
+            return GlobalDiscountExceedsNetProblem(globalDiscount, netAfterItemDiscounts, quotation.Currency);
         decimal taxableBase = Round2(Math.Max(0, netAfterItemDiscounts - globalDiscount));
 
         // Proportionally adjust IVA based on the global discount reduction
@@ -4994,7 +5400,7 @@ public class RequestsController : BaseController
         if (isOcrQuotation)
         {
             var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
-            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
             var itemsById = quotation.Items.ToDictionary(i => i.Id);
             var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
             if (gateError != null) return gateError;
@@ -5049,7 +5455,7 @@ public class RequestsController : BaseController
             .OrderBy(i => i.LineNumber)
             .ToListAsync();
 
-        return Ok(new SavedQuotationDto
+        return Ok(WithLinePricing(new SavedQuotationDto
         {
             Id = quotation.Id,
             RequestId = quotation.RequestId,
@@ -5109,7 +5515,7 @@ public class RequestsController : BaseController
                 ItemCatalogId = qi.ItemCatalogId,
                 ItemCatalogCode = qi.ItemCatalog != null ? qi.ItemCatalog.Code : null
             }).ToList()
-        });
+        }));
     }
 
     [HttpDelete("{id}/quotations/{quotationId}")]
@@ -5129,14 +5535,16 @@ public class RequestsController : BaseController
         if (!await (await GetScopedRequestsQuery()).AnyAsync(r => r.Id == id))
             return NotFound("Pedido não encontrado.");
 
-        // Status Rule Check
-        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code))
+        // Status Rule Check — v2.249.2: scalar window OR item-level window (QuotationWindowPolicy). A quotation ever
+        // submitted for approval stays protected by the §7 lock evaluated below, whatever the window.
+        if (!RequestWorkflowHelper.CanMutateQuotation(request.Status!.Code)
+            && !(await AlplaPortal.Infrastructure.Services.Purchasing.QuotationWindowEvaluator.EvaluateAsync(_context, request)).IsOpen)
         {
-            return Conflict(new ProblemDetails 
-            { 
-                Title = "Ação Bloqueada", 
-                Detail = "Não é possível excluir cotações neste status do pedido.", 
-                Status = 409 
+            return Conflict(new ProblemDetails
+            {
+                Title = "Ação Bloqueada",
+                Detail = "Não é possível excluir cotações neste status do pedido.",
+                Status = 409
             });
         }
 
@@ -7205,6 +7613,46 @@ public class RequestsController : BaseController
             });
         }
 
+        // ── Phase 1 P.O. cancellation (D15): the number of a previous CANCELLED P.O. of these same lines is reused →
+        // warn and require the Buyer's confirmation + explanation (never blocked by itself). Evaluated BEFORE the generic
+        // duplicate check so the Buyer is asked once, with the cancellation-aware wording; the confirmation also
+        // satisfies the generic duplicate confirmation (same fact, one explanation, audited below). ──
+        RequestPoGroupCancellation? reusedNumberOf = null;
+        string? reusedNumberComment = null;
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
+        {
+            var targetLineIds = await _context.RequestLineItems.AsNoTracking()
+                .Where(li => li.RequestPoGroupId == dto.PoGroupId.Value && !li.IsDeleted).Select(li => li.Id).ToListAsync();
+            if (targetLineIds.Count > 0)
+            {
+                var normalizedNumber = dto.PurchaseOrderNumber.Trim().ToUpperInvariant();
+                var priorCancellations = await _context.RequestPoGroupCancellations.AsNoTracking()
+                    .Where(c => c.PurchaseOrderNumberSnapshot != null && c.Items.Any(i => targetLineIds.Contains(i.RequestLineItemId)))
+                    .ToListAsync();
+                reusedNumberOf = priorCancellations.FirstOrDefault(c => string.Equals(c.PurchaseOrderNumberSnapshot!.Trim().ToUpperInvariant(), normalizedNumber, StringComparison.Ordinal));
+                if (reusedNumberOf != null)
+                {
+                    reusedNumberComment = dto.PreviousPoNumberReuseComment?.Trim();
+                    if (!dto.PreviousPoNumberReuseConfirmed || string.IsNullOrWhiteSpace(reusedNumberComment) || reusedNumberComment.Length < PoGroupCancellationConstants.MinJustificationLength)
+                    {
+                        var reusePd = new ProblemDetails
+                        {
+                            Title = "PREVIOUS_PO_NUMBER_REUSED",
+                            Detail = $"O número de P.O '{dto.PurchaseOrderNumber}' é o da P.O anterior cancelada em {reusedNumberOf.CancelledAtUtc:dd/MM/yyyy} para estes itens. " +
+                                     $"Confirme que a nova P.O reutiliza intencionalmente este número e explique porquê (mínimo {PoGroupCancellationConstants.MinJustificationLength} caracteres).",
+                            Status = 400
+                        };
+                        reusePd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PreviousPoNumberReused;
+                        reusePd.Extensions["cancellationId"] = reusedNumberOf.Id;
+                        reusePd.Extensions["previousPoGroupId"] = reusedNumberOf.RequestPoGroupId;
+                        return BadRequest(reusePd);
+                    }
+                    dto.OverrideDuplicateConfirmed = true;
+                    dto.DuplicateOverrideComment ??= reusedNumberComment;
+                }
+            }
+        }
+
         // ── Backend PO number validation (Primavera-aware, v2.229.12 groundwork) ──
         if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber) && targetGroupIntegrity != null)
         {
@@ -7377,18 +7825,139 @@ public class RequestsController : BaseController
 
         // ── Backend OCR Validation against Group ──
         var backendMismatches = new List<string>();
+
+        // ── v2.249.4 — the P.O. DOCUMENT: which file, is it a purchase order, which number does it carry ──
+        // (1) The file: the upload response id when the client sends it (validated against this group), else the newest
+        //     live P.O. file of the group. It becomes the group's CURRENT P.O. document below; earlier files are superseded.
+        var groupPoFiles = await _context.RequestAttachments
+            .Where(a => a.RequestId == request.Id && a.RequestPoGroupId == poGroup.Id && a.AttachmentTypeCode == RequestAttachment.TYPE_PO && !a.IsDeleted)
+            .OrderByDescending(a => a.UploadedAtUtc).ThenByDescending(a => a.Id)
+            .ToListAsync();
+        RequestAttachment? poDocument;
+        if (dto.PoAttachmentId.HasValue)
+        {
+            poDocument = groupPoFiles.FirstOrDefault(a => a.Id == dto.PoAttachmentId.Value && a.VoidedAtUtc == null);
+            if (poDocument == null)
+            {
+                var pd = new ProblemDetails { Title = "Documento de P.O. inválido", Detail = "O documento indicado não é um ficheiro de P.O. ativo deste grupo. Carregue novamente o documento e repita o registo.", Status = 400 };
+                pd.Extensions["code"] = "PO_ATTACHMENT_INVALID";
+                return BadRequest(pd);
+            }
+        }
+        else
+        {
+            poDocument = groupPoFiles.FirstOrDefault(a => a.VoidedAtUtc == null && a.SupersededAtUtc == null) ?? groupPoFiles.FirstOrDefault(a => a.VoidedAtUtc == null);
+        }
+
+        // (2) Enforceable, extraction-independent check: the very same file (SHA-256) is already a QUOTATION / PROFORMA
+        //     document of this request → it is quotation evidence, not a purchase order (REQ-628: the supplier's quotation
+        //     PDF was registered as the P.O.). No override: a quotation never becomes a P.O. by being re-uploaded.
+        if (poDocument != null && !string.IsNullOrWhiteSpace(poDocument.FileHash))
+        {
+            var quotationTwin = await _context.RequestAttachments.AsNoTracking()
+                .Where(a => a.RequestId == request.Id && !a.IsDeleted && a.FileHash == poDocument.FileHash
+                            && (a.AttachmentTypeCode == RequestAttachment.TYPE_QUOTATION || a.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA))
+                .Select(a => new { a.FileName, a.AttachmentTypeCode })
+                .FirstOrDefaultAsync();
+            if (quotationTwin != null)
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Documento não é uma P.O.",
+                    Detail = $"O ficheiro '{poDocument.FileName}' é o mesmo documento de {(quotationTwin.AttachmentTypeCode == RequestAttachment.TYPE_PROFORMA ? "proforma" : "cotação")} já registado neste pedido ('{quotationTwin.FileName}'). Uma cotação não pode ser registada como Ordem de Compra. Remova este ficheiro e carregue a P.O. emitida.",
+                    Status = 400
+                };
+                pd.Extensions["code"] = "DOCUMENT_IS_QUOTATION_EVIDENCE";
+                return BadRequest(pd);
+            }
+        }
+
+        // (3) Document identification — SERVER evidence only. The extraction the Buyer ran through POST …/po-document-extract
+        //     is persisted by the server (PoDocumentExtraction) from what the provider read, bound to THIS request and to the
+        //     SHA-256 the server computed over the bytes it read. The registered file must carry the same hash: the client can
+        //     neither supply nor alter the facts. No evidence for this exact file (never extracted, another file extracted, the
+        //     file swapped after the extraction, provider failure) = UNCERTAIN → explicit confirmation + justification (the
+        //     existing override policy, audited). A positively identified quotation / invoice is refused without override.
+        AlplaPortal.Domain.Entities.PoDocumentExtraction? evidence = null;
+        if (poDocument != null && !string.IsNullOrWhiteSpace(poDocument.FileHash))
+        {
+            evidence = await _context.PoDocumentExtractions.AsNoTracking()
+                .Where(e => e.RequestId == request.Id && e.FileHash == poDocument.FileHash)
+                .OrderByDescending(e => e.CreatedAtUtc).ThenByDescending(e => e.Id)
+                .FirstOrDefaultAsync();
+        }
+        var identification = evidence != null && evidence.Success
+            ? AlplaPortal.Domain.Services.PurchaseOrderDocumentIdentifier.Identify(evidence.ToIdentificationInput())
+            : AlplaPortal.Domain.Services.PurchaseOrderDocumentIdentifier.Identify(new AlplaPortal.Domain.Services.PoDocumentIdentificationInput { ExtractionPerformed = false });
+        var evidenceLabel = evidence == null ? "sem extração registada para este ficheiro" : $"extração {evidence.Id.ToString().Substring(0, 8)} de {evidence.CreatedAtUtc:dd/MM/yyyy HH:mm} UTC";
+        // Business values come from the evidence when it exists; the client-submitted values remain the fallback for the
+        // supplier / amount / currency comparison only (never for the identity).
+        var extractedTotalAmount = evidence?.Success == true ? evidence.GrandTotal : dto.ExtractedTotalAmount;
+        var extractedCurrencyCode = evidence?.Success == true ? evidence.CurrencyCode : dto.ExtractedCurrencyCode;
+        var extractedSupplierName = evidence?.Success == true ? evidence.SupplierName : dto.ExtractedSupplierName;
+
+        if (identification.IsBlocked)
+        {
+            var pd = new ProblemDetails { Title = "Documento não é uma P.O.", Detail = identification.Reason, Status = 400 };
+            pd.Extensions["code"] = "DOCUMENT_NOT_PURCHASE_ORDER";
+            pd.Extensions["reasonCode"] = identification.ReasonCode;
+            return BadRequest(pd);
+        }
+        string identificationAudit;
+        if (identification.RequiresExplicitConfirmation)
+        {
+            if (!dto.DocumentTypeConfirmed || string.IsNullOrWhiteSpace(dto.Comment))
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Confirmação do tipo de documento necessária",
+                    Detail = identification.Reason + " Confirme explicitamente que o documento é uma Ordem de Compra e justifique.",
+                    Status = 400
+                };
+                pd.Extensions["code"] = "DOCUMENT_TYPE_CONFIRMATION_REQUIRED";
+                pd.Extensions["reasonCode"] = identification.ReasonCode;
+                pd.Extensions["evidence"] = evidence == null ? "NONE" : evidence.Success ? "UNCERTAIN" : "FAILED";
+                return BadRequest(pd);
+            }
+            identificationAudit = $"Tipo de documento NÃO identificado automaticamente ({identification.ReasonCode}; {evidenceLabel}); confirmado manualmente pelo comprador como P.O. Justificativa: {dto.Comment}.";
+        }
+        else
+        {
+            identificationAudit = $"Documento identificado como P.O. {identification.Reference} ({identification.Family} — {identification.FamilyLabel}) pela {evidenceLabel}.";
+        }
+
+        // (4) The submitted number must be the document's own number. Identified document: canonical comparison with the
+        //     identified reference. Uncertain document whose extraction still read a letter-bearing, non-fiscal number (e.g. a
+        //     synthetic "ECF99 2026/9003"): loose comparison. Either difference is a divergence under the existing override
+        //     policy (confirmation + justification), never a silent acceptance — this is what keeps a stale number (the quotation
+        //     number of REQ-628) from surviving a correction whose document says otherwise.
+        if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
+        {
+            if (identification.Verdict == AlplaPortal.Domain.Services.PoDocumentVerdicts.IdentifiedPo)
+            {
+                var submittedParse = PrimaveraPoReference.TryParse(dto.PurchaseOrderNumber);
+                if (!string.Equals(submittedParse?.Canonical, identification.Canonical, StringComparison.Ordinal))
+                    backendMismatches.Add($"Número de P.O. divergente: introduzido \"{dto.PurchaseOrderNumber}\" (Identificado no documento: {identification.Reference})");
+            }
+            else if (evidence?.Success == true && !string.IsNullOrWhiteSpace(evidence.DocumentNumber)
+                     && evidence.DocumentNumber.Any(char.IsLetter) && !PrimaveraPoReference.LooksLikeNif(evidence.DocumentNumber)
+                     && !string.Equals(PrimaveraPoReference.NormalizeLoose(evidence.DocumentNumber), PrimaveraPoReference.NormalizeLoose(dto.PurchaseOrderNumber), StringComparison.Ordinal))
+            {
+                backendMismatches.Add($"Número de P.O. divergente: introduzido \"{dto.PurchaseOrderNumber}\" (Lido no documento: {evidence.DocumentNumber})");
+            }
+        }
         
-        if (dto.ExtractedTotalAmount.HasValue && Math.Abs(dto.ExtractedTotalAmount.Value - poGroup.TotalAmount) > 1.0m)
+        if (extractedTotalAmount.HasValue && Math.Abs(extractedTotalAmount.Value - poGroup.TotalAmount) > 1.0m)
         {
-            backendMismatches.Add($"Total divergente: Identificado {dto.ExtractedTotalAmount.Value:N2} (Esperado: {poGroup.TotalAmount:N2})");
+            backendMismatches.Add($"Total divergente: Identificado {extractedTotalAmount.Value:N2} (Esperado: {poGroup.TotalAmount:N2})");
         }
 
-        if (!string.IsNullOrWhiteSpace(dto.ExtractedCurrencyCode) && !dto.ExtractedCurrencyCode.Equals(poGroup.CurrencyCode, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(extractedCurrencyCode) && !extractedCurrencyCode.Equals(poGroup.CurrencyCode, StringComparison.OrdinalIgnoreCase))
         {
-            backendMismatches.Add($"Moeda divergente: Identificada {dto.ExtractedCurrencyCode} (Esperada: {poGroup.CurrencyCode})");
+            backendMismatches.Add($"Moeda divergente: Identificada {extractedCurrencyCode} (Esperada: {poGroup.CurrencyCode})");
         }
 
-        if (!string.IsNullOrWhiteSpace(dto.ExtractedSupplierName))
+        if (!string.IsNullOrWhiteSpace(extractedSupplierName))
         {
             // v2.242.0 — canonical supplier comparison (accent / spacing / hyphen / punctuation
             // tolerant), matching the frontend ocrPoValidation.calculateSimilarity so the authoritative
@@ -7400,9 +7969,9 @@ public class RequestsController : BaseController
                 ? poGroup.SupplierNameSnapshot
                 : poGroup.Supplier?.Name;
             if (!string.IsNullOrWhiteSpace(expectedSupplierName)
-                && !AlplaPortal.Domain.Services.SupplierNameComparer.NamesMatch(dto.ExtractedSupplierName, expectedSupplierName))
+                && !AlplaPortal.Domain.Services.SupplierNameComparer.NamesMatch(extractedSupplierName, expectedSupplierName))
             {
-                backendMismatches.Add($"Fornecedor divergente: Identificado \"{dto.ExtractedSupplierName}\" (Esperado: \"{expectedSupplierName}\")");
+                backendMismatches.Add($"Fornecedor divergente: Identificado \"{extractedSupplierName}\" (Esperado: \"{expectedSupplierName}\")");
             }
         }
 
@@ -7483,9 +8052,73 @@ public class RequestsController : BaseController
         var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection || isLegacyReturnCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
+        // v2.249.4 — a correction always states the P.O. number it confirms (the current one or the replacement): the old
+        // correction modal sent none, so the number of the returned P.O. silently survived every correction (REQ-628:
+        // the quotation number TEST-MAQSIS-2026-9003 stayed as the group's P.O. after the real ECF was uploaded).
+        if (isCorrection && string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber))
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Número de P.O. obrigatório",
+                Detail = "A correção da P.O. exige o número da P.O. corrigida (confirme o número atual ou introduza o novo).",
+                Status = 400
+            };
+            pd.Extensions["code"] = "PO_NUMBER_REQUIRED";
+            return BadRequest(pd);
+        }
+        var previousPoNumber = poGroup.PurchaseOrderNumber;
+
+        // ── Phase 1 P.O. cancellation (D4): the registration now runs in ONE transaction. Inside it the prior-ECF guard
+        // reads the cancellation rows of this group's lines WITH (UPDLOCK, HOLDLOCK), so a Finance confirmation can
+        // neither be missed nor interleave: either it committed before (we proceed) or it waits for our commit/rollback.
+        // Returning early disposes the transaction → rollback; nothing below is written. ──
+        await using var registerTx = await _context.Database.BeginTransactionAsync();
+        var priorEcf = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(poGroup.Id, lockRows: true);
+        if (priorEcf.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Registo de P.O bloqueado — confirmação de Finanças pendente", Detail = priorEcf.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            priorPd.Extensions["cancellations"] = priorEcf.Cancellations;
+            return Conflict(priorPd);
+        }
+
+        // ── v2.249.5 — the chosen P.O. DOCUMENT is locked and re-read INSIDE the transaction (PoDocumentRowLock: UPDLOCK,
+        // HOLDLOCK on SQL Server). It was selected from a read made BEFORE the transaction; a DELETE /attachments/{id} that
+        // committed meanwhile (temporary-upload clean-up of another session / tab) must refuse this registration instead of
+        // becoming the group's current document with IsDeleted = 1. The same lock makes a concurrent DELETE wait for this
+        // commit and then see the pointer (409 PO_EVIDENCE_PROTECTED). Returning here rolls everything back. ──
+        if (poDocument != null)
+        {
+            var stillThere = await PoDocumentRowLock.LockAndReloadAsync(_context, poDocument);
+            if (!stillThere || poDocument.IsDeleted || poDocument.VoidedAtUtc != null)
+            {
+                var racePd = new ProblemDetails
+                {
+                    Title = "Documento de P.O. alterado entretanto",
+                    Detail = $"O ficheiro '{poDocument.FileName}' foi removido ou anulado enquanto o registo decorria. Nada foi registado. Carregue novamente o documento da P.O. e repita o registo.",
+                    Status = 409
+                };
+                racePd.Extensions["code"] = PoDocumentRowLock.ConcurrentChangeCode;
+                racePd.Extensions["attachmentId"] = poDocument.Id;
+                return Conflict(racePd);
+            }
+        }
+
+
         if (isCorrection && string.IsNullOrWhiteSpace(finalComment))
         {
             finalComment = "P.O corrigida após devolução por Finanças.";
+        }
+
+        // ── Phase 1 P.O. cancellation (D15): audit of the confirmed number reuse (validated above, before any write) ──
+        if (reusedNumberOf != null)
+        {
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                RequestId = request.Id, ActorUserId = CurrentUserId, ActionTaken = PoGroupCancellationConstants.HistoryActions.PoNumberReused,
+                PreviousStatusId = request.StatusId, NewStatusId = request.StatusId, CreatedAtUtc = DateTime.UtcNow,
+                Comment = $"[Grupo P.O.: {poGroup.Supplier?.Name} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] Número de P.O '{dto.PurchaseOrderNumber}' reutilizado após o cancelamento da P.O anterior (CancellationId: {reusedNumberOf.Id}). Explicação do comprador: {reusedNumberComment}"
+            });
         }
 
         // ── B2P: Persist payment condition on RequestPoGroup ──
@@ -7494,6 +8127,37 @@ public class RequestsController : BaseController
         if (!string.IsNullOrWhiteSpace(dto.PurchaseOrderNumber)) 
         {
             poGroup.PurchaseOrderNumber = dto.PurchaseOrderNumber;
+        }
+        // ── v2.249.4 — audit of the document identification, of a changed number and of the document supersession ──
+        finalComment += identificationAudit + " ";
+        var numberChanged = !string.Equals(PrimaveraPoReference.NormalizeLoose(previousPoNumber), PrimaveraPoReference.NormalizeLoose(poGroup.PurchaseOrderNumber), StringComparison.Ordinal);
+        var supersededFiles = poDocument == null
+            ? new List<RequestAttachment>()
+            : groupPoFiles.Where(a => a.Id != poDocument.Id && a.VoidedAtUtc == null && a.SupersededAtUtc == null).ToList();
+        if (poDocument != null)
+        {
+            var nowUtc = DateTime.UtcNow;
+            foreach (var old in supersededFiles)
+            {
+                old.SupersededAtUtc = nowUtc;
+                old.SupersededByAttachmentId = poDocument.Id;
+                old.SupersededByUserId = CurrentUserId;
+            }
+            poGroup.CurrentPoAttachmentId = poDocument.Id;
+            finalComment += $"Documento P.O. atual: '{poDocument.FileName}' ({poDocument.Id.ToString().Substring(0, 8)})" +
+                            (supersededFiles.Count > 0 ? $"; substituído(s): {string.Join(", ", supersededFiles.Select(a => $"'{a.FileName}'"))}" : "") + ". ";
+        }
+        if (isCorrection && numberChanged)
+        {
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                RequestId = request.Id, ActorUserId = CurrentUserId, ActionTaken = "PO_NUMBER_CORRECTED",
+                PreviousStatusId = request.StatusId, NewStatusId = request.StatusId, CreatedAtUtc = DateTime.UtcNow,
+                Comment = $"[Grupo P.O.: {poGroup.Supplier?.Name} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] Número de P.O. corrigido: '{previousPoNumber ?? "—"}' → '{poGroup.PurchaseOrderNumber}' (origem do número: {dto.PurchaseOrderNumberSource ?? "não indicada"})." +
+                          (poDocument != null ? $" Documento atual: '{poDocument.FileName}'." : "") +
+                          (supersededFiles.Count > 0 ? $" Documento(s) substituído(s): {string.Join(", ", supersededFiles.Select(a => $"'{a.FileName}'"))}." : "")
+            });
+            finalComment += $"Número de P.O. corrigido: '{previousPoNumber ?? "—"}' → '{poGroup.PurchaseOrderNumber}'. ";
         }
         poGroup.UpdatedAtUtc = DateTime.UtcNow;
         poGroup.UpdatedByUserId = CurrentUserId;
@@ -7659,6 +8323,7 @@ public class RequestsController : BaseController
         await EvaluateCompletionPhaseOneAsync(id, null);
 
         await _context.SaveChangesAsync();
+        await registerTx.CommitAsync();
 
         // ── Notifications ──
         // Same request context as ProcessCommonOperationalTransition: the PO_REGISTERED recipients are
@@ -7762,6 +8427,14 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+        // Phase 1 P.O. cancellation (D4, defense in depth): an advance on lines whose previous ECF annulment is unconfirmed.
+        var priorEcfAdvance = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(group.Id, lockRows: false);
+        if (priorEcfAdvance.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Bloqueado — confirmação de Finanças pendente", Detail = priorEcfAdvance.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            return Conflict(priorPd);
+        }
 
         // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
         // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
@@ -7849,6 +8522,14 @@ public class RequestsController : BaseController
 
         var group = request.PoGroups.FirstOrDefault(g => g.Id == dto.RequestPoGroupId);
         if (group == null) return BadRequest("Grupo P.O não encontrado no request.");
+        // Phase 1 P.O. cancellation (D4, defense in depth): an advance on lines whose previous ECF annulment is unconfirmed.
+        var priorEcfAdvance = await new PriorEcfConfirmationGuard(_context).EvaluateForGroupAsync(group.Id, lockRows: false);
+        if (priorEcfAdvance.Blocked)
+        {
+            var priorPd = new ProblemDetails { Title = "Bloqueado — confirmação de Finanças pendente", Detail = priorEcfAdvance.Message, Status = 409 };
+            priorPd.Extensions["code"] = PoGroupCancellationConstants.ErrorCodes.PriorEcfConfirmationPending;
+            return Conflict(priorPd);
+        }
 
         // v2.247.6 (docs §G.19.2): unresolved request-level Finance return (scalar WAITING_PO_CORRECTION, no live group in
         // WAITING_PO_CORRECTION) → no advance scheduling/confirmation either. Checked before any mutation.
@@ -8526,11 +9207,21 @@ public class RequestsController : BaseController
                 g.ExpectedOperationInvoiceTotal,
                 g.ExpectedOperationInvoiceCurrency,
                 g.OperationInvoiceStatus,
-                g.PurchaseOrderNumber
+                g.PurchaseOrderNumber,
+                g.Status
             })
             .ToListAsync();
 
         var groupIds = groups.Select(g => g.Id).ToList();
+
+        // v2.249.4 — a RESTART_QUOTATION cancellation (DEC-151) removes the live line links; the lines the cancelled
+        // group covered survive only in the cancellation items. Read for history, never for arithmetic.
+        var historicalLineCounts = (await _context.RequestPoGroupCancellationItems.AsNoTracking()
+            .Where(i => groupIds.Contains(i.PreviousPoGroupId))
+            .Select(i => new { i.PreviousPoGroupId, i.RequestLineItemId })
+            .ToListAsync())
+            .GroupBy(i => i.PreviousPoGroupId)
+            .ToDictionary(x => x.Key, x => x.Select(i => i.RequestLineItemId).Distinct().Count());
 
         // Traceability comes from the group's own line items — never from the request header,
         // the supplier or the document type. Line order keeps the derived id order deterministic.
@@ -8600,7 +9291,9 @@ public class RequestsController : BaseController
             LineItemIds = lines
                 .Where(l => l.RequestPoGroupId == g.Id)
                 .Select(l => l.Id)
-                .ToList()
+                .ToList(),
+            GroupStatus = g.Status,
+            HistoricalLineItemCount = historicalLineCounts.TryGetValue(g.Id, out var historical) ? historical : 0
         }).ToList();
 
         var projection = OperationInvoiceObligationProjector.Project(snapshots);
@@ -8645,6 +9338,10 @@ public class RequestsController : BaseController
                     LineItemCount = o.LineItemCount,
                     ReasonCode = o.ReasonCode,
                     Explanation = o.Explanation,
+                    GroupCancelled = o.GroupCancelled,
+                    GroupStatus = g.Status,
+                    HistoricalExpectedAmount = o.HistoricalExpectedAmount,
+                    HistoricalLineItemCount = o.HistoricalLineItemCount,
                     // Phase 3A: percentage only against a known, positive finish line — an
                     // unknown expected total has no percentage, deliberately not 0.
                     CoveragePercent = o.ExpectedAmount is > 0
@@ -8682,6 +9379,7 @@ public class RequestsController : BaseController
                 UnclassifiedCount = projection.Rollup.UnclassifiedCount,
                 DriftCount = projection.Rollup.DriftCount,
                 HasStatusDrift = projection.Rollup.HasStatusDrift,
+                CancelledGroupCount = projection.Rollup.CancelledGroupCount,
                 GroupsWithUnknownExpectedTotal = projection.Rollup.CurrencyTotals
                     .Sum(c => c.GroupsWithUnknownExpectedTotal),
                 CurrencyTotals = projection.Rollup.CurrencyTotals
@@ -8940,8 +9638,10 @@ public class RequestsController : BaseController
 
                 if (hasPoGroups)
                 {
+                    // v2.249.4 — a CANCELLED group (DEC-151) carries no obligation; its cached classification is history.
                     var anyUnclassified = await _context.RequestPoGroups
                         .AnyAsync(g => g.RequestId == id &&
+                                       g.Status != RequestConstants.PoGroupStatuses.Cancelled &&
                                        g.OperationInvoiceStatus == RequestConstants.OperationInvoiceStatuses.Unclassified);
 
                     if (anyUnclassified)
@@ -9450,6 +10150,25 @@ public class RequestsController : BaseController
 
         var targetQuotation = request.Quotations.FirstOrDefault(q => q.Id == quotationId);
         if (targetQuotation == null) return NotFound(new ProblemDetails { Title = "Cotação não encontrada no pedido.", Status = 404 });
+
+        // ── v2.249.5 — selection follows the D3 reuse eligibility (same rule as the batch endpoints, Option C: no silent
+        // reuse). A quotation whose EVERY considered item was used in a cancelled / released batch and carries no active
+        // reuse authorization cannot be selected again from the card; one eligible or explicitly authorized item is enough.
+        // The historical adjudication shown on the card is display only — it never blocks an authorized candidate. ──
+        var reuseEligibility = await _quotationEligibility.GetEligibilityMapAsync(requestId);
+        var consideredItems = targetQuotation.Items
+            .Where(i => i.ReconciliationStatus != null && RequestConstants.ReconciliationStatuses.Considered.Contains(i.ReconciliationStatus))
+            .ToList();
+        if (reuseEligibility != null && consideredItems.Count > 0)
+        {
+            var blockedItems = consideredItems
+                .Select(i => reuseEligibility.TryGetValue(i.Id, out var e) ? e : null)
+                .Where(e => e != null && e.IsReuseBlocked)
+                .Select(e => e!)
+                .ToList();
+            if (blockedItems.Count == consideredItems.Count)
+                return ApprovalBatchController.ReuseNotAuthorizedConflict(blockedItems);
+        }
 
         // Enforce single selection
         foreach (var q in request.Quotations)

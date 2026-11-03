@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.Interfaces.Purchasing;
+using AlplaPortal.Infrastructure.Services.Purchasing;
 using AlplaPortal.Domain.Common;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
@@ -26,7 +28,14 @@ namespace AlplaPortal.Api.Controllers;
 [Route("api/v1/buyer/requests")]
 public class BuyerWorkspaceController : BaseController
 {
-    public BuyerWorkspaceController(ApplicationDbContext context) : base(context) { }
+    private readonly IPoGroupCancellationService? _cancellation;
+
+    // The cancellation service is optional so existing read-model tests that construct the controller with the context
+    // alone keep working; the DI container always supplies it.
+    public BuyerWorkspaceController(ApplicationDbContext context, IPoGroupCancellationService? cancellation = null) : base(context)
+    {
+        _cancellation = cancellation;
+    }
 
     [HttpGet("{id:guid}/workspace")]
     public async Task<ActionResult<BuyerWorkspaceDto>> GetWorkspace(Guid id)
@@ -45,9 +54,13 @@ public class BuyerWorkspaceController : BaseController
             .Include(x => x.LineItems).ThenInclude(li => li.Unit)
             .Include(x => x.LineItems).ThenInclude(li => li.ItemCatalogItem)
             .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
-            .Include(x => x.PoGroups)
+            .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.SelectedCandidate)
+            .Include(x => x.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.SelectedQuotationItem).ThenInclude(qi => qi!.Quotation)
+            .Include(x => x.PoGroups).ThenInclude(g => g.Supplier)
+            .Include(x => x.PoGroups).ThenInclude(g => g.Cancellation)
             .Include(x => x.Quotations).ThenInclude(q => q.Items)
             .Include(x => x.Quotations).ThenInclude(q => q.Supplier)
+            .Include(x => x.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(x => x.Attachments)
             .AsSplitQuery()
             .AsNoTracking()
@@ -161,9 +174,14 @@ public class BuyerWorkspaceController : BaseController
                 CancelledDeleted = Bkt(BuyerQueueConstants.CoverageBuckets.CancelledDeleted),
             },
             Items = BuildItems(r, buckets, ActorCanCloseNotQuoted(r)),
+            QuotationWindowOpen = QuotationWindow(r).IsOpen,
+            QuotationWindowClosedReasonCode = QuotationWindow(r).ClosedReasonCode,
+            OpenLineItemIds = QuotationWindow(r).OpenLineItemIds,
             Quotations = BuildQuotations(r),
             Batches = BuildBatches(r, supersededIds, adjustmentsByBatch),
             Suppliers = await BuildSuppliersAsync(r),
+            PoGroups = await BuildPoGroupsAsync(r),
+            ActiveApprovedTotals = BuildActiveTotals(r),
         };
 
         return Ok(dto);
@@ -201,7 +219,8 @@ public class BuyerWorkspaceController : BaseController
         };
         var activeBatchLineItemIds = r.ApprovalBatches
             .Where(b => activeBatchStatuses.Contains(b.Status))
-            .SelectMany(b => b.Items.Select(bi => bi.RequestLineItemId))
+            // Phase 1 P.O. cancellation: a RELEASED item of an APPROVED batch no longer holds its line.
+            .SelectMany(b => b.Items.Where(bi => !bi.ReleasedAtUtc.HasValue).Select(bi => bi.RequestLineItemId))
             .ToHashSet();
 
         // Item eligibility (lifecycle + not-in-active-batch) AND actor authorization together — the flag
@@ -240,6 +259,11 @@ public class BuyerWorkspaceController : BaseController
     private static List<BuyerWorkspaceQuotationDto> BuildQuotations(Request r)
     {
         var locks = AlplaPortal.Infrastructure.Services.Purchasing.QuotationSubmissionLock.EvaluateLoaded(r);
+        // v2.249.2 — reuse verdicts per quotation item (DEC-147 / D3), the same pure rule the batch endpoint applies.
+        var finishedUses = QuotationReuseEligibilityPolicy.FinishedUsesFromLoaded(r.ApprovalBatches);
+        var authFacts = r.QuotationReuseAuthorizations.Select(QuotationReuseEligibilityPolicy.AuthorizationFacts.From).ToList();
+        QuotationReuseEligibilityPolicy.Verdict Reuse(QuotationItem qi) =>
+            QuotationReuseEligibilityPolicy.Resolve(qi.Id, qi.ReconciliationStatus, finishedUses, authFacts);
         return r.Quotations
             .OrderByDescending(q => q.CreatedAtUtc)
             .Select(q => new BuyerWorkspaceQuotationDto
@@ -249,7 +273,9 @@ public class BuyerWorkspaceController : BaseController
                 SupplierName = q.Supplier?.Name ?? q.SupplierNameSnapshot,
                 DocumentNumber = q.DocumentNumber,
                 DocumentDate = q.DocumentDate,
-                ItemsQuotedCount = q.Items.Count,
+                // v2.249.4 — "Itens" = quoted lines; NOT_QUOTED / IGNORED rows are reconciliation placeholders, not offers.
+                ItemsQuotedCount = q.Items.Count(qi => qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.NotQuoted && qi.ReconciliationStatus != RequestConstants.ReconciliationStatuses.Ignored),
+                ItemsNotQuotedCount = q.Items.Count(qi => qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.NotQuoted || qi.ReconciliationStatus == RequestConstants.ReconciliationStatuses.Ignored),
                 Currency = q.Currency,
                 TotalAmount = q.TotalAmount,
                 DocumentCount = q.ProformaAttachmentId.HasValue ? 1 : 0,
@@ -257,8 +283,30 @@ public class BuyerWorkspaceController : BaseController
                 IsSubmittedForApproval = locks.TryGetValue(q.Id, out var lk) && lk.IsSubmitted,
                 SubmittedBatchNumber = locks.TryGetValue(q.Id, out var lk2) ? lk2.BatchNumber : null,
                 SubmissionLockReason = locks.TryGetValue(q.Id, out var lk3) ? lk3.Reason : null,
+                ReuseBlockedItemCount = finishedUses.Count == 0 ? 0 : q.Items.Count(qi => Reuse(qi).IsReuseBlocked),
+                ReuseAuthorizedItemCount = finishedUses.Count == 0 ? 0 : q.Items.Count(qi => Reuse(qi).IsReuseAuthorized),
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// v2.249.2 — the quotation window as the write endpoints see it: the request scalar window
+    /// (RequestWorkflowHelper.CanMutateQuotation) OR the item-level window (QuotationWindowPolicy: released / never-quoted
+    /// lines not held by an active/approved batch, batch-model requests only). Pure over the loaded aggregate.
+    /// </summary>
+    private static (bool IsOpen, string? ClosedReasonCode, List<Guid> OpenLineItemIds) QuotationWindow(Request r)
+    {
+        var window = QuotationWindowPolicy.EvaluateLoaded(r);
+        if (window.IsOpen) return (true, null, window.OpenLineItemIds.ToList());
+        if (RequestWorkflowHelper.CanMutateQuotation(r.Status.Code))
+        {
+            var held = QuotationWindowPolicy.HeldLineItemIds(r.ApprovalBatches);
+            var open = r.LineItems
+                .Where(li => QuotationWindowPolicy.IsLineOpen(li.QuotationLifecycleStatus, li.IsDeleted, held.Contains(li.Id)))
+                .Select(li => li.Id).ToList();
+            return (true, null, open);
+        }
+        return (false, window.ClosedReasonCode, new List<Guid>());
     }
 
     private static List<BuyerWorkspaceBatchDto> BuildBatches(
@@ -284,8 +332,77 @@ public class BuyerWorkspaceController : BaseController
                 AreaDecisionAtUtc = b.Items.Where(bi => bi.WinnerSelectedAtUtc.HasValue)
                     .Select(bi => bi.WinnerSelectedAtUtc).OrderBy(t => t).FirstOrDefault(),
                 Adjustment = adjustmentsByBatch.TryGetValue(b.Id, out var adj) ? adj : null,
+                // Phase 1 P.O. cancellation (D5/D7): historical ApprovedTotalAmount untouched; active/released split shown.
+                ReleasedItemCount = b.Items.Count(bi => bi.ReleasedAtUtc.HasValue),
+                ReleasedLineNumbers = b.Items.Where(bi => bi.ReleasedAtUtc.HasValue)
+                    .Select(bi => lineNumberById.TryGetValue(bi.RequestLineItemId, out var rln) ? rln : 0).Where(ln => ln > 0).OrderBy(ln => ln).ToList(),
+                ActiveTotalsByCurrency = ActiveApprovedTotals.ForBatch(b).Active.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+                ReleasedTotalsByCurrency = ActiveApprovedTotals.ForBatch(b).Released.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
             })
             .ToList();
+    }
+
+    // ── Phase 1 P.O. cancellation / return to quotation ──
+
+    private static ActiveApprovedTotalsDto BuildActiveTotals(Request r)
+    {
+        var totals = ActiveApprovedTotals.ForRequest(r.PoGroups, r.ApprovalBatches);
+        var (amount, currency) = ActiveApprovedTotals.Scalar(totals);
+        return new ActiveApprovedTotalsDto
+        {
+            ActiveByCurrency = totals.Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount }).ToList(),
+            ActiveAmount = amount, ActiveCurrency = currency,
+            HistoricalApprovedTotalAmount = r.ApprovedTotalAmount, HistoricalApprovedCurrencyCode = r.ApprovedCurrencyCode,
+            CancelledGroupCount = r.PoGroups.Count(g => g.Status == RequestConstants.PoGroupStatuses.Cancelled),
+            ReleasedItemCount = r.ApprovalBatches.SelectMany(b => b.Items).Count(bi => bi.ReleasedAtUtc.HasValue),
+        };
+    }
+
+    /// <summary>Groups with the server-decided actions: correct (existing flow) or cancel (phase 1), plus the D4 block state.</summary>
+    private async Task<List<BuyerWorkspacePoGroupDto>> BuildPoGroupsAsync(Request r)
+    {
+        var actor = new PoGroupCancellationActor(CurrentUserId, CurrentUserRoles);
+        var guard = new PriorEcfConfirmationGuard(_context);
+        var roles = CurrentUserRoles;
+        var isOwnerOrAdmin = roles.Contains(RoleConstants.SystemAdministrator) || (roles.Contains(RoleConstants.Buyer) && (r.BuyerId == null || r.BuyerId == CurrentUserId));
+        var batchNumbers = r.ApprovalBatches.ToDictionary(b => b.Id, b => b.BatchNumber);
+        var list = new List<BuyerWorkspacePoGroupDto>();
+        foreach (var g in r.PoGroups.OrderBy(g => g.CreatedAtUtc))
+        {
+            var dto = new BuyerWorkspacePoGroupDto
+            {
+                Id = g.Id, Status = g.Status, SupplierId = g.SupplierId, SupplierName = g.Supplier?.Name ?? g.SupplierNameSnapshot,
+                CurrencyCode = g.CurrencyCode, TotalAmount = g.TotalAmount, PurchaseOrderNumber = g.PurchaseOrderNumber,
+                ApprovalBatchNumber = g.ApprovalBatchId.HasValue && batchNumbers.TryGetValue(g.ApprovalBatchId.Value, out var bn) ? bn : null,
+                PaymentConditionCode = g.PaymentConditionCode, PlantId = g.PlantId, CreatedAtUtc = g.CreatedAtUtc,
+                RowVersion = Convert.ToBase64String(g.RowVersion ?? Array.Empty<byte>()), PoResponsibleBuyerId = g.PoResponsibleBuyerId,
+                LineNumbers = r.LineItems.Where(li => !li.IsDeleted && li.RequestPoGroupId == g.Id).Select(li => li.LineNumber).OrderBy(ln => ln).ToList(),
+                // v2.249.2 — "Registrar P.O." (first registration, WAITING_PO) and "Corrigir P.O." (Finance return,
+                // WAITING_PO_CORRECTION) are different actions with different flows; WAITING_PO no longer offers the correction tool.
+                CanRegisterPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPo,
+                CanCorrectPo = isOwnerOrAdmin && g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection,
+            };
+            if (g.Status == RequestConstants.PoGroupStatuses.Cancelled)
+            {
+                // v2.249.4 — the released lines keep no live link to the cancelled group; their numbers come from the
+                // cancellation items (history), so the card can still name what the P.O. covered.
+                var historicalLineIds = await _context.RequestPoGroupCancellationItems.AsNoTracking()
+                    .Where(i => i.PreviousPoGroupId == g.Id).Select(i => i.RequestLineItemId).ToListAsync();
+                dto.HistoricalLineNumbers = r.LineItems.Where(li => historicalLineIds.Contains(li.Id)).Select(li => li.LineNumber).Union(dto.LineNumbers).OrderBy(ln => ln).ToList();
+            }
+            if (_cancellation != null)
+            {
+                dto.LastFinanceReturn = await _cancellation.GetLastFinanceReturnAsync(g.Id);
+                dto.Cancellation = g.Cancellation != null ? await _cancellation.GetAsync(g.Id, actor) : null;
+                var elig = await _cancellation.EvaluateEligibilityAsync(g.Id, actor);
+                dto.CanCancel = elig.CanCancel; dto.CancelBlockCode = elig.BlockCode; dto.CancelBlockMessage = elig.BlockMessage;
+                dto.FinanceConfirmationWouldBeRequired = elig.FinanceConfirmationWouldBeRequired;
+            }
+            if (g.Status == RequestConstants.PoGroupStatuses.WaitingPo || g.Status == RequestConstants.PoGroupStatuses.WaitingPoCorrection)
+                dto.PriorEcfConfirmation = await guard.EvaluateForGroupAsync(g.Id, lockRows: false);
+            list.Add(dto);
+        }
+        return list;
     }
 
     private static string BatchKind(ApprovalBatch b, IReadOnlyCollection<Guid> supersededIds)

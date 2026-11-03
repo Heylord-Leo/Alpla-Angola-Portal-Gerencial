@@ -48,6 +48,7 @@ public class AccountsPayableConfigController : ControllerBase
                 c.NotifyOnCompleted,
                 c.NotifyOnPoRegistered,
                 c.NotifyFinanceUsersByEmail,
+                c.NotifyOnPoCancelled,
                 c.CreatedAtUtc,
                 c.UpdatedAtUtc
             })
@@ -92,6 +93,7 @@ public class AccountsPayableConfigController : ControllerBase
             NotifyOnCompleted = dto.NotifyOnCompleted,
             NotifyOnPoRegistered = dto.NotifyOnPoRegistered,
             NotifyFinanceUsersByEmail = dto.NotifyFinanceUsersByEmail,
+            NotifyOnPoCancelled = dto.NotifyOnPoCancelled,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -112,7 +114,8 @@ public class AccountsPayableConfigController : ControllerBase
             config.NotifyOnScheduled,
             config.NotifyOnCompleted,
             config.NotifyOnPoRegistered,
-            config.NotifyFinanceUsersByEmail
+            config.NotifyFinanceUsersByEmail,
+            config.NotifyOnPoCancelled
         });
     }
 
@@ -141,6 +144,7 @@ public class AccountsPayableConfigController : ControllerBase
         config.NotifyOnCompleted = dto.NotifyOnCompleted;
         config.NotifyOnPoRegistered = dto.NotifyOnPoRegistered;
         config.NotifyFinanceUsersByEmail = dto.NotifyFinanceUsersByEmail;
+        config.NotifyOnPoCancelled = dto.NotifyOnPoCancelled;
         config.UpdatedAtUtc = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
@@ -223,6 +227,8 @@ public class AccountsPayableConfigController : ControllerBase
         public bool NotifyOnPoRegistered { get; set; } = false;
         /// <summary>Default false: Finance-role users receive in-app notifications only unless an administrator opts in.</summary>
         public bool NotifyFinanceUsersByEmail { get; set; } = false;
+        /// <summary>v2.249.4 — default false: the AP mailbox is told about P.O. group cancellations (DEC-151) only when an administrator opts in.</summary>
+        public bool NotifyOnPoCancelled { get; set; } = false;
     }
 
     public class UpdateApConfigDto
@@ -236,5 +242,7 @@ public class AccountsPayableConfigController : ControllerBase
         public bool NotifyOnPoRegistered { get; set; } = false;
         /// <summary>Default false: Finance-role users receive in-app notifications only unless an administrator opts in.</summary>
         public bool NotifyFinanceUsersByEmail { get; set; } = false;
+        /// <summary>v2.249.4 — default false: the AP mailbox is told about P.O. group cancellations (DEC-151) only when an administrator opts in.</summary>
+        public bool NotifyOnPoCancelled { get; set; } = false;
     }
 }

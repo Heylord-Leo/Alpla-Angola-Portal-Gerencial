@@ -26,6 +26,26 @@ describe('page-buyer-request-workspace tour', () => {
         }
     });
 
+    it('has a "Cancelar P.O." header step and a "Grupos P.O." tab step worded as Buyer declaration + Finance confirmation', () => {
+        const cancel = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target) === '[data-tour="buyer-workspace-cancel-po"]');
+        expect(cancel).toBeDefined();
+        expect(cancel!.title).toBe('Cancelar P.O.');
+        expect(String(cancel!.content)).toContain('declaração do comprador');
+        expect(String(cancel!.content)).toContain('Finanças confirma');
+        expect(String(cancel!.content)).toContain('novas aprovações');
+        const groups = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target) === '[data-tour="buyer-workspace-po-groups"]');
+        expect(groups).toBeDefined();
+        expect(String(groups!.content)).toContain('Corrigir P.O.');
+        expect(String(groups!.content)).toContain('Registrar P.O.');   // v2.249.2 — first registration vs correction
+        expect(String(groups!.content)).toContain('Atualizar estado'); // v2.249.2 — delivery re-read
+        expect(String(groups!.content)).toContain('bloqueado');
+        const tabs = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target) === '[data-tour="buyer-workspace-tabs"]');
+        expect(String(tabs!.content)).toContain('Grupos P.O.');
+        // Header step mentions the new action next to the existing ones.
+        expect(workspaceSrc).toContain('data-tour="buyer-workspace-cancel-po"');
+        expect(workspaceSrc).toContain('data-tour="buyer-workspace-po-groups"');
+    });
+
     it('explains the quotation actions and their restrictions (assigned Buyer, quotation window, batch refusal, document consequence)', () => {
         const actions = BUYER_REQUEST_WORKSPACE_STEPS.find(s => String(s.target).includes('quotation-actions'));
         const text = String(actions!.content);

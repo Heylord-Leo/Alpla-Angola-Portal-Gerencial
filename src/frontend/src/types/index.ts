@@ -252,6 +252,16 @@ export interface SavedQuotationItemDto {
     sourceCancelledBatchNumber?: number | null;
     reuseAuthorizationId?: string | null;
     reuseConsumedFromBatchId?: string | null;
+
+    // v2.249.5 — per-item adjudication history (server projection; see lib/quotationLifecycle)
+    /** NOT_QUOTED | NOT_SUBMITTED | IN_APPROVAL | AWARDED | CANDIDATE_NOT_AWARDED | AWARD_CANCELLED | CANDIDATE_CANCELLED | REJECTED */
+    adjudicationStatus?: string | null;
+    adjudicationBatchNumber?: number | null;
+    /** RESTART_QUOTATION | CANCEL_ITEMS when released by a P.O.-group cancellation. */
+    adjudicationReleaseKind?: string | null;
+    /** REQUOTED_WITH_OTHER | PENDING_REQUOTE | CLOSED_AFTER_APPROVAL | AWARDED_HERE */
+    lineCurrentState?: string | null;
+    lineCurrentSupplierName?: string | null;
 }
 
 export interface PurchaseHistoryInsightDto {
@@ -303,7 +313,27 @@ export interface SavedQuotationDto {
     submittedBatchNumber?: number | null;
     submissionLockReason?: string | null;
     itemCount: number;
+    /** v2.249.4 — lines the supplier actually quoted (NOT_QUOTED / IGNORED placeholders excluded). */
+    quotedItemCount?: number;
+    /** v2.249.4 — requested lines recorded as not quoted / ignored on this document. */
+    notQuotedItemCount?: number;
     items: SavedQuotationItemDto[];
+    // v2.249.5 — lifecycle context (server projection; see lib/quotationLifecycle)
+    /** OPEN | IN_APPROVAL | AWARDED | NOT_AWARDED | PARTIALLY_HISTORICAL | HISTORICAL_CANCELLED | REJECTED */
+    lifecycleStatus?: string | null;
+    activeAwardedItemCount?: number;
+    historicalItemCount?: number;
+    historicalBatchNumber?: number | null;
+    historicalReleaseKind?: string | null;
+    // v2.249.6 — line-resolved pricing (server QuotationLinePricingPolicy; see lib/quotationPricing)
+    /** False when a quotation-level discount no line carries (or the lines do not add up to totalAmount): not submittable. */
+    isLinePricingResolved?: boolean;
+    /** GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH | null */
+    linePricingReasonCode?: string | null;
+    /** v2.249.6 — LINE_RESOLVED | ZERO_VALUE | LEGACY_TOTAL_NOT_COMPUTED | GLOBAL_DISCOUNT_UNALLOCATED | LINE_TOTAL_MISMATCH. */
+    linePricingKind?: string | null;
+    /** Σ lineTotal of the MAPPED / SUBSTITUTE / EXTRA_ITEM lines — what approval would use. */
+    consideredLineTotalSum?: number;
 }
 
 export interface RequestPoGroupDto {
@@ -330,10 +360,285 @@ export interface RequestPoGroupDto {
     createdByUserId: string;
     lineItemCount: number;
     attachmentCount: number;
+    /** v2.249.4 — lines the group covered before a cancellation released them (0 unless cancelled with RESTART_QUOTATION). */
+    historicalLineItemCount?: number;
+    /** v2.249.4 — the group's current P.O. document (pointer stamped by the registration, or the newest live file). */
+    currentPoAttachmentId?: string | null;
     payments?: RequestPaymentDto[];
     /** v2.230.0 — per-group Finance actions (SCHEDULE/PAY/CANCEL_SCHEDULE/RETURN) computed from
      *  this group's own status by the Finance payments list. Gates the multi-group card buttons. */
     financeActions?: string[];
+    // ── Phase 1 P.O. cancellation / return to quotation (docs/PO_GROUP_CANCELLATION.md) ──
+    /** Last Finance return (columns when recorded, else history with an UNCLASSIFIED kind — never inferred). */
+    lastFinanceReturn?: LastFinanceReturnDto | null;
+    /** Present when the group was cancelled after final approval. */
+    cancellation?: PoGroupCancellationDto | null;
+    /** D4: unconfirmed prior ECF cancellations that block a replacement P.O. on this group. */
+    priorEcfConfirmation?: PriorEcfConfirmationDto | null;
+    rowVersion?: string | null;
+}
+
+// ── Phase 1 P.O. group cancellation / return to quotation — TS mirror of PoGroupCancellationDtos.cs ──
+/** RESTART_QUOTATION | CANCEL_ITEMS */
+export type PoGroupCancellationKind = 'RESTART_QUOTATION' | 'CANCEL_ITEMS';
+/** The Buyer's HUMAN declaration about the external ECF document — never verified by the Portal. */
+export type PoGroupEcfStatus = 'NOT_APPLICABLE' | 'PENDING_EXTERNAL' | 'DECLARED_CANCELLED' | 'UNKNOWN';
+/** Finance's SEPARATE confirmation of the external annulment. */
+export type PoGroupFinanceConfirmationStatus = 'NOT_REQUIRED' | 'PENDING' | 'CONFIRMED' | 'REJECTED';
+/** PO_CORRECTION | ORDER_CANCELLATION_REQUESTED (null = legacy, not classified). */
+export type FinanceReturnKind = 'PO_CORRECTION' | 'ORDER_CANCELLATION_REQUESTED';
+
+export interface CancelPoGroupRequestDto {
+    kind?: PoGroupCancellationKind | string | null;
+    reasonCode?: string | null;
+    /** Mandatory explanation (20–1000 characters). */
+    reason?: string | null;
+    /** Required when the group ever had a P.O.: PENDING_EXTERNAL | DECLARED_CANCELLED | UNKNOWN. */
+    ecfStatus?: PoGroupEcfStatus | string | null;
+    /** Required for DECLARED_CANCELLED. */
+    ecfReference?: string | null;
+    ecfDeclarationNote?: string | null;
+    ecfEvidenceAttachmentId?: string | null;
+    /** Base64 of the group RowVersion the client displayed; a mismatch is 409 CANCELLATION_CONCURRENT_CHANGE. */
+    expectedGroupRowVersion?: string | null;
+}
+
+export interface UpdateEcfDeclarationDto {
+    ecfStatus?: PoGroupEcfStatus | string | null;
+    ecfReference?: string | null;
+    note?: string | null;
+    evidenceAttachmentId?: string | null;
+    expectedRowVersion?: string | null;
+}
+
+export interface FinanceCancellationReviewDto {
+    note?: string | null;
+    expectedRowVersion?: string | null;
+}
+
+export interface PoGroupCancellationItemDto {
+    requestLineItemId: string;
+    lineNumber: number;
+    description?: string | null;
+    outcome: string;
+    previousLineItemStatusCode?: string | null;
+}
+
+export interface PoGroupCancellationEcfEventDto {
+    eventType: string;
+    ecfStatusAfter: string;
+    financeStatusAfter: string;
+    reference?: string | null;
+    note?: string | null;
+    evidenceAttachmentId?: string | null;
+    actorUserId: string;
+    actorName?: string | null;
+    actorRoleSnapshot: string;
+    atUtc: string;
+}
+
+/** Actions the CURRENT caller may perform on a cancellation (server-decided; the UI never recomputes). */
+export interface PoGroupCancellationActionsDto {
+    canUpdateDeclaration: boolean;
+    canResendNotification: boolean;
+    canFinanceReview: boolean;
+    financeReviewBlockReason?: string | null;
+}
+
+export interface PoGroupCancellationDto {
+    id: string;
+    requestPoGroupId: string;
+    requestId: string;
+    kind: PoGroupCancellationKind | string;
+    reasonCode: string;
+    reasonLabel: string;
+    reason: string;
+    previousGroupStatus: string;
+    purchaseOrderNumberSnapshot?: string | null;
+    totalAmountSnapshot: number;
+    currencyCodeSnapshot?: string | null;
+    approvalBatchNumberSnapshot?: number | null;
+    originFinanceReturnHistoryId?: string | null;
+    cancelledByUserId: string;
+    cancelledByName?: string | null;
+    cancelledAtUtc: string;
+    // Buyer declaration
+    financeConfirmationRequired: boolean;
+    ecfStatus: PoGroupEcfStatus | string;
+    ecfReference?: string | null;
+    ecfDeclarationNote?: string | null;
+    ecfEvidenceAttachmentId?: string | null;
+    ecfDeclaredByUserId?: string | null;
+    ecfDeclaredByName?: string | null;
+    ecfDeclaredAtUtc?: string | null;
+    // Finance confirmation
+    financeConfirmationStatus: PoGroupFinanceConfirmationStatus | string;
+    financeConfirmedByUserId?: string | null;
+    financeConfirmedByName?: string | null;
+    financeConfirmedAtUtc?: string | null;
+    financeConfirmationNote?: string | null;
+    financeReviewedByName?: string | null;
+    financeReviewedAtUtc?: string | null;
+    /** v2.249.4 — false while a re-declared cancellation awaits a NEW decision: the reviewer/note then belong to previousFinanceReview. */
+    financeReviewAppliesToCurrentDeclaration?: boolean;
+    previousFinanceReview?: PoGroupCancellationPreviousReviewDto | null;
+    // Notification bookkeeping (D13)
+    financeRecipientsResolvedCount: number;
+    financeRecipientsWithEmailCount: number;
+    financeEmailsQueuedCount: number;
+    /** QUEUED | NO_ELIGIBLE_FINANCE_USERS | ELIGIBLE_USERS_WITHOUT_EMAIL | NO_PLANT_IN_APP_ONLY. Plant-scoped Finance users
+     *  ALWAYS get the e-mail for this event (independent of the company AP switch); the AP mailbox is additional. */
+    financeEmailPolicyOutcome?: FinanceEmailPolicyOutcome | string | null;
+    buyerRecipientResolved: boolean;
+    buyerEmailQueued: boolean;
+    /** Outbox state per recipient of the last emission (delivery is the worker's later fact). */
+    delivery: NotificationDeliveryDto[];
+    lastNotificationCorrelationId?: string | null;
+    lastNotifiedAtUtc?: string | null;
+    notificationResendCount: number;
+    /** Human explanation when Finance could not be addressed (e.g. no Finance user scoped to the plant). */
+    notificationWarning?: string | null;
+    rowVersion?: string | null;
+    items: PoGroupCancellationItemDto[];
+    events: PoGroupCancellationEcfEventDto[];
+    actions: PoGroupCancellationActionsDto;
+}
+
+/** v2.249.4 — a Finance review superseded by a later Buyer declaration (history, labelled as such). */
+export interface PoGroupCancellationPreviousReviewDto {
+    status: 'CONFIRMED' | 'REJECTED' | string;
+    byName?: string | null;
+    atUtc?: string | null;
+    note?: string | null;
+}
+
+export type FinanceEmailPolicyOutcome = 'QUEUED' | 'NO_ELIGIBLE_FINANCE_USERS' | 'ELIGIBLE_USERS_WITHOUT_EMAIL' | 'NO_PLANT_IN_APP_ONLY';
+export type NotificationDeliveryStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED' | 'DEAD_LETTER' | 'EXPIRED';
+
+export interface NotificationDeliveryDto {
+    recipientEmail: string;
+    recipientName?: string | null;
+    status: NotificationDeliveryStatus | string;
+    retryCount: number;
+    lastError?: string | null;
+    processedAtUtc?: string | null;
+    nextRetryAtUtc?: string | null;
+}
+
+export interface PoGroupCancellationResultDto {
+    cancellationId: string;
+    kind: string;
+    requestStatusCode: string;
+    requestCancelled: boolean;
+    financeConfirmationRequired: boolean;
+    financeRecipientsResolvedCount: number;
+    releasedLineCount: number;
+    closedLineCount: number;
+    voidedPoAttachments: number;
+    cancelledPlannedPayments: number;
+    message: string;
+    notificationWarning?: string | null;
+}
+
+/** Read-side eligibility of the cancel action for one group and the current caller. */
+export interface PoGroupCancellationEligibilityDto {
+    canCancel: boolean;
+    blockCode?: string | null;
+    blockMessage?: string | null;
+    /** True when the group ever had a P.O.: the dialog must collect the ECF declaration. */
+    financeConfirmationWouldBeRequired: boolean;
+    actorAuthorizationBlockCode?: string | null;
+}
+
+export interface PriorEcfBlockingCancellationDto {
+    cancellationId: string;
+    previousPoGroupId: string;
+    previousPoNumber?: string | null;
+    previousSupplierName?: string | null;
+    financeConfirmationStatus: string;
+    ecfStatus: string;
+    financeConfirmationNote?: string | null;
+    lineNumbers: number[];
+}
+
+/** D4 — unconfirmed prior cancellations that block a replacement P.O. on a group (or on a set of lines). */
+export interface PriorEcfConfirmationDto {
+    blocked: boolean;
+    cancellations: PriorEcfBlockingCancellationDto[];
+    message?: string | null;
+}
+
+/** Last Finance return of a group: from the new columns when present, otherwise from history (kind unclassified). */
+export interface LastFinanceReturnDto {
+    /** PO_CORRECTION | ORDER_CANCELLATION_REQUESTED | null (legacy, not classified — never inferred). */
+    kind?: FinanceReturnKind | string | null;
+    kindLabel: string;
+    reasonCode?: string | null;
+    /** The human reason as typed by Finance. */
+    notes?: string | null;
+    returnedAtUtc?: string | null;
+    returnedByName?: string | null;
+    /** COLUMNS | HISTORY. */
+    source: string;
+}
+
+/** Finance queue row: cancellations whose ECF confirmation is pending or rejected. */
+export interface FinancePoCancellationListItemDto {
+    cancellationId: string;
+    requestId: string;
+    requestNumber: string;
+    requestTitle?: string | null;
+    requestPoGroupId: string;
+    supplierName?: string | null;
+    companyName?: string | null;
+    plantName?: string | null;
+    plantId?: number | null;
+    totalAmountSnapshot: number;
+    currencyCodeSnapshot?: string | null;
+    purchaseOrderNumberSnapshot?: string | null;
+    kind: PoGroupCancellationKind | string;
+    reasonCode: string;
+    reasonLabel: string;
+    reason: string;
+    ecfStatus: PoGroupEcfStatus | string;
+    ecfReference?: string | null;
+    ecfDeclaredByName?: string | null;
+    ecfDeclaredAtUtc?: string | null;
+    financeConfirmationStatus: PoGroupFinanceConfirmationStatus | string;
+    financeConfirmationNote?: string | null;
+    cancelledAtUtc: string;
+    cancelledByName?: string | null;
+    financeRecipientsResolvedCount: number;
+    financeEmailPolicyOutcome?: FinanceEmailPolicyOutcome | string | null;
+    rowVersion?: string | null;
+    /** Whether THIS caller may confirm/reject (Finance role + plant scope + not the declarer). */
+    /** v2.249.4 */
+    financeReviewAppliesToCurrentDeclaration?: boolean;
+    previousFinanceReview?: PoGroupCancellationPreviousReviewDto | null;
+    canReview: boolean;
+    reviewBlockReason?: string | null;
+}
+
+export interface FinancePoCancellationListDto {
+    pendingCount: number;
+    rejectedCount: number;
+    confirmedCount: number;
+    items: FinancePoCancellationListItemDto[];
+}
+
+export interface CurrencyAmountDto { currency: string; amount: number; }
+
+/** Request-level active approved figures (D5): per currency, never summed across currencies. */
+export interface ActiveApprovedTotalsDto {
+    activeByCurrency: CurrencyAmountDto[];
+    /** Single scalar only when exactly one currency is active; otherwise null. */
+    activeAmount?: number | null;
+    /** The single active currency, or "MULTIPLE", or null when nothing is active. */
+    activeCurrency?: string | null;
+    historicalApprovedTotalAmount?: number | null;
+    historicalApprovedCurrencyCode?: string | null;
+    cancelledGroupCount: number;
+    releasedItemCount: number;
 }
 
 // ── Finance obligations projection (Phase 3/4) ──
@@ -450,6 +755,13 @@ export interface RequestAttachmentDto {
     uploadedByName: string;
     voidedAtUtc?: string | null;
     voidReason?: string | null;
+    /** v2.249.4 — replaced by a later P.O. file of the same group (correction). History, never the current document. */
+    supersededAtUtc?: string | null;
+    supersededByAttachmentId?: string | null;
+    /** v2.249.4 — the ONE current P.O. document of its group (server-resolved). */
+    isCurrentPo?: boolean;
+    /** v2.249.5 — registered P.O. evidence (current, superseded, voided or registered before the pointer existed): the server refuses its deletion. Null for non-P.O. files. */
+    isPoEvidence?: boolean | null;
 }
 
 // ── ApprovalBatch (partial/batch approval) — focused interfaces for the buyer batch-composition
@@ -472,6 +784,10 @@ export interface ApprovalBatchItemSummary {
     winnerSelectionJustification?: string | null;
     /** True for items decided by the Buyer under the pre-candidate model (zero candidate rows). */
     isLegacyBuyerSelectedWinner?: boolean;
+    /** v2.249.2 — set when a P.O.-group cancellation released this item from its APPROVED batch; a released item holds
+     * neither its line nor its candidates (the reuse rule governs them instead). */
+    releasedAtUtc?: string | null;
+    releaseKind?: string | null;
     /** Frozen candidate snapshots submitted by the Buyer (empty for legacy items). */
     candidates?: ApprovalBatchItemCandidate[];
 }
@@ -698,6 +1014,8 @@ export interface RequestDetailsDto extends RequestListItemDto {
      * corrections, whose comment stays optional. Never inferred client-side from the scalar status.
      */
     legacyReturnCorrection?: LegacyFinanceReturnCorrectionDto | null;
+    /** Phase 1 P.O. cancellation (D5): active approved figures per currency after cancellations/releases. */
+    activeApprovedTotals?: ActiveApprovedTotalsDto | null;
 }
 
 export interface LegacyFinanceReturnCorrectionDto {
@@ -740,6 +1058,11 @@ export interface OcrDraftItem {
     itemCatalogCode?: string | null; // Optional catalog code for display/traceability
     ivaUncertain?: boolean; // True when OCR could not confidently identify item-level IVA
     ivaGlobalInferred?: boolean; // True when IVA was inferred from document summary, not extracted per item
+    /** v2.249.6 — the extracted line discount and the document's own line total disagree (or the discount was implied from the
+     * line total): the Buyer must confirm the discount before advancing. Cleared when the discount is edited. */
+    discountUncertain?: boolean;
+    /** v2.249.6 — gross − printed line total at extraction (null when the document gave no line total); hint only. */
+    ocrImpliedDiscount?: number | null;
     autoMatchStatus?: 'AUTO_MATCHED' | 'NEEDS_REVIEW' | null; // Catalog auto-match result from OCR
     mappedRequestLineItemId?: string | null; // ID of the RequestLineItem this quotation item corresponds to
     reconciliationStatus?: 'MAPPED' | 'NOT_QUOTED' | 'EXTRA_ITEM' | 'IGNORED' | 'SUBSTITUTE';
@@ -805,6 +1128,20 @@ export interface QuotationReconciliationDto {
     /** Summary-level document IVA recognized by backend reconciliation inference (v2.226.1) —
      * an automatically recognized component, credited against the residual. */
     documentSummaryIvaCredit: number;
+    /** v2.249.7 — the extracted document-level (summary) discount as sent, net of IVA (0 when none). */
+    ocrDocumentDiscount: number;
+    /** v2.249.7 — NONE | DOCUMENT_LEVEL | AGGREGATE_OF_LINES: an aggregate of the printed line discounts is never credited twice. */
+    ocrDocumentDiscountKind: 'NONE' | 'DOCUMENT_LEVEL' | 'AGGREGATE_OF_LINES';
+    /** v2.249.7 — signed (≤ 0) effect of the document's own summary discount (net + the IVA that follows it), a document
+     * component credited against the residual whether the Buyer kept it as global discount or distributed it over the lines. */
+    documentSummaryDiscountCredit: number;
+    /** v2.249.7 — discount the quotation carries beyond the OCR line baseline (lines + global), at the final rates; ≤ 0. */
+    documentDiscountCarried: number;
+    /** v2.249.7 — discount the document grants on the considered lines (0 for an aggregate of line discounts); ≤ 0. */
+    documentDiscountExpected: number;
+    /** v2.249.7 — carried − expected: the Buyer's deviation from the document's own discount (negative = more discount than the
+     * document, e.g. the same discount applied twice). Part of the residual; justified explicitly or not at all. */
+    documentDiscountDeviation: number;
     residualVariance: number;
     toleranceApplied: number;
     residualExceedsTolerance: boolean;
@@ -822,7 +1159,11 @@ export interface OcrDraft {
     isCompanyOcrAutoFilled?: boolean;
     documentNumber: string;
     documentDate: string;
+    /** The quotation's validity date ("Validade da cotação"). Wizard-only: NOT part of the save payload and NOT persisted
+     * (no DTO / entity field) — informational for the Buyer's review. */
     dueDate?: string;
+    /** v2.249.8 — where `dueDate` came from: the extraction (normalised verbatim) or the Buyer. Undefined when none / unknown (edit hydration). */
+    dueDateSource?: 'EXTRACTED' | 'MANUAL';
     /**
      * Identity of the attached document — see lib/sourceDocumentType.
      * Widened from the superseded binary `'PROFORMA' | 'FINAL'`; the old values still normalize.
@@ -855,6 +1196,20 @@ export interface OcrDraft {
     supplierBankIban?: string;
     supplierBankSwift?: string;
     supplierPaymentTerms?: string;
+    /** v2.249.6 — how the header "Desconto Comercial" of the document was resolved at extraction: NONE | AGGREGATE_OF_LINES (sum of
+     * the line discounts, not applied as global) | DOCUMENT_LEVEL (kept as global discount — must be distributed before submission). */
+    globalDiscountKind?: 'NONE' | 'AGGREGATE_OF_LINES' | 'DOCUMENT_LEVEL' | null;
+    /** v2.249.6 — pt-PT sentence explaining the header-discount resolution (shown in the document step). */
+    globalDiscountNote?: string | null;
+    /** v2.249.6 — the header discount as extracted, before resolution. */
+    ocrHeaderDiscountAmount?: number | null;
+    /** v2.249.7 — IMMUTABLE OCR baseline of the header for the discount (counterpart of `ocrTotalAmount`): the summary
+     * "Desconto Comercial" figure the extraction read, net of IVA (a document-level discount or the aggregate of the printed line
+     * discounts — the server classifies it); null when the document shows none. Never edited, never zeroed by the allocation —
+     * `discountAmount` / `globalDiscountKind` are the draft's CURRENT state, this is what the document says. Sent as
+     * `ocrDocumentDiscountAmount`: the server credits a document-level discount and, once declared, treats any discount carried
+     * beyond what the document grants as a residual to justify. */
+    ocrDocumentDiscountAmount?: number | null;
 }
 
 export interface LookupDto {

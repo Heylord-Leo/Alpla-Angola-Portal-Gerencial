@@ -123,6 +123,9 @@ export function buildQuotationPayload(draft: OcrDraft, conflict: ClassificationC
         classificationJustification: classification.justification,
         currency: draft.currency || 'AOA',
         discountAmount: draft.discountAmount || 0,
+        // v2.249.7 — immutable OCR header-discount baseline (counterpart of `ocrTotal`, added by the callers): the server credits
+        // the document's own summary discount in the reconciliation, so distributing it over the lines leaves no residual.
+        ocrDocumentDiscountAmount: draft.ocrDocumentDiscountAmount ?? null,
         totalAmount: draft.totalAmount || 0,
         proformaAttachmentId: draft.proformaAttachmentId,
         items: draft.items.filter(i => ['MAPPED', 'SUBSTITUTE', 'EXTRA_ITEM', 'NOT_QUOTED', 'IGNORED'].includes(i.reconciliationStatus as string)).map((i, idx) => ({

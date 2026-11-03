@@ -53,12 +53,6 @@ public sealed class OperationalPipelineProjection
     };
 
     // Buyer-active hydration bound — identical to the Buyer queue / Dashboard Buyer section.
-    private static readonly string[] BuyerActiveRequestStatusCodes =
-    {
-        RequestConstants.Statuses.Draft, RequestConstants.Statuses.WaitingQuotation,
-        RequestConstants.Statuses.WaitingAreaApproval, RequestConstants.Statuses.AreaAdjustment,
-        RequestConstants.Statuses.WaitingFinalApproval, RequestConstants.Statuses.FinalAdjustment,
-    };
 
     public async Task<DashboardV2PipelineDto> BuildAsync(IQueryable<Request> scoped, DateTime today)
     {
@@ -106,13 +100,14 @@ public sealed class OperationalPipelineProjection
     private async Task<List<OperationalPipelineStageDto>> BuyerStagesAsync(IQueryable<Request> scoped, DateTime today)
     {
         var requests = await scoped
-            .Where(r => r.RequestType!.Code == RequestConstants.Types.Quotation
-                        && BuyerActiveRequestStatusCodes.Contains(r.Status!.Code))
+            .Where(r => r.RequestType!.Code == RequestConstants.Types.Quotation)
+            .Where(BuyerQueueAdmission.IsBuyerActiveOrHasOpenQuotationWork) // v2.249.2 — shared bound (released lines admitted)
             .Include(r => r.RequestType).Include(r => r.Status).Include(r => r.NeedLevel).Include(r => r.Buyer)
             .Include(r => r.LineItems).ThenInclude(li => li.LineItemStatus)
             .Include(r => r.ApprovalBatches).ThenInclude(b => b.Items).ThenInclude(bi => bi.Candidates)
             .Include(r => r.PoGroups)
             .Include(r => r.Quotations).ThenInclude(qq => qq.Items)
+            .Include(r => r.QuotationReuseAuthorizations) // v2.249.2 — reuse rule in the coverage projection
             .Include(r => r.Attachments)
             .AsSplitQuery().AsNoTracking()
             .ToListAsync();

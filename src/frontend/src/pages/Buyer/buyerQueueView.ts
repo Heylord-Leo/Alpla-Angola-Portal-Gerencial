@@ -16,6 +16,7 @@ export const OP = {
   AdjustmentRequired: 'ADJUSTMENT_REQUIRED',
   AwaitingRequesterDecision: 'AWAITING_REQUESTER_DECISION',
   PoCorrection: 'PO_CORRECTION',
+  PoRegistrationPending: 'PO_REGISTRATION_PENDING',
   CompletedForBuyer: 'COMPLETED_FOR_BUYER',
   NoBuyerAction: 'NO_BUYER_ACTION',
 } as const;
@@ -206,4 +207,47 @@ export function buildPoCorrectionDeepLink(requestId: string, poGroupId?: string 
   const p = new URLSearchParams({ action: 'PO_CORRECTION', requestId });
   if (poGroupId) p.set('poGroupId', poGroupId);
   return `/requests?${p.toString()}`;
+}
+
+// ── v2.249.2 — Finance-returned row: where the primary CTA goes and what it says ──
+// A QUOTATION request is handled in its Workspace "Grupos P.O." tab (correction AND cancellation live there, with the
+// stored return kind); a non-QUOTATION correction (PAYMENT) keeps the Para Minha Ação deep-link. The wording follows the
+// STORED return kind(s) of the returned groups — never inferred from reason text; legacy (null) stays neutral.
+export const WORKSPACE_GROUPS_TAB_PATH = (requestId: string) => `/buyer/requests/${requestId}?tab=groups`;
+
+export type PoCorrectionNavigation = { kind: 'WORKSPACE_GROUPS'; to: string } | { kind: 'DEEP_LINK'; to: string };
+export function resolvePoCorrectionNavigation(item: Pick<BuyerQueueItem, 'requestId' | 'requestTypeCode' | 'poCorrectionGroups'>): PoCorrectionNavigation {
+  if (!item.requestTypeCode || item.requestTypeCode === 'QUOTATION') return { kind: 'WORKSPACE_GROUPS', to: WORKSPACE_GROUPS_TAB_PATH(item.requestId) };
+  return { kind: 'DEEP_LINK', to: buildPoCorrectionDeepLink(item.requestId, item.poCorrectionGroups?.[0]?.poGroupId) };
+}
+
+export type PoReturnKindSummary = 'CORRECTION' | 'CANCELLATION_REQUESTED' | 'MIXED' | 'UNCLASSIFIED';
+export function summarizePoReturnKinds(groups: { returnKind?: string | null }[] | null | undefined): PoReturnKindSummary {
+  const kinds = (groups ?? []).map(g => g.returnKind ?? null);
+  const anyCorrection = kinds.includes('PO_CORRECTION');
+  const anyCancellation = kinds.includes('ORDER_CANCELLATION_REQUESTED');
+  if (anyCorrection && !anyCancellation) return 'CORRECTION';
+  if (anyCancellation && !anyCorrection) return 'CANCELLATION_REQUESTED';
+  if (anyCorrection && anyCancellation) return 'MIXED';
+  return 'UNCLASSIFIED';
+}
+
+/** Primary CTA label of a Finance-returned row (QUOTATION → opens the Workspace groups tab; PAYMENT → correction deep-link). */
+export function poCorrectionCtaLabel(item: Pick<BuyerQueueItem, 'requestTypeCode' | 'poCorrectionGroups'>): string {
+  if (item.requestTypeCode && item.requestTypeCode !== 'QUOTATION') return 'Corrigir P.O.';
+  switch (summarizePoReturnKinds(item.poCorrectionGroups)) {
+    case 'CORRECTION': return 'Corrigir P.O.';
+    case 'CANCELLATION_REQUESTED': return 'Gerir P.O. devolvida';
+    default: return 'Rever P.O. devolvida';
+  }
+}
+
+/** Short per-group chip text on the row: supplier + the stored kind (nothing inferred). */
+export function poCorrectionGroupChipLabel(g: { supplierName?: string | null; returnKind?: string | null }): string {
+  const supplier = g.supplierName || 'Fornecedor';
+  switch (g.returnKind) {
+    case 'PO_CORRECTION': return `${supplier} · corrigir`;
+    case 'ORDER_CANCELLATION_REQUESTED': return `${supplier} · cancelamento solicitado`;
+    default: return `${supplier} · devolução não classificada`;
+  }
 }
