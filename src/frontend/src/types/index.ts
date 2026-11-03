@@ -1128,6 +1128,20 @@ export interface QuotationReconciliationDto {
     /** Summary-level document IVA recognized by backend reconciliation inference (v2.226.1) —
      * an automatically recognized component, credited against the residual. */
     documentSummaryIvaCredit: number;
+    /** v2.249.7 — the extracted document-level (summary) discount as sent, net of IVA (0 when none). */
+    ocrDocumentDiscount: number;
+    /** v2.249.7 — NONE | DOCUMENT_LEVEL | AGGREGATE_OF_LINES: an aggregate of the printed line discounts is never credited twice. */
+    ocrDocumentDiscountKind: 'NONE' | 'DOCUMENT_LEVEL' | 'AGGREGATE_OF_LINES';
+    /** v2.249.7 — signed (≤ 0) effect of the document's own summary discount (net + the IVA that follows it), a document
+     * component credited against the residual whether the Buyer kept it as global discount or distributed it over the lines. */
+    documentSummaryDiscountCredit: number;
+    /** v2.249.7 — discount the quotation carries beyond the OCR line baseline (lines + global), at the final rates; ≤ 0. */
+    documentDiscountCarried: number;
+    /** v2.249.7 — discount the document grants on the considered lines (0 for an aggregate of line discounts); ≤ 0. */
+    documentDiscountExpected: number;
+    /** v2.249.7 — carried − expected: the Buyer's deviation from the document's own discount (negative = more discount than the
+     * document, e.g. the same discount applied twice). Part of the residual; justified explicitly or not at all. */
+    documentDiscountDeviation: number;
     residualVariance: number;
     toleranceApplied: number;
     residualExceedsTolerance: boolean;
@@ -1185,6 +1199,13 @@ export interface OcrDraft {
     globalDiscountNote?: string | null;
     /** v2.249.6 — the header discount as extracted, before resolution. */
     ocrHeaderDiscountAmount?: number | null;
+    /** v2.249.7 — IMMUTABLE OCR baseline of the header for the discount (counterpart of `ocrTotalAmount`): the summary
+     * "Desconto Comercial" figure the extraction read, net of IVA (a document-level discount or the aggregate of the printed line
+     * discounts — the server classifies it); null when the document shows none. Never edited, never zeroed by the allocation —
+     * `discountAmount` / `globalDiscountKind` are the draft's CURRENT state, this is what the document says. Sent as
+     * `ocrDocumentDiscountAmount`: the server credits a document-level discount and, once declared, treats any discount carried
+     * beyond what the document grants as a residual to justify. */
+    ocrDocumentDiscountAmount?: number | null;
 }
 
 export interface LookupDto {

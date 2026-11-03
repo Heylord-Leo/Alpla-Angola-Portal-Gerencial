@@ -4321,9 +4321,13 @@ public class RequestsController : BaseController
         });
     }
 
+    /// <summary>v2.249.7 — the immutable OCR header-discount baseline of the payload (counterpart of OcrTotal), never negative.</summary>
+    private static decimal OcrDocumentDiscountBaseline(SaveQuotationRequestDto dto)
+        => Round2(Math.Max(0m, dto.OcrDocumentDiscountAmount ?? 0m));
+
     private QuotationReconciliationResult ComputeReconciliation(
         decimal ocrHeaderTotal, List<ReconciliationLineInput> lineInputs, List<QuotationItem> allItems,
-        decimal globalDiscount, decimal netAfterItemDiscounts)
+        decimal globalDiscount, decimal netAfterItemDiscounts, decimal ocrDocumentDiscount)
     {
         // Single source of truth for the considered total + global-discount effect: the exact same
         // QuotationIntegrityCalculator used elsewhere (refinement 4 — identical allocation & IVA rules).
@@ -4336,7 +4340,7 @@ public class RequestsController : BaseController
 
         return QuotationReconciliationCalculator.Compute(
             ocrHeaderTotal, lineInputs, integrity.QuotationConsideredTotal, globalDiscountEffect,
-            QuotationReconciliationCalculator.ToleranceAmount);
+            QuotationReconciliationCalculator.ToleranceAmount, ocrDocumentDiscount);
     }
 
     private static QuotationReconciliationDto MapReconciliation(QuotationReconciliationResult r) => new()
@@ -4357,6 +4361,12 @@ public class RequestsController : BaseController
         ManualAdditionsImpact = r.ManualAdditionsImpact,
         ExplainedLineAdjustments = r.ExplainedLineAdjustments,
         DocumentSummaryIvaCredit = r.DocumentSummaryIvaCredit,
+        OcrDocumentDiscount = r.OcrDocumentDiscount,
+        OcrDocumentDiscountKind = r.OcrDocumentDiscountKind,
+        DocumentSummaryDiscountCredit = r.DocumentSummaryDiscountCredit,
+        DocumentDiscountCarried = r.DocumentDiscountCarried,
+        DocumentDiscountExpected = r.DocumentDiscountExpected,
+        DocumentDiscountDeviation = r.DocumentDiscountDeviation,
         ResidualVariance = r.ResidualVariance,
         ToleranceApplied = r.ToleranceApplied,
         ResidualExceedsTolerance = r.ResidualExceedsTolerance,
@@ -4458,7 +4468,11 @@ public class RequestsController : BaseController
                     $"Reconciliação financeira da cotação ({quotation.SupplierNameSnapshot}). " +
                     $"Total documento OCR (cabeçalho)={result.OcrHeaderTotal:N2}; soma linhas OCR={result.OcrLineSumTotal:N2}; " +
                     $"reconstruído dos componentes OCR={result.ReconstructedOcrLineSum:N2}; diferença estrutural={result.StructuralHeaderDifference:N2}; " +
-                    $"diferença de componentes={result.OcrLineComponentDifference:N2}; residual (com sinal)={result.ResidualVariance:N2}; " +
+                    $"diferença de componentes={result.OcrLineComponentDifference:N2}; " +
+                    $"desconto do resumo do documento={result.OcrDocumentDiscount:N2} ({result.OcrDocumentDiscountKind}); crédito do desconto do resumo={result.DocumentSummaryDiscountCredit:N2}; " +
+                    $"IVA de resumo reconhecido={result.DocumentSummaryIvaCredit:N2}; desconto transportado pela cotação={result.DocumentDiscountCarried:N2}; " +
+                    $"desconto concedido pelo documento={result.DocumentDiscountExpected:N2}; desvio de desconto face ao documento={result.DocumentDiscountDeviation:N2}; " +
+                    $"residual (com sinal)={result.ResidualVariance:N2}; " +
                     $"tolerância={result.ToleranceApplied:N2}. Ajustes explicados: ignorados={result.IgnoredImpact:N2}, quantidade={result.QuantityImpact:N2}, " +
                     $"preço={result.UnitPriceImpact:N2}, desconto={result.DiscountImpact:N2}, IVA={result.IvaImpact:N2}, " +
                     $"desconto global={result.GlobalDiscountImpact:N2}, adições manuais={result.ManualAdditionsImpact:N2}. " +
@@ -4592,7 +4606,7 @@ public class RequestsController : BaseController
             return BadRequest(pd);
         }
 
-        var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, items, globalDiscount, netAfterItemDiscounts);
+        var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, items, globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
         return Ok(MapReconciliation(reconciliation));
     }
 
@@ -4870,7 +4884,7 @@ public class RequestsController : BaseController
         if (isOcrQuotation)
         {
             var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
-            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
             var itemsById = quotation.Items.ToDictionary(i => i.Id);
             var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
             if (gateError != null) return gateError;
@@ -5386,7 +5400,7 @@ public class RequestsController : BaseController
         if (isOcrQuotation)
         {
             var lineInputs = BuildReconciliationLineInputs(quotation.Items, manualAdditionItemIds, ivaRates);
-            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts);
+            var reconciliation = ComputeReconciliation(dto.OcrTotal!.Value, lineInputs, quotation.Items.ToList(), globalDiscount, netAfterItemDiscounts, OcrDocumentDiscountBaseline(dto));
             var itemsById = quotation.Items.ToDictionary(i => i.Id);
             var gateError = EnforceReconciliationGate(request, quotation, dto, reconciliation, itemsById, actorId);
             if (gateError != null) return gateError;

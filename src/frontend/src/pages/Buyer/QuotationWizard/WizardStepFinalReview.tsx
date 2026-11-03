@@ -212,6 +212,12 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                     <Row label="Total do cabeçalho OCR" value={reconciliation.ocrHeaderTotal} />
                                     <Row label="Soma das linhas OCR" value={reconciliation.ocrLineSumTotal} />
                                     <Row label="Reconstruído dos componentes OCR" value={reconciliation.reconstructedOcrLineSum} />
+                                    {/* v2.249.7 — the document's own summary discount (read by the extraction), net of IVA. */}
+                                    {(reconciliation.ocrDocumentDiscount ?? 0) > 0 && (
+                                        <Row label={reconciliation.ocrDocumentDiscountKind === 'AGGREGATE_OF_LINES'
+                                            ? 'Desconto do resumo (soma dos descontos das linhas)'
+                                            : 'Desconto do resumo do documento (s/ IVA)'} value={reconciliation.ocrDocumentDiscount} />
+                                    )}
                                     <Row label="Diferença estrutural (cabeçalho − linhas)" value={reconciliation.structuralHeaderDifference} />
                                     <Row label="Diferença de componentes OCR" value={reconciliation.ocrLineComponentDifference} />
                                 </div>
@@ -229,6 +235,16 @@ export const WizardStepFinalReview: React.FC<WizardStepFinalReviewProps> = ({
                                         distinguishes the document's own tax from buyer adjustments. */}
                                     {reconciliation.documentSummaryIvaCredit !== 0 && (
                                         <Row label="IVA de resumo reconhecido" value={reconciliation.documentSummaryIvaCredit} />
+                                    )}
+                                    {/* v2.249.7 — the document's own summary discount (with the IVA that follows it) is a document
+                                        component, not a Buyer adjustment: distributing it over the lines is the same discount. */}
+                                    {(reconciliation.documentSummaryDiscountCredit ?? 0) !== 0 && (
+                                        <Row label="Desconto do resumo reconhecido (c/ IVA)" value={reconciliation.documentSummaryDiscountCredit} />
+                                    )}
+                                    {/* v2.249.7 — the quotation carries more (negative) or less (positive) discount than the document grants:
+                                        the same discount applied twice is the typical case; it is part of the residual and needs an explicit reason. */}
+                                    {(reconciliation.documentDiscountDeviation ?? 0) !== 0 && (
+                                        <Row label={(reconciliation.documentDiscountDeviation ?? 0) < 0 ? 'Desconto além do documento (c/ IVA)' : 'Desconto aquém do documento (c/ IVA)'} value={reconciliation.documentDiscountDeviation} />
                                     )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--color-border)', margin: '4px 0' }} />
                                     <Row label="Total final considerado" value={reconciliation.finalConsideredTotal} strong />

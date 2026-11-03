@@ -3,6 +3,7 @@ import {
     evaluateQuotationLinePricing, describeQuotationPricingState, readLinePricingConflict, QUOTATION_PRICING_NOT_LINE_RESOLVED,
     resolveOcrLineDiscount, resolveOcrHeaderDiscount, allocateAmountProportionally, allocateGlobalDiscountToLines, lineNet,
     applyGlobalDiscountAllocationToDraft, computeDraftQuotationTotal, recomputeDraftLineTotal, describeAllocationRefusal,
+    ocrDocumentDiscountBaseline,
     type AllocatableDraftLine, type DraftPricingLike,
 } from './quotationPricing';
 
@@ -326,5 +327,57 @@ describe('allocation boundaries — never negative, never twice, never on ignore
         ] };
         expect(computeDraftQuotationTotal(d, IVA)).toBe(345_775.5);
         expect(computeDraftQuotationTotal({ ...d, discountAmount: 999_999 }, IVA)).toBe(0);
+    });
+});
+
+// v2.249.7 — REQ-03/11/2026-630 (synthetic fixture K, TEST-K-2026-0630): 10 × 5.000,00 + 20 × 500,00, no line discounts, a genuine
+// summary-only discount of 6.000,00, IVA 14 % on both → taxable 54.000, IVA 7.560, total 61.560. The allocation gives 5.000 / 1.000.
+describe('document-level discount baseline — captured once, survives the allocation, never an aggregate (REQ-630 fixture K)', () => {
+    const IVA14 = [{ id: 14, ratePercent: 14 }];
+    const fixtureK = (): DraftPricingLike & { ocrTotalAmount: number } => ({
+        currency: 'AOA', discountAmount: 6_000, totalAmount: 61_560, ocrTotalAmount: 61_560,
+        globalDiscountKind: 'DOCUMENT_LEVEL', ocrDocumentDiscountAmount: 6_000,
+        items: [
+            { quantity: 10, unitPrice: 5_000, discountAmount: 0, ivaRateId: 14, reconciliationStatus: 'MAPPED' },
+            { quantity: 20, unitPrice: 500, discountAmount: 0, ivaRateId: 14, reconciliationStatus: 'MAPPED' },
+        ],
+    });
+
+    it('the baseline is the summary figure whenever the document shows one (document-level or aggregate — the server classifies); none gives null', () => {
+        expect(ocrDocumentDiscountBaseline(resolveOcrHeaderDiscount(6_000, [0, 0]))).toBe(6_000);
+        expect(ocrDocumentDiscountBaseline(resolveOcrHeaderDiscount(67_690, [37_530, 30_160]))).toBe(67_690);  // LUANDAY: aggregate, declared too
+        expect(ocrDocumentDiscountBaseline(resolveOcrHeaderDiscount(0, [0, 0]))).toBeNull();
+        expect(ocrDocumentDiscountBaseline({ kind: 'DOCUMENT_LEVEL', headerDiscount: 1_000.005 })).toBe(1_000.01);
+        expect(ocrDocumentDiscountBaseline({ kind: 'DOCUMENT_LEVEL', headerDiscount: 0 })).toBeNull();
+    });
+
+    it('fixture K: the allocation moves 6.000 to the lines (5.000 / 1.000 → 51.300 / 10.260, total 61.560) and keeps the baseline', () => {
+        expect(computeDraftQuotationTotal(fixtureK(), IVA14)).toBe(61_560);
+        const o = applyGlobalDiscountAllocationToDraft(fixtureK(), IVA14);
+        expect(o.refusal).toBeNull();
+        expect(o.allocatedLineCount).toBe(2);
+        expect(o.draft.items.map(i => i.discountAmount)).toEqual([5_000, 1_000]);
+        expect(o.draft.items.map(i => i.totalPrice)).toEqual([51_300, 10_260]);
+        expect(o.draft.discountAmount).toBe(0);
+        expect(o.draft.globalDiscountKind).toBe('NONE');
+        expect(o.draft.totalAmount).toBe(61_560);
+        expect(o.draft.ocrDocumentDiscountAmount).toBe(6_000);     // immutable: what the document says, not the draft state
+        expect(o.draft.ocrTotalAmount).toBe(61_560);
+    });
+
+    it('a repeat press after the allocation returns the same draft with the same baseline (nothing applied twice)', () => {
+        const first = applyGlobalDiscountAllocationToDraft(fixtureK(), IVA14);
+        const second = applyGlobalDiscountAllocationToDraft(first.draft, IVA14);
+        expect(second.refusal).toBe('NOTHING_TO_ALLOCATE');
+        expect(second.draft).toBe(first.draft);
+        expect(second.draft.ocrDocumentDiscountAmount).toBe(6_000);
+        expect(second.draft.items.map(i => i.discountAmount)).toEqual([5_000, 1_000]);
+    });
+
+    it('a refused allocation keeps the baseline too', () => {
+        const o = applyGlobalDiscountAllocationToDraft({ ...fixtureK(), discountAmount: 60_000.01 }, IVA14);
+        expect(o.refusal).toBe('EXCEEDS_ELIGIBLE_NET');
+        expect(o.draft.ocrDocumentDiscountAmount).toBe(6_000);
+        expect(o.draft.discountAmount).toBe(60_000.01);
     });
 });

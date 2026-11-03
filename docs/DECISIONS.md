@@ -2481,7 +2481,38 @@ We standardized on the `number | null` pattern for numeric IDs in the frontend t
        until decided, immediate-payment wording always requires the Buyer's own selection.
 - **Consequences:** see `docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md`. No migration; no configuration
   change. Read-only diagnostic for the persisted REQ-595 facts: `scripts/db/quotation-discount-pricing-req595-readonly.sql`.
-  Known limitation kept: summary-only discounts are still not credited by the reconciliation calculator (residual to justify).
+  ~~Known limitation kept: summary-only discounts are still not credited by the reconciliation calculator (residual to justify).~~
+  Resolved by the amendment below.
+- **Amendment (2026-11-03, v2.249.7 — REQ-03/11/2026-630, fixture K blocked at the final review; design doc §9):**
+    1. **The document's own summary discount is a document component of the reconciliation, like the summary IVA.** The
+       extraction's document-level discount is an immutable header baseline (`OcrDraft.ocrDocumentDiscountAmount` →
+       `SaveQuotationRequestDto.OcrDocumentDiscountAmount`, DTO-only like `OcrTotal`, not persisted, no migration) and
+       `QuotationReconciliationCalculator` credits it (`DocumentSummaryDiscountCredit`: the discount, never beyond the baselined
+       net, plus the IVA that follows it — proportional to every baselined line's net, the server's own rule for a quotation-level
+       discount; lines without an extracted rate take their reduced net into the summary-IVA credit). The residual of a document
+       whose discount exists only in its summary is therefore **zero whether the Buyer keeps the discount at quotation level or
+       distributes it over the lines**: the allocation is a redistribution of the same discount, not a commercial change, and its
+       audit is the per-line change against the immutable baseline with the pre-filled reason.
+    2. **A summary figure equal (within 1,00) to the sum of the extracted line discounts is their aggregate** and is never credited a
+       second time (fixture J unchanged); beyond that it is a document-level discount on top of the line discounts.
+    3. **No numeric guard, no tolerance change, no fixture-specific rule:** a summary discount the header is not net of, an omitted
+       OCR line, a payload without the baseline (older client) or a summary discount above the baselined net still surface as a
+       residual to justify.
+    4. **Once the document's summary figure is declared, the quotation's discount must match the document's (review 2026-11-03,
+       design doc §9.9).** The discount carried beyond the OCR line baseline (line changes + global, at the final rates on the
+       considered lines) is compared with what the document grants on those lines (proportional share of its summary discount; 0
+       for an aggregate already in the lines; an ignored line takes its share away) and the deviation is part of the residual: the
+       same discount applied twice, or applied short, is justified explicitly (residual justification, audited with carried /
+       granted / deviation) or refused — never acknowledged by a pre-filled per-line reason. The declared figure can therefore only
+       tighten the gate (an inflated figure is credited only up to the baselined net and the final must still land on the header);
+       omitting it keeps the previous semantics; the wizard declares the figure for an aggregate summary too. `NONE` (no summary
+       discount read) is unchanged — extending the rule there is a separate decision.
+    5. **The header baseline is client-supplied and not server-verifiable** (no header extraction evidence is stored for quotations;
+       `OcrTotal` and the line baselines are in the same class). Not a new bypass: a fabricated figure alone explains nothing, and a
+       client able to shape the payload could already silence the gate by omitting or altering `OcrTotal`. Server-held header
+       evidence (mirror of `PoDocumentExtraction`, migration) is the follow-up that would close it — design doc §9.8.
+    6. The residual-justified audit row records the document discount, its kind, its credit, the summary-IVA credit and the
+       carried / granted / deviation figures next to the signed residual.
 
 ## DEC-153 — Registered P.O. Evidence Is Never Deleted; Quotation Lifecycle Context and Per-Item Price Comparison (v2.249.5)
 

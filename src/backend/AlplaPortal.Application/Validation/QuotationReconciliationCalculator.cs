@@ -99,6 +99,49 @@ public sealed class QuotationReconciliationResult
     /// </summary>
     public decimal DocumentSummaryIvaCredit { get; init; }
 
+    /// <summary>
+    /// v2.249.7 — the document-level (summary-only) discount the extraction read in the document's summary, net of IVA,
+    /// exactly as received (the immutable OCR header baseline, counterpart of OcrHeaderTotal for the discount). 0 when the
+    /// payload carried none. How it was treated is in <see cref="OcrDocumentDiscountKind"/>.
+    /// </summary>
+    public decimal OcrDocumentDiscount { get; init; }
+
+    /// <summary>NONE | DOCUMENT_LEVEL | AGGREGATE_OF_LINES (<see cref="QuotationReconciliationCalculator.DocumentDiscountKinds"/>):
+    /// a summary figure that equals the sum of the discounts the line baseline already carries is the AGGREGATE of the printed
+    /// line discounts and is never credited a second time.</summary>
+    public string OcrDocumentDiscountKind { get; init; } = QuotationReconciliationCalculator.DocumentDiscountKinds.None;
+
+    /// <summary>
+    /// Signed (≤ 0) effect of the document's own summary discount on the reconstructed document total: the discount itself
+    /// (never beyond the net of the baselined lines) plus the IVA that follows it on the lines with an extracted rate,
+    /// proportional to every baselined line's net — the same proportional rule the server applies to a quotation-level
+    /// discount. A DOCUMENT COMPONENT read from the extraction (not an inference, no numeric guard): credited against the
+    /// residual so the document's own discount is never reported as unexplained, whether the Buyer keeps it at quotation level
+    /// or distributes it over the lines (both are explained buckets of that same amount). A summary discount that does not fit
+    /// the header surfaces as a residual instead of being dropped.
+    /// </summary>
+    public decimal DocumentSummaryDiscountCredit { get; init; }
+
+    /// <summary>
+    /// v2.249.7 — the discount the quotation CARRIES beyond the OCR line baseline (line discounts changed against the baseline
+    /// plus the quotation-level global discount), valued on the considered lines at their final rates; signed ≤ 0 for a discount.
+    /// Computed only when the payload declares the document's summary discount (kind ≠ NONE).
+    /// </summary>
+    public decimal DocumentDiscountCarried { get; init; }
+
+    /// <summary>v2.249.7 — the discount the DOCUMENT grants on the considered lines (its summary discount, proportional to the
+    /// baseline nets, with the IVA that follows it at the final rates); 0 for an aggregate of line discounts (already in the
+    /// baseline). Signed ≤ 0.</summary>
+    public decimal DocumentDiscountExpected { get; init; }
+
+    /// <summary>
+    /// v2.249.7 — <see cref="DocumentDiscountCarried"/> − <see cref="DocumentDiscountExpected"/>: the Buyer's deviation from
+    /// the document's own discount (negative = more discount than the document grants, e.g. the same discount applied twice;
+    /// positive = less). Part of the residual — a deviation must be justified explicitly, it is never an implicit per-line
+    /// reason. 0 when no summary discount was declared (NONE: the pre-existing explained-bucket behaviour).
+    /// </summary>
+    public decimal DocumentDiscountDeviation { get; init; }
+
     public decimal IgnoredImpact { get; init; }
     public decimal QuantityImpact { get; init; }
     public decimal UnitPriceImpact { get; init; }
@@ -108,8 +151,8 @@ public sealed class QuotationReconciliationResult
     public decimal ManualAdditionsImpact { get; init; }
     public decimal ExplainedLineAdjustments { get; init; }
 
-    /// <summary>Signed: OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal −
-    /// DocumentSummaryIvaCredit. Only the residual AFTER recognized document components gates.</summary>
+    /// <summary>Signed: OcrHeaderTotal + ExplainedLineAdjustments − FinalConsideredTotal − DocumentSummaryDiscountCredit −
+    /// DocumentDiscountDeviation − DocumentSummaryIvaCredit. Only the residual AFTER recognized document components gates.</summary>
     public decimal ResidualVariance { get; init; }
     public decimal ToleranceApplied { get; init; }
     public bool ResidualExceedsTolerance { get; init; }
@@ -129,9 +172,14 @@ public sealed class QuotationReconciliationResult
 /// (IGNORED → quantity → unit-price → discount → IVA → manual-additions → global-discount), which
 /// reconcile to <c>FinalConsideredTotal − ReconstructedOcrLineSum</c> within rounding.
 ///
-/// Known limitation (documented follow-up, not expanded here): OCR-summary-only DISCOUNTS have the
-/// same architectural shape and are not yet credited — a header net of a summary discount absent
-/// from the line baseline still surfaces as residual.
+/// v2.249.7 — OCR-summary-only DISCOUNTS have the same architectural shape and are credited the same
+/// way (<see cref="QuotationReconciliationResult.DocumentSummaryDiscountCredit"/>): the extracted summary
+/// discount is part of the document reconstruction (net share + the IVA that follows it, proportional to
+/// the baselined line nets), so a header net of a document-level discount reconciles to zero whether the
+/// Buyer keeps the discount at quotation level or distributes it over the lines — a redistribution of the
+/// document's own discount is not a commercial change. A summary figure equal to the sum of the line
+/// discounts the baseline already carries is the aggregate of the printed line discounts (never credited
+/// twice); a summary discount that does not fit the header still surfaces as residual.
 ///
 /// Global-discount allocation and IVA re-proportioning reuse the EXACT rules of
 /// <see cref="QuotationIntegrityCalculator"/> so the two calculators never diverge.
@@ -140,6 +188,18 @@ public static class QuotationReconciliationCalculator
 {
     /// <summary>Residual tolerance. Matches the live Financial Integrity Gate flat tolerance.</summary>
     public const decimal ToleranceAmount = QuotationIntegrityCalculator.ToleranceAmount;
+
+    /// <summary>v2.249.7 — a summary discount within this amount of the sum of the extracted line discounts is their
+    /// aggregate, not a second discount (mirror of the wizard's HEADER_DISCOUNT_AGGREGATE_TOLERANCE in lib/quotationPricing).</summary>
+    public const decimal DocumentDiscountAggregateTolerance = 1.00m;
+
+    /// <summary>v2.249.7 — how an extracted summary discount was treated by the reconciliation.</summary>
+    public static class DocumentDiscountKinds
+    {
+        public const string None = "NONE";
+        public const string DocumentLevel = "DOCUMENT_LEVEL";
+        public const string AggregateOfLines = "AGGREGATE_OF_LINES";
+    }
 
     private static decimal Round2(decimal v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
 
@@ -154,18 +214,24 @@ public static class QuotationReconciliationCalculator
     /// (QuotationIntegrityCalculator.QuotationConsideredTotal) — passed in so there is a single source of truth.</param>
     /// <param name="consideredGlobalDiscountEffect">Signed (≤ 0) effect of the quotation-level global discount on the
     /// considered total (taxable + its IVA reduction), computed by QuotationIntegrityCalculator — reused verbatim.</param>
+    /// <param name="ocrDocumentDiscount">v2.249.7 — document-level (summary-only) discount read by the extraction in the
+    /// document's summary, net of IVA (immutable OCR header baseline, like <paramref name="ocrHeaderTotal"/>); 0 when the
+    /// document shows none. Credited as a document component (see <see cref="QuotationReconciliationResult.DocumentSummaryDiscountCredit"/>).</param>
     public static QuotationReconciliationResult Compute(
         decimal ocrHeaderTotal,
         IReadOnlyList<ReconciliationLineInput> lines,
         decimal finalConsideredTotal,
         decimal consideredGlobalDiscountEffect,
-        decimal tolerance)
+        decimal tolerance,
+        decimal ocrDocumentDiscount = 0m)
     {
         var baselined = lines.Where(l => l.HasOcrBaseline).ToList();
 
         // ── OCR document-internal figures (independent of final values) ──
         decimal ocrLineSumTotal = 0m;      // Σ document-extracted line totals (imputed from components only when null, flagged)
         decimal reconstructedOcrLineSum = 0m; // Σ value(OCR components)
+        decimal baselineNet = 0m;             // Σ max(0, qty·price − line discount) of the baseline, document-wide (v2.249.7)
+        decimal baselineLineDiscountSum = 0m; // Σ extracted line discounts, document-wide (v2.249.7 aggregate guard)
 
         var lineResults = new List<LineReconciliationResult>(lines.Count);
 
@@ -179,6 +245,8 @@ public static class QuotationReconciliationCalculator
 
             var reconstructed = Value(oQty, oUp, oDisc, oIva);
             reconstructedOcrLineSum += reconstructed;
+            baselineNet += Math.Max(0m, oQty * oUp - oDisc);
+            baselineLineDiscountSum += oDisc;
 
             // OcrLineTotal is the document's own reported line total; fall back to the reconstruction
             // ONLY when it was not extracted (flagged as an imputed component so it is never silent).
@@ -246,6 +314,84 @@ public static class QuotationReconciliationCalculator
         //
         // The credit uses the ORIGINAL line components with the confirmed rate, so buyer edits to
         // quantity/price/discount neither inflate nor deflate the document's own tax.
+        // ── Document-summary DISCOUNT credit (v2.249.7) — a DOCUMENT COMPONENT read from the extraction, not an inference ──
+        //
+        // A document whose summary carries a discount the line baseline cannot carry (REQ-03/11/2026-630: lines 50.000 + 10.000,
+        // "Desconto 6.000", IVA 14 %, total 61.560) reconstructs to the UNDISCOUNTED lines (68.400), so the header was always
+        // short of the reconstruction by the discount and its IVA (−6.840) — before and after "Distribuir pelas linhas", because
+        // the Buyer's global discount and the line-discount changes are both explained buckets of exactly that amount and the
+        // residual is anchored on the document's own consistency. The extracted summary discount is therefore part of the
+        // document reconstruction:
+        //   1. Aggregate guard (mirror of the wizard's resolveOcrHeaderDiscount): a summary figure equal to the sum of the
+        //      discounts the line baseline already carries is the aggregate of the printed line discounts (LUANDAY:
+        //      37.530 + 30.160 = 67.690) and is never credited a second time.
+        //   2. Otherwise the discount reduces the net of every baselined line proportionally (the server's own rule for a
+        //      quotation-level discount, document-wide — an IGNORED line's removal stays a Buyer adjustment at its gross value)
+        //      and the IVA of the lines with an extracted rate follows; lines without an extracted rate take their reduced net
+        //      into the summary-IVA credit below. Never beyond the net of the baselined lines.
+        //   No numeric guard: a summary discount that does not fit the header (mis-extraction, a figure that is not a discount,
+        //   the discount applied twice by the Buyer) must surface as a residual, never be dropped silently.
+        decimal ocrDocumentDiscountReceived = Math.Max(0m, ocrDocumentDiscount);
+        string documentDiscountKind = DocumentDiscountKinds.None;
+        decimal documentDiscountRatio = 0m;       // share of every baselined line's net taken by the summary discount
+        decimal rawDocumentDiscountCredit = 0m;   // ≤ 0
+        if (ocrDocumentDiscountReceived > 0m)
+        {
+            if (baselineLineDiscountSum > 0m
+                && Math.Abs(ocrDocumentDiscountReceived - baselineLineDiscountSum) <= DocumentDiscountAggregateTolerance)
+            {
+                documentDiscountKind = DocumentDiscountKinds.AggregateOfLines;
+            }
+            else
+            {
+                documentDiscountKind = DocumentDiscountKinds.DocumentLevel;
+                var applied = Math.Min(ocrDocumentDiscountReceived, baselineNet);
+                documentDiscountRatio = baselineNet > 0m ? applied / baselineNet : 0m;
+                decimal vatFollowingTheDiscount = 0m;
+                foreach (var l in baselined)
+                {
+                    if (l.OcrIvaPercent == null) continue;
+                    var net = Math.Max(0m, (l.OcrQuantity ?? 0m) * (l.OcrUnitPrice ?? 0m) - (l.OcrDiscount ?? 0m));
+                    vatFollowingTheDiscount += net * documentDiscountRatio * l.OcrIvaPercent.Value / 100m;
+                }
+                rawDocumentDiscountCredit = -(applied + vatFollowingTheDiscount);
+            }
+        }
+
+        // ── Discount deviation from the document (v2.249.7) ──
+        //
+        // Both Buyer discount buckets (line discounts changed against the baseline, quotation-level global discount) equal by
+        // construction their effect on the final total, so on their own they can never leave a residual: the same document
+        // discount applied TWICE (REQ-630: 6.000 distributed to the lines AND re-entered as global → 54.720, or distributed
+        // twice into the lines) or applied short reconciled to zero. Once the payload declares the document's summary discount
+        // (DOCUMENT_LEVEL or AGGREGATE_OF_LINES), the discount the quotation carries beyond the OCR line baseline is compared with
+        // the discount the document itself grants, both valued on the CONSIDERED lines at their FINAL rates (the server's
+        // proportional rule; a line the Buyer ignored takes its share of the document discount away). The difference is the
+        // Buyer's deviation from the document — a residual to justify explicitly (QUOTATION_RESIDUAL_JUSTIFIED), never an
+        // implicit per-line reason. NONE (no summary discount read): the pre-existing explained-bucket behaviour is unchanged.
+        decimal documentDiscountCarried = 0m, documentDiscountExpected = 0m, documentDiscountDeviation = 0m;
+        if (documentDiscountKind != DocumentDiscountKinds.None)
+        {
+            decimal consideredBaselineNet = 0m, consideredBaselineIvaOnNet = 0m;
+            foreach (var l in baselined)
+            {
+                if (!RequestConstants.ReconciliationStatuses.Considered.Contains(l.ReconciliationStatus)) continue;
+                var net = Math.Max(0m, (l.OcrQuantity ?? 0m) * (l.OcrUnitPrice ?? 0m) - (l.OcrDiscount ?? 0m));
+                consideredBaselineNet += net;
+                consideredBaselineIvaOnNet += net * l.FinalIvaPercent / 100m;
+                documentDiscountCarried += Value(l.FinalQuantity, l.FinalUnitPrice, l.FinalDiscount, l.FinalIvaPercent)
+                                         - Value(l.FinalQuantity, l.FinalUnitPrice, l.OcrDiscount ?? 0m, l.FinalIvaPercent);
+            }
+            documentDiscountCarried += globalDiscountImpact;
+            if (documentDiscountKind == DocumentDiscountKinds.DocumentLevel && baselineNet > 0m && consideredBaselineNet > 0m)
+            {
+                var appliedDocumentWide = Math.Min(ocrDocumentDiscountReceived, baselineNet);
+                var consideredShare = appliedDocumentWide * consideredBaselineNet / baselineNet;
+                documentDiscountExpected = -(consideredShare + consideredShare * consideredBaselineIvaOnNet / consideredBaselineNet);
+            }
+            documentDiscountDeviation = documentDiscountCarried - documentDiscountExpected;
+        }
+
         decimal rawSummaryIvaCredit = 0m;
         foreach (var l in baselined)
         {
@@ -255,20 +401,22 @@ public static class QuotationReconciliationCalculator
             var oQty = l.OcrQuantity ?? 0m;
             var oUp = l.OcrUnitPrice ?? 0m;
             var oDisc = l.OcrDiscount ?? 0m;
-            rawSummaryIvaCredit += Value(oQty, oUp, oDisc, l.FinalIvaPercent) - Value(oQty, oUp, oDisc, 0m);
+            // v2.249.7 — the document's tax follows the net AFTER its own summary discount.
+            rawSummaryIvaCredit += (Value(oQty, oUp, oDisc, l.FinalIvaPercent) - Value(oQty, oUp, oDisc, 0m)) * (1m - documentDiscountRatio);
         }
 
         decimal residualWithoutCredit = ocrHeaderTotal + explained - finalConsideredTotal;
+        decimal residualAfterDocumentDiscount = residualWithoutCredit - rawDocumentDiscountCredit - documentDiscountDeviation;
         decimal documentSummaryIvaCredit =
             rawSummaryIvaCredit != 0m &&
-            Math.Abs(residualWithoutCredit - rawSummaryIvaCredit) < Math.Abs(residualWithoutCredit)
+            Math.Abs(residualAfterDocumentDiscount - rawSummaryIvaCredit) < Math.Abs(residualAfterDocumentDiscount)
                 ? rawSummaryIvaCredit
                 : 0m;
 
         // Signed residual — the canonical control value. Any bucket shortfall (rounding/interaction)
         // is honestly absorbed here rather than hidden. The structural header difference remains a
         // separate diagnostic and may legitimately stay non-zero on a fully reconciled document.
-        decimal residual = residualWithoutCredit - documentSummaryIvaCredit;
+        decimal residual = residualAfterDocumentDiscount - documentSummaryIvaCredit;
         decimal residualRounded = Round2(residual);
 
         // ── Per-line diagnostics (materiality is decided by the caller for quantity/unit; the
@@ -341,6 +489,12 @@ public static class QuotationReconciliationCalculator
             FinalConsideredTotal = Round2(finalConsideredTotal),
             ManualAdditionsTotal = Round2(manualAdditionsTotal),
             DocumentSummaryIvaCredit = Round2(documentSummaryIvaCredit),
+            OcrDocumentDiscount = Round2(ocrDocumentDiscountReceived),
+            OcrDocumentDiscountKind = documentDiscountKind,
+            DocumentSummaryDiscountCredit = Round2(rawDocumentDiscountCredit),
+            DocumentDiscountCarried = Round2(documentDiscountCarried),
+            DocumentDiscountExpected = Round2(documentDiscountExpected),
+            DocumentDiscountDeviation = Round2(documentDiscountDeviation),
             IgnoredImpact = Round2(ignoredImpact),
             QuantityImpact = Round2(quantityImpact),
             UnitPriceImpact = Round2(unitPriceImpact),

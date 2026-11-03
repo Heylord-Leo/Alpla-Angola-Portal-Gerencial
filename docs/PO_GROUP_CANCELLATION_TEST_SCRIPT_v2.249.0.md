@@ -585,6 +585,39 @@ Evidência: `v2249-3.10-01.png` (modal sem remover), `-02.png` (409 por API), `-
    **IVA com taxas mistas:** comparar o **IVA total da cotação (1.593,75)** com o IVA impresso no documento K; se diferir, o
    documento não distribui o desconto proporcionalmente ao líquido e a distribuição **não** é a leitura correta: introduzir os
    descontos por linha conforme o documento (ou justificar). Guardar; sem chip; enviar, aprovar área e final → grupo **16.593,75**.
+   **Revisão final (v2.249.7):** "Documento reconciliado dentro da tolerância — diferença residual de **0,00**"; **sem** caixa de
+   justificativa residual; na Consistência do documento OCR a linha **"Desconto do resumo do documento (s/ IVA) 1.000,00"**; nos
+   Ajustes explicados "Desconto **−1.106,25**" e **"Desconto do resumo reconhecido (c/ IVA) −1.106,25"**.
+6-bis. **[BUYER] Retoma v2.249.7 — REQ-03/11/2026-630 (K real do operador: 10 × 5.000,00 + 20 × 500,00, desconto global 6.000,00,
+   IVA 14 %, total 61.560,00).** A cotação TEST-K-2026-0630 **não ficou guardada** (o assistente parou na revisão final): não há
+   cotação a editar nem a reparar. Se ainda existir um documento temporário na lista de anexos do pedido (o assistente foi fechado
+   sem "Cancelar"), pode ser removido dentro da janela de estado ou ignorado. **Importar de novo** o mesmo PDF (novo upload + OCR):
+   passo Documento com linhas 50.000,00 / 10.000,00 sem desconto, Desconto Comercial Global = 6.000,00, total 61.560,00; carregar
+   **uma vez** em "Distribuir pelas linhas" → **5.000,00 / 1.000,00**, linhas **51.300,00 / 10.260,00**, global 0, total 61.560,00,
+   motivo de ajuste pré-preenchido em cada linha (editável); o botão desaparece. Mapear as duas linhas. **Revisão final:** Total do
+   cabeçalho OCR 61.560,00; Soma das linhas OCR 60.000,00; Reconstruído 68.400,00; **Desconto do resumo do documento (s/ IVA)
+   6.000,00**; Diferença estrutural 1.560,00 e Diferença de componentes −8.400,00 (apenas diagnóstico — o documento imprime as linhas
+   sem IVA); Ajustes explicados: Desconto **−6.840,00**, Desconto global 0,00, **Desconto do resumo reconhecido (c/ IVA)
+   −6.840,00**; Total final considerado 61.560,00; **"Documento reconciliado dentro da tolerância — diferença residual de 0,00"**;
+   **nenhuma justificativa de diferença residual**; "Recalcular resumo" devolve o mesmo. **Guardar** → cotação guardada **sem**
+   justificativa, cartão sem chip, descontos por linha 5.000,00 / 1.000,00, total 61.560,00; o histórico **não** tem
+   `QUOTATION_RESIDUAL_JUSTIFIED`. *(Bloqueio antes de distribuir — ainda **não testado**, não reportar como passado: num K2 igual,
+   guardar **sem** distribuir: revisão final também com residual 0,00 e sem justificativa, mas aviso "… não poderá ser enviada para
+   aprovação …"; cartão com chip "Desconto global não distribuído"; lote por API → 409 `QUOTATION_PRICING_NOT_LINE_RESOLVED`.)*
+   **Por API (C.2)**: `POST /api/v1/requests/{id}/quotations/reconcile-preview` com o mesmo payload **sem** `ocrDocumentDiscountAmount`
+   → `residualVariance: -6840` (comportamento anterior, cliente antigo); com `ocrDocumentDiscountAmount: 6000` → `residualVariance: 0`,
+   `documentSummaryDiscountCredit: -6840`, `ocrDocumentDiscountKind: "DOCUMENT_LEVEL"`; com `ocrTotal: 68400` e `ocrDocumentDiscountAmount: 6000`
+   → `residualVariance: 6840` (o total não é líquido do desconto: continua a exigir justificativa).
+   **Mesmo desconto aplicado duas vezes (revisão v2.249.7):** após a distribuição (5.000,00 / 1.000,00, global 0) escrever **6.000,00**
+   outra vez no Desconto Comercial Global → total 54.720,00; revisão final: "Desconto global −6.840,00", **"Desconto além do documento
+   (c/ IVA) −6.840,00"**, **"Diferença não explicada do documento: 6.840,00"** com a justificativa residual obrigatória — **não**
+   justificar; apagar o 6.000,00 → residual 0,00 de novo. Variante subtil: com o global em 6.000,00 carregar outra vez em "Distribuir
+   pelas linhas" (descontos por linha 10.000,00 / 2.000,00, global 0, total 54.720,00) → a mesma diferença +6.840,00 e a mesma
+   justificativa obrigatória (o motivo pré-preenchido das linhas **não** a substitui). Se o operador quiser provar o bloqueio de
+   aprovação: guardar com uma justificativa residual explícita, cartão com chip "Desconto global não distribuído" (caso global) →
+   **Enviar para aprovação** / `POST …/batches` → **409** `QUOTATION_PRICING_NOT_LINE_RESOLVED`; no caso subtil (linhas 10.000 / 2.000)
+   a cotação é **aceite** para aprovação a 54.720,00 — é o ajuste intencional e justificado (histórico `QUOTATION_RESIDUAL_JUSTIFIED`
+   com "desvio de desconto face ao documento=-6.840,00"). **Não** aprovar nem registar P.O. com essa cotação; apagá-la depois.
 7. **[BUYER] Limites da distribuição (no K, antes de guardar, ou num K2).** (i) Escrever **20.000,00** no Desconto Comercial Global
    (líquido das linhas = 16.000,00) e carregar em Distribuir → **nada muda**, nota “O desconto global de 20.000,00 AOA excede o
    valor líquido das linhas consideradas (16.000,00 AOA); nenhuma linha pode ficar com valor negativo …”, campo mantém 20.000,00.
@@ -629,7 +662,9 @@ Evidência: `v2249-3.10-01.png` (modal sem remover), `-02.png` (409 por API), `-
 Evidência: `v2249-3.11-01.png` (J passo Documento), `-02.png` (J corrigido pelas linhas: 179.518,50 / 166.257,00), `-03.png` (J2
 chip + 409 por API), `-04.png` (J grupo/lote 345.775,50), `-05.png` (J2 lote parcial 179.518,50), `-06.png` (K distribuição
 625,00 / 375,00), `-07.png` (K limites: 20.000 recusado, 400 por API), `-08.png` (Registrar P.O. recusado), `-09.png` (Corrigir
-P.O. + condição de pagamento), `-10.txt` (diagnóstico). `Resultado: ____`
+P.O. + condição de pagamento), `-10.txt` (diagnóstico), `-11.png` (REQ-630 revisão final: residual 0,00, desconto do resumo reconhecido −6.840,00),
+`-12.png` (REQ-630 cotação guardada sem justificativa; histórico sem `QUOTATION_RESIDUAL_JUSTIFIED`), `-13.png` (REQ-630 desconto
+aplicado duas vezes: "Desconto além do documento −6.840,00" + diferença +6.840,00 com justificativa obrigatória). `Resultado: ____`
 
 ---
 

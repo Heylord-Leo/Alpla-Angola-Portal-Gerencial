@@ -9,6 +9,8 @@ import eligibility from '../batchEligibility.ts?raw';
 import requestCards from '../../Requests/components/RequestQuotations.tsx?raw';
 import buyerList from '../BuyerItemsList.tsx?raw';
 import pricingLib from '../../../lib/quotationPricing.ts?raw';
+import saveLogic from './quotationSaveLogic.ts?raw';
+import wizardModal from './QuotationWizardModal.tsx?raw';
 
 describe('OCR draft building — discounts are resolved by the shared rule, never silently rewritten', () => {
     it('useOcrProcessor uses resolveOcrLineDiscount and flags uncertain lines instead of the old Strategy A overwrite', () => {
@@ -80,5 +82,35 @@ describe('Submission surfaces — an unresolved quotation is never offered and t
         expect(requestCards).toMatch(/data-testid="quotation-pricing-chip"/);
         expect(buyerList).toMatch(/describeQuotationPricingState\(q, q\.currency\)/);
         expect(buyerList).toMatch(/data-testid="quotation-pricing-chip"/);
+    });
+});
+
+describe('v2.249.7 — the document-level discount is a document component of the reconciliation (REQ-03/11/2026-630)', () => {
+    it('the processor captures the immutable header-discount baseline once, from the shared resolution', () => {
+        expect(processor).toMatch(/import \{ resolveOcrLineDiscount, resolveOcrHeaderDiscount, ocrDocumentDiscountBaseline \} from '\.\.\/lib\/quotationPricing';/);
+        expect(processor).toMatch(/draft\.ocrDocumentDiscountAmount = ocrDocumentDiscountBaseline\(headerDiscount\);/);
+    });
+
+    it('the save/preview payload sends the baseline next to the global discount (one builder for save and preview)', () => {
+        expect(saveLogic).toMatch(/ocrDocumentDiscountAmount: draft\.ocrDocumentDiscountAmount \?\? null,/);
+        // The allocation transform never touches the baseline (it spreads the draft and only rewrites items / discountAmount / kind / note).
+        expect(pricingLib).toMatch(/ocrDocumentDiscountAmount\?: number \| null;/);
+        expect(pricingLib).not.toMatch(/ocrDocumentDiscountAmount: (0|null)/);
+    });
+
+    it('the final review and the 409 panel show the recognized document discount, never as a Buyer adjustment', () => {
+        expect(finalReview).toMatch(/Desconto do resumo do documento \(s\/ IVA\)/);
+        expect(finalReview).toMatch(/Desconto do resumo \(soma dos descontos das linhas\)/);
+        expect(finalReview).toMatch(/Desconto do resumo reconhecido \(c\/ IVA\)/);
+        expect(finalReview).toMatch(/value=\{reconciliation\.documentSummaryDiscountCredit\}/);
+        expect(finalReview).toMatch(/Desconto além do documento \(c\/ IVA\)/);
+        expect(finalReview).toMatch(/value=\{reconciliation\.documentDiscountDeviation\}/);
+        expect(wizardModal).toMatch(/Desvio de desconto face ao documento: \{formatCurrencyAO\(r\.documentDiscountDeviation \?\? 0, c\)\}/);
+        // The figure is declared for an aggregate summary too (fixture J): the server classifies and tightens, never the client.
+        expect(pricingLib).toMatch(/return resolved\.kind !== 'NONE' && resolved\.headerDiscount > 0 \? round2\(resolved\.headerDiscount\) : null;/);
+        expect(wizardModal).toMatch(/Desconto do resumo reconhecido: \{formatCurrencyAO\(r\.documentSummaryDiscountCredit \?\? 0, c\)\}/);
+        // The residual verdict still comes from the server's signed residual vs tolerance — no client-side shortcut.
+        expect(finalReview).toMatch(/const residualBlocks = !!reconciliation && Math\.abs\(reconciliation\.residualVariance\) > reconciliation\.toleranceApplied;/);
+        expect(wizardModal).toMatch(/const residualBlocksSave = !!preview && Math\.abs\(preview\.residualVariance\) > preview\.toleranceApplied;/);
     });
 });

@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.249.6
+v2.249.7
+
+## [v2.249.7] - 2026-11-03
+
+### The document's summary discount is a component of the reconciliation; the same discount applied twice is a residual, never an approval
+
+PATCH, backend + frontend, **no migration** (Deploy to TEST only, on the v2.249.4 schema). Finding of the v2.249.6 TEST validation on
+REQ-03/11/2026-630 (fixture K blocked at the final review with residual −6.840 after "Distribuir pelas linhas"): immutable header
+baseline `ocrDocumentDiscountAmount` (DTO-only like `OcrTotal`) credited by `QuotationReconciliationCalculator`
+(`DocumentSummaryDiscountCredit`, aggregate guard, no numeric guard) so a summary-only discount reconciles to 0 kept or distributed;
+`DocumentDiscountDeviation` makes the same discount applied twice a residual (+6.840) that needs the explicit residual justification,
+and every candidate-snapshot path refuses the unresolved doubled quotation writing nothing. The header baseline is client-supplied and
+not server-verifiable (same class as `OcrTotal`; not a new bypass; server-held header evidence = follow-up with migration). Browser
+validation, the manual pre-allocation submission block and supported-ECF recognition remain pending. See CHANGELOG and
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md` §9.
 
 ## [v2.249.6] - 2026-11-03
 

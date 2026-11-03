@@ -215,6 +215,18 @@ export const HEADER_DISCOUNT_AGGREGATE_TOLERANCE = 1.0;
  * documents, the SUM of the line discounts, not an additional discount. Applying it as a global discount on top of the line
  * discounts counts the discount twice; applying it alone (lines without discount) hides it from every per-line value.
  */
+/**
+ * v2.249.7 — the IMMUTABLE header-discount baseline the draft carries for the server's reconciliation (`ocrDocumentDiscountAmount`):
+ * the summary "Desconto Comercial" figure the extraction read, whenever there is one — a genuine document-level discount OR the
+ * aggregate of the printed line discounts (the server re-classifies it against the line baseline and credits an aggregate nothing).
+ * Captured once at extraction; the allocation ("Distribuir pelas linhas") zeroes the draft's `discountAmount` but never this value.
+ * Declaring the figure can only tighten the server's verdict: once declared, the discount the quotation carries beyond the OCR line
+ * baseline must equal what the document grants (the same discount applied twice, or applied short, is a residual to justify).
+ */
+export function ocrDocumentDiscountBaseline(resolved: Pick<ResolvedHeaderDiscount, 'kind' | 'headerDiscount'>): number | null {
+    return resolved.kind !== 'NONE' && resolved.headerDiscount > 0 ? round2(resolved.headerDiscount) : null;
+}
+
 export function resolveOcrHeaderDiscount(headerDiscount: number, lineDiscounts: number[]): ResolvedHeaderDiscount {
     const header = Math.max(0, headerDiscount || 0);
     const lineSum = round2(lineDiscounts.reduce((s, d) => s + Math.max(0, d || 0), 0));
@@ -347,6 +359,8 @@ export interface DraftPricingLike<TLine extends DraftPricingLine = DraftPricingL
     currency?: string;
     globalDiscountKind?: 'NONE' | 'AGGREGATE_OF_LINES' | 'DOCUMENT_LEVEL' | null;
     globalDiscountNote?: string | null;
+    /** v2.249.7 — immutable header baseline (see OcrDraft.ocrDocumentDiscountAmount); the allocation transform MUST keep it. */
+    ocrDocumentDiscountAmount?: number | null;
 }
 
 /** One line's VAT-inclusive total from its own fields (same arithmetic as the server: Round2 per line, net never negative). */
@@ -393,6 +407,8 @@ export interface DraftAllocationOutcome<TDraft> {
  * success → shares added to the lines, every line total recomputed, global discount zeroed (so a REPEAT press finds nothing
  * to allocate and returns the same draft: the discount can never be applied twice), kind NONE, note with the arithmetic,
  * quotation total recomputed; refusal → the SAME draft object except the note explaining why (global discount untouched).
+ * The immutable header baseline `ocrDocumentDiscountAmount` is carried through untouched (v2.249.7): the allocation is a
+ * redistribution of the document's own discount, which the server reconciliation credits as a document component.
  */
 export function applyGlobalDiscountAllocationToDraft<TLine extends DraftPricingLine, TDraft extends DraftPricingLike<TLine>>(draft: TDraft, rates: IvaRateLike[]): DraftAllocationOutcome<TDraft> {
     const currency = draft.currency || 'AOA';

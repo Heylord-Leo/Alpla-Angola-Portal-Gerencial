@@ -685,4 +685,214 @@ public class QuotationGlobalDiscountSubmissionTests
             Assert.Equal(218_925m, (await ctx.ApprovalBatchItemCandidates.AsNoTracking().SingleAsync()).LineTotal);
         }
     }
+    // ── 9. v2.249.7 — REQ-03/11/2026-630 (fixture K): the same document discount applied twice never reaches approval ──
+    //
+    // Document: 10 × 5.000,00 + 20 × 500,00 (lines printed net 50.000 / 10.000), summary discount 6.000,00, IVA 14 %, total 61.560.
+    // Correct allocation: line discounts 5.000 / 1.000 → 51.300 / 10.260 = 61.560. Doubled: global 6.000 re-entered on top → 54.720.
+
+    private static SaveQuotationRequestDto KDto(Seed s, decimal? figure, decimal globalDiscount, decimal d1, decimal d2, bool residualOverride = false)
+    {
+        SaveQuotationItemDto Line(int n, string description, decimal qty, decimal unitPrice, decimal discount, Guid mapped) => new()
+        {
+            LineNumber = n, Description = description, Quantity = qty, UnitPrice = unitPrice, DiscountAmount = discount, IvaRateId = IVA14, UnitId = UNIT_CX,
+            MappedRequestLineItemId = mapped, ReconciliationStatus = "MAPPED", LineOrigin = QuotationLineOrigins.Ocr,
+            OcrOriginalQuantity = qty, OcrOriginalUnitPrice = unitPrice, OcrOriginalDiscountAmount = 0m, OcrOriginalIvaRatePercent = 14m,
+            OcrOriginalUnitText = "CX", OcrOriginalUnitId = UNIT_CX, OcrOriginalLineTotal = qty * unitPrice,
+            LineAdjustmentJustification = discount > 0 ? "Desconto comercial global de 6.000,00 AOA distribuído proporcionalmente ao valor líquido da linha." : null
+        };
+        return new SaveQuotationRequestDto
+        {
+            SupplierId = SUPPLIER, SupplierNameSnapshot = "LUANDAY - COMERCIO E SERVIÇOS, LDA", DocumentNumber = "TEST-K-2026-0630",
+            DocumentDate = new DateTime(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc), DocumentType = "PROFORMA", Currency = "AOA", SourceType = "OCR",
+            DiscountAmount = globalDiscount, OcrTotal = 61_560m, OcrDocumentDiscountAmount = figure,
+            FinancialIntegrityOverride = residualOverride,
+            OverrideJustification = residualOverride ? "Diferença residual aceite pelo comprador para efeitos de teste do bloqueio de aprovação." : null,
+            Items = new List<SaveQuotationItemDto> { Line(1, "Resma de Papel A4", 10m, 5_000m, d1, s.Line1), Line(2, "Lapiseira azul", 20m, 500m, d2, s.Line2) }
+        };
+    }
+
+    private static async Task AssertNothingSubmittedAsync(Seed s, int expectedCandidates)
+    {
+        await using var verify = new ApplicationDbContext(s.Options);
+        Assert.Equal(expectedCandidates == 0 ? 0 : 1, await verify.ApprovalBatches.CountAsync());
+        Assert.Equal(expectedCandidates, await verify.ApprovalBatchItemCandidates.CountAsync());
+        Assert.Equal(0, await verify.ApprovalBatchExtraItemDecisions.CountAsync());
+        Assert.Equal(0, await verify.RequestStatusHistories.CountAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "BATCH_CANDIDATES_SUBMITTED"));
+    }
+
+    [Fact]
+    public async Task K_global_reentered_after_allocation_is_refused_on_save_and_if_forced_through_the_residual_override_CreateBatch_refuses_whole_and_partial_batches_writing_nothing()
+    {
+        var s = await SeedAsync();
+        // Save-time: the residual gate catches the doubled discount (+6.840) — no quotation written.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Requests(ctx, s.Actor).SaveQuotation(s.RequestId, null, KDto(s, 6_000m, globalDiscount: 6_000m, d1: 5_000m, d2: 1_000m));
+            Assert.IsType<ConflictObjectResult>(r.Result);
+            Assert.Equal("DOCUMENT_RESIDUAL_UNEXPLAINED", Code(r.Result!));
+            Assert.Equal(0, await ctx.Quotations.CountAsync());
+        }
+        // Forced through the explicit residual justification (the only way): 54.720 persisted, NOT line-resolved.
+        var saved = await SaveAsync(s, KDto(s, 6_000m, globalDiscount: 6_000m, d1: 5_000m, d2: 1_000m, residualOverride: true));
+        Assert.Equal(54_720m, saved.TotalAmount);
+        Assert.Equal(6_000m, saved.DiscountAmount);
+        Assert.False(saved.IsLinePricingResolved);
+        Assert.Equal(QuotationLinePricingPolicy.Reasons.GlobalDiscountUnallocated, saved.LinePricingReasonCode);
+        Assert.Equal(61_560m, saved.ConsideredLineTotalSum);            // the lines already carry the whole document discount
+
+        await using var read = new ApplicationDbContext(s.Options);
+        var items = (await read.QuotationItems.AsNoTracking().Where(i => i.QuotationId == saved.Id).OrderBy(i => i.LineNumber).ToListAsync());
+        // Whole batch → 409 QUOTATION_PRICING_NOT_LINE_RESOLVED; nothing written.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Batches(ctx, s.Actor).CreateBatch(s.RequestId, BatchOf((s.Line1, new[] { items[0].Id }), (s.Line2, new[] { items[1].Id })));
+            Assert.IsType<ConflictObjectResult>(r);
+            Assert.Equal(QuotationLinePricingPolicy.ConflictCode, Code(r));
+            var digits = new string(Problem(r).Detail!.Where(char.IsDigit).ToArray());
+            Assert.Contains("600000", digits);      // global 6.000,00
+            Assert.Contains("6156000", digits);     // line sum 61.560,00
+            Assert.Contains("5472000", digits);     // quotation total 54.720,00
+        }
+        // Partial batch (line 1 only) → same refusal.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Batches(ctx, s.Actor).CreateBatch(s.RequestId, BatchOf((s.Line1, new[] { items[0].Id })));
+            Assert.Equal(QuotationLinePricingPolicy.ConflictCode, Code(r));
+        }
+        await AssertNothingSubmittedAsync(s, expectedCandidates: 0);
+        await using var verify = new ApplicationDbContext(s.Options);
+        Assert.All(await verify.RequestLineItems.AsNoTracking().Where(l => l.RequestId == s.RequestId).ToListAsync(), l => Assert.Null(l.QuotationLifecycleStatus));
+        Assert.Equal(54_720m, (await verify.Quotations.AsNoTracking().SingleAsync(q => q.Id == saved.Id)).TotalAmount);   // the quotation itself untouched
+    }
+
+    [Fact]
+    public async Task K_rework_revision_of_a_correct_quotation_cannot_introduce_the_doubled_discount_neither_on_save_nor_through_UpdateBatch()
+    {
+        var s = await SeedAsync();
+        var correct = await SaveAsync(s, KDto(s, 6_000m, globalDiscount: 0m, d1: 5_000m, d2: 1_000m));
+        Assert.Equal(61_560m, correct.TotalAmount);
+        Assert.True(correct.IsLinePricingResolved);
+
+        Guid batchId;
+        List<QuotationItem> items;
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            items = await ctx.QuotationItems.AsNoTracking().Where(i => i.QuotationId == correct.Id).OrderBy(i => i.LineNumber).ToListAsync();
+            var ok = Assert.IsType<OkObjectResult>(await Batches(ctx, s.Actor).CreateBatch(s.RequestId, BatchOf((s.Line1, new[] { items[0].Id }), (s.Line2, new[] { items[1].Id }))));
+            batchId = Assert.IsType<ApprovalBatchDto>(ok.Value).Id;
+            Assert.Equal(61_560m, await ctx.ApprovalBatchItemCandidates.SumAsync(c => c.LineTotal));
+            // Returned for rework by the Area approver: batch in AREA_ADJUSTMENT, scalar at WAITING_AREA_APPROVAL.
+            (await ctx.ApprovalBatches.SingleAsync(b => b.Id == batchId)).Status = RequestConstants.ApprovalBatchStatuses.AreaAdjustment;
+            (await ctx.Requests.SingleAsync(r => r.Id == s.RequestId)).StatusId = 2;
+            await ctx.SaveChangesAsync();
+        }
+        // Rework revision carrying the doubled discount: the reconciliation gate refuses the revision itself — no new quotation.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Requests(ctx, s.Actor).SaveQuotation(s.RequestId, null, KDto(s, 6_000m, globalDiscount: 6_000m, d1: 5_000m, d2: 1_000m), reworkBatchId: batchId, revisesQuotationId: correct.Id);
+            if (r.Result is not ConflictObjectResult) { var f = Problem(r.Result!); Assert.Fail($"{f.Status} {f.Title} — {f.Detail} [{(f.Extensions.TryGetValue("code", out var c) ? c : null)}]"); }
+            Assert.Equal("DOCUMENT_RESIDUAL_UNEXPLAINED", Code(r.Result!));
+            Assert.Equal(1, await ctx.Quotations.CountAsync());
+        }
+        // Forced through the residual override: the revision exists, but UpdateBatch refuses to admit its candidate — nothing written.
+        List<QuotationItem> revisionItems;
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Requests(ctx, s.Actor).SaveQuotation(s.RequestId, null, KDto(s, 6_000m, globalDiscount: 6_000m, d1: 5_000m, d2: 1_000m, residualOverride: true), reworkBatchId: batchId, revisesQuotationId: correct.Id);
+            var revision = Assert.IsType<SavedQuotationDto>(Assert.IsType<OkObjectResult>(r.Result).Value);
+            Assert.Equal(54_720m, revision.TotalAmount);
+            Assert.False(revision.IsLinePricingResolved);
+            revisionItems = await ctx.QuotationItems.AsNoTracking().Where(i => i.QuotationId == revision.Id).OrderBy(i => i.LineNumber).ToListAsync();
+        }
+        // The original is now superseded ("Cotação Substituída": the batch must select the revised version) — and the revised
+        // version is refused by the pricing rule. Nothing written either way.
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Batches(ctx, s.Actor).UpdateBatch(s.RequestId, batchId, new UpdateApprovalBatchDto
+            {
+                Items = new List<BatchItemDto>
+                {
+                    new() { RequestLineItemId = s.Line1, Candidates = { new BatchCandidateInputDto { QuotationItemId = revisionItems[0].Id } } },
+                    new() { RequestLineItemId = s.Line2, Candidates = { new BatchCandidateInputDto { QuotationItemId = revisionItems[1].Id } } }
+                }
+            });
+            if (r is not ConflictObjectResult) { var f = Problem(r); Assert.Fail($"{f.Status} {f.Title} — {f.Detail} [{(f.Extensions.TryGetValue("code", out var c) ? c : null)}]"); }
+            Assert.Equal(QuotationLinePricingPolicy.ConflictCode, Code(r));
+        }
+        await using var verify = new ApplicationDbContext(s.Options);
+        var candidates = await verify.ApprovalBatchItemCandidates.AsNoTracking().ToListAsync();
+        Assert.Equal(2, candidates.Count);                                   // the original two only
+        Assert.DoesNotContain(candidates, c => revisionItems.Any(ri => ri.Id == c.QuotationItemId));
+        Assert.Equal(61_560m, candidates.Sum(c => c.LineTotal));
+        Assert.Equal(RequestConstants.ApprovalBatchStatuses.AreaAdjustment, (await verify.ApprovalBatches.SingleAsync(b => b.Id == batchId)).Status);
+    }
+
+    [Fact]
+    public async Task K_doubled_quotation_with_an_EXTRA_ITEM_line_is_refused_by_the_pricing_rule_before_the_extra_item_decision()
+    {
+        var s = await SeedAsync();
+        Guid mappedId;
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var q = new Quotation { Id = Guid.NewGuid(), RequestId = s.RequestId, SupplierId = SUPPLIER, SupplierNameSnapshot = "LUANDAY - COMERCIO E SERVIÇOS, LDA", DocumentNumber = "TEST-K-2026-0630", Currency = "AOA", SourceType = "OCR",
+                TotalAmount = 54_720m + 5_000m, DiscountAmount = 6_000m, CreatedAtUtc = DateTime.UtcNow.AddHours(-1), CreatedByUserId = s.Actor };
+            var mapped = new QuotationItem { Id = Guid.NewGuid(), QuotationId = q.Id, LineNumber = 1, Description = "Resma de Papel A4", Quantity = 10, UnitPrice = 5_000m, DiscountAmount = 5_000m, GrossSubtotal = 50_000m, IvaRatePercent = 14m, IvaAmount = 6_300m, LineTotal = 51_300m, MappedRequestLineItemId = s.Line1, ReconciliationStatus = "MAPPED", UnitId = UNIT_CX, IvaRateId = IVA14 };
+            var extra = new QuotationItem { Id = Guid.NewGuid(), QuotationId = q.Id, LineNumber = 2, Description = "PORTES", Quantity = 1, UnitPrice = 5_000m, GrossSubtotal = 5_000m, IvaRatePercent = 0m, IvaAmount = 0m, LineTotal = 5_000m, MappedRequestLineItemId = null, ReconciliationStatus = "EXTRA_ITEM", ReconciliationJustification = "Linha adicional do documento sem correspondência no pedido.", UnitId = UNIT_CX };
+            ctx.Quotations.Add(q); ctx.QuotationItems.AddRange(mapped, extra);
+            await ctx.SaveChangesAsync();
+            mappedId = mapped.Id;
+        }
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Batches(ctx, s.Actor).CreateBatch(s.RequestId, BatchOf((s.Line1, new[] { mappedId })));
+            Assert.Equal(QuotationLinePricingPolicy.ConflictCode, Code(r));
+        }
+        await AssertNothingSubmittedAsync(s, expectedCandidates: 0);
+    }
+
+    [Fact]
+    public async Task K_distributed_twice_into_the_lines_is_line_resolved_so_approval_accepts_it_only_after_the_explicit_residual_justification_while_an_older_client_passes_silently()
+    {
+        var s = await SeedAsync();
+        // (a) Current client (figure declared): the save refuses the subtle variant without the explicit justification…
+        await using (var ctx = new ApplicationDbContext(s.Options))
+        {
+            var r = await Requests(ctx, s.Actor).SaveQuotation(s.RequestId, null, KDto(s, 6_000m, globalDiscount: 0m, d1: 10_000m, d2: 2_000m));
+            Assert.Equal("DOCUMENT_RESIDUAL_UNEXPLAINED", Code(r.Result!));
+            Assert.Equal(0, await ctx.Quotations.CountAsync());
+        }
+        // …and with it the quotation is an intentional, audited Buyer adjustment that approval accepts at 54.720.
+        var justified = await SaveAsync(s, KDto(s, 6_000m, globalDiscount: 0m, d1: 10_000m, d2: 2_000m, residualOverride: true));
+        Assert.Equal(54_720m, justified.TotalAmount);
+        Assert.True(justified.IsLinePricingResolved);
+        await using (var verify = new ApplicationDbContext(s.Options))
+        {
+            var audit = await verify.RequestStatusHistories.AsNoTracking().SingleAsync(h => h.RequestId == s.RequestId && h.ActionTaken == "QUOTATION_RESIDUAL_JUSTIFIED");
+            Assert.Contains("desvio de desconto face ao documento=-6", audit.Comment);
+            var items = await verify.QuotationItems.AsNoTracking().Where(i => i.QuotationId == justified.Id).OrderBy(i => i.LineNumber).ToListAsync();
+            await using var ctx = new ApplicationDbContext(s.Options);
+            Assert.IsType<OkObjectResult>(await Batches(ctx, s.Actor).CreateBatch(s.RequestId, BatchOf((s.Line1, new[] { items[0].Id }), (s.Line2, new[] { items[1].Id }))));
+            Assert.Equal(new[] { 9_120m, 45_600m }, (await ctx.ApprovalBatchItemCandidates.AsNoTracking().Select(c => c.LineTotal).ToListAsync()).OrderBy(x => x).ToArray());
+        }
+        // (b) Older client (no figure): NOT silent either — the pre-v2.249.7 residual (−6.840, the uncredited document discount) still
+        //     demands a justification, only with a figure that does not name the cause; justified, approval accepts 54.720 the same way.
+        var s2 = await SeedAsync();
+        await using (var ctx = new ApplicationDbContext(s2.Options))
+        {
+            var r = await Requests(ctx, s2.Actor).SaveQuotation(s2.RequestId, null, KDto(s2, figure: null, globalDiscount: 0m, d1: 10_000m, d2: 2_000m));
+            Assert.Equal("DOCUMENT_RESIDUAL_UNEXPLAINED", Code(r.Result!));
+            var recon = Assert.IsType<QuotationReconciliationDto>(Problem(r.Result!).Extensions["reconciliation"]);
+            Assert.Equal(-6_840m, recon.ResidualVariance);
+            Assert.Equal(0m, recon.DocumentDiscountDeviation);
+        }
+        var legacyJustified = await SaveAsync(s2, KDto(s2, figure: null, globalDiscount: 0m, d1: 10_000m, d2: 2_000m, residualOverride: true));
+        Assert.Equal(54_720m, legacyJustified.TotalAmount);
+        await using (var verify = new ApplicationDbContext(s2.Options))
+        {
+            Assert.Equal(1, await verify.RequestStatusHistories.CountAsync(h => h.RequestId == s2.RequestId && h.ActionTaken == "QUOTATION_RESIDUAL_JUSTIFIED"));
+            var items = await verify.QuotationItems.AsNoTracking().Where(i => i.QuotationId == legacyJustified.Id).OrderBy(i => i.LineNumber).ToListAsync();
+            await using var ctx = new ApplicationDbContext(s2.Options);
+            Assert.IsType<OkObjectResult>(await Batches(ctx, s2.Actor).CreateBatch(s2.RequestId, BatchOf((s2.Line1, new[] { items[0].Id }), (s2.Line2, new[] { items[1].Id }))));
+        }
+    }
 }

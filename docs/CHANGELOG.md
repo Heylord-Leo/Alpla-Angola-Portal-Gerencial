@@ -4,7 +4,84 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.6
+v2.249.7
+
+## [v2.249.7] - 2026-11-03 — The document's own summary discount is a component of the reconciliation; the same discount applied twice is a residual, never an approval
+
+PATCH, backend + frontend, **no migration** (calculator + DTO read-model fields + controller wiring; the new header baseline travels in
+the save/update/preview DTO like `OcrTotal` and is not persisted; no change to any migration file; TEST needs only Deploy to TEST on
+the v2.249.4 schema). No configuration change. Finding of the manual TEST validation of v2.249.6 on the synthetic request
+**REQ-03/11/2026-630** (fixture K, LUANDAY, document TEST-K-2026-0630: 10 × 5.000,00 + 20 × 500,00, summary-only discount 6.000,00,
+IVA 14 %, total 61.560,00) plus the pre-publication review of the two trust/pricing boundaries. Reference
+`docs/QUOTATION_DISCOUNT_PRICING_AND_PO_WIZARD_REFUSAL_v2.249.6.md` §9 (§9.2 trace and root cause, §9.3 change, §9.6 limitations,
+§9.7 resume, §9.8 trust boundary, §9.9 duplicate discount, §9.10 checks), decision DEC-154 amendment, manual script §3.11 step 6-bis.
+Fixture J (REQ-629) had passed end to end at 345.775,50; fixture K passed OCR and allocation and was blocked at the final review.
+
+- **Root cause (confirmed by reproduction through the real endpoints).** The reconciliation residual is `header + explained Buyer
+  adjustments − final − summary-IVA credit`; the Buyer's global-discount bucket equals its effect on the final by construction and a
+  line-discount change is likewise explained, so the residual reduced to `header − reconstructed OCR lines` whatever the Buyer did
+  with the discount — and the reconstruction had no term for a discount the document carries only in its summary (the line baseline
+  correctly holds 0; no header-level discount baseline existed: the DTO carried `OcrTotal` only, the wizard kept the header figure in
+  the draft but never sent it). Fixture K therefore showed **−6.840,00** (6.000 + its 14 %) before and after "Distribuir pelas
+  linhas"; "Recalcular resumo" is a pure recomputation and could not change it. Not a double application by the allocation (it is
+  idempotent and the total stayed 61.560,00), not an inconsistent line baseline — the calculator's own header listed exactly this as
+  a known limitation (summary-only discounts not credited; the v2.226.1 summary-IVA credit solved the same shape for tax).
+- **Immutable header baseline.** `OcrDraft.ocrDocumentDiscountAmount` is captured once at extraction
+  (`lib/quotationPricing.ocrDocumentDiscountBaseline`: the summary "Desconto Comercial" figure the extraction read — a document-level
+  discount or the aggregate of the printed line discounts; the server classifies it), never edited, never zeroed by the allocation;
+  `buildQuotationPayload` sends it as `ocrDocumentDiscountAmount` next to `discountAmount` (one builder for save, update and
+  preview). `SaveQuotationRequestDto.OcrDocumentDiscountAmount` is DTO-only like `OcrTotal` (not persisted).
+- **Calculator credit (`QuotationReconciliationCalculator`, `DocumentSummaryDiscountCredit`).** The extracted summary discount is part
+  of the document reconstruction: a figure within 1,00 of the sum of the extracted line discounts is their **aggregate**
+  (`AGGREGATE_OF_LINES`, never credited twice — LUANDAY 37.530 + 30.160 = 67.690); otherwise (`DOCUMENT_LEVEL`) the discount reduces
+  every baselined line's net proportionally (the server's own rule for a quotation-level discount, document-wide, never beyond the
+  baselined net) and the IVA of the lines with an extracted rate follows; lines without an extracted rate take their reduced net into
+  the summary-IVA credit. No numeric guard: a figure the header is not net of (68.400 with a "6.000" read as discount → +6.840), an
+  omitted OCR line (+11.400), a discount above the baselined net or an older payload without the baseline (the same −6.840) still
+  produce the residual. Fixture K reconciles to **0,00** with the discount kept at quotation level (still not line-resolved: the
+  DEC-154 submission block is untouched) and after the allocation (no residual justification; the allocation stays audited per line
+  — discount changed against the immutable baseline, pre-filled editable reason persisted, `OcrOriginalDiscountAmount` kept at 0).
+- **The same discount applied twice is a residual, never an approval (`DocumentDiscountCarried / Expected / Deviation`).** Once the
+  summary figure is declared, the discount the quotation carries beyond the OCR line baseline (line changes + global, valued on the
+  considered lines at the final rates; a line the Buyer ignored takes its proportional share away) must equal what the document
+  grants on those lines (0 for an aggregate already in the lines); the deviation is part of the residual and is justified
+  explicitly through the residual justification (audited in `QUOTATION_RESIDUAL_JUSTIFIED` with carried / granted / deviation) or
+  refused — a pre-filled per-line reason never explains it. Fixture K doubled (6.000 re-entered as global on top of the allocated
+  lines → 54.720, or distributed twice into the lines 10.000 / 2.000) answers **409 +6.840** on preview, save and update; forced
+  through the override, the global-kept shape is `GLOBAL_DISCOUNT_UNALLOCATED` and **CreateBatch (whole and partial), UpdateBatch in
+  AREA_ADJUSTMENT, the EXTRA_ITEM path and a rework revision write nothing** (no batch, candidate, extra-item decision, lifecycle or
+  `BATCH_CANDIDATES_SUBMITTED` row; the revision is refused by the gate itself, and a superseded original can no longer be selected);
+  the line-resolved subtle variant reaches approval **only** as an intentional, explicitly justified Buyer adjustment (frozen 45.600 /
+  9.120). The figure can therefore only tighten the gate: an inflated figure is credited only up to the baselined net and the final
+  must still land on the header; a negative figure is "none"; omitting it restores the previous semantics. Fixture J doubled (printed
+  line discounts + 67.690 re-entered) is a residual of +71.074,50. Documents with no summary discount (`NONE`) keep the previous
+  explained-bucket behaviour.
+- **Trust boundary — kept explicit (design doc §9.8).** The only server-held extraction evidence for a quotation is the per-line
+  `OcrExtractedItems`; **no header figure is persisted**, so `OcrTotal`, the line baselines (client-supplied at first save, immutable
+  afterwards, not cross-checked) and the new field are the same client-supplied class. Proven through the endpoints: a fabricated
+  figure alone explains nothing (the deviation cancels the credit); a fabricated figure plus a matching Buyer discount saves — exactly
+  as omitting or altering `OcrTotal` already could (pre-existing, not a new bypass). The server validates arithmetic, not evidence
+  authenticity: a mathematically plausible value is not proof the document contains it. Follow-ups explained, not implemented:
+  server-held header extraction evidence bound to the attachment (mirror of `PoDocumentExtraction`, needs a migration) or a narrow
+  line-discount cross-check against the existing rows.
+- **UI.** Final review: "Desconto do resumo do documento (s/ IVA)" / "… (soma dos descontos das linhas)" under the OCR consistency,
+  "Desconto do resumo reconhecido (c/ IVA)" and "Desconto além / aquém do documento (c/ IVA)" under the explained adjustments; the 409
+  panel lists both. The verdict is still the server's signed residual against the unchanged tolerance; no fixture-specific code.
+- **Resume of REQ-630 in TEST.** The quotation was never saved: new import of the same PDF (upload + OCR), one press of "Distribuir
+  pelas linhas", mapping, final review with residual 0,00 and no justification, save; expected line discounts 5.000,00 / 1.000,00,
+  line totals 51.300,00 / 10.260,00, global 0, total 61.560,00 preserved through submission, area and final approval and the P.O.
+  group (script §3.11 step 6-bis). A leftover temporary upload (wizard closed without "Cancelar") is deletable inside the status
+  window and otherwise harmless.
+- **Tests.** `QuotationReconciliationCalculatorTests` (+15: observed −6.840 with/without allocation, K kept / distributed /
+  recalculated, doubled / twice / short, inflated and negative figures, header not net of the figure, omitted line, J aggregate and
+  doubled, non-proportional document, mixed VAT exact, rounding remainders, summary-only IVA + summary discount, ignored line
+  share), new `QuotationDocumentDiscountReconciliationTests` (12, real endpoints: preview / save / update parity, purity,
+  idempotence, audit row, trust-boundary matrix, J aggregate, mixed VAT), `QuotationGlobalDiscountSubmissionTests` (+4: every
+  candidate-snapshot path for the doubled K), `lib/quotationPricing.test.ts` (+4), `globalDiscountWiring.test.ts` (+3).
+- **Checks (local, 2026-11-03):** backend 3342/3342, vitest 114 files / 1292 tests, `tsc --noEmit` clean, `vite build` ok, EF
+  `has-pending-model-changes`: none, migrations folder untouched. **Pending (not passed):** browser validation (script §3.11 steps 6
+  and 6-bis), the manual submission block before allocating a global discount, supported-ECF identifier recognition, the REQ-595
+  read-only diagnostic (H1–H4 open).
 
 ## [v2.249.6] - 2026-11-03 — Line-resolved pricing is a precondition of approval (quotation-level discounts never approved away), discounts counted once at the line, refused P.O. documents show divergences as diagnostics only
 

@@ -1,6 +1,6 @@
 import { api } from '../lib/api';
 import { IvaRate, Unit, CurrencyDto, OcrDraft, OcrDraftItem, LookupDto } from '../types';
-import { resolveOcrLineDiscount, resolveOcrHeaderDiscount } from '../lib/quotationPricing';
+import { resolveOcrLineDiscount, resolveOcrHeaderDiscount, ocrDocumentDiscountBaseline } from '../lib/quotationPricing';
 
 export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: CurrencyDto[], companies: LookupDto[] = []) {
 
@@ -352,6 +352,9 @@ export function useOcrProcessor(ivaRates: IvaRate[], units: Unit[], currencies: 
             draft.globalDiscountKind = headerDiscount.kind;
             draft.globalDiscountNote = headerDiscount.note;
             draft.discountAmount = headerDiscount.globalDiscount;
+            // v2.249.7 — immutable header baseline for the server reconciliation (REQ-03/11/2026-630): a genuine document-level
+            // discount is a component of the document's own total, credited whether the Buyer keeps it global or distributes it.
+            draft.ocrDocumentDiscountAmount = ocrDocumentDiscountBaseline(headerDiscount);
         }
 
         // v2.229.10 monetary reconciliation: the document's DECLARED total is kept when the
