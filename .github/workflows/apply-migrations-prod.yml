@@ -54,7 +54,10 @@ jobs:
   apply-migrations:
     name: Apply PRODUCTION Migrations (${{ inputs.version }})
     runs-on: [self-hosted, Windows, X64, iis]
-    timeout-minutes: 20
+    # 45, not 20. The whole job must fit: checkout, SDK check, tool restore, restore/build,
+    # database backup, migration application and verification. Run #28 (v2.249.8, 2026-11-03)
+    # was cancelled 19 min into an SDK download, before a single database step was reached.
+    timeout-minutes: 45
     environment: production
 
     steps:
@@ -74,11 +77,107 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- Setup .NET 8 SDK ---
-      - name: Setup .NET 8 SDK
+      # --- Use the .NET 8 SDK already on the runner, if there is one ---
+      #
+      # Same correction as the TEST job (89b80cc), never ported here. actions/setup-dotnet@v4 run
+      # unconditionally with the open patch channel '8.0.x' does two network installs on EVERY run:
+      # first `install-dotnet.ps1 -Runtime dotnet -Channel LTS` (the LTS channel now resolves to
+      # .NET 10: run #28 installed runtime 10.0.14 on this server), then `-Channel 8.0`, which
+      # resolves the newest 8.0 SDK on the CDN and DOWNLOADS it whenever that exact version is not
+      # installed (8.0.427 was published; the server has up to 8.0.426). Run #28 (v2.249.8) sat in
+      # that download for 19 minutes and was cancelled before any database step.
+      #
+      # Every backend project targets net8.0 and the repository has no global.json, so any 8.0.x
+      # SDK present on the machine builds this solution and runs the pinned dotnet-ef 8.0.11. If
+      # one is installed we use it and download nothing; the network stops being on the critical
+      # path. The TEST job has run this way on the same runner (AOVIA1VMS011) since 2026-08-06.
+      # Finding an 8.0.x SDK is not the same as using it (see the verify step below).
+      #
+      # Deliberately NOT falling back to the .NET 10 runtime: a runtime cannot build, and rolling a
+      # net8.0 migration build forward to another SDK band is a silent substitution.
+      - name: Detect installed .NET 8 SDK
+        id: dotnet_probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          $dotnetPath = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+          if (-not $dotnetPath) {
+            Write-Host "dotnet is not on the runner service PATH."
+            "has_sdk8=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+
+          Write-Host "dotnet: $dotnetPath"
+          $sdks = @(dotnet --list-sdks 2>&1)
+          Write-Host "Installed SDKs:"
+          $sdks | ForEach-Object { Write-Host "  $_" }
+
+          $sdk8 = $sdks | Where-Object { $_ -match '^8\.0\.' } | Select-Object -First 1
+          if ($sdk8) {
+            Write-Host "OK - using the installed .NET 8 SDK: $sdk8"
+            "has_sdk8=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            Write-Host "No 8.0.x SDK found; setup-dotnet will install one."
+            "has_sdk8=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      # Fallback only. Runs when the runner genuinely has no .NET 8 SDK, with the full 45-minute
+      # job budget to complete the download.
+      - name: Setup .NET 8 SDK (only if missing)
+        if: steps.dotnet_probe.outputs.has_sdk8 != 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      # Whatever path got us here, the build must not proceed on the wrong band.
+      #
+      # Finding an 8.0.x SDK is not the same as using it: without a global.json the dotnet host
+      # resolves the HIGHEST installed SDK for every command, so a 9.x or 10.x SDK installed on the
+      # runner one day would silently build this solution and run dotnet-ef. The repository keeps
+      # no global.json (developers and the other jobs are unchanged), so this job writes a
+      # temporary one at the workspace root: every dotnet command below (tool restore, dotnet ef
+      # inside apply-migrations.ps1, restore, build) runs from the workspace root, so the pin
+      # governs all of them. 'latestFeature' rolls forward to the newest installed 8.0.x feature
+      # band and never past 8.0. The resolved SDK is then asserted, not assumed. The file is
+      # removed at the end of the job (the runner workspace is shared by every workflow).
+      - name: Verify .NET 8 SDK is usable and pin it for this job
+        id: sdk_pin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdks = @(dotnet --list-sdks 2>&1)
+          if (-not ($sdks | Where-Object { $_ -match '^8\.0\.' })) {
+            Write-Host "::error::No .NET 8 SDK is available to the runner service account."
+            Write-Host "::error::Every backend project targets net8.0. Install the .NET 8 SDK on"
+            Write-Host "::error::AOVIA1VMS011 and confirm it is on the runner service PATH."
+            $sdks | ForEach-Object { Write-Host "  $_" }
+            throw "Required .NET 8 SDK is not installed on the PRODUCTION runner."
+          }
+          Write-Host "OK - .NET 8 SDK(s) installed:"
+          $sdks | Where-Object { $_ -match '^8\.0\.' } | ForEach-Object { Write-Host "  $_" }
+
+          $globalJson = Join-Path $env:GITHUB_WORKSPACE 'global.json'
+          if (Test-Path -LiteralPath $globalJson) {
+            Write-Host "A global.json is already present in the workspace; it is honored, not overwritten:"
+            Get-Content -LiteralPath $globalJson | ForEach-Object { Write-Host "  $_" }
+            "pinned_global_json=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            $pin = [ordered]@{ sdk = [ordered]@{ version = '8.0.100'; rollForward = 'latestFeature'; allowPrerelease = $false } }
+            $pin | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $globalJson -Encoding utf8
+            Write-Host "Temporary global.json written at the workspace root (SDK 8.0.100, rollForward latestFeature)."
+            "pinned_global_json=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+          $effectiveRaw = (dotnet --version 2>&1 | Out-String).Trim()
+          $effective = ($effectiveRaw -split "`r?`n")[0].Trim()
+          Write-Host "Effective SDK resolved by the host from the workspace root: $effective"
+          if ($effective -notmatch '^8\.0\.\d+$') {
+            Write-Host $effectiveRaw
+            Write-Host "::error::The dotnet host did not resolve an 8.0.x SDK from the workspace root. Refusing to build the migration bundle on another SDK band."
+            throw "Effective .NET SDK is '$effective'; an 8.0.x SDK is required."
+          }
+          Write-Host "OK - every dotnet command in this job runs on SDK $effective."
 
       # --- Restore the repo-pinned LOCAL dotnet-ef tool (.config/dotnet-tools.json -> 8.0.11) ---
       # Deterministic: uses the manifest version regardless of any global tool on the runner.
@@ -186,22 +285,45 @@ jobs:
             Write-Host "No new database backup was created this run - retention skipped."
           }
 
+      # --- Remove the temporary SDK pin (only the file this job wrote) ---
+      - name: Remove temporary global.json
+        if: always() && steps.sdk_pin.outputs.pinned_global_json == 'true'
+        shell: pwsh
+        run: |
+          $globalJson = Join-Path $env:GITHUB_WORKSPACE 'global.json'
+          if (Test-Path -LiteralPath $globalJson) {
+            Remove-Item -LiteralPath $globalJson -Force
+            Write-Host "Temporary global.json removed."
+          } else {
+            Write-Host "Temporary global.json already gone."
+          }
+
       # --- Summary ---
       - name: Migration summary
         if: always()
         shell: pwsh
         run: |
+          # This step runs on EVERY outcome (if: always()) so the summary is never missing, which is
+          # why it also printed after the cancelled run #28. The job outcome comes first: nothing
+          # below applies unless it reads 'success'.
+          $outcome = "${{ job.status }}"
           Write-Host "============================================="
           Write-Host "  PRODUCTION Migration Summary"
           Write-Host "============================================="
+          Write-Host "Job outcome:  $outcome"
           Write-Host "Version:      ${{ inputs.version }}"
           Write-Host "Database:     Portal-Gerencial"
           Write-Host "Server:       AOVIA1VMS011"
           Write-Host "============================================="
           Write-Host ""
-          Write-Host "If migrations were applied successfully:"
-          Write-Host "  -> Run 'Deploy to PRODUCTION' workflow with version ${{ inputs.version }}"
-          Write-Host ""
-          Write-Host "If no migrations were pending:"
-          Write-Host "  -> Proceed directly to 'Deploy to PRODUCTION'"
+          if ($outcome -ne 'success') {
+            Write-Host "::warning::Job outcome is '$outcome' - the migration step did NOT complete. Do NOT proceed to 'Deploy to PRODUCTION'."
+            Write-Host "Review the failed/cancelled step above and re-run this workflow after the cause is fixed."
+          } else {
+            Write-Host "If migrations were applied successfully:"
+            Write-Host "  -> Run 'Deploy to PRODUCTION' workflow with version ${{ inputs.version }}"
+            Write-Host ""
+            Write-Host "If no migrations were pending:"
+            Write-Host "  -> Proceed directly to 'Deploy to PRODUCTION'"
+          }
           Write-Host "============================================="
