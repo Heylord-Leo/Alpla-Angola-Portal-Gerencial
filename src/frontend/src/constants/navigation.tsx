@@ -4,7 +4,7 @@ import {
     Package, Activity, Network, Shield, CheckCircle,
     CreditCard, DollarSign, Archive, Users, UserCheck, Calendar, CalendarDays,
     Layers, History, FileSignature, Bell, CalendarCheck, Monitor, Settings2,
-    ClipboardList, Wrench
+    ClipboardList, Wrench, LayoutGrid, Palette
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -237,6 +237,24 @@ export const getNavigationConfig = (userRoles: string[], hasHRModuleAccess: bool
                     to: '/operations/transfers',
                     roles: [ROLES.SYSTEM_ADMINISTRATOR, ROLES.OPERATIONS],
                     keywords: ['transferências', 'timeline', 'pedido', 'compra', 'planta', 'viana']
+                },
+                {
+                    id: 'operations-viana3-monitor-layout',
+                    type: 'link',
+                    label: 'Monitor Viana 3 — Layout TV',
+                    icon: <LayoutGrid size={18} strokeWidth={2.5} />,
+                    to: '/operations/viana3-monitor/layout',
+                    roles: [ROLES.SYSTEM_ADMINISTRATOR, ROLES.OPERATIONS],
+                    keywords: ['monitor', 'viana 3', 'tv', 'layout', 'produção', 'sopro', 'pré-formas', 'cartões']
+                },
+                {
+                    id: 'operations-viana3-monitor-card-design',
+                    type: 'link',
+                    label: 'Monitor Viana 3 — Design dos cartões',
+                    icon: <Palette size={18} strokeWidth={2.5} />,
+                    to: '/operations/viana3-monitor/card-design',
+                    roles: [ROLES.SYSTEM_ADMINISTRATOR, ROLES.OPERATIONS],
+                    keywords: ['monitor', 'viana 3', 'tv', 'design', 'cartão', 'imagem', 'cores', 'itens', 'origem dos dados']
                 }
             ]
         },

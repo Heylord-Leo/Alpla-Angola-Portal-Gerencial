@@ -238,3 +238,220 @@ export interface OperationsLiveBoardResponse {
     outbound: OperationsLiveBoardTransfer[];
     queryDurationMs: number;
 }
+
+// ─── Viana 3 Production Monitor (TV) ───
+// Mirror of AlplaPortal.Application.DTOs.Operations.Viana3ProductionMonitorDtos.
+// Every datetime is Angola local wall-clock (UTC+1, no DST) WITHOUT offset, except fetchedAtUtc.
+
+export type Viana3SourceStatus = 'LIVE' | 'CACHED' | 'STALE';
+
+export interface Viana3MonitorSource {
+    status: Viana3SourceStatus;
+    fetchedAtLocal: string;
+    fetchedAtUtc: string;
+    ageSeconds: number;
+    timeZoneLabel: string;
+    unavailableReason: string | null;
+    queryDurationMs: number;
+}
+
+export interface Viana3MonitorScope {
+    warehouseId: number;
+    warehouseName: string;
+    locationIds: number[];
+    retentionLocationId: number;
+    bufferLocationId: number;
+    wasteBottlesArticleId: number;
+    wastePreformsArticleId: number;
+}
+
+export interface Viana3Waste {
+    bookings: number;
+    rejectedBottlesKg: number | null;
+    rejectedBottlesUnitsEstimate: number | null;
+    rejectedPreformsKg: number | null;
+    rejectedPreformsUnitsEstimate: number | null;
+    lastBooking: string | null;
+    estimateNote: string;
+}
+
+export type Viana3DeviationStatus = 'NOT_APPLICABLE' | 'NO_SCAN' | 'NO_REPORT' | 'PROVISIONAL';
+
+export interface Viana3Deviation {
+    statusCode: Viana3DeviationStatus;
+    statusLabel: string;
+    ratio: number | null;
+    differenceUnits: number | null;
+    provisional: boolean;
+}
+
+export type Viana3LotKind = 'Production' | 'Maintenance' | 'NoOrder' | 'Placeholder';
+
+export interface Viana3Lot {
+    slot: number;
+    lotId: number;
+    lotKind: Viana3LotKind;
+    lotKindLabel: string;
+    lotStatus: 'OPEN' | 'CLOSED' | null;
+    bottleArticle: string | null;
+    bottleWeightG: number | null;
+    preformArticleId: number | null;
+    preformArticle: string | null;
+    preformWeightG: number | null;
+    planFrom: string | null;
+    planTo: string | null;
+    plannedBottles: number | null;
+    reportedBottles: number | null;
+    lastReportedDay: string | null;
+    reportLastUpdated: string | null;
+    scanCount: number;
+    scannedPreforms: number | null;
+    lastScan: string | null;
+    otherPreformScanCount: number;
+    otherPreformsScanned: number | null;
+    waste: Viana3Waste;
+    deviation: Viana3Deviation;
+}
+
+export interface Viana3PreformStockLocation {
+    locationId: number;
+    location: string;
+    groupCode: 'BLOCKED_RETENTION' | 'BUFFER' | 'LINE_SIDE';
+    groupLabel: string;
+    positions: number;
+    availableQty: number;
+    blockedQty: number;
+    lastChange: string | null;
+}
+
+export interface Viana3PreformStock {
+    preformArticleId: number;
+    preformArticle: string;
+    availablePositions: number;
+    availableQty: number;
+    blockedPositions: number;
+    blockedQty: number;
+    lastChange: string | null;
+    locations: Viana3PreformStockLocation[];
+}
+
+export type Viana3MachineStatus = 'RUNNING' | 'MAINTENANCE' | 'NO_ORDER' | 'PLACEHOLDER' | 'IDLE';
+
+export interface Viana3MachinePanel {
+    machineId: number;
+    machineName: string;
+    current: Viana3Lot | null;
+    previous: Viana3Lot[];
+    preformStock: Viana3PreformStock | null;
+    statusCode: Viana3MachineStatus;
+    statusLabel: string;
+}
+
+export interface Viana3MonitorResponse {
+    plant: string;
+    plantName: string;
+    refreshSeconds: number;
+    source: Viana3MonitorSource;
+    machines: Viana3MachinePanel[];
+    preformStock: Viana3PreformStock[];
+    scope: Viana3MonitorScope;
+    notes: string[];
+}
+
+export interface Viana3OpenSystemBalance {
+    machineId: number;
+    machineName: string | null;
+    preformArticleId: number;
+    preformArticle: string;
+    barcode: string | null;
+    lastLotId: number | null;
+    lastOperation: number | null;
+    openSystemBalance: number;
+    lastMovement: string | null;
+    daysSinceLastMovement: number | null;
+    balanceStatus: string;
+}
+
+export interface Viana3OrphanWaste {
+    bookingId: number;
+    bookedAt: string | null;
+    wasteArticleId: number;
+    wasteType: string;
+    wasteKg: number;
+    lotOnBooking: number | null;
+    machineId: number | null;
+    bottleArticleId: number | null;
+    bottleArticle: string | null;
+    bottleWeightG: number | null;
+    unitsEstimate: number | null;
+}
+
+export interface Viana3MonitorDiagnosticsResponse {
+    plant: string;
+    source: Viana3MonitorSource;
+    openSystemBalances: Viana3OpenSystemBalance[];
+    orphanWaste: Viana3OrphanWaste[];
+    orphanWasteWindowDays: number;
+    notes: string[];
+}
+
+// ─── Viana 3 Production Monitor: shared TV screens / layouts (display preferences only) ───
+
+/** Card size on the 1920×1080 TV stage: COMPACT/STANDARD = 1×1, WIDE = 2×1, LARGE = 2×2. */
+export type Viana3CardSize = 'COMPACT' | 'STANDARD' | 'WIDE' | 'LARGE';
+
+export interface Viana3MonitorLayoutCard {
+    machineId: number;
+    size: Viana3CardSize;
+    /** Hidden from the TV. Never deletes or changes machine data. */
+    hidden: boolean;
+}
+
+/** One TV screen (summary for the editor's screen list). */
+export interface Viana3MonitorScreen {
+    screenKey: string;
+    name: string;
+    /** Backs the historical TV URL; cannot be deleted. */
+    isDefault: boolean;
+    /** False until saved once (default screen = discovery layout). */
+    isPersisted: boolean;
+    includeNewMachines: boolean;
+    columns: number;
+    cardCount: number;
+    visibleCount: number;
+    updatedAtUtc: string | null;
+    updatedByName: string | null;
+    /** Portal path of the read-only TV page (append ?fullscreen=true on the device). */
+    tvPath: string;
+}
+
+/** Layout of one screen. */
+export interface Viana3MonitorLayout {
+    screenKey: string;
+    name: string;
+    isDefault: boolean;
+    isPersisted: boolean;
+    /** Machines discovered later (or not listed) are appended visible (true) or stay off the screen (false). */
+    includeNewMachines: boolean;
+    schemaVersion: number;
+    columns: number;
+    cards: Viana3MonitorLayoutCard[];
+    updatedAtUtc: string | null;
+    updatedByName: string | null;
+    tvPath: string;
+}
+
+export interface SaveViana3MonitorLayoutRequest {
+    columns: number;
+    cards: Viana3MonitorLayoutCard[];
+    includeNewMachines: boolean;
+}
+
+export interface CreateViana3MonitorScreenRequest {
+    name: string;
+    copyFromScreenKey?: string | null;
+}
+
+export interface RenameViana3MonitorScreenRequest {
+    name: string;
+}

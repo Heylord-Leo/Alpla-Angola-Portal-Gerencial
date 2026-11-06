@@ -18,10 +18,18 @@ import type {
     OperationsTransferListFilters,
     OperationsTransferDetail,
     OperationsLiveBoardResponse,
+    Viana3MonitorResponse,
+    Viana3MonitorDiagnosticsResponse,
+    Viana3MonitorLayout,
+    Viana3MonitorScreen,
+    SaveViana3MonitorLayoutRequest,
+    CreateViana3MonitorScreenRequest,
+    RenameViana3MonitorScreenRequest,
 } from '../types/operations.types';
 
 const BASE = `${API_BASE_URL}/api/operations/transfers`;
 const LIVE_BOARD_BASE = `${API_BASE_URL}/api/operations/live-board`;
+const VIANA3_MONITOR_BASE = `${API_BASE_URL}/api/operations/viana3-monitor`;
 
 // ─── Helpers ───
 
@@ -167,3 +175,114 @@ export async function fetchOperationsLiveBoard(params: {
     return handleResponse<OperationsLiveBoardResponse>(res);
 }
 
+
+// ─── Viana 3 Production Monitor (TV) ───
+
+/**
+ * Fetches the Viana 3 Production Monitor payload (read-only AlplaPROD_aovia3 projection).
+ *
+ * GET /api/operations/viana3-monitor?refreshSeconds=120
+ *
+ * Anonymous endpoint (TV signage). When AlplaPROD is unavailable the backend
+ * returns its last successful snapshot with `source.status === 'STALE'`.
+ *
+ * @throws ApiError(503) — Integration disabled / AlplaPROD unreachable and no snapshot
+ * @throws ApiError(500) — Unexpected server error
+ */
+export async function fetchViana3Monitor(params?: { refreshSeconds?: number }): Promise<Viana3MonitorResponse> {
+    const qs = new URLSearchParams();
+    if (params?.refreshSeconds !== undefined && !isNaN(params.refreshSeconds)) {
+        qs.set('refreshSeconds', String(params.refreshSeconds));
+    }
+    const query = qs.toString();
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}${query ? `?${query}` : ''}`);
+    return handleResponse<Viana3MonitorResponse>(res);
+}
+
+/**
+ * Fetches the Viana 3 monitor diagnostics (historical open system balance at the
+ * machine areas, Waste on deleted lots). Cached one hour server-side.
+ *
+ * GET /api/operations/viana3-monitor/diagnostics
+ */
+export async function fetchViana3MonitorDiagnostics(): Promise<Viana3MonitorDiagnosticsResponse> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/diagnostics`);
+    return handleResponse<Viana3MonitorDiagnosticsResponse>(res);
+}
+
+// ─── Viana 3 Production Monitor: shared TV screens / layouts ───
+
+/**
+ * Reads the layout of the DEFAULT screen (historical TV URL). Anonymous. Display preferences only.
+ *
+ * GET /api/operations/viana3-monitor/layout
+ */
+export async function fetchViana3MonitorLayout(): Promise<Viana3MonitorLayout> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/layout`);
+    return handleResponse<Viana3MonitorLayout>(res);
+}
+
+/**
+ * Reads the layout of one screen. Anonymous — the read-only TV loads it with every data refresh.
+ *
+ * GET /api/operations/viana3-monitor/screens/{screenKey}/layout
+ * @throws ApiError(404) — unknown screen
+ */
+export async function fetchViana3MonitorScreenLayout(screenKey: string): Promise<Viana3MonitorLayout> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens/${encodeURIComponent(screenKey)}/layout`);
+    return handleResponse<Viana3MonitorLayout>(res);
+}
+
+/** Screen list (editor). OPERATIONS / System Administrator. GET /api/operations/viana3-monitor/screens */
+export async function fetchViana3MonitorScreens(): Promise<Viana3MonitorScreen[]> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens`);
+    return handleResponse<Viana3MonitorScreen[]>(res);
+}
+
+/** Creates a named screen (stable generated key). POST /api/operations/viana3-monitor/screens */
+export async function createViana3MonitorScreen(body: CreateViana3MonitorScreenRequest): Promise<Viana3MonitorLayout> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return handleResponse<Viana3MonitorLayout>(res);
+}
+
+/** Renames a screen. PUT /api/operations/viana3-monitor/screens/{screenKey} */
+export async function renameViana3MonitorScreen(screenKey: string, body: RenameViana3MonitorScreenRequest): Promise<Viana3MonitorScreen> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens/${encodeURIComponent(screenKey)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return handleResponse<Viana3MonitorScreen>(res);
+}
+
+/**
+ * Replaces the layout of one screen. OPERATIONS / System Administrator only.
+ *
+ * PUT /api/operations/viana3-monitor/screens/{screenKey}/layout
+ * @throws ApiError(400) — invalid layout document (message in Portuguese)
+ * @throws ApiError(401/403) — not allowed
+ */
+export async function saveViana3MonitorScreenLayout(screenKey: string, body: SaveViana3MonitorLayoutRequest): Promise<Viana3MonitorLayout> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens/${encodeURIComponent(screenKey)}/layout`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return handleResponse<Viana3MonitorLayout>(res);
+}
+
+/** Resets one screen's layout. DELETE /api/operations/viana3-monitor/screens/{screenKey}/layout */
+export async function resetViana3MonitorScreenLayout(screenKey: string): Promise<Viana3MonitorLayout> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens/${encodeURIComponent(screenKey)}/layout`, { method: 'DELETE' });
+    return handleResponse<Viana3MonitorLayout>(res);
+}
+
+/** Deletes a named screen (the default screen is refused with 400). DELETE /api/operations/viana3-monitor/screens/{screenKey} */
+export async function deleteViana3MonitorScreen(screenKey: string): Promise<void> {
+    const res = await apiFetch(`${VIANA3_MONITOR_BASE}/screens/${encodeURIComponent(screenKey)}`, { method: 'DELETE' });
+    if (!res.ok) await handleResponse<unknown>(res);
+}

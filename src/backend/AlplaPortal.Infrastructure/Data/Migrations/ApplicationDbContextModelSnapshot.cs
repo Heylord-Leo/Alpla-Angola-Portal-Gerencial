@@ -5967,6 +5967,184 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.ToTable("OperationalStageTransitions");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsBoardLayout", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BoardKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LayoutJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ScreenKey")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("BoardKey", "ScreenKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationsBoardLayouts_Board_Screen");
+
+                    b.ToTable("OperationsBoardLayouts", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsCardDesign", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BoardKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DesignJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("LastSaveToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MachineId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("BoardKey", "MachineId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationsCardDesigns_Board_Machine");
+
+                    b.ToTable("OperationsCardDesigns", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsDesignAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BoardKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Extension")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastPurgeAttemptUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastPurgeError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("PurgeAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageReference")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("BoardKey", "DeletedAtUtc")
+                        .HasDatabaseName("IX_OperationsDesignAssets_Board_Deleted");
+
+                    b.HasIndex("BoardKey", "Sha256")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OperationsDesignAssets_Board_Sha256_Active")
+                        .HasFilter("[DeletedAtUtc] IS NULL");
+
+                    b.ToTable("OperationsDesignAssets", (string)null);
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>
                 {
                     b.Property<Guid>("Id")
@@ -10169,6 +10347,36 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("RequestPoGroup");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsBoardLayout", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("UpdatedByUser");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsCardDesign", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("UpdatedByUser");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.OperationsDesignAsset", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("CreatedByUser");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.PaymentSourceDocument", b =>

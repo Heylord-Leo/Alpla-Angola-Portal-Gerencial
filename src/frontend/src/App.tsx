@@ -174,6 +174,18 @@ const OperationsTransfersPage = React.lazy(() =>
 const OperationsLiveBoardPage = React.lazy(() =>
     import('./pages/Operations/OperationsLiveBoardPage')
 );
+const Viana3ProductionMonitorPage = React.lazy(() =>
+    import('./pages/Operations/Viana3ProductionMonitorPage')
+);
+const Viana3MonitorDiagnosticsPage = React.lazy(() =>
+    import('./pages/Operations/Viana3MonitorDiagnosticsPage')
+);
+const Viana3MonitorLayoutEditorPage = React.lazy(() =>
+    import('./pages/Operations/Viana3MonitorLayoutEditorPage')
+);
+const Viana3CardDesignEditorPage = React.lazy(() =>
+    import('./pages/Operations/Viana3CardDesignEditorPage')
+);
 const NotFoundPage = React.lazy(() =>
     import('./pages/NotFoundPage')
 );
@@ -283,6 +295,9 @@ function AppContent() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/operations/live-board/:plant" element={<Suspense fallback={<LoadingSkeleton />}><OperationsLiveBoardPage /></Suspense>} />
+            {/* Viana 3 Production Monitor (TV) — public standalone routes, same model as the Live Board */}
+            <Route path="/operations/viana3-monitor" element={<Suspense fallback={<LoadingSkeleton />}><Viana3ProductionMonitorPage /></Suspense>} />
+            <Route path="/operations/viana3-monitor/screen/:screenKey" element={<Suspense fallback={<LoadingSkeleton />}><Viana3ProductionMonitorPage /></Suspense>} />
             
             <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                 <Route path="/change-password" element={<ChangePasswordPage />} />
@@ -337,6 +352,12 @@ function AppContent() {
 
                 {/* Operations Workspace */}
                 <Route path="/operations/transfers" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><OperationsTransfersPage /></Suspense></AdminRoute>} />
+                {/* Viana 3 Production Monitor — layout editor (computer, authorized); the TV route above stays read-only */}
+                <Route path="/operations/viana3-monitor/layout" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><Viana3MonitorLayoutEditorPage /></Suspense></AdminRoute>} />
+                {/* Viana 3 Production Monitor — diagnostics (restricted like the editors; the public TV never calls it) */}
+                <Route path="/operations/viana3-monitor/diagnostics" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><Viana3MonitorDiagnosticsPage /></Suspense></AdminRoute>} />
+                {/* Viana 3 Production Monitor — machine-card design editor (shared across screens) */}
+                <Route path="/operations/viana3-monitor/card-design" element={<AdminRoute allowedRoles={[ROLES.OPERATIONS]}><Suspense fallback={<LoadingSkeleton />}><Viana3CardDesignEditorPage /></Suspense></AdminRoute>} />
 
                 {/* HR Workspace */}
                 <Route path="/hr" element={<HRRoute><Suspense fallback={<LoadingSkeleton />}><HRLandingPage /></Suspense></HRRoute>}>

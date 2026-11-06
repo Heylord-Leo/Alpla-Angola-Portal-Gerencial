@@ -1,295 +1,69 @@
-# Implementation Plan — Mandatory Items, Reconciliation Workaround & Contextual Supplier Creation
+# Implementation Plan — Viana 3 Production Monitor (TV screens, layout editor, card-design editor)
 
-> Status: **In implementation** (approved plan). No commit/push/version changes until the official `/task-publish` phase.
-> Local unrelated change to preserve: `src/backend/AlplaPortal.Api/Program.cs` (out of scope — do not stage).
+> Status: **Implemented and validated in local DEV (2026-11-04) — awaiting manual validation in TEST.** Backend build 0 errors,
+> `tsc -b` clean, Vite build OK. No commit/push/version change until `/task-publish`.
+> **Two additive EF migrations** are pending for TEST: `20261104134729_AddOperationsBoardLayout` (screens) and
+> `20261104151526_AddOperationsCardDesign` (card designs + design assets). Both were applied to the **local DEV clone only** by the
+> Development auto-migrate (`Program.cs` runs `Database.Migrate()` in Development when `execution/restart_services.ps1` starts the
+> backend). TEST/PROD untouched. Existing DEV screens ("Ecrã principal", "Envase 1", "Envase 2 - Norte") preserved.
+> Reference query: `AlplaPROD_aovia3_tv_preform_monitor_v5.sql` (Downloads, "v5 (1)" wording).
 
-This plan addresses three related problems in the Purchasing / Payment / OCR / Quotation-Wizard flows.
+## Scope delivered (four iterations, all uncommitted)
 
----
+1. TV page + diagnostics (read-only AlplaPROD projection, rules: scanner ≠ consumption, provisional deviation, Waste separate, retention apart).
+2. Read-only TV + shared layout editor; "Maximum update depth" crash fixed (change-only fit reporting).
+3. Multiple independent TV screens with dedicated URLs (`/operations/viana3-monitor/screen/{key}`).
+4. **Machine-card design editor** (`/operations/viana3-monitor/card-design`): template + per-machine designs shared across screens,
+   drag/resize/rotate/colour/visibility/display properties/images, read-only verified data-source panel, readability warnings,
+   raster-only assets with hash reuse, 50-image quota, two-phase deletion and reconciliation, per-board application lock.
 
-## Phase 1 — Reconciliation workaround (add omitted requested item from proforma)
+## Decisions honoured (card design)
 
-### Goal
-Allow the Buyer, during quotation reconciliation, to explicitly create a **requested** `RequestLineItem`
-from a proforma/OCR line — for old requests with **zero** items *and* for requests that already have
-some items but where others were **omitted**. This is semantically **distinct** from `EXTRA_ITEM`.
+| Decision | Implementation |
+|----------|----------------|
+| No SVG; PNG/JPEG/WebP only | `Viana3DesignAssetService.UploadAsync`: extension, declared type, magic bytes, Magick.NET decode + re-encode; content type served from the row only. |
+| Board-wide template; machine override; built-in fallback | `OperationsCardDesign.MachineId = 0` = template; `resolveDesign` own → template → null; `MachinePanel` kept for undesigned machines. |
+| Full copy on personalise; reset removes the override | Save on a machine without a row creates it from the document the editor shows; `DELETE …/{machineId}` removes it. |
+| Six free items | `Viana3CardDesignRules.MaxFreeItems` enforced server-side and in the editor. |
+| Readability 14 / 11 px, visible, non-blocking | `computeReadability` per screen placement (`cardBoxFor` mirrors the board geometry); chips in the editor; never blocks saving. |
+| Previous orders and pallet stack designable, internal layout fixed | Items `previousOrders` / `palletStack` are positioned boxes rendering the existing components scaled to fit. |
+| Catalogue = source of truth, verified against the real query | `Viana3CardItemCatalog` + `Viana3CardCatalogVerifier` (renders Q1/Q2 text from the builder, checks alias/table/field, reflection for service methods and DTO fields; expression extracted at verification time, never stored). |
+| Hash reuse before quota; quota authoritative inside the lock | Upload: lookup by (board, hash, active) first; then `COUNT(active) < 50` inside the `sp_getapplock` transaction before the insert; post-commit count is a diagnostic log only. |
+| Two-phase deletion + reconciliation | Tombstone (`DeletedAtUtc`) committed first; purge in a separate locked transaction; `PurgeAttempts`/`LastPurgeError`; sweep purges tombstones, removes age-guarded orphan files, reports missing files. |
+| Per-board lock shared by design and asset writes; conflicts returned once | `Viana3BoardLock` (transaction-owned `sp_getapplock`); `BOARD_BUSY` (+Retry-After, editor retries once), `ASSET_UNAVAILABLE`, `ASSET_REFERENCED`, `QUOTA_EXCEEDED`, `DESIGN_MODIFIED`; duplicate upload → reuse. |
+| Retry-safe file work | File written under its unique id before the delegate; delegate database-only and idempotent on asset id / save token; reuse or failure deletes this request's file; crashes leave orphans for the sweep. |
 
-### Semantic distinction (must remain two actions)
-- **Add as requested item** → creates a `RequestLineItem` immediately, `QuotationLifecycleStatus = QUOTATION_PENDING`,
-  outside any batch, does **not** depend on `EXTRA_ITEM` approval. Origin recorded as `BUYER_RECONCILIATION`.
-- **Mark as additional item** (`EXTRA_ITEM`) → unchanged; remains a proposal subject to approver acceptance.
+## Files (iteration 4)
 
-### Conservative state scope (initial)
-Allowed **only** when ALL hold (re-validated in backend):
-- `RequestType = QUOTATION`
-- `Status = WAITING_QUOTATION`
-- not terminal (not APPROVED/PO_ISSUED/PAID/COMPLETED/REJECTED/CANCELLED/…)
-- the new item belongs to **no** batch
-- actor has Buyer role
-Blocked (this phase): AREA/FINAL approval & adjustment, WAITING_COST_CENTER, any batch-bearing/approved/terminal state.
-Expansion to adjustment states is a **separate future task**.
+### Backend
+- `AlplaPortal.Domain/Entities/OperationsCardDesign.cs` — `OperationsCardDesign`, `OperationsDesignAsset`.
+- `AlplaPortal.Infrastructure/Data/Configurations/OperationsCardDesignConfiguration.cs`; `Data/ApplicationDbContext.cs` (DbSets); `Data/Migrations/20261104151526_AddOperationsCardDesign.cs` (+ Designer, snapshot).
+- `AlplaPortal.Application/DTOs/Operations/Viana3CardDesignDtos.cs`; `Interfaces/Operations/IViana3CardDesignService.cs`.
+- `AlplaPortal.Infrastructure/Services/Operations/Viana3BoardLock.cs`, `Viana3CardItemCatalog.cs`, `Viana3CardDesignService.cs`, `Viana3DesignAssetService.cs`.
+- `AlplaPortal.Api/Controllers/Viana3CardDesignController.cs`; `Program.cs` (DI); `appsettings.json` (`AppConfig:OperationsCardDesignStoragePath`).
 
-### Value rule (conservative)
-New line created with `UnitPrice = 0` (never copy the proforma price as "requested value").
-Copy only: Description, Quantity, Unit, catalog reference when present. Total recompute via existing
-`RecalculateEstimatedTotalAsync` — a 0-priced line does not inflate the total.
+### Frontend
+- `types/viana3CardDesign.types.ts`; `lib/viana3CardDesignApi.ts`.
+- `pages/Operations/viana3/viana3CardDesign.ts` (model, default design, resolution, formats, readability); `pages/Operations/viana3/Viana3DesignedPanel.tsx` (renderer).
+- `pages/Operations/viana3/Viana3Board.tsx` (exports, `designs` prop, designed-card branch); `Viana3ProductionMonitorPage.tsx` and `Viana3MonitorLayoutEditorPage.tsx` (load the bundle).
+- `pages/Operations/Viana3CardDesignEditorPage.tsx` (new editor); `App.tsx` (route); `constants/navigation.tsx` (menu entry).
 
-### Common domain service (no duplication)
-Extract line-item creation into a reusable service (`ILineItemFactory` / `LineItemCreationService`)
-shared by `AddLineItem` and the new endpoint. It centralizes: description/quantity/unit validation,
-line-number assignment, entity creation, `QuotationLifecycleStatus`, initial values, total recompute,
-history, provenance fields, transactional persistence. Controllers keep: authorization, context,
-state guards, request/response translation.
+### Docs
+- `docs/OPERATIONS_VIANA3_PRODUCTION_MONITOR.md` §2/§3 updated, §11 added. `CHANGELOG.md` / `VERSION.md` / `DECISIONS.md` untouched (reserved for `/task-publish`).
 
-### Provenance & audit (structured, not free-text)
-New nullable columns on `RequestLineItem`:
-- `CreationOrigin` (e.g. `BUYER_RECONCILIATION`; null/`STANDARD` for normal creation)
-- `SourceProformaAttachmentId` (Guid?, soft reference to the proforma `RequestAttachment`)
-- `CreationIdempotencyKey` (string?, client-supplied UUID; **unique filtered index** where not null)
-- (reuse existing `CreatedByUserId`, `CreatedAtUtc`)
-Plus a dedicated history event `ITEM_ADDED_FROM_PROFORMA`.
+## DEV validation summary (2026-11-04)
+- Builds: backend 0 errors; `tsc -b` clean; Vite build OK (ESLint not part of the toolchain; no tests run or added, as instructed).
+- Migration `20261104151526_AddOperationsCardDesign` applied to the DEV clone by auto-migrate (tables, unique and filtered indexes confirmed by query); screens intact.
+- 2026-11-05 DEV incident: the clone was found with `AddOperationsCardDesign` reverted (history row and both tables gone, `AddOperationsBoardLayout` intact, API still running → 500 `Invalid object name 'OperationsCardDesigns'` on card-design/assets/template). Re-applied the same migration from the generated EF script (additive only) and rebuilt the lost rows from the audit log (designs of machines 2 and 3 = exact `VIANA3_CARD_DESIGN_SAVED` payloads 29288/29285; asset 6ee16907 from the file on disk + upload event 29268). TEST/PROD untouched.
+- Catalogue: 17 items / 26 sources VERIFIED at runtime; anonymous catalogue request 401.
+- Editor scenario (headless Chrome): template edited (accent, hide, move, label, COMPACT, PNG illustration, 15° rotation) and saved; machine 1 personalised (label, font 6 → "ilegível" band, font 12 → "texto pequeno"); template edited again → machine 1 unchanged, machine 3 follows; machine 1 reset → follows template.
+- TV: both dedicated screens and the default URL rendered DESIGNED cards with the image illustration, green reported bar, hidden previous orders, COMPACT stock figure and the machine-1 scanner label; zero interactive controls.
+- 2026-11-05 adjustable canvas width (600–1200 × fixed 440; server-validated; editor control with per-screen suggestions; items keep coordinates; readability/clipping per placement with the document canvas). DEV-validated on machine 2 (API 400 for 1300 and for height 400; editor 880→1000 saved via PUT 200 with items byte-identical; TV Grande cell content 1864×820 inside the full frame; machine 3 and layouts untouched; machine 2 restored to its saved design afterwards).
+- 2026-11-05 fix: designed card's outer frame fills its grid cell (frame moved from the scaled canvas to the cell wrapper; canvas = transparent content layer). Measured at 1920×1080: TV default screen (machine 2, Grande, 2 columns) card rect == cell rect (0 px difference, 1864×946 stage units); editor preview with machine 1 (built-in) restored unsaved: both Grande cards 1864×466, each frame == cell. Saved layouts/designs untouched.
+- Assets: valid PNG stored; identical upload reused; 4096 px, 2.4 MB, renamed executable, SVG and SVG-as-PNG refused (400); anonymous download 200 → 404 after deletion; referenced asset 409 (referencedBy [0,1]); quota: 49 new + 1 existing → 409 QUOTA_EXCEEDED ×3; bulk cleanup tombstoned and purged 49; orphan sweep removed a 3-hour-old orphan and kept a fresh one and a non-asset file.
 
-### Idempotency vs cross-session duplicate detection (two DIFFERENT mechanisms)
-
-**(1) Same-operation idempotency** — protects double-click, retry, concurrent same call, network
-failure after the DB write, immediate re-send:
-- Frontend generates a UUID **once** when it starts creating a given proforma line and reuses it on retries.
-- Backend persists it in `CreationIdempotencyKey` with a **unique filtered index**.
-- On a repeat with the same key → return the **existing** item (200/idempotent), never create a second.
-- Handled inside a transaction; the DB unique index is the final guard against races.
-- Limitation (explicit): this UUID lives in wizard memory. It does **not** survive reload / new browser /
-  other machine / OCR reprocessing / document re-upload. It is **not** a cross-session solution.
-
-**(2) Cross-session probable-duplicate detection** — protects against the same real proforma line being
-added again in a different session, where the session UUID is gone:
-- Before creating, backend looks for a likely prior creation using **persisted** signals:
-  `RequestId` + `SourceProformaAttachmentId` + normalized Description + Quantity + Unit (+ catalog ref).
-- **Not** a rigid unique index on (description, quantity, unit) — two legitimate lines may share values.
-- Outcomes:
-  - **Unambiguous match** (same proforma attachment + same normalized line already produced a
-    `BUYER_RECONCILIATION` item): return existing, do not duplicate, rehydrate wizard.
-  - **Probable (not unambiguous)**: return a `duplicateSuspected` response with the candidate(s); the buyer
-    chooses *use existing* or *create anyway* (explicit confirmation flag), and the choice is recorded.
-  - **No match**: create normally.
-- Ideal persistent source (checked during impl): if a persisted proforma-line / QuotationItem id exists at
-  action time, prefer it. Currently the wizard reconciles an **in-memory** OCR draft (QuotationItems persist
-  only at quotation save), so at action time there is no persisted QuotationItemId → rely on
-  `CreationIdempotencyKey` (retries) + `SourceProformaAttachmentId`-based detection (cross-session).
-
-### Endpoint (Phase 1)
-`POST /api/v1/requests/{requestId}/line-items/from-proforma`
-- Body: description, quantity, unitId, itemCatalogId?, sourceProformaAttachmentId?, idempotencyKey (required),
-  confirmCreateDespiteDuplicate? (bool).
-- Guards (all 400/403/409 as appropriate): existence, QUOTATION, WAITING_QUOTATION, not terminal, Buyer role,
-  not touching any batch.
-- Returns created (or existing/idempotent) line item id + a `duplicate` signal when applicable.
-
-### Frontend (Phase 1)
-- `WizardStepReconciliation`: add **"Adicionar como item solicitado"** action (distinct from EXTRA_ITEM),
-  opening a small OCR-prefilled review form (description, quantity, unit, catalog ref; **no price as requested value**).
-- On confirm → call endpoint with a per-line UUID; on success insert into Panel 2, set the OCR line to
-  `MAPPED` + `mappedRequestLineItemId = newId`; persist mapping in the normal quotation save.
-- On post-create failure → retry with the same UUID returns the existing item (rehydrate; no manual re-create).
-- Handle `duplicateSuspected` with a confirm dialog (use existing / create anyway).
-
-### Tests (Phase 1)
-Unit + integration: zero-item request; partially-omitted request; distinct from EXTRA_ITEM; item born
-QUOTATION_PENDING & batch-free; blocked states; retry/double-click no-dup; two-tab race; OCR reprocessed;
-document removed/re-uploaded; created-then-closed-before-save; network failure + reopen; history/provenance persisted.
-
----
-
-## Phase 2 — Mandatory items on new requests
-
-- **Quotation**: enforce ≥1 valid item at **`CreateRequest`** (it is the definitive send; status → WAITING_QUOTATION).
-  Reject `null`/`[]`/empty lines, frontend + backend.
-- **Payment**: keep `CreateRequest` allowing an item-less **DRAFT** (progressive OCR/attachments); enforce ≥1 valid
-  item at **`Submit`**, frontend + backend.
-- **Minimum valid item**:
-  - Quotation: Description non-empty, Quantity > 0, Unit required.
-  - Payment (at Submit): Description non-empty, Quantity > 0, Unit required, positive unit/total value,
-    per-line consistency (qty × unit − discount + IVA = total); keep overall request total validation.
-    A zero-value line must not be masked by another positive line.
-  - **Due date is NOT a per-item mandatory field** (belongs to invoice/request).
-- Historical item-less requests remain accessible; **no destructive migration**.
-
-## Phase 3 — Contextual supplier creation (Payment OCR)
-
-- Primary target **Scenario B** (no `requestId` during creation OCR — confirmed): contextual endpoint
-  (e.g. `POST /api/v1/lookups/suppliers/from-payment-ocr`), authorized for users who may create Payment requests.
-  Creates supplier as `DRAFT` only; origin `PAYMENT_OCR`; no manage/activate/approve/deactivate/Primavera-edit.
-- Scenario A (existing `requestId`): only if a real edit/reprocess flow needs it, reusing the same service.
-- **Backend-authoritative matching** (order): exact normalized NIF → exact normalized Name → inactive →
-  probable similar → allow create. Same-NIF blocks (returns existing, even inactive, shown clearly, no auto-reactivate);
-  same name + different NIF → alert/confirm; empty NIF → name matching; races guarded by unique indexes + conflict handling.
-  Align frontend/backend normalization (case, spaces, punctuation, accents, dashes, corporate suffixes).
-- Policy contextual (not a plain role add): may-create-Payment + context; existing general-permission users keep working.
-- Suppliers remain **global** (no company/plant scope) unless an existing scope rule is found — then stop & document.
-
-## Phase 4 — Tests, build, runtime, regression
-## Phase 5 — Docs / Guided Tour / CHANGELOG / VERSION / commit / push (only after approval, via workflow)
-
----
-
-## Execution constraints (active)
-No reset/rebase/amend/force; no branch deletion; additive/safe migrations only; no historical-data mutation;
-no general role expansion; no adjustment-state expansion; never copy proforma price to requested value;
-session UUID is not a complete cross-session dedup; no CHANGELOG/VERSION before publish; no commit before
-tests+review; no push without explicit authorization.
-
----
-
-## Phase 6 — PO OCR null-safety & error-handling fix (RegisterPoModal / CorrectPoModal)
-
-> Status: **Implemented and manually validated (Musoland PO test document).** Ready for commit.
-> Unrelated to Phases 1–5 above (separate investigation: PO-systemic OCR flow, confirmed
-> HTTP 200 / client-side crash contradiction on a real Primavera PO — REQ Serviços Ministério
-> 2026/0041, MUSOLAND supplier).
-
-### Confirmed bug
-`RegisterPoModal.tsx`'s `requestData.supplierName` (sourced from the nullable
-`RequestPoGroupDto.supplierNameSnapshot`, passed through unguarded by `RequestEdit.tsx`) could be
-`null`/`undefined` at runtime despite its non-nullable prop type. Comparing it via
-`calculateSimilarity` → `normalizeForComparison` → `s.normalize('NFD')` threw a `TypeError` while
-processing an already-successful (HTTP 200) `direct-ocr` response, which the modal's blanket
-`catch` then mislabeled as "Documento ilegível ou em formato não suportado."
-
-### Fix
-- Extracted the previously-duplicated `calculateSimilarity`/`normalizeForComparison` plus the OCR
-  response/mismatch-processing logic into `src/frontend/src/lib/ocrPoValidation.ts` (pure, shared
-  by both modals — eliminates the duplication and the divergence between them).
-- `RegisterPoModal.tsx`/`CorrectPoModal.tsx`: null-safe expected supplier/total via
-  `resolveExpectedSupplierName`/`resolveExpectedTotalAmount`; split `runOcrValidation` into a
-  transport/backend-error catch (real `err.detail`/`err.message`/`correlationId`, logged via
-  `logger` with `componentKey: 'OcrDirectExtract'`) and a client-processing-error catch (shows
-  "Os dados foram extraídos do documento, mas ocorreu um erro ao processar o resultado.", logged as
-  `OCR_CLIENT_PROCESSING_ERROR`) — never conflating the two again.
-- Removed the dead `suggestions?.purchaseOrderNumber?.value` read (no such backend DTO field
-  exists); PO number is now explicitly sourced from `documentNumber` only.
-- `lib/logger.ts`: added `'OcrDirectExtract'` component key and `'OCR_CLIENT_PROCESSING_ERROR'`
-  event type. `lib/api.ts`: `directOcrExtract`'s error path now logs (previously silent).
-- **Follow-up correction**: the initial fix used a `'---'` display placeholder as the comparison
-  value passed into `calculateSimilarity`, which — combined with `String.includes('')` being
-  vacuously true — scored a missing expected supplier as a 0.9 near-match instead of a divergence.
-  Corrected by separating the comparison value from the display value:
-  `resolveExpectedSupplierName` now returns `string | null` (never a placeholder);
-  `resolveSupplierDisplay` renders `'Não definido'` for UI only. `calculateSimilarity` now returns
-  `number | null` and refuses to score when either side is null/blank/strips to empty content.
-  `buildOcrMismatchResult` reports a missing expected supplier as its own explicit "not comparable"
-  divergence (never a silent match). `RegisterPoModalProps.requestData`'s
-  `supplierName`/`totalAmount` widened to `string | null` / `number | null` to match runtime
-  reality (the shared `RequestDetailsDto.supplierName` used by `CorrectPoModal` was already
-  correctly nullable; its `estimatedTotalAmount` was deliberately left non-nullable in the shared
-  DTO to avoid a disproportionate ripple across its many other consumers — the existing runtime
-  guard already covers it).
-
-### Tests
-No test runner existed in the frontend project (no vitest/jest, no test script). Per explicit
-user decision, added `src/frontend/src/lib/ocrPoValidation.test.mjs` — 36 cases run via Node's
-built-in `node --test` (Node 24, zero new dependencies), covering the exact confirmed HTTP 200
-fixture (null optional fields, ADVANCE_FULL + null advance percent, PO number from
-documentNumber, total 855000, ALPLA-vs-MUSOLAND supplier divergence, transport-error message
-resolution with/without correlationId, and the full nullable-supplier comparison matrix: null/
-undefined/empty/whitespace on either side, both empty, identical names, slightly different names,
-and an explicit regression guard proving placeholder-like strings no longer score as matches).
-Full component-render assertions (e.g. "message absent from the DOM") are **not** covered — that
-needs React Testing Library, which was explicitly declined for this phase.
-
-### Scope limits observed
-No changes to `OpenAiDocumentExtractionProvider`, no dedicated PO extractor/prompt/schema, no
-broader OCR pipeline refactor. The ALPLA/MUSOLAND supplier-role inversion remains a separate,
-un-actioned extraction-quality issue for a later phase.
-
----
-
-## Phase 7 — Finance > Payments: centralized eligibility, search, sort, legacy remediation script
-
-> Status: **Implemented, hardened, and committed (v2.211.0) — no data remediation executed and no
-> deploy/push performed.** See DEC-149 in `docs/DECISIONS.md` for the full architectural decision
-> record, including the confirmed `MarkAsPaid` self-healing behavior added during final review.
-
-### Confirmed root cause (read-only investigation, approved separately)
-12 legacy `PAYMENT`-type `RequestPoGroup` rows (single backfill batch, `CreatedAtUtc =
-2026-07-20 17:25:39`) are stuck at `Status = 'PENDING'` under a parent `Request.Status.Code`
-already at `PO_ISSUED`. `FinanceController.GetPayments` computed `AvailableFinanceActions` from the
-parent status only, while filtering the DTO's `PoGroups` by a separate `financeGroupStatuses` list
-— so these 12 rows got `PoGroups = []`, and the frontend's `poGroups.length > 0` gate hid
-`SCHEDULE`/`PAY` even where `MarkAsPaid`'s own (parent-status-driven, for `PAYMENT` type) rule would
-have accepted `PAY`. Multiple contributing causes: legacy data + a frontend gate stricter than, and
-independent of, the backend's real authorization rule.
-
-### Fix
-- `IFinancePaymentEligibilityService` / `FinancePaymentEligibilityService` (new,
-  `AlplaPortal.Application.Interfaces.Finance` / `AlplaPortal.Infrastructure.Services.Finance`) —
-  single source of truth for `SCHEDULE`/`PAY`/`RETURN`/`ADD_NOTE`/`ADD_PROOF`, exposing both
-  `Evaluate(...)` (for listing) and individual `CanSchedule`/`CanPay`/`CanReturn` predicates (reused
-  by `SchedulePayment`/`MarkAsPaid`/`ReturnForAdjustment` directly — no parallel rule).
-- `GetPayments`'s `PoGroups` DTO projection no longer filters by `financeGroupStatuses` (the
-  frontend needs every group's real id, including legacy ones); the QUOTATION empty-group
-  row-exclusion guard was re-derived from the original query results instead.
-- `FinancePaymentsList.tsx`: actions render from `availableFinanceActions` only
-  (`resolveSingleGroupRowActions`/`shouldShowSchedule`/`shouldShowPay` in new
-  `src/frontend/src/lib/financePaymentsView.ts`); a missing group id is an execution guard, not an
-  eligibility rule.
-- Search: `searchSupplier` → general `search` (OR across `RequestNumber` and effective supplier
-  name), server-side, case-insensitive; legacy param kept as fallback, new param takes precedence.
-  Label "Fornecedor" → "Buscar", placeholder "Buscar por pedido ou fornecedor...".
-  UI label/placeholder/state renamed accordingly; same 500ms debounce pattern as
-  `RequestsDashboard`.
-- Sorting: `sortBy`/`isDescending` added to `GetPayments`, mirroring
-  `RequestsController.GetRequests`'s exact conventions — `requestnumber` sorts by
-  `CreatedAtUtc.Date` (not the formatted string), `statuscode` by `RequestStatus.DisplayOrder` (not
-  alphabetically), amounts as raw `decimal`. Frontend headers use the same `ArrowUp`/`ArrowDown`/
-  `ArrowUpDown` icons and click-to-toggle behavior as `RequestsTableWidget`. Ações remains
-  non-sortable. The visual "Vencimento / Status" header cell got two independent inline sort
-  triggers (`needbydateutc`, `statuscode`) since the table keeps them as one visual column.
-
-### Legacy data remediation (NOT executed)
-`scripts/db/remediate-legacy-po-group-status-payment-po-issued.sql` +
-`rollback-legacy-po-group-status-payment-po-issued.sql` — PREVIEW-by-default, exact 12-row
-manifest (confirmed via read-only query), independent live cohort-count re-check, transaction,
-exact-rowcount enforcement, post-update validation before COMMIT, provenance-safeguarded rollback.
-**APPLY mode was not run against any environment as part of this change** — explicit separate
-authorization is required.
-
-### Tests
-- Backend (xUnit, `tests/backend/AlplaPortal.Application.Tests/Services/Finance/`):
-  `FinancePaymentEligibilityServiceTests.cs` (37 cases — PAYMENT/QUOTATION × every group/parent
-  status combination, the exact confirmed bug scenario asserted directly, already-paid, zero/
-  multiple groups), `FinancePaymentsSearchAndSortQueryTests.cs` (12 cases — full/partial request
-  number, supplier case-insensitivity, combined status/currency filters, null due date, null
-  supplier, `CreatedAtUtc`-based request-number sort, `DisplayOrder`-based status sort, raw-decimal
-  amount sort, stable tie-breaker), and `FinanceMarkAsPaidTransitionTests.cs` (1 case — the actual
-  state transition, not just the eligibility predicate: PAYMENT + parent `PO_ISSUED` + group
-  `PENDING` → `MarkAsPaid` succeeds, both `Request.Status` and `RequestPoGroup.Status` become
-  `PAYMENT_COMPLETED`, `ActualPaidAmount`/`ActualPaidAtUtc` persisted, status-history record created;
-  instantiates `FinanceController` directly against an EF Core InMemory context with a fake
-  SystemAdministrator `ClaimsPrincipal` — no controller-level HTTP/auth test framework exists in this
-  repo, so this is the least-invasive architecture consistent with existing precedent, e.g.
-  `QuotationReuseAuthorizationIntegrationTests.cs`). 50 Finance-specific cases pass; full suite run
-  (189 total) confirmed **188 passed, 1 confirmed pre-existing failure**
-  (`GroupBuilderServiceTests...SelectedQuotation`, confirmed via `git stash` to predate this change).
-- Frontend (`node --test`, zero new dependencies, same pattern as `ocrPoValidation.test.mjs`):
-  `src/frontend/src/lib/financePaymentsView.test.mjs` — 20 cases covering the action-visibility
-  helper (including the confirmed bug scenario), the CANCELLED-group operational-count exclusion
-  (`resolveOperationalGroups`/`hasMultipleOperationalGroups`: one operational + one CANCELLED still
-  resolves to the operational group; a lone CANCELLED group resolves no action; a legacy PENDING
-  PAYMENT group remains resolvable for PAY), and the sort-toggle state machine.
-- No controller-level (HTTP/auth-mocked) integration test suite exists for `GetPayments` itself —
-  the search/sort query shapes are verified directly against an in-memory `ApplicationDbContext`
-  (same LINQ predicates as the controller); the one mutation endpoint where the *actual state
-  transition* (not just the predicate) needed direct coverage (`MarkAsPaid`) now has a dedicated
-  controller-level test using the same InMemory + fake-ClaimsPrincipal approach.
-
-### Hardening added during final review (before commit)
-- DEC-149 updated with an explicit point on `MarkAsPaid`'s self-healing behavior (the "impossible
-  state" `Request=PAYMENT_COMPLETED`/`RequestPoGroup=PENDING` is unreachable).
-- `financePaymentsView.ts`: `resolveOperationalGroups`/`hasMultipleOperationalGroups` centralize
-  `CANCELLED`-group exclusion from the operational count (kept only for historical display),
-  replacing `FinancePaymentsList.tsx`'s inline `poGroups.length > 1` check — does not reintroduce
-  the old broad finance-status filter (only `CANCELLED` is excluded).
-
-### Scope limits observed
-No schema migration. No data UPDATE executed anywhere (PREVIEW only). No change to
-`RequestPoGroupDto`'s public shape. `UnavailableReasons` kept internal, not added to
-`FinanceListItemDto`. No changes to unrelated finance/request workflows.
+## Validation (manual, TEST) — when authorised
+1. Apply both migrations in TEST, deploy backend + frontend.
+2. Screens and layout editor as before (§10 of the doc).
+3. Card design: create the template, personalise one machine, confirm both TV screens; upload the transparent SBM PNG for the illustration; check the readability chips on a 2-column 3-row screen; try an SVG (refused); delete a referenced image (refused) and an unreferenced one; run "Limpar não utilizadas".
+4. TV routes keep zero interactive controls; diagnostics and STALE behaviour unchanged.

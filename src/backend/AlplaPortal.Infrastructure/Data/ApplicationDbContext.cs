@@ -87,6 +87,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<OperationalStageState> OperationalStageStates => Set<OperationalStageState>();
     public DbSet<OperationalStageTransition> OperationalStageTransitions => Set<OperationalStageTransition>();
 
+    // Operations TV boards — shared display layouts (Viana 3 Production Monitor).
+    public DbSet<OperationsBoardLayout> OperationsBoardLayouts => Set<OperationsBoardLayout>();
+    public DbSet<OperationsCardDesign> OperationsCardDesigns => Set<OperationsCardDesign>();
+    public DbSet<OperationsDesignAsset> OperationsDesignAssets => Set<OperationsDesignAsset>();
+
     // Integration Foundation (Phase 0)
     public DbSet<IntegrationProvider> IntegrationProviders => Set<IntegrationProvider>();
     public DbSet<IntegrationConnectionStatus> IntegrationConnectionStatuses => Set<IntegrationConnectionStatus>();

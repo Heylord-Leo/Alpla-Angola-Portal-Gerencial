@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using AlplaPortal.Application.DTOs.Operations;
 using AlplaPortal.Application.Interfaces.Operations;
 using AlplaPortal.Domain.Enums;
 using AlplaPortal.Domain.Constants;
@@ -43,6 +45,8 @@ public class OperationsController : ControllerBase
     private readonly IOperationsTransferListService _transferListService;
     private readonly IOperationsTransferDetailService _detailService;
     private readonly IOperationsLiveBoardService _liveBoardService;
+    private readonly IViana3ProductionMonitorService _viana3Monitor;
+    private readonly IViana3MonitorLayoutService _viana3Layout;
     private readonly ILogger<OperationsController> _logger;
 
     /// <summary>Maximum allowed date range for transfer list queries (days).</summary>
@@ -59,14 +63,294 @@ public class OperationsController : ControllerBase
         IOperationsTransferListService transferListService,
         IOperationsTransferDetailService detailService,
         IOperationsLiveBoardService liveBoardService,
+        IViana3ProductionMonitorService viana3Monitor,
+        IViana3MonitorLayoutService viana3Layout,
         ILogger<OperationsController> logger)
     {
         _timelineService = timelineService;
         _transferListService = transferListService;
         _detailService = detailService;
         _liveBoardService = liveBoardService;
+        _viana3Monitor = viana3Monitor;
+        _viana3Layout = viana3Layout;
         _logger = logger;
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Viana 3 Production Monitor (TV)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Returns the Viana 3 Production Monitor payload: per machine the current
+    /// lot, the Warehouse 3 stock of its preform, planned / reported / scanned
+    /// figures, AlplaLABEL Waste and the two previous production lots.
+    ///
+    /// Read-only projection of AlplaPROD_aovia3, cached for the refresh window;
+    /// when AlplaPROD is unavailable the last successful snapshot is returned
+    /// with source.status = STALE. Anonymous for the same reason as the Live
+    /// Board (TV signage; no financial values, no usernames).
+    ///
+    /// Examples:
+    ///   GET /api/operations/viana3-monitor
+    ///   GET /api/operations/viana3-monitor?refreshSeconds=60
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("viana3-monitor")]
+    public async Task<IActionResult> GetViana3Monitor([FromQuery] int? refreshSeconds, CancellationToken ct)
+    {
+        var resolvedRefresh = Math.Clamp(refreshSeconds ?? 120, 60, 300);
+        try
+        {
+            var result = await _viana3Monitor.GetMonitorAsync(resolvedRefresh, ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "[Operations] Service unavailable for Viana3 monitor");
+            return StatusCode(503, new { error = "SERVICE_UNAVAILABLE", message = ex.Message });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2 || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError(ex, "[Operations] SQL timeout for Viana3 monitor");
+            return StatusCode(503, new { error = "QUERY_TIMEOUT", message = "A consulta ao AlplaPROD excedeu o tempo limite. Tente novamente." });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            _logger.LogError(ex, "[Operations] SQL error for Viana3 monitor: SqlError={Number}", ex.Number);
+            return StatusCode(503, new { error = "CONNECTION_ERROR", message = "Erro de conexão com o AlplaPROD. Tente novamente." });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error for Viana3 monitor");
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao processar o monitor de produção. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic view of the Viana 3 monitor: historical open SYSTEM balance at
+    /// the machine areas (not stock) and AlplaLABEL Waste on deleted lots.
+    /// Cached for one hour. Never shown on the main TV page. Restricted to
+    /// OPERATIONS / System Administrator (same policy as the editors).
+    ///
+    ///   GET /api/operations/viana3-monitor/diagnostics
+    /// </summary>
+    [Authorize(Roles = Viana3EditorRoles)] // restricted like the editors: OPERATIONS or System Administrator; the TV never calls it
+    [HttpGet("viana3-monitor/diagnostics")]
+    public async Task<IActionResult> GetViana3MonitorDiagnostics(CancellationToken ct)
+    {
+        try
+        {
+            var result = await _viana3Monitor.GetDiagnosticsAsync(ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "[Operations] Service unavailable for Viana3 diagnostics");
+            return StatusCode(503, new { error = "SERVICE_UNAVAILABLE", message = ex.Message });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2 || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError(ex, "[Operations] SQL timeout for Viana3 diagnostics");
+            return StatusCode(503, new { error = "QUERY_TIMEOUT", message = "A consulta ao AlplaPROD excedeu o tempo limite. Tente novamente." });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            _logger.LogError(ex, "[Operations] SQL error for Viana3 diagnostics: SqlError={Number}", ex.Number);
+            return StatusCode(503, new { error = "CONNECTION_ERROR", message = "Erro de conexão com o AlplaPROD. Tente novamente." });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error for Viana3 diagnostics");
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao processar o diagnóstico do monitor. Contacte o suporte." });
+        }
+    }
+
+    // ─── Viana 3 Production Monitor: shared TV screens / layouts ───
+    //
+    // The TV is read-only and loads its screen's layout anonymously (display
+    // preferences only: machine ids, order, sizes, hidden flags — no production
+    // data, no usernames). Editing is restricted to OPERATIONS and System
+    // Administrator, like the Operations workspace. Hiding or removing a card is
+    // a display decision; it never deletes or changes AlplaPROD records.
+    //
+    //   GET    viana3-monitor/layout                       default screen layout (historical TV URL) — anonymous
+    //   GET    viana3-monitor/screens/{key}/layout         one screen's layout — anonymous (TV)
+    //   GET    viana3-monitor/screens                      screen list (editor)
+    //   POST   viana3-monitor/screens                      create a named screen
+    //   PUT    viana3-monitor/screens/{key}                rename
+    //   PUT    viana3-monitor/screens/{key}/layout         save layout
+    //   DELETE viana3-monitor/screens/{key}/layout         reset layout
+    //   DELETE viana3-monitor/screens/{key}                delete a named screen (default refused)
+
+    private const string Viana3EditorRoles = RoleConstants.SystemAdministrator + "," + RoleConstants.Operations;
+
+    /// <summary>Layout of the default screen (backs the historical TV URL).</summary>
+    [AllowAnonymous]
+    [HttpGet("viana3-monitor/layout")]
+    public Task<IActionResult> GetViana3MonitorLayout(CancellationToken ct) =>
+        GetViana3MonitorScreenLayout(Viana3MonitorLayoutRules.DefaultScreenKey, ct);
+
+    /// <summary>Layout of one screen (404 when the key is unknown).</summary>
+    [AllowAnonymous]
+    [HttpGet("viana3-monitor/screens/{screenKey}/layout")]
+    public async Task<IActionResult> GetViana3MonitorScreenLayout(string screenKey, CancellationToken ct)
+    {
+        try
+        {
+            var layout = await _viana3Layout.GetLayoutAsync(screenKey, ct);
+            return layout is null
+                ? NotFound(new { error = "SCREEN_NOT_FOUND", message = "Ecrã da TV não encontrado." })
+                : Ok(layout);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error reading the Viana3 monitor layout for screen {ScreenKey}", screenKey);
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao ler o layout do monitor. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Every screen of the board (editor).</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpGet("viana3-monitor/screens")]
+    public async Task<IActionResult> ListViana3MonitorScreens(CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await _viana3Layout.ListScreensAsync(ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error listing the Viana3 monitor screens");
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao listar os ecrãs do monitor. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Creates a named screen with a generated stable key.</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpPost("viana3-monitor/screens")]
+    public async Task<IActionResult> CreateViana3MonitorScreen([FromBody] CreateViana3MonitorScreenRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var layout = await _viana3Layout.CreateScreenAsync(request, GetUserId(), ct);
+            return Ok(layout);
+        }
+        catch (Viana3MonitorLayoutValidationException ex)
+        {
+            return BadRequest(new { error = "SCREEN_INVALID", message = ex.Message });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error creating a Viana3 monitor screen");
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao criar o ecrã. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Renames a screen.</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpPut("viana3-monitor/screens/{screenKey}")]
+    public async Task<IActionResult> RenameViana3MonitorScreen(string screenKey, [FromBody] RenameViana3MonitorScreenRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var screen = await _viana3Layout.RenameScreenAsync(screenKey, request, GetUserId(), ct);
+            return screen is null
+                ? NotFound(new { error = "SCREEN_NOT_FOUND", message = "Ecrã da TV não encontrado." })
+                : Ok(screen);
+        }
+        catch (Viana3MonitorLayoutValidationException ex)
+        {
+            return BadRequest(new { error = "SCREEN_INVALID", message = ex.Message });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error renaming Viana3 monitor screen {ScreenKey}", screenKey);
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao renomear o ecrã. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Replaces the layout of one screen (validated; 400 on an invalid document).</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpPut("viana3-monitor/screens/{screenKey}/layout")]
+    public async Task<IActionResult> SaveViana3MonitorScreenLayout(string screenKey, [FromBody] SaveViana3MonitorLayoutRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var layout = await _viana3Layout.SaveLayoutAsync(screenKey, request, GetUserId(), ct);
+            return layout is null
+                ? NotFound(new { error = "SCREEN_NOT_FOUND", message = "Ecrã da TV não encontrado." })
+                : Ok(layout);
+        }
+        catch (Viana3MonitorLayoutValidationException ex)
+        {
+            return BadRequest(new { error = "LAYOUT_INVALID", message = ex.Message });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error saving the Viana3 monitor layout for screen {ScreenKey}", screenKey);
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao guardar o layout do monitor. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Resets the layout of one screen (default screen → discovery layout; named screen → empty selection).</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpDelete("viana3-monitor/screens/{screenKey}/layout")]
+    public async Task<IActionResult> ResetViana3MonitorScreenLayout(string screenKey, CancellationToken ct)
+    {
+        try
+        {
+            var layout = await _viana3Layout.ResetLayoutAsync(screenKey, GetUserId(), ct);
+            return layout is null
+                ? NotFound(new { error = "SCREEN_NOT_FOUND", message = "Ecrã da TV não encontrado." })
+                : Ok(layout);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error resetting the Viana3 monitor layout for screen {ScreenKey}", screenKey);
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao repor o layout do monitor. Contacte o suporte." });
+        }
+    }
+
+    /// <summary>Deletes a named screen (the default screen is refused with 400).</summary>
+    [Authorize(Roles = Viana3EditorRoles)]
+    [HttpDelete("viana3-monitor/screens/{screenKey}")]
+    public async Task<IActionResult> DeleteViana3MonitorScreen(string screenKey, CancellationToken ct)
+    {
+        try
+        {
+            var deleted = await _viana3Layout.DeleteScreenAsync(screenKey, GetUserId(), ct);
+            return deleted
+                ? NoContent()
+                : NotFound(new { error = "SCREEN_NOT_FOUND", message = "Ecrã da TV não encontrado." });
+        }
+        catch (Viana3MonitorLayoutValidationException ex)
+        {
+            return BadRequest(new { error = "SCREEN_INVALID", message = ex.Message });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Operations] Unexpected error deleting Viana3 monitor screen {ScreenKey}", screenKey);
+            return StatusCode(500, new { error = "INTERNAL_ERROR", message = "Erro interno ao eliminar o ecrã. Contacte o suporte." });
+        }
+    }
+
+    private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
     // ═══════════════════════════════════════════════════════════════════════
     // Phase Live 2: Live Board
     // ═══════════════════════════════════════════════════════════════════════

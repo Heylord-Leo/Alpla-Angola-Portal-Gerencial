@@ -78,6 +78,12 @@ builder.Services.AddScoped<IOperationsTimelineService, OperationsTimelineService
 builder.Services.AddScoped<IOperationsTransferListService, OperationsTransferListService>();
 builder.Services.AddScoped<IOperationsTransferDetailService, OperationsTransferDetailService>();
 builder.Services.AddScoped<IOperationsLiveBoardService, OperationsLiveBoardService>();
+// Viana 3 Production Monitor (TV) — read-only AlplaPROD_aovia3 projection, IMemoryCache snapshot.
+builder.Services.AddScoped<IViana3ProductionMonitorService, Viana3ProductionMonitorService>();
+builder.Services.AddScoped<IViana3MonitorLayoutService, AlplaPortal.Infrastructure.Services.Operations.Viana3MonitorLayoutService>();
+builder.Services.AddSingleton<AlplaPortal.Infrastructure.Services.Operations.Viana3CardCatalogVerifier>();
+builder.Services.AddScoped<IViana3CardDesignService, AlplaPortal.Infrastructure.Services.Operations.Viana3CardDesignService>();
+builder.Services.AddScoped<IViana3DesignAssetService, AlplaPortal.Infrastructure.Services.Operations.Viana3DesignAssetService>();
 
 builder.Services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
 builder.Services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
