@@ -4,7 +4,57 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.8
+v2.249.9
+
+## [v2.249.9] - 2026-11-06 — Viana 3 Production Monitor (public TV screens, layout editor, machine-card design editor) and HR Directory mapping Phase 1 (mapping state, fail-closed plant suggestion, company consistency)
+
+PATCH (number set by the owner for this TEST release; functionally two new features), backend + frontend, **three additive
+migrations** — `20261104134729_AddOperationsBoardLayout`, `20261104151526_AddOperationsCardDesign`,
+`20261105163725_AddHREmployeeSuggestionLookupScope` — **already applied and verified in `Portal-Gerencial-Test` on 2026-11-06**
+(Apply TEST Migrations, before this deploy); TEST needs only Deploy to TEST. Not for PROD in this step. Reviewed commits
+`1cf9e41` (Operations) and `342b9f4` (HR); references `docs/OPERATIONS_VIANA3_PRODUCTION_MONITOR.md` and
+`docs/HR_DIRECTORY_MAPPING_PHASE1.md`.
+
+- **Operations — Viana 3 Production Monitor.** Full-screen TV page for the Viana 3 blow-moulding hall
+  (`/operations/viana3-monitor?fullscreen=true` and one dedicated URL per TV, `/operations/viana3-monitor/screen/{screenKey}`),
+  public and outside the shell like the Live Board: one panel per machine with the current production order, the Warehouse 3
+  stock of the preform it needs, planned / reported / scanned comparison, AlplaLABEL Waste and the two previous orders. The
+  Portal backend is the only client of AlplaPROD (`AlplaProdConnectionFactory`, plant **VIANA3**, SELECT only, reference query
+  `AlplaPROD_aovia3_tv_preform_monitor_v5.sql`; no financial values and no usernames in the payload; `503` with a stale-snapshot
+  fallback when the integration or the plant is disabled). **Shared layout editor** (`…/layout`, nav "Operações → Monitor Viana 3 —
+  Layout TV"): multiple independent TV screens (create / rename / delete), machine order, sizes and hidden flags saved per screen,
+  reset to default. **Machine-card design editor** (`…/card-design`, nav "… — Design dos cartões"): a template and per-machine
+  designs shared by every screen (drag / resize / rotate / colour / visibility / display properties / images), read-only verified
+  data-source panel, readability warnings, raster-only image assets with hash reuse, a 50-image quota, two-phase deletion with
+  reconciliation and a per-board application lock. Editors, screen management and asset APIs are
+  `[Authorize(Roles = "System Administrator,OPERATIONS")]` (`AdminRoute allowedRoles=[OPERATIONS]`); the TV reads only
+  `[AllowAnonymous]` endpoints (monitor, default layout, screen layout, card-design bundle, asset bytes). The **diagnostics view**
+  (`…/diagnostics`, historical / system-balance checks) is restricted with the same editor policy: API `401` without a token,
+  `403` without the role; verified in DEV. New tables `OperationsBoardLayouts`, `OperationsCardDesigns`, `OperationsDesignAssets`;
+  new configuration section `Integrations:AlplaProd:Viana3Monitor` (repository values = the reference query's ids; environment
+  overrides belong in the server-preserved `appsettings.Test.json`); asset files are stored under the API's data directory (the
+  application-pool identity must be able to write there — verified by the first upload in TEST).
+- **HR → Directory and Mapping, Phase 1.** `mappingState` (COMPLETE / PARTIAL / UNMAPPED = plant + department master +
+  responsible person) replaces the stored `IsMapped` in the UI (the flag keeps its legacy meaning and writers); KPI cards are
+  computed on the base scope and the status chips (complete / partial / unmapped / missing field / suggestion state) filter the list
+  only. The Primavera plant suggestion **fails closed**: if any configured company does not answer, nothing is persisted ("Consulta
+  incompleta … Nenhuma sugestão foi gravada."); successful runs stamp `SuggestedPlantLookupScope` / `SuggestedPlantLookupComplete`,
+  and `suggestionState` (ACTIONABLE / NEEDS_CHOICE / MANUAL / UNVERIFIED / NONE) drives both the "Sugestão aplicável" KPI and the
+  "Aceitar" button — legacy rows show "não verificada" until the next complete "Sincronizar". Company map confirmed in PROD
+  (`ALPLAPLASTICO` ⇔ `APA` ⇔ `AlplaPLASTICOS`; `ALPLASOPRO` ⇔ `APS` ⇔ `AlplaSOPRO`) as the single source of truth in
+  `HRDirectoryMappingPolicy`. The department picker is filtered by the company of the plant chosen by HR (suggested plants listed
+  first, full list available); the server refuses a plant and a department master from different companies with
+  `400 COMPANY_MISMATCH` on the single save and on the bulk save (the final pair of every affected employee is validated and the
+  whole batch is rejected before any write; manager-only edits remain allowed). New `GET employees/mapping-context` (plants with
+  company codes, company map, current scope, manager candidates with Option C eligibility — highlight only, every active user
+  remains selectable, the current responsible person is preserved even if inactive); `GET departments/master` accepts `search` and
+  `companyCode`. Two nullable columns on `HREmployees`; no change to the Innux employee sync. 30 policy tests.
+- **Guided Tour impact: deferred by owner decision (2026-11-06).** The two new authenticated Operations pages (layout editor,
+  card-design editor) ship without page tours; creating them (data-tour anchors + `page-*` tours + registry) is a pending follow-up
+  for the Operations owner. The public TV page and the restricted diagnostics view do not take tours. HR Directory is an existing
+  page without a tour (pre-existing gap, unchanged).
+- **Excluded from this release** (local only, not committed): the Development-only Primavera/Innux unlock, the HR data-reset
+  scripts and runbooks, and the TEST-account helper files.
 
 ## [v2.249.8] - 2026-11-03 — The typed P.O. number is reviewed against the document on every input; Print View line values distinguish the requester's estimate from the approved value; the quotation validity date is copied, never derived
 

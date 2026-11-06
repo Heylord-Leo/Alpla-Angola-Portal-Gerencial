@@ -1,9 +1,10 @@
 # Operations — Viana 3 Production Monitor (read-only TV page + shared layout editor)
 
-> Status: implemented and DEV-validated (no version bump, not deployed to TEST/PROD). Iteration 2 (2026-11-04) adds the shared
+> Status: released in **v2.249.9** (2026-11-06) for manual validation in TEST (both migrations applied and verified in `Portal-Gerencial-Test` on 2026-11-06; not in PROD).
+> **Pending (owner decision 2026-11-06):** guided tours for the layout editor and the card-design editor (`page-*` tours, anchors, registry) were deferred to a follow-up. Iteration 2 (2026-11-04) adds the shared
 > layout editor; iteration 3 (2026-11-04) adds **multiple independent TV screens**; iteration 4 (2026-11-04) adds the
 > **machine-card design editor** (§11). **Two additive migrations** (`20261104134729_AddOperationsBoardLayout`,
-> `20261104151526_AddOperationsCardDesign`) — applied to the local DEV clone only (Development auto-migrate), not to TEST/PROD.
+> `20261104151526_AddOperationsCardDesign`) — applied to the local DEV clone (Development auto-migrate) and to TEST (2026-11-06); not to PROD.
 > Reference query: `AlplaPROD_aovia3_tv_preform_monitor_v5.sql` (operator's Downloads; the "v5 (1)" wording carries the
 > decision of 2026-11: the historical postings of lots 2687/2700 are NOT corrected and stay off the main screen).
 > Related: `OPERATIONS_LIVE_TRANSFER_BOARD_DESIGN.md` (routing / fullscreen / anonymous-access model, reused unchanged),

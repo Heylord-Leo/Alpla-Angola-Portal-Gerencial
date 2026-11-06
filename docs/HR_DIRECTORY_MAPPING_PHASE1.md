@@ -1,7 +1,7 @@
 # HR Directory — Mapping Workflow, Phase 1
 
 **Scope:** `/hr/directory` (HR → Directory and Mapping). Manual mapping of Innux employees to Plant, Department Master and Responsible Person.
-**Status:** implemented 2026-11-05, prepared for review in TEST. One additive migration. No behaviour change for the Innux employee sync.
+**Status:** released in **v2.249.9** (2026-11-06) for manual validation in TEST; migration `20261105163725` applied and verified in `Portal-Gerencial-Test` on 2026-11-06. One additive migration. No behaviour change for the Innux employee sync.
 
 ## 1. Company map (confirmed against PROD on 2026-11-05)
 

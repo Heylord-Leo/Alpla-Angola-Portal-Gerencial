@@ -2,7 +2,21 @@
 
 ## Current Version
 
-v2.249.8
+v2.249.9
+
+## [v2.249.9] - 2026-11-06
+
+### Viana 3 Production Monitor (public TV screens, layout editor, machine-card design editor) and HR Directory mapping Phase 1
+
+PATCH (number set by the owner for this TEST release), backend + frontend, **three additive migrations**
+(`20261104134729_AddOperationsBoardLayout`, `20261104151526_AddOperationsCardDesign`,
+`20261105163725_AddHREmployeeSuggestionLookupScope`) **already applied and verified in `Portal-Gerencial-Test` on 2026-11-06**;
+TEST needs only Deploy to TEST; not for PROD in this step. Operations: public Viana 3 TV page with per-screen URLs, shared layout
+editor, machine-card design editor with image assets, diagnostics restricted to OPERATIONS / System Administrator; read-only
+AlplaPROD projection through the Portal backend only. HR: computed `mappingState`, fail-closed Primavera plant suggestion with
+`suggestionState`, department picker filtered by the selected plant's company, `400 COMPANY_MISMATCH` on single and bulk saves,
+responsible-person picker with Option C eligibility highlighted. See CHANGELOG, `docs/OPERATIONS_VIANA3_PRODUCTION_MONITOR.md` and
+`docs/HR_DIRECTORY_MAPPING_PHASE1.md`.
 
 ## [v2.249.8] - 2026-11-03
 
