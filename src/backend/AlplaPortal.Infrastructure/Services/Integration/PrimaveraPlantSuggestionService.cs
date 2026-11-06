@@ -1,4 +1,5 @@
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Validation;
 using AlplaPortal.Infrastructure.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -91,9 +92,22 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
             }
         }
 
-        if (!companyLookups.Any())
+        // Completeness gate (fail closed). The scope is the set of configured companies; a suggestion is
+        // persisted only when EVERY one of them answered. A partial lookup would otherwise turn an employee
+        // that exists in the unreachable company into NOT_FOUND or into a single-company "High" match.
+        var scope = HRDirectoryMappingPolicy.BuildLookupScope(
+            companies.Select(c => HRDirectoryMappingPolicy.ByPrimaveraCompany(c.ToString())?.CompanyCode ?? c.ToString()));
+        result.LookupScope = scope;
+        result.LookupComplete = companies.Count > 0 && companyLookups.Count == companies.Count;
+
+        if (!result.LookupComplete)
         {
-            _logger.LogWarning("PrimaveraPlantSuggestion: no Primavera companies available. Aborting.");
+            result.SkippedIncompleteLookup = employees.Count;
+            _logger.LogWarning(
+                "PrimaveraPlantSuggestion: lookup incomplete ({Answered}/{Configured} companies answered, scope {Scope}). Nothing persisted for {Count} employees.",
+                companyLookups.Count, companies.Count, scope, employees.Count);
+            result.ErrorMessages.Add(
+                $"Consulta incompleta ({companyLookups.Count}/{companies.Count} empresas responderam). Nenhuma sugestão foi gravada.");
             return result;
         }
 
@@ -118,7 +132,7 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
                 var code = employee.EmployeeCode?.Trim();
                 if (string.IsNullOrWhiteSpace(code))
                 {
-                    SetSuggestion(employee, "PRIMAVERA:NO_CODE", "NotFound",
+                    SetSuggestion(employee, scope,"PRIMAVERA:NO_CODE", "NotFound",
                         "Funcionário sem código — não é possível consultar o Primavera.");
                     result.NotFound++;
                     continue;
@@ -133,7 +147,7 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
                 if (matchedCompanies.Count == 0)
                 {
                     // Not found in any Primavera database
-                    SetSuggestion(employee, "PRIMAVERA:NOT_FOUND", "NotFound",
+                    SetSuggestion(employee, scope,"PRIMAVERA:NOT_FOUND", "NotFound",
                         "Código do funcionário não encontrado em nenhuma base Primavera.");
                     result.NotFound++;
                 }
@@ -144,21 +158,21 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
                     if (company == PrimaveraCompany.ALPLASOPRO)
                     {
                         // High confidence: ALPLASOPRO → Viana 3
-                        SetSuggestion(employee, "PRIMAVERA:ALPLASOPRO", "High",
+                        SetSuggestion(employee, scope,"PRIMAVERA:ALPLASOPRO", "High",
                             "Funcionário encontrado na base ALPLASOPRO — corresponde a Viana 3.");
                         result.HighConfidence++;
                     }
                     else if (company == PrimaveraCompany.ALPLAPLASTICO)
                     {
                         // Ambiguous: ALPLAPLASTICO → Viana 1 or Viana 2
-                        SetSuggestion(employee, "PRIMAVERA:ALPLAPLASTICO", "Ambiguous",
+                        SetSuggestion(employee, scope,"PRIMAVERA:ALPLAPLASTICO", "Ambiguous",
                             "Funcionário encontrado na base ALPLAPLASTICO — pode pertencer a Viana 1 ou Viana 2. Seleção manual necessária.");
                         result.Ambiguous++;
                     }
                     else
                     {
                         // Unknown company — treat as ambiguous
-                        SetSuggestion(employee, $"PRIMAVERA:{company}", "Ambiguous",
+                        SetSuggestion(employee, scope,$"PRIMAVERA:{company}", "Ambiguous",
                             $"Funcionário encontrado na base {company}. Planta não determinada automaticamente.");
                         result.Ambiguous++;
                     }
@@ -167,7 +181,7 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
                 {
                     // Found in multiple companies
                     var companyNames = string.Join(", ", matchedCompanies.Select(c => c.ToString()));
-                    SetSuggestion(employee, "PRIMAVERA:MULTI", "Ambiguous",
+                    SetSuggestion(employee, scope,"PRIMAVERA:MULTI", "Ambiguous",
                         $"Funcionário encontrado em múltiplas bases Primavera ({companyNames}). Seleção manual necessária.");
                     result.Ambiguous++;
                 }
@@ -235,11 +249,14 @@ public class PrimaveraPlantSuggestionService : IPrimaveraPlantSuggestionService
     /// </summary>
     private static void SetSuggestion(
         Domain.Entities.HREmployee employee,
-        string source, string confidence, string reason)
+        string scope, string source, string confidence, string reason)
     {
         employee.SuggestedPlantSource = source;
         employee.SuggestedPlantConfidence = confidence;
         employee.SuggestedPlantReason = reason;
         employee.SuggestedPlantResolvedAtUtc = DateTime.UtcNow;
+        // Only reached after the completeness gate: every company in the scope answered.
+        employee.SuggestedPlantLookupScope = scope;
+        employee.SuggestedPlantLookupComplete = true;
     }
 }

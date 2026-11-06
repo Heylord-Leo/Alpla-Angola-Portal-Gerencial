@@ -2327,6 +2327,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<string>("SuggestedPlantConfidence")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool?>("SuggestedPlantLookupComplete")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SuggestedPlantLookupScope")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("SuggestedPlantReason")
                         .HasColumnType("nvarchar(max)");
 

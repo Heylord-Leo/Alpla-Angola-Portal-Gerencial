@@ -1828,6 +1828,37 @@ export interface DepartmentMasterDto {
     displayName: string;
 }
 
+// ─── HR Directory mapping (Phase 1) ───
+export interface HRMappingPlantDto {
+    id: number;
+    code?: string | null;
+    name: string;
+    companyId: number;
+    companyCode?: string | null;               // Companies.Code (APA / APS)
+    companyName?: string | null;
+    departmentMasterCompanyCode?: string | null; // DepartmentMasters.CompanyCode label (AlplaPLASTICOS / AlplaSOPRO)
+}
+
+export interface HRManagerCandidateDto {
+    id: string;
+    fullName: string;
+    email?: string | null;
+    isActive: boolean;
+    eligibleOptionC: boolean;   // highlighted only; nothing enforced until HR confirms the policy
+    reasons: string[];
+}
+
+export interface HRMappingContextDto {
+    companyMap: { primaveraCompany: string; suggestedPlantSource: string; companyCode: string; departmentMasterCompanyCode: string }[];
+    currentLookupScope: string;
+    eligibilityPolicy: string;
+    plants: HRMappingPlantDto[];
+    managerCandidates: HRManagerCandidateDto[];
+}
+
+export type HRMappingState = 'COMPLETE' | 'PARTIAL' | 'UNMAPPED';
+export type HRSuggestionState = 'ACTIONABLE' | 'NEEDS_CHOICE' | 'MANUAL' | 'UNVERIFIED' | 'NONE';
+
 // ─── Catalog Item Reconciliation Types ────────────────────────────────────────
 
 /** Internal status codes for catalog item reconciliation (English constants). */

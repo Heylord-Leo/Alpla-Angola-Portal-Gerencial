@@ -113,6 +113,18 @@ public class HREmployee
     /// </summary>
     public DateTime? SuggestedPlantResolvedAtUtc { get; set; }
 
+    /// <summary>
+    /// Company scope the suggestion was resolved against, canonical and order-independent
+    /// (e.g. "APA|APS"). Null for suggestions written before lookup completeness was tracked.
+    /// </summary>
+    public string? SuggestedPlantLookupScope { get; set; }
+
+    /// <summary>
+    /// True only when every company in <see cref="SuggestedPlantLookupScope"/> answered during the
+    /// resolution that wrote this suggestion. Null = legacy row, treated as unverified.
+    /// </summary>
+    public bool? SuggestedPlantLookupComplete { get; set; }
+
     // ─── Sync Metadata ───
 
     public DateTime? LastSyncedAtUtc { get; set; }

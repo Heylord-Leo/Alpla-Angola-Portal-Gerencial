@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Integration;
+using AlplaPortal.Application.Validation;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Infrastructure.Data;
+using AlplaPortal.Infrastructure.Services.Integration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -33,14 +35,16 @@ public class HRLeaveController : ControllerBase
     private readonly IPrimaveraPlantSuggestionService _suggestionService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<HRLeaveController> _logger;
+    private readonly PrimaveraConnectionFactory _primaveraFactory;
 
     public HRLeaveController(
-        ApplicationDbContext context, 
+        ApplicationDbContext context,
         IHREmployeeSyncService syncService,
         IPrimaveraDepartmentSyncService deptSyncService,
         IPrimaveraPlantSuggestionService suggestionService,
         INotificationService notificationService,
-        ILogger<HRLeaveController> logger)
+        ILogger<HRLeaveController> logger,
+        PrimaveraConnectionFactory primaveraFactory)
     {
         _context = context;
         _syncService = syncService;
@@ -48,7 +52,14 @@ public class HRLeaveController : ControllerBase
         _suggestionService = suggestionService;
         _notificationService = notificationService;
         _logger = logger;
+        _primaveraFactory = primaveraFactory;
     }
+
+    /// <summary>Canonical company scope of the current Primavera configuration (e.g. "APA|APS").</summary>
+    private string CurrentLookupScope()
+        => HRDirectoryMappingPolicy.BuildLookupScope(
+            _primaveraFactory.GetConfiguredCompanies()
+                .Select(c => HRDirectoryMappingPolicy.ByPrimaveraCompany(c.ToString())?.CompanyCode ?? c.ToString()));
 
     // ─── Helpers ───
 
@@ -331,43 +342,117 @@ public class HRLeaveController : ControllerBase
         [FromQuery] string? innuxDepartment = null,
         [FromQuery] bool? hasSuggestion = null,
         [FromQuery] string? missingField = null,
+        [FromQuery] string? suggestionState = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
         if (!await HasHRModuleAccess())
             return Forbid();
 
-        var query = await GetScopedEmployeesQuery();
+        // ─── Base scope: role scope + active + search + plant/department/Innux-department filters ───
+        // The KPI summary is computed on this scope only, so the status chips (mappingStatus, missingField,
+        // hasSuggestion, suggestionState, mapped) behave as tabs with stable counts.
+        var baseQuery = await GetScopedEmployeesQuery();
 
         if (active.HasValue)
-            query = query.Where(e => e.IsActive == active.Value);
+            baseQuery = baseQuery.Where(e => e.IsActive == active.Value);
         else
-            query = query.Where(e => e.IsActive); // Default: active only
+            baseQuery = baseQuery.Where(e => e.IsActive); // Default: active only
 
-        if (mapped.HasValue)
+        if (plantId.HasValue)
+            baseQuery = baseQuery.Where(e => e.PlantId == plantId.Value);
+
+        if (departmentMasterId.HasValue)
+            baseQuery = baseQuery.Where(e => e.DepartmentMasterId == departmentMasterId.Value);
+
+        if (!string.IsNullOrWhiteSpace(innuxDepartment))
+        {
+            var dept = innuxDepartment.Trim().ToLower();
+            baseQuery = baseQuery.Where(e => e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(dept));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            baseQuery = baseQuery.Where(e =>
+                e.FullName.ToLower().Contains(term) ||
+                e.EmployeeCode.ToLower().Contains(term) ||
+                (e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(term))
+            );
+        }
+
+        // ─── Suggestion context: one rule (HRDirectoryMappingPolicy) for the KPI and the "Aceitar" button ───
+        var currentScope = CurrentLookupScope();
+        var activePlants = await _context.Plants
+            .Where(p => p.IsActive)
+            .Select(p => new { p.Id, CompanyCode = p.Company.Code })
+            .ToListAsync();
+        var plantIdsByCompany = activePlants
+            .Where(p => p.CompanyCode != null)
+            .GroupBy(p => p.CompanyCode!)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.Id).OrderBy(id => id).ToList(), StringComparer.Ordinal);
+
+        List<int> CandidatePlants(string? source)
+        {
+            var entry = HRDirectoryMappingPolicy.BySuggestedPlantSource(source);
+            return entry != null && plantIdsByCompany.TryGetValue(entry.CompanyCode, out var ids) ? ids : new List<int>();
+        }
+
+        string SuggestionStateOf(int? empPlantId, string? source, bool? complete, string? scope)
+            => HRDirectoryMappingPolicy.ComputeSuggestionState(empPlantId, source, complete, scope, currentScope, CandidatePlants(source).Count);
+
+        var suggestionRows = await baseQuery
+            .Select(e => new { e.Id, e.PlantId, e.SuggestedPlantSource, e.SuggestedPlantLookupComplete, e.SuggestedPlantLookupScope })
+            .ToListAsync();
+        var suggestionStateById = suggestionRows.ToDictionary(
+            r => r.Id,
+            r => SuggestionStateOf(r.PlantId, r.SuggestedPlantSource, r.SuggestedPlantLookupComplete, r.SuggestedPlantLookupScope));
+
+        // ─── KPI Summary on the base scope ───
+        var total = await baseQuery.CountAsync();
+        var summary = new
+        {
+            total,
+            // mappingState (plant + department master + manager)
+            complete = await baseQuery.CountAsync(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
+            partial = await baseQuery.CountAsync(e =>
+                !(e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue) &&
+                (e.PlantId.HasValue || e.DepartmentMasterId.HasValue || e.ManagerUserId.HasValue)),
+            unmapped = await baseQuery.CountAsync(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
+            // legacy key kept for existing callers (same definition as "complete")
+            fullyMapped = await baseQuery.CountAsync(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
+            withoutPlant = await baseQuery.CountAsync(e => !e.PlantId.HasValue),
+            withoutDepartment = await baseQuery.CountAsync(e => !e.DepartmentMasterId.HasValue),
+            withoutManager = await baseQuery.CountAsync(e => !e.ManagerUserId.HasValue),
+            // legacy key kept for existing callers: any resolved suggestion that is not NotFound (includes mapped rows)
+            withSuggestion = await baseQuery.CountAsync(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound"),
+            // suggestion states (same rule as the "Aceitar" button)
+            suggestionActionable = suggestionStateById.Values.Count(s => s == HRDirectoryMappingPolicy.SuggestionActionable),
+            suggestionNeedsChoice = suggestionStateById.Values.Count(s => s == HRDirectoryMappingPolicy.SuggestionNeedsChoice),
+            suggestionManual = suggestionStateById.Values.Count(s => s == HRDirectoryMappingPolicy.SuggestionManual),
+            suggestionUnverified = suggestionStateById.Values.Count(s => s == HRDirectoryMappingPolicy.SuggestionUnverified),
+            currentLookupScope = currentScope
+        };
+
+        // ─── List filters (status chips) applied on top of the base scope ───
+        var query = baseQuery;
+
+        if (mapped.HasValue) // legacy stored flag, unchanged semantics
             query = query.Where(e => e.IsMapped == mapped.Value);
 
-        // ─── New Filter: by confirmed plant ───
-        if (plantId.HasValue)
-            query = query.Where(e => e.PlantId == plantId.Value);
-
-        // ─── New Filter: by confirmed department master ───
-        if (departmentMasterId.HasValue)
-            query = query.Where(e => e.DepartmentMasterId == departmentMasterId.Value);
-
-        // ─── New Filter: mapping completeness ───
         if (!string.IsNullOrWhiteSpace(mappingStatus))
         {
             query = mappingStatus.Trim().ToLower() switch
             {
-                "mapped" => query.Where(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
+                "mapped" or "complete" => query.Where(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
                 "unmapped" => query.Where(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
-                "partial" => query.Where(e => e.IsMapped && !(e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue)),
+                "partial" => query.Where(e =>
+                    !(e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue) &&
+                    (e.PlantId.HasValue || e.DepartmentMasterId.HasValue || e.ManagerUserId.HasValue)),
                 _ => query
             };
         }
 
-        // ─── New Filter: by specific missing field ───
         if (!string.IsNullOrWhiteSpace(missingField))
         {
             query = missingField.Trim().ToLower() switch
@@ -379,15 +464,7 @@ public class HRLeaveController : ControllerBase
             };
         }
 
-        // ─── New Filter: by Innux source department name ───
-        if (!string.IsNullOrWhiteSpace(innuxDepartment))
-        {
-            var dept = innuxDepartment.Trim().ToLower();
-            query = query.Where(e => e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(dept));
-        }
-
-        // ─── New Filter: employees with plant suggestion ───
-        if (hasSuggestion.HasValue)
+        if (hasSuggestion.HasValue) // legacy filter, unchanged semantics
         {
             if (hasSuggestion.Value)
                 query = query.Where(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound");
@@ -395,66 +472,188 @@ public class HRLeaveController : ControllerBase
                 query = query.Where(e => e.SuggestedPlantConfidence == null || e.SuggestedPlantConfidence == "NotFound");
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(suggestionState))
         {
-            var term = search.Trim().ToLower();
-            query = query.Where(e =>
-                e.FullName.ToLower().Contains(term) ||
-                e.EmployeeCode.ToLower().Contains(term) ||
-                (e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(term))
-            );
+            var wanted = suggestionState.Trim().ToUpperInvariant();
+            var ids = suggestionStateById.Where(kv => kv.Value == wanted).Select(kv => kv.Key).ToList();
+            query = query.Where(e => ids.Contains(e.Id));
         }
 
-        // ─── KPI Summary (computed from the filtered query, before pagination) ───
-        var summaryQuery = query; // same filters applied
-        var total = await summaryQuery.CountAsync();
-        var summary = new
-        {
-            total,
-            fullyMapped = await summaryQuery.CountAsync(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
-            unmapped = await summaryQuery.CountAsync(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
-            withoutPlant = await summaryQuery.CountAsync(e => !e.PlantId.HasValue),
-            withoutDepartment = await summaryQuery.CountAsync(e => !e.DepartmentMasterId.HasValue),
-            withoutManager = await summaryQuery.CountAsync(e => !e.ManagerUserId.HasValue),
-            withSuggestion = await summaryQuery.CountAsync(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound")
-        };
-
-        var items = await query
+        var rows = await query
             .OrderBy(e => e.FullName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(e => new
+            .Select(e => new HREmployeeDirectoryItem
             {
-                e.Id,
-                e.EmployeeCode,
-                e.FullName,
-                e.InnuxEmployeeId,
-                e.InnuxDepartmentName,
-                e.JobTitle,
-                e.PlantId,
+                Id = e.Id,
+                EmployeeCode = e.EmployeeCode,
+                FullName = e.FullName,
+                InnuxEmployeeId = e.InnuxEmployeeId,
+                InnuxDepartmentName = e.InnuxDepartmentName,
+                JobTitle = e.JobTitle,
+                PlantId = e.PlantId,
                 PlantName = e.Plant != null ? e.Plant.Name : null,
-                e.PortalDepartmentId,
+                PlantCompanyCode = e.Plant != null ? e.Plant.Company.Code : null,
+                PortalDepartmentId = e.PortalDepartmentId,
                 PortalDepartmentName = e.PortalDepartment != null ? e.PortalDepartment.Name : null,
-                e.DepartmentMasterId,
-                DepartmentMasterName = e.DepartmentMaster != null 
-                    ? $"{e.DepartmentMaster.DepartmentName} ({e.DepartmentMaster.CompanyCode})" 
+                DepartmentMasterId = e.DepartmentMasterId,
+                DepartmentMasterName = e.DepartmentMaster != null
+                    ? $"{e.DepartmentMaster.DepartmentName} ({e.DepartmentMaster.CompanyCode})"
                     : null,
-                e.ManagerUserId,
+                DepartmentMasterCompanyCode = e.DepartmentMaster != null ? e.DepartmentMaster.CompanyCode : null,
+                ManagerUserId = e.ManagerUserId,
                 ManagerName = e.ManagerUser != null ? e.ManagerUser.FullName : null,
-                e.IsActive,
-                e.IsMapped,
-                e.Email,
-                e.CardNumber,
-                e.LastSyncedAtUtc,
-                // ─── Plant Suggestion Fields (advisory) ───
-                e.SuggestedPlantSource,
-                e.SuggestedPlantReason,
-                e.SuggestedPlantConfidence,
-                e.SuggestedPlantResolvedAtUtc
+                ManagerIsActive = e.ManagerUser != null ? e.ManagerUser.IsActive : (bool?)null,
+                IsActive = e.IsActive,
+                IsMapped = e.IsMapped,
+                Email = e.Email,
+                CardNumber = e.CardNumber,
+                LastSyncedAtUtc = e.LastSyncedAtUtc,
+                SuggestedPlantSource = e.SuggestedPlantSource,
+                SuggestedPlantReason = e.SuggestedPlantReason,
+                SuggestedPlantConfidence = e.SuggestedPlantConfidence,
+                SuggestedPlantResolvedAtUtc = e.SuggestedPlantResolvedAtUtc,
+                SuggestedPlantLookupScope = e.SuggestedPlantLookupScope,
+                SuggestedPlantLookupComplete = e.SuggestedPlantLookupComplete
             })
             .ToListAsync();
 
-        return Ok(new { items, total, page, pageSize, summary });
+        foreach (var r in rows)
+        {
+            r.MappingState = HRDirectoryMappingPolicy.ComputeMappingState(r.PlantId, r.DepartmentMasterId, r.ManagerUserId);
+            r.SuggestionState = SuggestionStateOf(r.PlantId, r.SuggestedPlantSource, r.SuggestedPlantLookupComplete, r.SuggestedPlantLookupScope);
+            var entry = HRDirectoryMappingPolicy.BySuggestedPlantSource(r.SuggestedPlantSource);
+            r.SuggestedCompanyCode = entry?.CompanyCode;
+            r.SuggestedDepartmentMasterCompanyCode = entry?.DepartmentMasterCompanyCode;
+            r.SuggestedPlantCandidateIds = r.PlantId.HasValue ? new List<int>() : CandidatePlants(r.SuggestedPlantSource);
+            r.CompanyConsistent = HRDirectoryMappingPolicy.IsCompanyConsistent(r.PlantCompanyCode, r.DepartmentMasterCompanyCode);
+        }
+
+        return Ok(new { items = rows, total, page, pageSize, summary });
+    }
+
+    /// <summary>Directory row. Computed fields are filled after materialisation from HRDirectoryMappingPolicy.</summary>
+    public class HREmployeeDirectoryItem
+    {
+        public Guid Id { get; set; }
+        public string EmployeeCode { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public int InnuxEmployeeId { get; set; }
+        public string? InnuxDepartmentName { get; set; }
+        public string? JobTitle { get; set; }
+        public int? PlantId { get; set; }
+        public string? PlantName { get; set; }
+        public string? PlantCompanyCode { get; set; }
+        public int? PortalDepartmentId { get; set; }
+        public string? PortalDepartmentName { get; set; }
+        public int? DepartmentMasterId { get; set; }
+        public string? DepartmentMasterName { get; set; }
+        public string? DepartmentMasterCompanyCode { get; set; }
+        public Guid? ManagerUserId { get; set; }
+        public string? ManagerName { get; set; }
+        public bool? ManagerIsActive { get; set; }
+        public bool IsActive { get; set; }
+        public bool IsMapped { get; set; }
+        public string? Email { get; set; }
+        public string? CardNumber { get; set; }
+        public DateTime? LastSyncedAtUtc { get; set; }
+        public string? SuggestedPlantSource { get; set; }
+        public string? SuggestedPlantReason { get; set; }
+        public string? SuggestedPlantConfidence { get; set; }
+        public DateTime? SuggestedPlantResolvedAtUtc { get; set; }
+        public string? SuggestedPlantLookupScope { get; set; }
+        public bool? SuggestedPlantLookupComplete { get; set; }
+        // computed
+        public string MappingState { get; set; } = HRDirectoryMappingPolicy.StateUnmapped;
+        public string SuggestionState { get; set; } = HRDirectoryMappingPolicy.SuggestionNone;
+        public string? SuggestedCompanyCode { get; set; }
+        public string? SuggestedDepartmentMasterCompanyCode { get; set; }
+        public List<int> SuggestedPlantCandidateIds { get; set; } = new();
+        public bool CompanyConsistent { get; set; } = true;
+    }
+
+    /// <summary>
+    /// Master data for the mapping editor in one call: active plants with their company codes and the
+    /// department-master label that goes with each, the company map, the current lookup scope, and the
+    /// responsible-person candidates. ALL active users are selectable while HR reviews the eligibility
+    /// policy; users meeting Option C (active DepartmentManagers row, Local Manager, HR or System
+    /// Administrator) are only highlighted, never enforced.
+    /// </summary>
+    [HttpGet("employees/mapping-context")]
+    public async Task<IActionResult> GetMappingContext()
+    {
+        if (!IsAdminOrHR)
+            return Forbid();
+
+        var plants = await _context.Plants
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Name)
+            .Select(p => new { p.Id, p.Code, p.Name, p.CompanyId, CompanyCode = p.Company.Code, CompanyName = p.Company.Name })
+            .ToListAsync();
+
+        var plantItems = plants.Select(p => new
+        {
+            p.Id, p.Code, p.Name, p.CompanyId, p.CompanyCode, p.CompanyName,
+            DepartmentMasterCompanyCode = HRDirectoryMappingPolicy.ByCompanyCode(p.CompanyCode)?.DepartmentMasterCompanyCode
+        }).ToList();
+
+        var departmentManagerUserIds = await _context.DepartmentManagers
+            .Where(dm => dm.IsActive)
+            .Select(dm => dm.UserId)
+            .Distinct()
+            .ToListAsync();
+        var dmSet = departmentManagerUserIds.ToHashSet();
+
+        var users = await _context.Users
+            .AsNoTracking()
+            .Where(u => u.IsActive)
+            .OrderBy(u => u.FullName)
+            .Select(u => new { u.Id, u.FullName, u.Email, Roles = u.UserRoleAssignments.Select(ra => ra.Role.RoleName).ToList() })
+            .ToListAsync();
+
+        var candidates = users.Select(u =>
+        {
+            var reasons = new List<string>();
+            if (dmSet.Contains(u.Id)) reasons.Add("Gestor de departamento");
+            if (u.Roles.Contains(RoleConstants.LocalManager)) reasons.Add(RoleConstants.LocalManager);
+            if (u.Roles.Contains(RoleConstants.HR)) reasons.Add(RoleConstants.HR);
+            if (u.Roles.Contains(RoleConstants.SystemAdministrator)) reasons.Add(RoleConstants.SystemAdministrator);
+            return new { u.Id, u.FullName, u.Email, IsActive = true, EligibleOptionC = reasons.Count > 0, Reasons = reasons };
+        }).ToList();
+
+        return Ok(new
+        {
+            companyMap = HRDirectoryMappingPolicy.CompanyMap,
+            currentLookupScope = CurrentLookupScope(),
+            eligibilityPolicy = "OPTION_C_HIGHLIGHT_ONLY", // pending HR confirmation; nothing enforced
+            plants = plantItems,
+            managerCandidates = candidates
+        });
+    }
+
+    /// <summary>
+    /// Company consistency of a (plant, department master) pair. Returns null when consistent or when either
+    /// side is absent; otherwise a user-facing message. Uses HRDirectoryMappingPolicy.IsCompanyConsistent.
+    /// </summary>
+    private async Task<string?> ValidateCompanyConsistencyAsync(int? plantIdToCheck, int? departmentMasterIdToCheck)
+    {
+        if (!plantIdToCheck.HasValue || !departmentMasterIdToCheck.HasValue) return null;
+
+        var plant = await _context.Plants.AsNoTracking()
+            .Where(p => p.Id == plantIdToCheck.Value)
+            .Select(p => new { p.Name, CompanyCode = p.Company.Code })
+            .FirstOrDefaultAsync();
+        var master = await _context.DepartmentMasters.AsNoTracking()
+            .Where(m => m.Id == departmentMasterIdToCheck.Value)
+            .Select(m => new { m.DepartmentName, m.CompanyCode })
+            .FirstOrDefaultAsync();
+
+        if (plant == null) return $"Planta {plantIdToCheck} não encontrada.";
+        if (master == null) return $"Departamento mestre {departmentMasterIdToCheck} não encontrado.";
+
+        return HRDirectoryMappingPolicy.IsCompanyConsistent(plant.CompanyCode, master.CompanyCode)
+            ? null
+            : $"A planta '{plant.Name}' ({plant.CompanyCode}) e o departamento '{master.DepartmentName}' ({master.CompanyCode}) pertencem a empresas diferentes.";
     }
 
     /// <summary>Update Portal mapping fields for an HR employee.</summary>
@@ -467,19 +666,32 @@ public class HRLeaveController : ControllerBase
         var employee = await _context.HREmployees.FindAsync(id);
         if (employee == null) return NotFound();
 
+        // Company consistency is validated whenever the plant or the department master changes.
+        // A manager-only edit on a record with a legacy mismatch is allowed (the pair is unchanged).
+        var plantChanged = employee.PlantId != request.PlantId;
+        var departmentChanged = employee.DepartmentMasterId != request.DepartmentMasterId;
+        if (plantChanged || departmentChanged)
+        {
+            var problem = await ValidateCompanyConsistencyAsync(request.PlantId, request.DepartmentMasterId);
+            if (problem != null)
+                return BadRequest(new { message = problem, errorCode = "COMPANY_MISMATCH", employeeCode = employee.EmployeeCode });
+        }
+
         employee.PlantId = request.PlantId;
         employee.PortalDepartmentId = request.PortalDepartmentId;
         employee.DepartmentMasterId = request.DepartmentMasterId;
         employee.ManagerUserId = request.ManagerUserId;
-        
-        // Re-evaluate mapping status including the new DepartmentMasterId
-        employee.IsMapped = request.PlantId.HasValue || 
-                            request.PortalDepartmentId.HasValue || 
-                            request.DepartmentMasterId.HasValue ||
-                            request.ManagerUserId.HasValue;
+
+        // Legacy flag semantics kept for existing callers (any of the four fields).
+        employee.IsMapped = HRDirectoryMappingPolicy.ComputeLegacyIsMapped(
+            request.PlantId, request.PortalDepartmentId, request.DepartmentMasterId, request.ManagerUserId);
 
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Mapeamento atualizado." });
+        return Ok(new
+        {
+            message = "Mapeamento atualizado.",
+            mappingState = HRDirectoryMappingPolicy.ComputeMappingState(employee.PlantId, employee.DepartmentMasterId, employee.ManagerUserId)
+        });
     }
 
     /// <summary>Bulk update Portal mapping fields for multiple HR employees.</summary>
@@ -498,11 +710,54 @@ public class HRLeaveController : ControllerBase
 
         var result = new BulkUpdateMappingResult { Processed = request.EmployeeIds.Count };
 
+        // ─── Company consistency: validate the FINAL (plant, department master) pair of every affected
+        // employee whenever the request touches either field (including department-only updates), and
+        // reject the whole batch before any write. Manager-only batches skip the check so that records
+        // with a legacy mismatch can still receive a responsible person.
+        var touchesPair = request.PlantId.HasValue || request.DepartmentMasterId.HasValue || request.ClearDepartmentMaster;
+        if (touchesPair)
+        {
+            var plantCompanyById = await _context.Plants.AsNoTracking()
+                .Select(p => new { p.Id, CompanyCode = p.Company.Code })
+                .ToDictionaryAsync(p => p.Id, p => p.CompanyCode);
+            var masterCompanyById = await _context.DepartmentMasters.AsNoTracking()
+                .Select(m => new { m.Id, m.CompanyCode })
+                .ToDictionaryAsync(m => m.Id, m => m.CompanyCode);
+
+            if (request.PlantId.HasValue && !plantCompanyById.ContainsKey(request.PlantId.Value))
+                return BadRequest(new { message = $"Planta {request.PlantId} não encontrada.", errorCode = "PLANT_NOT_FOUND" });
+            if (request.DepartmentMasterId.HasValue && !masterCompanyById.ContainsKey(request.DepartmentMasterId.Value))
+                return BadRequest(new { message = $"Departamento mestre {request.DepartmentMasterId} não encontrado.", errorCode = "DEPARTMENT_MASTER_NOT_FOUND" });
+
+            var invalid = new List<string>();
+            foreach (var employee in employees)
+            {
+                var finalPlantId = request.PlantId ?? employee.PlantId;
+                var finalMasterId = request.ClearDepartmentMaster ? null : (request.DepartmentMasterId ?? employee.DepartmentMasterId);
+                if (!finalPlantId.HasValue || !finalMasterId.HasValue) continue;
+
+                plantCompanyById.TryGetValue(finalPlantId.Value, out var plantCompany);
+                masterCompanyById.TryGetValue(finalMasterId.Value, out var masterCompany);
+                if (!HRDirectoryMappingPolicy.IsCompanyConsistent(plantCompany, masterCompany))
+                    invalid.Add(employee.EmployeeCode);
+            }
+
+            if (invalid.Count > 0)
+            {
+                return BadRequest(new
+                {
+                    message = $"Atualização rejeitada: {invalid.Count} funcionário(s) ficariam com planta e departamento de empresas diferentes. Nenhum registo foi alterado.",
+                    errorCode = "COMPANY_MISMATCH",
+                    employeeCodes = invalid
+                });
+            }
+        }
+
         foreach (var employee in employees)
         {
             bool modified = false;
 
-            if (request.PlantId.HasValue) 
+            if (request.PlantId.HasValue)
             {
                 employee.PlantId = request.PlantId;
                 modified = true;
@@ -532,11 +787,9 @@ public class HRLeaveController : ControllerBase
 
             if (modified)
             {
-                // Re-evaluate mapping status
-                employee.IsMapped = employee.PlantId.HasValue || 
-                                    employee.PortalDepartmentId.HasValue || 
-                                    employee.DepartmentMasterId.HasValue ||
-                                    employee.ManagerUserId.HasValue;
+                // Legacy flag semantics kept for existing callers (any of the four fields).
+                employee.IsMapped = HRDirectoryMappingPolicy.ComputeLegacyIsMapped(
+                    employee.PlantId, employee.PortalDepartmentId, employee.DepartmentMasterId, employee.ManagerUserId);
                 result.Updated++;
             }
             else
@@ -734,15 +987,30 @@ public class HRLeaveController : ControllerBase
     }
 
     [HttpGet("departments/master")]
-    public async Task<IActionResult> GetDepartmentMasters()
+    public async Task<IActionResult> GetDepartmentMasters([FromQuery] string? search = null, [FromQuery] string? companyCode = null)
     {
         if (!IsAdminOrHR)
             return Forbid();
 
-        // Used by Autocomplete for mapping
-        var departments = await _context.DepartmentMasters
+        // Used by Autocomplete for mapping. `search` narrows by name or code (the picker sends it);
+        // `companyCode` accepts either the Companies.Code (APA/APS) or the master label (AlplaPLASTICOS/AlplaSOPRO).
+        var query = _context.DepartmentMasters
             .AsNoTracking()
-            .Where(d => d.IsActive)
+            .Where(d => d.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(d => d.DepartmentName.Contains(term) || d.DepartmentCode.Contains(term));
+        }
+
+        if (!string.IsNullOrWhiteSpace(companyCode))
+        {
+            var label = HRDirectoryMappingPolicy.ByCompanyCode(companyCode.Trim())?.DepartmentMasterCompanyCode ?? companyCode.Trim();
+            query = query.Where(d => d.CompanyCode == label);
+        }
+
+        var departments = await query
             .OrderBy(d => d.DepartmentName)
             .ThenBy(d => d.CompanyCode)
             .Select(d => new

@@ -67,3 +67,63 @@
 2. Screens and layout editor as before (§10 of the doc).
 3. Card design: create the template, personalise one machine, confirm both TV screens; upload the transparent SBM PNG for the illustration; check the readability chips on a 2-column 3-row screen; try an SVG (refused); delete a referenced image (refused) and an unreferenced one; run "Limpar não utilizadas".
 4. TV routes keep zero interactive controls; diagnostics and STALE behaviour unchanged.
+
+---
+
+# Implementation Plan — HR Directory Phase 1: manual mapping workflow (separate task, 2026-11-05)
+
+> Status: **Implemented locally, uncommitted — prepared for review in TEST.** Backend compiles (0 errors), `tsc -b` clean,
+> new policy tests pass. **One additive migration** `20261105163725_AddHREmployeeSuggestionLookupScope` (two nullable columns on
+> `HREmployees`), NOT applied to TEST/PROD. Company map confirmed against PROD P3.5/P3.6 (APA ⇔ AlplaPLASTICOS ⇔ PRI2975140;
+> APS ⇔ AlplaSOPRO ⇔ PRI297514003). No commit/push/version change until `/task-publish`.
+
+## Scope
+1. Department search: `GET /api/hr/leave/departments/master?search=&companyCode=` narrows by name/code and by company (code or label).
+2. Computed `mappingState` (COMPLETE / PARTIAL / UNMAPPED from plant + department master + manager). Stored `IsMapped` keeps its
+   legacy "any of four fields" semantics and writers; legacy `mapped`, `hasSuggestion` and `withSuggestion` remain in the API.
+3. KPI summary on the base scope only (role scope, active, search, plant, department master, Innux department); status chips
+   (`mappingStatus`, `missingField`, `hasSuggestion`, `suggestionState`, `mapped`) act as tabs with stable counts.
+4. Suggestion rule in one place (`HRDirectoryMappingPolicy.ComputeSuggestionState`): ACTIONABLE ⇔ no plant ∧ lookup complete for
+   the current scope ∧ exactly one company ∧ exactly one active plant; NEEDS_CHOICE (several plants); MANUAL (both companies);
+   UNVERIFIED (legacy/partial lookup, shown "não verificada" until refreshed); NONE. Same rule feeds the KPI and the button.
+5. Resolver fail-closed: `PrimaveraPlantSuggestionService` persists nothing unless every configured company answered; writes
+   `SuggestedPlantLookupScope` ("APA|APS") and `SuggestedPlantLookupComplete = 1`.
+6. Company consistency: single save validates the final (plant, department master) pair when either changes; bulk validates the
+   final pair of every affected employee whenever the request touches plant or department (including department-only updates) and
+   rejects the whole batch (400 `COMPANY_MISMATCH`, employee codes) before any write; manager-only edits are allowed on legacy
+   mismatches. Department picker filters on the SELECTED plant's company (via `Plant.CompanyId`); the suggested company only
+   orders the plant list; cross-company change clears the department in the form.
+7. Responsible person: all active users selectable; Option C users (active `DepartmentManagers` row, Local Manager, HR, System
+   Administrator) grouped first with reasons; the current assignment is preserved in the editor even if inactive/outside Option C.
+   Eligibility policy NOT enforced (pending HR).
+
+## Changes
+- Backend: `Application/Validation/HRDirectoryMappingPolicy.cs` (new); `Domain/Entities/HREmployee.cs` (+2 columns);
+  `Infrastructure/Data/ApplicationDbContext.cs` (max length 64); migration `20261105163725_AddHREmployeeSuggestionLookupScope`;
+  `Infrastructure/Services/Integration/PrimaveraPlantSuggestionService.cs` (fail-closed, scope/complete);
+  `Application/Interfaces/Integration/IPrimaveraPlantSuggestionService.cs` (result fields);
+  `Api/Controllers/HRLeaveController.cs` (GetEmployees base scope + computed fields + `suggestionState` filter, `HREmployeeDirectoryItem`,
+  `GET employees/mapping-context`, consistency checks on single/bulk saves, department search).
+- Frontend: `types/index.ts` (HRMapping* DTOs), `lib/api.ts` (`getDepartmentMasters(search, companyCode)`, `getMappingContext`),
+  `pages/HR/HREmployeeDirectory.tsx` (chips/KPIs by mappingState, suggestion hint by suggestionState, plant options suggested-first,
+  manager options Option-C-first with current preserved, company from selected plant, server error surfaced).
+- Tests: `tests/backend/AlplaPortal.Application.Tests/Validation/HRDirectoryMappingPolicyTests.cs`.
+- Docs: `docs/HR_DIRECTORY_MAPPING_PHASE1.md` (new).
+
+## Incident during migration generation (2026-11-05, DEV only) — resolved
+`dotnet ef migrations remove --force` resolved the "last migration" from a compiled assembly that did not yet contain the HR
+migration and therefore removed the untracked Viana 3 `20261104151526_AddOperationsCardDesign` files and reverted that migration
+on the local DEV clone (`OperationsCardDesigns`, `OperationsDesignAssets` dropped; history row removed). The migration was
+regenerated from the model under its original id; its operations were verified IDENTICAL to the deleted original (compared
+against the pre-deletion compiled assembly). The DEV clone is re-migrated automatically at the next API start (Development
+auto-migrate). TEST/PROD were never involved.
+
+## Manual validation (TEST)
+1. Apply migration `20261105163725` (additive) and deploy backend + frontend.
+2. KPIs: Completos + Parciais + Não Mapeados = Total under every filter; chips keep counts stable.
+3. "Sincronizar" with both Primavera companies reachable → rows ACTIONABLE (APS) / NEEDS_CHOICE (APA); disable one company in
+   `/admin/integrations` → resolver persists nothing, message "Consulta incompleta".
+4. APS suggested, HR picks Viana 1: picker shows AlplaPLASTICOS masters only; earlier APS department cleared; save OK.
+5. Single save with cross-company pair → 400 with message; bulk department-only update producing a mismatch → 400, nothing written;
+   manager-only edit on a legacy mismatch → OK.
+6. Manager picker: Option C group first with reasons; inactive current manager still shown as "(atual — utilizador inativo)".

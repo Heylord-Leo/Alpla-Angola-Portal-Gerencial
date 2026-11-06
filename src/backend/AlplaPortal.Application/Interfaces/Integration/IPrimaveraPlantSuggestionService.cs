@@ -34,4 +34,16 @@ public class PlantSuggestionResult
     public int AlreadyMapped { get; set; }
     public int Errors { get; set; }
     public List<string> ErrorMessages { get; set; } = new();
+
+    /// <summary>Canonical company scope of this run (e.g. "APA|APS").</summary>
+    public string LookupScope { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when every configured company answered. When false, NOTHING was persisted:
+    /// a partial lookup must never produce a suggestion that looks complete.
+    /// </summary>
+    public bool LookupComplete { get; set; }
+
+    /// <summary>Employees that were due for resolution but left untouched because the lookup was incomplete.</summary>
+    public int SkippedIncompleteLookup { get; set; }
 }

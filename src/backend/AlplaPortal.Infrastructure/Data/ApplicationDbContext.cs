@@ -362,6 +362,9 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.IsActive);
             entity.HasIndex(e => e.IsMapped);
 
+            // Canonical company scope of the last suggestion lookup, e.g. "APA|APS" (HRDirectoryMappingPolicy).
+            entity.Property(e => e.SuggestedPlantLookupScope).HasMaxLength(64);
+
             entity.HasOne(e => e.Plant)
                 .WithMany()
                 .HasForeignKey(e => e.PlantId)

@@ -6,18 +6,23 @@ import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { HRActionModal, HRActionType } from '../../components/modals/HRActionModal';
 
 import { DepartmentMasterAutocomplete } from '../../components/DepartmentMasterAutocomplete';
+import type { HRMappingContextDto, HRMappingPlantDto, HRManagerCandidateDto } from '../../types';
 
 // ─── Filter Chip Definitions ───
-type FilterChipKey = 'all' | 'mapped' | 'unmapped' | 'noPlant' | 'noDept' | 'noManager' | 'withSuggestion';
+// Status chips are driven by the server-computed mappingState (plant + department master + manager)
+// and suggestionState (same rule as the "Aceitar" button). Legacy IsMapped is not used by the UI any more.
+type FilterChipKey = 'all' | 'mapped' | 'partial' | 'unmapped' | 'noPlant' | 'noDept' | 'noManager' | 'suggestionActionable' | 'suggestionNeedsChoice';
 interface FilterChipDef { key: FilterChipKey; label: string; icon?: React.ReactNode; color: string; }
 const FILTER_CHIPS: FilterChipDef[] = [
     { key: 'all', label: 'Todos', color: '#0f172a' },
-    { key: 'mapped', label: 'Mapeados', icon: <CheckCircle2 size={13} />, color: '#16a34a' },
+    { key: 'mapped', label: 'Completos', icon: <CheckCircle2 size={13} />, color: '#16a34a' },
+    { key: 'partial', label: 'Parciais', icon: <AlertTriangle size={13} />, color: '#ca8a04' },
     { key: 'unmapped', label: 'Não Mapeados', icon: <AlertTriangle size={13} />, color: '#d97706' },
     { key: 'noPlant', label: 'Sem Planta', icon: <Building size={13} />, color: '#dc2626' },
     { key: 'noDept', label: 'Sem Departamento', color: '#9333ea' },
     { key: 'noManager', label: 'Sem Responsável', icon: <Users size={13} />, color: '#0284c7' },
-    { key: 'withSuggestion', label: 'Com Sugestão', icon: <Sparkles size={13} />, color: '#f59e0b' },
+    { key: 'suggestionActionable', label: 'Sugestão aplicável', icon: <Sparkles size={13} />, color: '#16a34a' },
+    { key: 'suggestionNeedsChoice', label: 'Escolher planta', icon: <Sparkles size={13} />, color: '#f59e0b' },
 ];
 
 export default function HREmployeeDirectory() {
@@ -40,8 +45,9 @@ export default function HREmployeeDirectory() {
     const [summary, setSummary] = useState<any>(null);
 
     // Master Data for mapping
-    const [plants, setPlants] = useState<any[]>([]);
-    const [managers, setManagers] = useState<any[]>([]);
+    const [plants, setPlants] = useState<HRMappingPlantDto[]>([]);
+    const [managers, setManagers] = useState<HRManagerCandidateDto[]>([]);
+    const [mappingContext, setMappingContext] = useState<HRMappingContextDto | null>(null);
     
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState({
@@ -82,19 +88,13 @@ export default function HREmployeeDirectory() {
 
     const loadMasterData = async () => {
         try {
-            const [plRes, usersRes] = await Promise.all([
-                api.lookups.getPlants(undefined, true),
-                api.users.list()
-            ]);
-            setPlants(plRes);
-            // Managers could be anyone with AREA_APPROVER or something, 
-            // but for safety, we allow assigning any user who might represent a manager.
-            // Let's filter active users who have area approver or local manager roles.
-            const possibleManagers = usersRes.filter((u: any) => 
-                u.isActive && 
-                u.roles.some((r: string) => ['AreaApprover', 'LocalManager', 'Admin'].includes(r))
-            );
-            setManagers(possibleManagers.length > 0 ? possibleManagers : usersRes);
+            // One call: active plants with company codes + department-master labels, the company map,
+            // the current lookup scope and the responsible-person candidates. ALL active users remain
+            // selectable while HR reviews the eligibility policy; Option C users are only highlighted.
+            const ctx = await api.hrLeave.getMappingContext();
+            setMappingContext(ctx);
+            setPlants(ctx.plants);
+            setManagers(ctx.managerCandidates);
         } catch (error) {
             console.error('Error loading master data', error);
         }
@@ -106,13 +106,15 @@ export default function HREmployeeDirectory() {
             const params: Record<string, string | number | boolean> = { page, pageSize };
             if (search) params.search = search;
 
-            // Map chip to backend params
-            if (activeChip === 'mapped') params.mappingStatus = 'mapped';
+            // Map chip to backend params (mappingStatus / suggestionState are evaluated server-side)
+            if (activeChip === 'mapped') params.mappingStatus = 'complete';
+            else if (activeChip === 'partial') params.mappingStatus = 'partial';
             else if (activeChip === 'unmapped') params.mappingStatus = 'unmapped';
             else if (activeChip === 'noPlant') params.missingField = 'plant';
             else if (activeChip === 'noDept') params.missingField = 'department';
             else if (activeChip === 'noManager') params.missingField = 'manager';
-            else if (activeChip === 'withSuggestion') params.hasSuggestion = true;
+            else if (activeChip === 'suggestionActionable') params.suggestionState = 'ACTIONABLE';
+            else if (activeChip === 'suggestionNeedsChoice') params.suggestionState = 'NEEDS_CHOICE';
 
             if (filterPlantId) params.plantId = filterPlantId;
             if (filterDepartmentId) params.departmentMasterId = filterDepartmentId;
@@ -145,22 +147,68 @@ export default function HREmployeeDirectory() {
 
     const hasActiveFilters = activeChip !== 'all' || filterPlantId || filterDepartmentId || filterInnuxDept || search;
 
+    // The server decides whether a suggestion is actionable (HRDirectoryMappingPolicy):
+    // no plant, complete lookup for the current company scope, found in exactly one company,
+    // exactly one active plant in that company. Only then is the plant pre-filled.
     const acceptSuggestion = (emp: any) => {
-        // For ALPLASOPRO, pre-fill with Viana 3
-        if (emp.suggestedPlantSource === 'PRIMAVERA:ALPLASOPRO') {
-            const viana3 = plants.find(p => p.name?.toUpperCase().includes('VIANA 3'));
-            startEditing(emp);
-            if (viana3) {
-                setTimeout(() => {
-                    setEditForm(prev => ({ ...prev, plantId: viana3.id }));
-                    setFeedback({ type: 'info', message: `Sugestão Viana 3 pré-preenchida. Confirme salvando.` });
-                }, 50);
-            }
-        } else {
-            // For ambiguous, just open edit mode
-            startEditing(emp);
-            setFeedback({ type: 'info', message: 'Sugestão ambígua — selecione a planta manualmente (Viana 1 ou Viana 2).' });
+        const candidates: number[] = emp.suggestedPlantCandidateIds || [];
+        startEditing(emp);
+        if (emp.suggestionState === 'ACTIONABLE' && candidates.length === 1) {
+            const plantId = candidates[0];
+            setTimeout(() => {
+                setEditForm(prev => ({ ...prev, plantId }));
+                setFeedback({ type: 'info', message: `Sugestão ${plantNameById(plantId)} pré-preenchida. Confirme salvando.` });
+            }, 50);
+        } else if (emp.suggestionState === 'NEEDS_CHOICE') {
+            setFeedback({ type: 'info', message: `Empresa identificada (${emp.suggestedCompanyCode}). Escolha a planta: ${candidates.map(plantNameById).join(' ou ')}.` });
+        } else if (emp.suggestionState === 'MANUAL') {
+            setFeedback({ type: 'info', message: 'Funcionário encontrado nas duas empresas Primavera — mapeamento manual.' });
+        } else if (emp.suggestionState === 'UNVERIFIED') {
+            setFeedback({ type: 'warning', message: 'Sugestão não verificada (consulta anterior incompleta ou de outro âmbito). Execute "Sincronizar" para a atualizar, ou mapeie manualmente.' });
         }
+    };
+
+    const plantNameById = (id: number | string) => plants.find(p => p.id.toString() === id.toString())?.name || `#${id}`;
+
+    // Plant options: the plants of the suggested company come first (guidance only); the full list stays available.
+    const renderPlantOptions = (candidateIds: number[] = []) => {
+        const suggested = plants.filter(p => candidateIds.includes(p.id));
+        const others = plants.filter(p => !candidateIds.includes(p.id));
+        if (suggested.length === 0) return others.map(p => <option key={p.id} value={p.id}>{p.name}</option>);
+        return (
+            <>
+                <optgroup label="Sugeridas (empresa identificada no Primavera)">
+                    {suggested.map(p => <option key={p.id} value={p.id}>{p.name} ★</option>)}
+                </optgroup>
+                <optgroup label="Outras plantas">
+                    {others.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+            </>
+        );
+    };
+
+    // Responsible-person options: every active user is selectable while HR reviews the eligibility policy.
+    // Option C users (active DepartmentManagers row, Local Manager, HR, System Administrator) are grouped first.
+    // The current assignment is always preserved, even if that user is inactive or outside Option C.
+    const renderManagerOptions = (currentId?: string | null, currentName?: string | null, currentActive?: boolean | null) => {
+        const eligible = managers.filter(m => m.eligibleOptionC);
+        const others = managers.filter(m => !m.eligibleOptionC);
+        const inList = !!currentId && managers.some(m => m.id === currentId);
+        return (
+            <>
+                {currentId && !inList && (
+                    <option value={currentId}>
+                        {currentName || currentId} (atual{currentActive === false ? ' — utilizador inativo' : ' — não listado'})
+                    </option>
+                )}
+                <optgroup label="Elegíveis — Opção C (política em revisão pelos RH)">
+                    {eligible.map(m => <option key={m.id} value={m.id}>{m.fullName} · {m.reasons.join(', ')}</option>)}
+                </optgroup>
+                <optgroup label="Outros utilizadores ativos">
+                    {others.map(m => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                </optgroup>
+            </>
+        );
     };
 
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,6 +217,9 @@ export default function HREmployeeDirectory() {
     };
 
     const startEditing = (emp: any) => {
+        if (emp.companyConsistent === false) {
+            setFeedback({ type: 'warning', message: `${emp.fullName}: a planta e o departamento mestre guardados pertencem a empresas diferentes. Ao alterar a planta ou o departamento, o par terá de ser coerente; só o responsável pode ser alterado sem corrigir o par.` });
+        }
         setEditingId(emp.id);
         setEditForm({
             portalDepartmentId: emp.portalDepartmentId || '',
@@ -183,14 +234,12 @@ export default function HREmployeeDirectory() {
         setEditingId(null);
     };
 
+    // Department-master company label (AlplaPLASTICOS / AlplaSOPRO) of the SELECTED plant, via Plant.CompanyId
+    // on the server. Once HR selects a plant, its company takes precedence over any suggestion.
     const getCompanyForPlant = (plantId: string | number | null | undefined): string => {
         if (!plantId) return '';
         const p = plants.find(plant => plant.id.toString() === plantId.toString());
-        if (!p || !p.name) return '';
-        const nameUpper = p.name.toUpperCase();
-        if (nameUpper.includes('VIANA 1') || nameUpper.includes('VIANA 2')) return 'ALPLAPLASTICOS';
-        if (nameUpper.includes('VIANA 3')) return 'ALPLASOPRO';
-        return '';
+        return p?.departmentMasterCompanyCode || '';
     };
 
     const handlePlantChange = (newPlantId: string) => {
@@ -224,7 +273,8 @@ export default function HREmployeeDirectory() {
             setFeedback({ type: 'success', message: 'Mapeamento atualizado com sucesso.' });
         } catch (error) {
             console.error('Error saving mapping', error);
-            setFeedback({ type: 'error', message: 'Falha ao atualizar o mapeamento.' });
+            // The server rejects a plant/department pair from different companies (COMPANY_MISMATCH); show its message.
+            setFeedback({ type: 'error', message: error instanceof Error && error.message ? error.message : 'Falha ao atualizar o mapeamento.' });
         } finally {
             setSaving(false);
         }
@@ -352,43 +402,58 @@ export default function HREmployeeDirectory() {
     };
 
     // ─── Suggestion Rendering Helper ───
+    // Driven entirely by the server-computed suggestionState (same rule as the "Sugestão aplicável" KPI).
     const renderSuggestionHint = (emp: any) => {
-        if (!emp.suggestedPlantConfidence || emp.suggestedPlantConfidence === 'NotFound') {
-            if (emp.suggestedPlantConfidence === 'NotFound') {
+        const state: string = emp.suggestionState || 'NONE';
+        const source = emp.suggestedPlantSource?.replace('PRIMAVERA:', '') || '';
+        const candidates: number[] = emp.suggestedPlantCandidateIds || [];
+
+        if (state === 'NONE') {
+            if (emp.suggestedPlantSource === 'PRIMAVERA:NOT_FOUND') {
                 return (
                     <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-                        Sugestão Primavera: Não encontrada
+                        Sugestão Primavera: não encontrado em nenhuma empresa
                     </div>
                 );
             }
             return null;
         }
 
-        const isHigh = emp.suggestedPlantConfidence === 'High';
-        const bgColor = isHigh ? '#f0fdf4' : '#fefce8';
-        const borderColor = isHigh ? '#bbf7d0' : '#fef08a';
-        const textColor = isHigh ? '#166534' : '#854d0e';
-        const label = isHigh ? 'Viana 3' : 'Viana 1 ou Viana 2';
-        const confidence = isHigh ? 'Alta' : 'Parcial / Ambígua';
-        const source = emp.suggestedPlantSource?.replace('PRIMAVERA:', '') || '';
+        const palette = state === 'ACTIONABLE'
+            ? { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534' }
+            : state === 'UNVERIFIED'
+                ? { bg: '#f8fafc', border: '#cbd5e1', text: '#475569' }
+                : { bg: '#fefce8', border: '#fef08a', text: '#854d0e' };
+
+        const label = state === 'ACTIONABLE' ? plantNameById(candidates[0])
+            : state === 'NEEDS_CHOICE' ? candidates.map(plantNameById).join(' ou ')
+            : state === 'MANUAL' ? 'encontrado nas duas empresas'
+            : 'não verificada';
+        const status = state === 'ACTIONABLE' ? 'Aplicável (consulta completa, 1 empresa, 1 planta)'
+            : state === 'NEEDS_CHOICE' ? `Escolha necessária (empresa ${emp.suggestedCompanyCode})`
+            : state === 'MANUAL' ? 'Mapeamento manual'
+            : 'Consulta anterior incompleta ou de outro âmbito — sincronize para atualizar';
+        const button = state === 'ACTIONABLE' ? '✓ Aceitar Sugestão'
+            : state === 'NEEDS_CHOICE' ? '✎ Escolher planta'
+            : '✎ Mapear Manualmente';
 
         return (
-            <div style={{ marginTop: '6px', padding: '6px 8px', borderRadius: '6px', backgroundColor: bgColor, border: `1px solid ${borderColor}`, fontSize: '11px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: textColor, fontWeight: 600 }}>
+            <div style={{ marginTop: '6px', padding: '6px 8px', borderRadius: '6px', backgroundColor: palette.bg, border: `1px solid ${palette.border}`, fontSize: '11px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: palette.text, fontWeight: 600 }}>
                     <Sparkles size={11} />
                     Sugestão: {label}
                 </div>
-                <div style={{ color: textColor, opacity: 0.8, marginTop: '2px' }}>
-                    Fonte: {source} | Confiança: {confidence}
+                <div style={{ color: palette.text, opacity: 0.8, marginTop: '2px' }}>
+                    Fonte: {source} | {status}
                 </div>
                 {!emp.plantId && (
                     <button
                         onClick={(e) => { e.stopPropagation(); acceptSuggestion(emp); }}
-                        style={{ marginTop: '4px', padding: '2px 8px', borderRadius: '4px', border: `1px solid ${borderColor}`, backgroundColor: '#fff', color: textColor, fontSize: '10px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
-                        onMouseOver={e => e.currentTarget.style.backgroundColor = bgColor}
+                        style={{ marginTop: '4px', padding: '2px 8px', borderRadius: '4px', border: `1px solid ${palette.border}`, backgroundColor: '#fff', color: palette.text, fontSize: '10px', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.03em' }}
+                        onMouseOver={e => e.currentTarget.style.backgroundColor = palette.bg}
                         onMouseOut={e => e.currentTarget.style.backgroundColor = '#fff'}
                     >
-                        {isHigh ? '✓ Aceitar Sugestão' : '✎ Mapear Manualmente'}
+                        {button}
                     </button>
                 )}
             </div>
@@ -462,12 +527,14 @@ export default function HREmployeeDirectory() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
                     {[
                         { label: 'Total', value: summary.total, color: '#0f172a', chipKey: 'all' as FilterChipKey },
-                        { label: 'Mapeados', value: summary.fullyMapped, color: '#16a34a', chipKey: 'mapped' as FilterChipKey },
+                        { label: 'Completos', value: summary.complete, color: '#16a34a', chipKey: 'mapped' as FilterChipKey },
+                        { label: 'Parciais', value: summary.partial, color: '#ca8a04', chipKey: 'partial' as FilterChipKey },
                         { label: 'Não Mapeados', value: summary.unmapped, color: '#d97706', chipKey: 'unmapped' as FilterChipKey },
                         { label: 'Sem Planta', value: summary.withoutPlant, color: '#dc2626', chipKey: 'noPlant' as FilterChipKey },
                         { label: 'Sem Depto', value: summary.withoutDepartment, color: '#9333ea', chipKey: 'noDept' as FilterChipKey },
                         { label: 'Sem Chefe', value: summary.withoutManager, color: '#0284c7', chipKey: 'noManager' as FilterChipKey },
-                        { label: 'Com Sugestão', value: summary.withSuggestion, color: '#f59e0b', chipKey: 'withSuggestion' as FilterChipKey },
+                        { label: 'Sugestão aplicável', value: summary.suggestionActionable, color: '#16a34a', chipKey: 'suggestionActionable' as FilterChipKey },
+                        { label: 'Escolher planta', value: summary.suggestionNeedsChoice, color: '#f59e0b', chipKey: 'suggestionNeedsChoice' as FilterChipKey },
                     ].map(card => (
                         <div
                             key={card.label}
@@ -598,7 +665,7 @@ export default function HREmployeeDirectory() {
                                     const isEditing = editingId === emp.id;
                                     
                                     return (
-                                        <tr key={emp.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: !emp.isMapped ? '#fffbeb' : '#fff' }}>
+                                        <tr key={emp.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: emp.mappingState !== 'COMPLETE' ? '#fffbeb' : '#fff' }}>
                                             <td style={{ padding: '16px' }}>
                                                 <input 
                                                     type="checkbox"
@@ -614,9 +681,19 @@ export default function HREmployeeDirectory() {
                                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                     <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                         {emp.fullName}
-                                                        {!emp.isMapped && (
-                                                            <ModernTooltip content="Mapeamento incompleto. Este funcionário não será visível para gerentes.">
+                                                        {emp.mappingState === 'UNMAPPED' && (
+                                                            <ModernTooltip content="Não mapeado: sem planta, departamento mestre nem responsável. Este funcionário não será visível para gerentes.">
                                                                 <AlertTriangle size={14} color="#d97706" />
+                                                            </ModernTooltip>
+                                                        )}
+                                                        {emp.mappingState === 'PARTIAL' && (
+                                                            <ModernTooltip content="Mapeamento parcial: falta planta, departamento mestre ou responsável.">
+                                                                <AlertTriangle size={14} color="#ca8a04" />
+                                                            </ModernTooltip>
+                                                        )}
+                                                        {emp.companyConsistent === false && (
+                                                            <ModernTooltip content="Planta e departamento mestre pertencem a empresas diferentes (registo legado). Corrija o par ao editar.">
+                                                                <Building size={14} color="#dc2626" />
                                                             </ModernTooltip>
                                                         )}
                                                     </span>
@@ -635,7 +712,7 @@ export default function HREmployeeDirectory() {
                                                         style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                                                     >
                                                         <option value="">Não atribuído</option>
-                                                        {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                        {renderPlantOptions(emp.suggestedPlantCandidateIds || [])}
                                                     </select>
                                                 ) : (
                                                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: emp.plantName ? '#0f172a' : '#94a3b8' }}>
@@ -680,7 +757,7 @@ export default function HREmployeeDirectory() {
                                                         style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                                                     >
                                                         <option value="">Sem responsável</option>
-                                                        {managers.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                                                        {renderManagerOptions(emp.managerUserId, emp.managerName, emp.managerIsActive)}
                                                     </select>
                                                 ) : (
                                                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: emp.managerName ? '#0f172a' : '#94a3b8' }}>
@@ -822,7 +899,7 @@ export default function HREmployeeDirectory() {
                                         >
                                             <option value="">Sem alteração / Manter atual</option>
                                             <option value="CLEAR">🛑 Remover Responsável/Gestor</option>
-                                            {managers.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                                            {renderManagerOptions()}
                                         </select>
                                     </div>
                                 </div>

@@ -1230,10 +1230,19 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao buscar funcionários.');
             return response.json();
         },
-        getDepartmentMasters: async (search?: string): Promise<import('../types').DepartmentMasterDto[]> => {
-            const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+        getDepartmentMasters: async (search?: string, companyCode?: string): Promise<import('../types').DepartmentMasterDto[]> => {
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (companyCode) params.append('companyCode', companyCode);
+            const qs = params.toString() ? `?${params.toString()}` : '';
             const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/departments/master${qs}`);
             if (!response.ok) return handleApiError(response, 'Falha ao buscar departamentos mestre.');
+            return response.json();
+        },
+        /** Mapping editor master data: plants with company codes, company map, current lookup scope, manager candidates (Option C highlighted, nothing enforced). */
+        getMappingContext: async (): Promise<import('../types').HRMappingContextDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/mapping-context`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar dados de mapeamento.');
             return response.json();
         },
         syncDepartments: async (correlationId?: string): Promise<{ message: string, created: number, updated: number, processed: number, errors?: string[] }> => {
