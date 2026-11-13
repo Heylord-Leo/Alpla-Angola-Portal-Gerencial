@@ -1,0 +1,85 @@
+# =============================================================================
+# Preflight TEST Migrations (READ-ONLY)
+# =============================================================================
+# Owner-review gate that runs BEFORE "Apply TEST Migrations". It connects to the TEST database with
+# the same server-preserved appsettings.Test.json the apply workflow uses, and asserts — without
+# writing anything, without a backup, without generating SQL — that:
+#   1. DB_NAME() is exactly Portal-Gerencial-Test;
+#   2. __EFMigrationsHistory is an exact prefix of the repository migration files (DEC-145);
+#   3. the pending set is EXACTLY the list typed by the owner in `expected_pending`
+#      (comma-separated ids; empty = assert nothing pending).
+# Any other outcome fails the run. Nothing else happens: the apply workflow is a separate, later,
+# separately authorized dispatch. Script: scripts/db/preflight-migrations.ps1 (SELECT statements only).
+#
+# PROPOSED with the supplier-credit Stage 1 release (docs/SUPPLIER_CREDIT_TEST_DEPLOYMENT_PLAN.md §3);
+# validated locally against the Development clone and the LocalDB sandbox (PASS / FAIL paths), not yet
+# executed against TEST.
+# =============================================================================
+
+name: Preflight TEST Migrations (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version being prepared (e.g. v2.250.0) — informational'
+        required: true
+        type: string
+      expected_pending:
+        description: 'Exact pending migration ids, comma-separated, in order (empty = assert nothing pending)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: test-database
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight TEST migrations (${{ inputs.version }})
+    runs-on: [self-hosted, Windows, X64, iis, test, alpla-portal-test]
+    environment: test
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read TEST connection string (server-preserved appsettings.Test.json)
+        shell: pwsh
+        run: |
+          $apiDeploy = "${{ vars.API_DEPLOY_PATH }}"
+          $configFile = Join-Path $apiDeploy "appsettings.Test.json"
+          if (-not (Test-Path $configFile)) { throw "appsettings.Test.json not found at $configFile." }
+          $connStr = (Get-Content $configFile -Raw | ConvertFrom-Json).ConnectionStrings.DefaultConnection
+          if ([string]::IsNullOrWhiteSpace($connStr)) { throw "DefaultConnection is empty in appsettings.Test.json." }
+          Write-Host "::add-mask::$connStr"
+          "PREFLIGHT_CONN_STR=$connStr" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Preflight (read-only assertions)
+        shell: pwsh
+        run: |
+          $expected = @()
+          $raw = "${{ inputs.expected_pending }}"
+          if (-not [string]::IsNullOrWhiteSpace($raw)) { $expected = @($raw.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+          & "${{ github.workspace }}\scripts\db\preflight-migrations.ps1" `
+            -ConnectionString $env:PREFLIGHT_CONN_STR `
+            -ExpectedDatabase "Portal-Gerencial-Test" `
+            -RepoRoot "${{ github.workspace }}" `
+            -ExpectedPending $expected
+          if ($LASTEXITCODE -ne 0) { throw "Preflight failed (exit $LASTEXITCODE). Do NOT run Apply TEST Migrations until the discrepancy is understood." }
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          Write-Host "============================================="
+          Write-Host "  TEST Migration Preflight (read-only)"
+          Write-Host "============================================="
+          Write-Host "Version:           ${{ inputs.version }}"
+          Write-Host "Expected pending:  ${{ inputs.expected_pending }}"
+          Write-Host "Outcome:           $env:OUTCOME"
+          Write-Host "Nothing was written to the database by this workflow."
