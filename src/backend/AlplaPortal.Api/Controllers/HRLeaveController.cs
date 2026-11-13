@@ -27,7 +27,7 @@ namespace AlplaPortal.Api.Controllers;
 [ApiController]
 [Route("api/hr/leave")]
 [Authorize]
-public class HRLeaveController : ControllerBase
+public partial class HRLeaveController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly IHREmployeeSyncService _syncService;
@@ -343,70 +343,24 @@ public class HRLeaveController : ControllerBase
         [FromQuery] bool? hasSuggestion = null,
         [FromQuery] string? missingField = null,
         [FromQuery] string? suggestionState = null,
+        [FromQuery] string? suggestedCompany = null,
+        [FromQuery] bool innuxDepartmentExact = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
         if (!await HasHRModuleAccess())
             return Forbid();
 
-        // ─── Base scope: role scope + active + search + plant/department/Innux-department filters ───
-        // The KPI summary is computed on this scope only, so the status chips (mappingStatus, missingField,
-        // hasSuggestion, suggestionState, mapped) behave as tabs with stable counts.
-        var baseQuery = await GetScopedEmployeesQuery();
-
-        if (active.HasValue)
-            baseQuery = baseQuery.Where(e => e.IsActive == active.Value);
-        else
-            baseQuery = baseQuery.Where(e => e.IsActive); // Default: active only
-
-        if (plantId.HasValue)
-            baseQuery = baseQuery.Where(e => e.PlantId == plantId.Value);
-
-        if (departmentMasterId.HasValue)
-            baseQuery = baseQuery.Where(e => e.DepartmentMasterId == departmentMasterId.Value);
-
-        if (!string.IsNullOrWhiteSpace(innuxDepartment))
-        {
-            var dept = innuxDepartment.Trim().ToLower();
-            baseQuery = baseQuery.Where(e => e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(dept));
-        }
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim().ToLower();
-            baseQuery = baseQuery.Where(e =>
-                e.FullName.ToLower().Contains(term) ||
-                e.EmployeeCode.ToLower().Contains(term) ||
-                (e.InnuxDepartmentName != null && e.InnuxDepartmentName.ToLower().Contains(term))
-            );
-        }
-
-        // ─── Suggestion context: one rule (HRDirectoryMappingPolicy) for the KPI and the "Aceitar" button ───
-        var currentScope = CurrentLookupScope();
-        var activePlants = await _context.Plants
-            .Where(p => p.IsActive)
-            .Select(p => new { p.Id, CompanyCode = p.Company.Code })
-            .ToListAsync();
-        var plantIdsByCompany = activePlants
-            .Where(p => p.CompanyCode != null)
-            .GroupBy(p => p.CompanyCode!)
-            .ToDictionary(g => g.Key, g => g.Select(p => p.Id).OrderBy(id => id).ToList(), StringComparer.Ordinal);
-
-        List<int> CandidatePlants(string? source)
-        {
-            var entry = HRDirectoryMappingPolicy.BySuggestedPlantSource(source);
-            return entry != null && plantIdsByCompany.TryGetValue(entry.CompanyCode, out var ids) ? ids : new List<int>();
-        }
-
+        // Shared with GET employees/ids and the bulk-mapping preview (HRLeaveController.BulkMapping.cs): base scope
+        // (role scope + active + search + plant/department/Innux-department/suggested-company) and the status-chip filters.
+        var dq = await BuildDirectoryQueryAsync(search, mapped, active, plantId, departmentMasterId, mappingStatus,
+            innuxDepartment, innuxDepartmentExact, hasSuggestion, missingField, suggestionState, suggestedCompany);
+        var baseQuery = dq.BaseQuery;
+        var suggestionStateById = dq.SuggestionStateById;
+        var currentScope = dq.CurrentScope;
+        List<int> CandidatePlants(string? source) => dq.CandidatePlants(source);
         string SuggestionStateOf(int? empPlantId, string? source, bool? complete, string? scope)
-            => HRDirectoryMappingPolicy.ComputeSuggestionState(empPlantId, source, complete, scope, currentScope, CandidatePlants(source).Count);
-
-        var suggestionRows = await baseQuery
-            .Select(e => new { e.Id, e.PlantId, e.SuggestedPlantSource, e.SuggestedPlantLookupComplete, e.SuggestedPlantLookupScope })
-            .ToListAsync();
-        var suggestionStateById = suggestionRows.ToDictionary(
-            r => r.Id,
-            r => SuggestionStateOf(r.PlantId, r.SuggestedPlantSource, r.SuggestedPlantLookupComplete, r.SuggestedPlantLookupScope));
+            => dq.SuggestionStateOf(empPlantId, source, complete, scope);
 
         // ─── KPI Summary on the base scope ───
         var total = await baseQuery.CountAsync();
@@ -434,50 +388,7 @@ public class HRLeaveController : ControllerBase
             currentLookupScope = currentScope
         };
 
-        // ─── List filters (status chips) applied on top of the base scope ───
-        var query = baseQuery;
-
-        if (mapped.HasValue) // legacy stored flag, unchanged semantics
-            query = query.Where(e => e.IsMapped == mapped.Value);
-
-        if (!string.IsNullOrWhiteSpace(mappingStatus))
-        {
-            query = mappingStatus.Trim().ToLower() switch
-            {
-                "mapped" or "complete" => query.Where(e => e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue),
-                "unmapped" => query.Where(e => !e.PlantId.HasValue && !e.DepartmentMasterId.HasValue && !e.ManagerUserId.HasValue),
-                "partial" => query.Where(e =>
-                    !(e.PlantId.HasValue && e.DepartmentMasterId.HasValue && e.ManagerUserId.HasValue) &&
-                    (e.PlantId.HasValue || e.DepartmentMasterId.HasValue || e.ManagerUserId.HasValue)),
-                _ => query
-            };
-        }
-
-        if (!string.IsNullOrWhiteSpace(missingField))
-        {
-            query = missingField.Trim().ToLower() switch
-            {
-                "plant" => query.Where(e => !e.PlantId.HasValue),
-                "department" => query.Where(e => !e.DepartmentMasterId.HasValue),
-                "manager" => query.Where(e => !e.ManagerUserId.HasValue),
-                _ => query
-            };
-        }
-
-        if (hasSuggestion.HasValue) // legacy filter, unchanged semantics
-        {
-            if (hasSuggestion.Value)
-                query = query.Where(e => e.SuggestedPlantConfidence != null && e.SuggestedPlantConfidence != "NotFound");
-            else
-                query = query.Where(e => e.SuggestedPlantConfidence == null || e.SuggestedPlantConfidence == "NotFound");
-        }
-
-        if (!string.IsNullOrWhiteSpace(suggestionState))
-        {
-            var wanted = suggestionState.Trim().ToUpperInvariant();
-            var ids = suggestionStateById.Where(kv => kv.Value == wanted).Select(kv => kv.Key).ToList();
-            query = query.Where(e => ids.Contains(e.Id));
-        }
+        var query = dq.Query;
 
         var rows = await query
             .OrderBy(e => e.FullName)

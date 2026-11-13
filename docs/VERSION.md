@@ -2,7 +2,19 @@
 
 ## Current Version
 
-v2.250.0
+v2.251.0
+
+## [v2.251.0] - 2026-11-13
+
+### HR Directory "Mapeamento em lote" (bulk mapping workspace)
+
+MINOR, backend + frontend, **no migration, no configuration change**; for TEST validation, not for PROD in this step. New screen
+`/hr/directory/bulk-mapping` for team-level mapping of Innux employees (plant, department master, responsible) with a server-side
+preview before every write, selection across pages and filters, confirmation of ACTIONABLE plant suggestions only, explicit plant choice
+for multi-plant companies, fill-by-default with per-field overwrite, company-consistency of the final pair, 409 `STALE_SELECTION` and
+400 `BULK_MAPPING_BLOCKED` with nothing written. New endpoints `GET employees/ids`, `GET employees/innux-departments`,
+`POST employees/bulk-mapping/preview|apply`; extra filters on `GET employees`. New `HRBulkMappingPolicyTests`. See CHANGELOG and
+`docs/HR_DIRECTORY_BULK_MAPPING.md`.
 
 ## [v2.250.0] - 2026-11-13
 

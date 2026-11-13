@@ -4,7 +4,41 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.250.0
+v2.251.0
+
+## [v2.251.0] - 2026-11-13 — HR Directory "Mapeamento em lote": team-level mapping of Innux employees with server-side preview, stale-selection and company-consistency checks
+
+MINOR, backend + frontend, **no migration** (builds on the Phase 1 schema `20261105163725_AddHREmployeeSuggestionLookupScope`, already in
+TEST), **no configuration change**. DEV-verified on 2026-11-09 (`docs/HR_DIRECTORY_BULK_MAPPING.md` §6); for TEST validation. Not for PROD
+in this step. The DEV-only Primavera/Innux unlock and other local changes are **not** part of this release.
+
+- **Screen** `/hr/directory/bulk-mapping` (HR → Directório & Mapeamento → "Mapeamento em lote", `HRAdminRoute`): KPIs on the current
+  filter; filters by search, suggested Primavera company (APA / APS / Ambas / Sem sugestão), Innux department (exact), assigned plant
+  (incl. "Sem planta"), missing field and state; grid with per-row single edit; selection persisting across pages and filters
+  ("Selecionar página" / "Selecionar todos os N filtrados"); panel "Rever sugestões de planta" (confirm only ACTIONABLE suggestions;
+  explicit plant choice when the suggested company has several plants); panel "Atribuir equipa" (plant / department master / responsible,
+  department picker filtered by company, mixed-company conflict box with "Manter só APA/APS", per-field "Substituir" = overwrite, default
+  fill-empty-only); preview modal (current → proposed per field, "mantido", CHANGE / UNCHANGED / BLOCKED with reasons, conflicts with
+  "Remover da seleção e recalcular"; "Confirmar e gravar" only when nothing is blocked and something changes).
+- **API** (`IsAdminOrHR`, same data scope as the directory): `GET /api/hr/leave/employees` gains the filters `suggestedCompany`,
+  `innuxDepartmentExact`, `plantId=0`, `missingField=any` (contract otherwise unchanged); new `GET …/employees/ids` (light rows of every
+  employee matching the filters), `GET …/employees/innux-departments`, `POST …/employees/bulk-mapping/preview` (nothing written) and
+  `POST …/employees/bulk-mapping/apply` (one transaction, all-or-nothing; 409 `STALE_SELECTION` when the current values differ from the
+  previewed `expected[]`; 400 `BULK_MAPPING_BLOCKED` with the employees and reasons; 400 `PLANT_NOT_FOUND` / `DEPARTMENT_MASTER_NOT_FOUND` /
+  `MANAGER_NOT_FOUND` / `NO_CHANGES`). `HRLeaveController` became `partial` with the new endpoints in `HRLeaveController.BulkMapping.cs`;
+  the directory query was extracted into `BuildDirectoryQueryAsync` without changing the list contract.
+- **Rules** (`HRBulkMappingPolicy`, pure): fill-by-default / explicit overwrite per field; company consistency of the FINAL (plant,
+  department master) pair with the reasons `COMPANY_MISMATCH_EXISTING_PLANT`, `COMPANY_MISMATCH_EXISTING_DEPARTMENT`,
+  `COMPANY_MISMATCH_REQUESTED` (a legacy mismatch the plan does not touch stays allowed, as in the single save); suggestion confirmation
+  only for an ACTIONABLE suggestion with exactly one candidate plant (NEEDS_CHOICE / MANUAL / UNVERIFIED blocked with the reason; rows with
+  a plant unchanged). Any blocked row blocks the whole batch. Excel import and automatic department / manager inference remain a later phase.
+- **Tests.** New `HRBulkMappingPolicyTests` (fill-by-default, overwrite flags, unchanged / preserved, untouched fields, the three mismatch
+  reasons, legacy mismatch allowed, suggestion confirmation and its refusals, known modes). Endpoint behaviour verified in DEV (preview /
+  apply, 409 stale, 400 blocked with nothing written, 403 for non-HR roles). Known pre-existing failures, unchanged: backend
+  `PoDocumentSupersessionMigrationRehearsalTests…`; frontend source-level assertions in `requestWorkflowSnapshot.test.ts`,
+  `workspaceQuotationActions.test.ts`, `v2458ClassificationFlow.test.ts`.
+- Guided Tour impact: no HR tour exists (the directory itself has none); a tour for the new screen is deferred to the owner's decision,
+  as for the v2.249.9 Operations editors.
 
 ## [v2.250.0] - 2026-11-13 — Supplier account credit on P.O. groups, Stage 1 ("Créditos em conta corrente"): accounts and ledger on the supplier ficha, credit reservation in the P.O. wizards, Finance application and reversal, explorer totals per currency, read-only migration preflight
 

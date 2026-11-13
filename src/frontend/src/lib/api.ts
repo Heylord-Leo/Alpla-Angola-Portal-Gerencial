@@ -1288,6 +1288,34 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao processar atualização em massa.');
             return response.json();
         },
+        /** Light rows of EVERY employee matching the directory filters ("Selecionar todos os filtrados"). */
+        getEmployeeIds: async (params?: Record<string, string | number | boolean>): Promise<{ total: number; items: import('../types').HRDirectoryLightRow[] }> => {
+            const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/ids${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao selecionar os funcionários filtrados.');
+            return response.json();
+        },
+        getInnuxDepartments: async (): Promise<import('../types').HRInnuxDepartmentDto[]> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/innux-departments`);
+            if (!response.ok) return handleApiError(response, 'Falha ao carregar os departamentos Innux.');
+            return response.json();
+        },
+        /** Bulk mapping preview: exact employees and field changes; nothing is written. */
+        previewBulkMapping: async (plan: import('../types').HRBulkMappingPlanRequest): Promise<import('../types').HRBulkMappingPreviewResult> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/bulk-mapping/preview`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao pré-visualizar o mapeamento em lote.');
+            return response.json();
+        },
+        /** Bulk mapping apply: all-or-nothing; 409 STALE_SELECTION / 400 BULK_MAPPING_BLOCKED name the employees. */
+        applyBulkMapping: async (request: import('../types').HRBulkMappingApplyRequest): Promise<import('../types').HRBulkMappingApplyResult> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/employees/bulk-mapping/apply`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request)
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao gravar o mapeamento em lote.');
+            return response.json();
+        },
         getRecords: async (params?: Record<string, string | number>): Promise<any> => {
             const qs = params ? '?' + new URLSearchParams(params as any).toString() : '';
             const response = await apiFetch(`${API_BASE_URL}/api/hr/leave/records${qs}`);

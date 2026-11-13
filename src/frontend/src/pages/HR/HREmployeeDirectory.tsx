@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { Search, Save, Edit2, X, RefreshCw, AlertTriangle, Building, Users, Filter, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Search, Save, Edit2, X, RefreshCw, AlertTriangle, Building, Users, Filter, Sparkles, CheckCircle2, Layers } from 'lucide-react';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { HRActionModal, HRActionType } from '../../components/modals/HRActionModal';
@@ -511,6 +512,15 @@ export default function HREmployeeDirectory() {
                         Filtros
                         {hasActiveFilters && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#0ea5e9' }} />}
                     </button>
+                    <Link
+                        to="/hr/directory/bulk-mapping"
+                        data-testid="bulk-mapping-link"
+                        title="Rever e mapear funcionários por equipa, com pré-visualização antes de gravar"
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', border: '1px solid #0ea5e9', backgroundColor: '#f0f9ff', color: '#0284c7', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}
+                    >
+                        <Layers size={15} />
+                        Mapeamento em lote
+                    </Link>
                     <button 
                         onClick={() => setActionModal('SYNC_ALL')}
                         className="btn-primary"

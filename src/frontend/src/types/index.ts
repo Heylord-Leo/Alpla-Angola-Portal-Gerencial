@@ -1974,6 +1974,48 @@ export interface HRMappingContextDto {
 export type HRMappingState = 'COMPLETE' | 'PARTIAL' | 'UNMAPPED';
 export type HRSuggestionState = 'ACTIONABLE' | 'NEEDS_CHOICE' | 'MANUAL' | 'UNVERIFIED' | 'NONE';
 
+// ─── HR Directory bulk mapping ("Mapeamento em lote") ───
+export type HRBulkMappingMode = 'ASSIGN' | 'CONFIRM_SUGGESTIONS';
+export interface HRBulkMappingPlanRequest {
+    employeeIds: string[];
+    mode: HRBulkMappingMode;
+    plantId?: number | null;
+    departmentMasterId?: number | null;
+    managerUserId?: string | null;
+    overwritePlant?: boolean;
+    overwriteDepartment?: boolean;
+    overwriteManager?: boolean;
+}
+export interface HRBulkMappingExpectedState { employeeId: string; plantId: number | null; departmentMasterId: number | null; managerUserId: string | null; }
+export interface HRBulkMappingApplyRequest extends HRBulkMappingPlanRequest { expected: HRBulkMappingExpectedState[]; }
+export interface HRBulkMappingFieldValues {
+    plantId: number | null; plantName: string | null;
+    departmentMasterId: number | null; departmentMasterName: string | null;
+    managerUserId: string | null; managerName: string | null;
+}
+export interface HRBulkMappingPreviewRow {
+    employeeId: string; employeeCode: string; fullName: string; innuxDepartmentName: string | null;
+    suggestionState: HRSuggestionState; suggestedCompanyCode: string | null;
+    current: HRBulkMappingFieldValues; proposed: HRBulkMappingFieldValues;
+    changedFields: string[]; preservedFields: string[];
+    status: 'CHANGE' | 'UNCHANGED' | 'BLOCKED'; reasonCode: string | null; reason: string | null;
+}
+export interface HRBulkMappingConflict { code: string; message: string; employeeIds: string[]; count: number; }
+export interface HRBulkMappingPreviewResult {
+    mode: HRBulkMappingMode; selected: number; willChange: number; unchanged: number; blocked: number;
+    plantChanges: number; departmentChanges: number; managerChanges: number;
+    canApply: boolean; message: string | null;
+    rows: HRBulkMappingPreviewRow[]; conflicts: HRBulkMappingConflict[]; expected: HRBulkMappingExpectedState[];
+}
+export interface HRBulkMappingApplyResult { updated: number; unchanged: number; message: string; }
+/** Light directory row returned by GET employees/ids (select all filtered). */
+export interface HRDirectoryLightRow {
+    id: string; employeeCode: string; fullName: string;
+    plantId: number | null; plantCompanyCode: string | null; departmentMasterId: number | null; managerUserId: string | null;
+    mappingState: HRMappingState; suggestionState: HRSuggestionState; suggestedCompanyCode: string | null;
+}
+export interface HRInnuxDepartmentDto { name: string; total: number; withoutPlant: number; }
+
 // ─── Catalog Item Reconciliation Types ────────────────────────────────────────
 
 /** Internal status codes for catalog item reconciliation (English constants). */

@@ -221,6 +221,9 @@ const SyncWorkspace = React.lazy(() =>
 const HREmployeeDirectory = React.lazy(() =>
     import('./pages/HR/HREmployeeDirectory')
 );
+const HRBulkMappingPage = React.lazy(() =>
+    import('./pages/HR/HRBulkMappingPage')
+);
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, user } = useAuth();
@@ -368,6 +371,7 @@ function AppContent() {
                     <Route path="attendance" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRAttendanceCalendar /></Suspense></HRAdminRoute>} />
                     <Route path="schedules" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRScheduleExplorer /></Suspense></HRAdminRoute>} />
                     <Route path="directory" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HREmployeeDirectory /></Suspense></HRAdminRoute>} />
+                    <Route path="directory/bulk-mapping" element={<HRAdminRoute><Suspense fallback={<LoadingSkeleton />}><HRBulkMappingPage /></Suspense></HRAdminRoute>} />
                     
                     {/* Compatibility Redirects */}
                     <Route path="employees" element={<Navigate to="badges/employees" replace />} />
