@@ -70,7 +70,7 @@ public class DashboardV2Controller : BaseController
 
         var scoped = await GetScopedRequestsQuery();
         var service = new DashboardV2QueryService(_context);
-        var projection = new FinanceObligationSummaryProjection(_financeEligibility);
+        var projection = new FinanceObligationSummaryProjection(_financeEligibility, _context);
 
         var dto = await service.BuildFinanceSectionAsync(
             scoped, projection, isFinance, canSeeManagerial, DateTime.UtcNow.Date);

@@ -48,6 +48,12 @@ public static class FinancePaymentFlows
 {
     public const string Advance = "ADVANCE";
     public const string Standard = "STANDARD";
+    /// <summary>
+    /// Supplier account credit: the group's CURRENT stage owes no bank amount (full coverage, or the bank part
+    /// already settled) and a PLANNED SUPPLIER_CREDIT row is waiting for Finance — settled ONLY through
+    /// POST api/v1/finance/{id}/apply-credit; schedule / pay / confirm-advance refuse with 409 CREDIT_APPLICATION_REQUIRED.
+    /// </summary>
+    public const string Credit = "CREDIT";
 
     /// <summary>
     /// The single rule (used by the obligation projection AND the MarkAsPaid guard). A group's open

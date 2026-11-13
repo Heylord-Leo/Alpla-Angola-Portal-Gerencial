@@ -24,8 +24,15 @@ public class DashboardSummaryDto
     /// </summary>
     public int PoCorrectionsForMe { get; set; }
 
+    /// <summary>Legacy scalar: the single-currency total when exactly one currency is involved, otherwise the raw sum of every
+    /// bucket (kept for the home KPI, which already guards multi-currency with <see cref="FilteredCurrencyCodes"/>).</summary>
     public decimal FilteredTotal { get; set; }
     public List<string> FilteredCurrencyCodes { get; set; } = new();
+
+    /// <summary>Explorer "Total Filtrado": one total per currency over every request matching the active filters (all pages),
+    /// with the same amount / currency source rules as the rows; multi-currency requests contribute each component once
+    /// (RequestFilteredTotals). Empty when nothing matches.</summary>
+    public List<CurrencyAmountDto> FilteredTotalsByCurrency { get; set; } = new();
 
     // Trend & Growth (MoM)
     public decimal? FilteredTotalTrend { get; set; }

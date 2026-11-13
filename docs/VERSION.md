@@ -2,7 +2,20 @@
 
 ## Current Version
 
-v2.249.9
+v2.250.0
+
+## [v2.250.0] - 2026-11-13
+
+### Supplier account credit on P.O. groups — Stage 1 ("Créditos em conta corrente") and read-only migration preflight
+
+MINOR, backend + frontend, **one additive migration** `20261109150614_AddSupplierCreditAccounts` (not yet applied in
+`Portal-Gerencial-Test`: `Preflight TEST Migrations` → `Apply TEST Migrations` → `Deploy to TEST`). New key
+`SupplierCredit:NewReservationsEnabled`, committed default **false**; TEST activation is a server-side change of the preserved
+`appsettings.Test.json`; not for PROD in this step. Supplier credit accounts and ledger on the ficha (supplier × company × currency),
+credit reservation in the P.O. wizards (Pós-Pago / 100 % Antecipado, partial or full), Finance application / strict bank part / reversal of
+a full coverage by a different Finance user, cancellation release, explorer "Total Filtrado" per currency over the whole filtered scope,
+Portuguese credit-event labels, `scripts/db/preflight-migrations.ps1` + workflow `Preflight TEST Migrations (read-only)`. See CHANGELOG,
+`docs/SUPPLIER_CREDIT_PO_COVERAGE.md` and `docs/SUPPLIER_CREDIT_TEST_DEPLOYMENT_PLAN.md`.
 
 ## [v2.249.9] - 2026-11-06
 

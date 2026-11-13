@@ -272,6 +272,22 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 await HandlePaymentFanningOverridesAsync(recipients, evt, reqRef);
                 break;
 
+            // --- Supplier account credit: settlement by credit is NOT a cash payment (no Accounts Payable notice) ---
+            case WorkflowEventCodes.SupplierCreditApplied:
+                // Same audience as a payment: the requester and the department fan-out; plus the responsible Buyer.
+                await HandlePaymentFanningOverridesAsync(recipients, evt, reqRef);
+                await AddUserRecipientAsync(recipients, evt.BuyerId);
+                break;
+            case WorkflowEventCodes.SupplierCreditReversed:
+                // The responsible Buyer (a bank obligation was reopened on their P.O.) and plant-scoped Finance.
+                await AddUserRecipientAsync(recipients, evt.BuyerId, bypassSelfNotifyRule: true);
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId);
+                break;
+            case WorkflowEventCodes.SupplierCreditReleased:
+                // A hold was released outside the normal settlement: plant-scoped Finance is informed.
+                await AddPlantScopedFinanceRecipientsAsync(recipients, evt.PlantId, evt.CompanyId);
+                break;
+
             // --- Lifecycle: notify key stakeholders ---
             case WorkflowEventCodes.RequestCancelled:
                 await AddUserRecipientAsync(recipients, evt.RequesterId);
@@ -1802,6 +1818,42 @@ public class WorkflowNotificationOrchestrator : IWorkflowNotificationOrchestrato
                 EmailSubject = $"Pagamento Realizado — {reqRef}",
                 EmailHeadline = "Pagamento Realizado com Sucesso",
                 EmailBody = $"O pagamento para o pedido <b>{reqRef}</b>{reqContext} foi concluído pela equipa financeira."
+            };
+
+            case WorkflowEventCodes.SupplierCreditApplied: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Success,
+                InAppTitle = "Crédito em Conta Corrente Aplicado",
+                InAppMessage = $"O pedido {reqRef}{reqContext} foi liquidado (total ou parcialmente) com crédito em conta corrente do fornecedor.",
+                SendEmail = true,
+                EmailSubject = $"Crédito em Conta Corrente Aplicado — {reqRef}",
+                EmailHeadline = "Crédito em Conta Corrente Aplicado",
+                EmailBody = $"A equipa financeira aplicou crédito em conta corrente do fornecedor ao pedido <b>{reqRef}</b>{reqContext}. Este movimento não é um pagamento bancário."
+            };
+
+            case WorkflowEventCodes.SupplierCreditReversed: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Warning,
+                InAppTitle = "Crédito em Conta Corrente Revertido",
+                InAppMessage = $"O crédito aplicado ao pedido {reqRef}{reqContext} foi revertido; a obrigação bancária foi reaberta.",
+                SendEmail = true,
+                EmailSubject = $"Crédito em Conta Corrente Revertido — {reqRef}",
+                EmailHeadline = "Crédito em Conta Corrente Revertido",
+                EmailBody = $"A equipa financeira reverteu o crédito em conta corrente aplicado ao pedido <b>{reqRef}</b>{reqContext}. O saldo voltou à conta do fornecedor e a P.O. volta a ter pagamento bancário em aberto."
+            };
+
+            case WorkflowEventCodes.SupplierCreditReleased: return new EventConfig
+            {
+                Category = NotificationCategories.Payment,
+                NotificationType = NotificationTypes.Info,
+                InAppTitle = "Reserva de Crédito Libertada",
+                InAppMessage = $"A reserva de crédito em conta corrente do pedido {reqRef}{reqContext} foi libertada.",
+                SendEmail = false,
+                EmailSubject = $"Reserva de Crédito Libertada — {reqRef}",
+                EmailHeadline = "Reserva de Crédito Libertada",
+                EmailBody = $"A reserva de crédito em conta corrente do pedido <b>{reqRef}</b>{reqContext} foi libertada."
             };
 
             case WorkflowEventCodes.FinanceReturned: return new EventConfig

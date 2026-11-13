@@ -132,12 +132,17 @@ public sealed record GroupCompletionProjection
 public static class GroupCompletionProjector
 {
     /// <summary>Owed-money payment types: a pending row of these blocks completion. REFUND and
-    /// OTHER represent money coming back or annotations, never an outstanding obligation.</summary>
+    /// OTHER represent money coming back or annotations, never an outstanding obligation.
+    /// SUPPLIER_CREDIT is owed money settled by supplier account credit instead of cash: a PLANNED
+    /// credit row blocks completion exactly like a PLANNED advance, and its COMPLETED ActualPaidAmount
+    /// (the applied credit) counts towards the group total — so a partially credit-covered group is
+    /// paid in full only when both the cash and the credit are settled.</summary>
     private static readonly string[] OwedMoneyPaymentTypes =
     {
         RequestPayment.PaymentTypes.Advance,
         RequestPayment.PaymentTypes.FinalBalance,
-        RequestPayment.PaymentTypes.Regularization
+        RequestPayment.PaymentTypes.Regularization,
+        RequestPayment.PaymentTypes.SupplierCredit
     };
 
     /// <summary>Payment lifecycle states that mean money is still owed. SCHEDULED is never paid.</summary>

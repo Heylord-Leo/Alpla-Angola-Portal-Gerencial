@@ -158,6 +158,51 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         return actions;
     }
 
+    // Group statuses in which supplier credit may be applied to the CURRENT stage (stage 1: single stage).
+    private static readonly string[] CreditApplicableGroupStatuses =
+    {
+        RequestConstants.Statuses.PoIssued,
+        RequestConstants.Statuses.PaymentRequestSent,
+        RequestConstants.Statuses.PaymentScheduled,
+        RequestConstants.Statuses.AdvancePaymentRequired,
+        RequestConstants.Statuses.AdvancePaymentScheduled
+    };
+
+    // Group statuses in which an APPLIED credit may still be reversed (before any receiving evidence).
+    private static readonly string[] CreditReversibleGroupStatuses =
+    {
+        RequestConstants.Statuses.PaymentCompleted,
+        RequestConstants.Statuses.Paid,
+        RequestConstants.Statuses.WaitingSupplierDelivery,
+        RequestConstants.Statuses.AdvancePaymentCompleted
+    };
+
+    public IReadOnlyList<string> EvaluateGroupActions(string requestTypeCode, string requestStatusCode, string? groupStatus, FinanceGroupCreditFacts? credit)
+    {
+        var actions = EvaluateGroupActions(requestTypeCode, requestStatusCode, groupStatus).ToList();
+        if (credit == null || !credit.IsCreditTouched) return actions;
+
+        // Full coverage of the current stage: no bank row to schedule or pay — Finance applies the credit instead.
+        // The settlement endpoints enforce the same rule (409 CREDIT_APPLICATION_REQUIRED), so the queue never
+        // advertises an action the endpoint would refuse.
+        if (credit.HasPlannedCreditRow && !credit.HasPendingBankRow && groupStatus != null && CreditApplicableGroupStatuses.Contains(groupStatus))
+        {
+            actions.Remove(FinancePaymentActionCodes.Schedule);
+            actions.Remove(FinancePaymentActionCodes.Pay);
+            actions.Remove(FinancePaymentActionCodes.CancelSchedule);
+            actions.Add(FinancePaymentActionCodes.ApplyCredit);
+        }
+
+        // Reversal (D7, stage 1 = FULL_COVERAGE): credit applied, no cash row completed, no post-settlement evidence.
+        if (credit.ReservationStatus == SupplierCreditConstants.ReservationStatuses.Applied
+            && !credit.HasCompletedCashRow && !credit.HasPostSettlementEvidence
+            && groupStatus != null && CreditReversibleGroupStatuses.Contains(groupStatus))
+        {
+            actions.Add(FinancePaymentActionCodes.ReverseCredit);
+        }
+        return actions;
+    }
+
     public FinanceActionEligibilityResult Evaluate(FinanceEligibilityInput input)
     {
         var actions = new List<string>();
@@ -171,7 +216,7 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         var union = new HashSet<string>();
         foreach (var g in input.PoGroups)
         {
-            foreach (var a in EvaluateGroupActions(input.RequestTypeCode, input.RequestStatusCode, g.GroupStatus))
+            foreach (var a in EvaluateGroupActions(input.RequestTypeCode, input.RequestStatusCode, g.GroupStatus, g.Credit))
                 union.Add(a);
         }
 
@@ -207,6 +252,10 @@ public class FinancePaymentEligibilityService : IFinancePaymentEligibilityServic
         Emit(FinancePaymentActionCodes.Return, FinancePaymentUnavailableReasons.ParentStatusNotEligibleForReturn);
         Emit(FinancePaymentActionCodes.CancelSchedule, input.PoGroups.Count == 0
             ? FinancePaymentUnavailableReasons.NoPoGroup : FinancePaymentUnavailableReasons.NoGroupCurrentlyScheduled);
+
+        // Supplier account credit actions come straight from the per-group union (no unavailability reason is tracked for them).
+        if (union.Contains(FinancePaymentActionCodes.ApplyCredit)) actions.Add(FinancePaymentActionCodes.ApplyCredit);
+        if (union.Contains(FinancePaymentActionCodes.ReverseCredit)) actions.Add(FinancePaymentActionCodes.ReverseCredit);
 
         actions.Add(FinancePaymentActionCodes.AddNote);
 

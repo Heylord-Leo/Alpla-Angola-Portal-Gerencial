@@ -33,6 +33,11 @@ public static class WorkflowEventCodes
     public const string PoCorrectionCompleted = "PO_CORRECTION_COMPLETED";
     public const string PaymentScheduleCancelled = "PAYMENT_SCHEDULE_CANCELLED";
 
+    // --- Supplier account credit (never PaymentCompleted: credit is settlement, not cash) ---
+    public const string SupplierCreditApplied = "SUPPLIER_CREDIT_APPLIED";
+    public const string SupplierCreditReversed = "SUPPLIER_CREDIT_REVERSED";
+    public const string SupplierCreditReleased = "SUPPLIER_CREDIT_RELEASED";
+
     // --- Lifecycle ---
     public const string RequestCancelled = "REQUEST_CANCELLED";
     public const string RequestFinalized = "REQUEST_FINALIZED";

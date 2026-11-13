@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { FinanceHistoryItemDto, PagedResult } from '../../types';
+import { SUPPLIER_CREDIT_EVENT_LABELS } from '../../lib/workflowEventLabels';
 import { PageContainer } from '../../components/ui/PageContainer';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SearchFilterBar } from '../../components/ui/SearchFilterBar';
@@ -114,6 +115,13 @@ export default function FinanceHistory() {
             case 'PAYMENT_DIVERGENCE_DETECTED': return { label: 'Divergência', bg: '#fefce8', color: '#ca8a04', border: '#fde047' };
             case 'PAYMENT_SCHEDULE_CANCELLED': return { label: 'Agendamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
             case 'ADVANCE_PAYMENT_SCHEDULE_CANCELLED': return { label: 'Adiantamento Cancelado', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
+            // Supplier account credit (settlement by credit — never "Pago"/cash)
+            // Labels shared with the request page and the Print View (lib/workflowEventLabels).
+            case 'SUPPLIER_CREDIT_RESERVED': return { label: SUPPLIER_CREDIT_EVENT_LABELS.SUPPLIER_CREDIT_RESERVED, bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' };
+            case 'SUPPLIER_CREDIT_RESERVATION_CHANGED': return { label: SUPPLIER_CREDIT_EVENT_LABELS.SUPPLIER_CREDIT_RESERVATION_CHANGED, bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' };
+            case 'SUPPLIER_CREDIT_RELEASED': return { label: SUPPLIER_CREDIT_EVENT_LABELS.SUPPLIER_CREDIT_RELEASED, bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
+            case 'SUPPLIER_CREDIT_APPLIED': return { label: SUPPLIER_CREDIT_EVENT_LABELS.SUPPLIER_CREDIT_APPLIED, bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' };
+            case 'SUPPLIER_CREDIT_REVERSED': return { label: SUPPLIER_CREDIT_EVENT_LABELS.SUPPLIER_CREDIT_REVERSED, bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };
             // Phase 1 P.O. cancellation / return to quotation
             case 'PO_GROUP_CANCELLED': return { label: 'P.O. cancelada', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
             case 'PO_GROUP_ITEMS_RELEASED': return { label: 'Itens devolvidos à cotação', bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' };

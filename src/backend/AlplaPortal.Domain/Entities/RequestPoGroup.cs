@@ -81,6 +81,20 @@ public class RequestPoGroup
     /// <summary>The cancellation record when this group was cancelled after final approval (phase 1); null otherwise.</summary>
     public RequestPoGroupCancellation? Cancellation { get; set; }
 
+    // ── Supplier account credit ("Créditos em conta corrente") ──
+    /// <summary>
+    /// C — the live credit coverage reserved for this group (0 when none). Written only by RegisterPo
+    /// (reserve / change / remove), the cancellation release, the release endpoint and the Finance
+    /// reversal. The bank amount owed is always TotalAmount − CreditCoverageAmount.
+    /// </summary>
+    public decimal CreditCoverageAmount { get; set; }
+
+    /// <summary>
+    /// Pointer to the LATEST credit reservation of this group (kept after release/reversal, so the group
+    /// stays "credit-touched" and the strict settlement rules keep applying). Null = never used credit.
+    /// </summary>
+    public Guid? SupplierCreditReservationId { get; set; }
+
     // ── Concurrency (Post-Payment Completion Workflow — Release 1 foundation) ──
     /// <summary>
     /// SQL Server rowversion. Guards the parallel post-payment dimensions: Operational Receipt,

@@ -18,6 +18,8 @@ import {
     useSuggestedPoNumber, clearExtractedNumber, numberDecisionPending, keepCurrentPoNumber, describePoNumberDivergence, withNumberDivergence,
 } from '../lib/poDocumentIdentification';
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
+import { SupplierCreditCoverageBlock, EMPTY_CREDIT_DECISION, type SupplierCreditDecision } from './po/SupplierCreditCoverageBlock';
+import { describeAdvanceObligation, resolveDecisionCoverage } from '../lib/advanceObligationNotice';
 import { describeDivergenceControls } from '../lib/poDocumentIdentification';
 import { resolveOcrPaymentConditionProposal } from '../lib/poPaymentCondition';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
@@ -93,10 +95,13 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
     const [ocrDetectedPaymentCondition, setOcrDetectedPaymentCondition] = useState<string | null>(null);
     /** v2.249.6 — the document's payment-terms text when the extraction's proposal was NOT applied (shown under the selector). */
     const [paymentConditionHint, setPaymentConditionHint] = useState<string | null>(null);
+    // Supplier account credit — existing hold (keep / change / remove) or a new reservation on the corrected P.O.
+    const [creditDecision, setCreditDecision] = useState<SupplierCreditDecision>(EMPTY_CREDIT_DECISION);
 
     // Load request details on open
     useEffect(() => {
         if (!show) {
+            setCreditDecision(EMPTY_CREDIT_DECISION);
             setLoading(true);
             setRequestData(null);
             setReturnReason('');
@@ -368,6 +373,7 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
         const submission = {
             requestId, poGroupId, detailsUnavailable, groupMissing, file, comment, ocrResult: reviewMismatches, overrideConfirmed,
             paymentCondition, advancePercent, paymentConditionSource, justification,
+            supplierCredit: creditDecision,
             previousPoNumberReuseComment: previousPoReuse ? reuseComment : undefined,
             skipUpload: reuseUpload,
             uploadedAttachmentId: reuseUpload ? uploadedAttachmentIdRef.current : null,
@@ -953,12 +959,22 @@ export function CorrectPoModal({ show, requestId, poGroupId, onClose, onSuccess 
                                     )}
 
                                     {paymentCondition === 'ADVANCE_FULL' && (
-                                        <div style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <AlertTriangle size={14} />
-                                            O valor total de {formatCurrencyAO(totalAmount)} {currencyCode} será exigido como adiantamento.
+                                        // Total advance obligation · credit coverage (Manter / Alterar / Remover) · actual bank advance.
+                                        <div data-testid="advance-full-notice" style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                                            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                                            <span>{describeAdvanceObligation(totalAmount, resolveDecisionCoverage(creditDecision), currencyCode).text}</span>
                                         </div>
                                     )}
                                 </div>
+
+                                {/* ── Supplier account credit — existing hold: Manter / Alterar / Remover; otherwise a new reservation (flag permitting) ── */}
+                                {poGroupId && (paymentCondition || selectedGroup?.supplierCredit) && (
+                                    <SupplierCreditCoverageBlock
+                                        requestId={requestId} poGroupId={poGroupId} paymentCondition={paymentCondition}
+                                        totalAmount={totalAmount} currencyCode={currencyCode} mode="correct"
+                                        value={creditDecision} onChange={(next) => setCreditDecision(next)} disabled={processing}
+                                    />
+                                )}
                                 <div style={{ marginBottom: '32px' }}>
                                     <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                         Comentário {justification.required ? '(Obrigatório)' : '(opcional)'}

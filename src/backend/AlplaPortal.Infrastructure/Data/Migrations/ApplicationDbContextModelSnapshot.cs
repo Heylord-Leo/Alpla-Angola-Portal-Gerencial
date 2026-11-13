@@ -7531,6 +7531,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("ScheduledDateUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SettlementStage")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<Guid?>("SupplierCreditReservationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -7551,6 +7558,10 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("RequestPoGroupId");
 
                     b.HasIndex("ScheduledByUserId");
+
+                    b.HasIndex("SupplierCreditReservationId")
+                        .HasDatabaseName("IX_RequestPayments_SupplierCreditReservationId")
+                        .HasFilter("[SupplierCreditReservationId] IS NOT NULL");
 
                     b.HasIndex("RequestId", "PaymentType", "PaymentSequence")
                         .IsUnique()
@@ -7579,6 +7590,11 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("CreditCoverageAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<string>("CurrencyCode")
                         .HasMaxLength(10)
@@ -7687,6 +7703,9 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<Guid?>("SupplierCreditReservationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int?>("SupplierId")
                         .HasColumnType("int");
 
@@ -7719,6 +7738,10 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.HasIndex("PlantId");
 
                     b.HasIndex("RequestId");
+
+                    b.HasIndex("SupplierCreditReservationId")
+                        .HasDatabaseName("IX_RequestPoGroups_SupplierCreditReservationId")
+                        .HasFilter("[SupplierCreditReservationId] IS NOT NULL");
 
                     b.HasIndex("SupplierId");
 
@@ -8801,6 +8824,275 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                             PortalCode = "SUP-000002",
                             RegistrationStatus = "ACTIVE"
                         });
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ClosedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SupplierCreditAccounts_AccountNumber");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("SupplierId", "CompanyId", "CurrencyCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SupplierCreditAccounts_Supplier_Company_Currency");
+
+                    b.ToTable("SupplierCreditAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DocumentDateUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EntryType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("OriginPlantId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PurchaseOrderNumberSnapshot")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestNumberSnapshot")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReservationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("SignedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("IX_SupplierCreditEntries_AccountId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SupplierCreditEntries_IdempotencyKey")
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("RequestPoGroupId")
+                        .HasDatabaseName("IX_SupplierCreditEntries_RequestPoGroupId");
+
+                    b.HasIndex("ReservationId");
+
+                    b.ToTable("SupplierCreditEntries", (string)null);
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AdvanceAppliedEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AdvanceCreditAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("AppliedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("AppliedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("AppliedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BalanceAppliedEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("BalanceCreditAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ReleaseNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ReleaseReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime?>("ReleasedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ReleasedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("ReleasedHoldAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("ReopenedAdvancePaymentId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ReopenedBalancePaymentId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestPoGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ReservedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ReservedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReversalKind")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<string>("ReversalReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal?>("ReversedAppliedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("ReversedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ReversedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("SupersededByReservationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("IX_SupplierCreditReservations_AccountId");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("IX_SupplierCreditReservations_RequestId");
+
+                    b.HasIndex("RequestPoGroupId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_SupplierCreditReservations_LiveGroup")
+                        .HasFilter("[Status] IN ('RESERVED','PARTIALLY_APPLIED','APPLIED')");
+
+                    b.ToTable("SupplierCreditReservations", (string)null);
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierDocument", b =>
@@ -11117,6 +11409,62 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("DgApprover");
                 });
 
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditAccount", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditEntry", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.SupplierCreditAccount", "Account")
+                        .WithMany("Entries")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.SupplierCreditReservation", "Reservation")
+                        .WithMany()
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Reservation");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditReservation", b =>
+                {
+                    b.HasOne("AlplaPortal.Domain.Entities.SupplierCreditAccount", "Account")
+                        .WithMany("Reservations")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AlplaPortal.Domain.Entities.RequestPoGroup", "RequestPoGroup")
+                        .WithMany()
+                        .HasForeignKey("RequestPoGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("RequestPoGroup");
+                });
+
             modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierDocument", b =>
                 {
                     b.HasOne("AlplaPortal.Domain.Entities.Supplier", "Supplier")
@@ -11415,6 +11763,13 @@ namespace AlplaPortal.Infrastructure.Data.Migrations
                     b.Navigation("Documents");
 
                     b.Navigation("StatusHistories");
+                });
+
+            modelBuilder.Entity("AlplaPortal.Domain.Entities.SupplierCreditAccount", b =>
+                {
+                    b.Navigation("Entries");
+
+                    b.Navigation("Reservations");
                 });
 
             modelBuilder.Entity("AlplaPortal.Domain.Entities.User", b =>

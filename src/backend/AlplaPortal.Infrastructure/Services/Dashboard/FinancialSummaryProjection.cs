@@ -56,7 +56,7 @@ public sealed class FinancialSummaryProjection
     {
         // Materialize the canonical B3 finance obligation population ONCE; both finance categories
         // (Em processamento financeiro + Pago) derive from this single result — no duplicate sweep.
-        var financeObligations = (await new FinanceObligationSummaryProjection(_eligibility)
+        var financeObligations = (await new FinanceObligationSummaryProjection(_eligibility, _context)
             .BuildAsync(scoped, null, null, null, today)).Obligations;
 
         return new List<FinancialCategoryDto>

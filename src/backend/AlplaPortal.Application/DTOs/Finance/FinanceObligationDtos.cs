@@ -54,6 +54,19 @@ public class FinanceObligationDto
     public bool IsDueToday { get; set; }
     // Display
     public decimal ObligationAmount { get; set; }
+
+    // ── Supplier account credit (0 / null when the group never used credit) ──
+    /// <summary>C — live credit coverage reserved on the group.</summary>
+    public decimal CreditCoverageAmount { get; set; }
+    /// <summary>Credit already applied by Finance.</summary>
+    public decimal CreditAppliedAmount { get; set; }
+    /// <summary>Credit still on hold (reserved, not yet applied).</summary>
+    public decimal CreditReservedAmount { get; set; }
+    /// <summary>RESERVED | PARTIALLY_APPLIED | APPLIED | RELEASED | REVERSED of the latest reservation.</summary>
+    public string? CreditReservationStatus { get; set; }
+    public string? CreditAccountNumber { get; set; }
+    /// <summary>Bank amount still owed: group total − coverage − completed cash ("Valor a pagar").</summary>
+    public decimal BankPayableAmount { get; set; }
 }
 
 /// <summary>A Request as a visual container of one-or-more obligations (Option C).</summary>

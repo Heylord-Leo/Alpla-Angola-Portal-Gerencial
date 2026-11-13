@@ -19,6 +19,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
 import { formatCurrencyAO, getRequestGuidance, formatDateTimeAngola } from '../../lib/utils';
+import { resolveSupplierCreditEventLabel } from '../../lib/workflowEventLabels';
 import { CurrencyDto, LookupDto, RequestStatusHistoryDto, RequestAttachmentDto, RequestLineItemDto, SavedQuotationDto } from '../../types';
 import { RequestAttachments } from '../../components/RequestAttachments';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -935,8 +936,9 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                                     <div>
                                         <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '4px' }}>Ação / Novo Status</div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--color-primary)' }}>
-                                                {entry.actionTaken === 'CREATE' ? 'CRIAÇÃO' :
+                                            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--color-primary)' }} title={entry.actionTaken}>
+                                                {resolveSupplierCreditEventLabel(entry.actionTaken)?.toUpperCase() ??
+                                                (entry.actionTaken === 'CREATE' ? 'CRIAÇÃO' :
                                                     entry.actionTaken === 'UPDATE' ? 'ATUALIZAÇÃO' :
                                                         entry.actionTaken === 'SUBMIT' ? 'SUBMISSÃO' : 
                                                             entry.actionTaken === 'DOCUMENTO ADICIONADO' ? 'DOC. ANEXADO' :
@@ -944,7 +946,7 @@ export function RequestEdit({ requestId: inputRequestId, onClose: onDrawerClose 
                                                                     entry.actionTaken === 'ITEM_ADICIONADO' ? 'ITEM ADICIONADO' :
                                                                         entry.actionTaken === 'ITEM_ALTERADO' ? 'ITEM ALTERADO' :
                                                                             entry.actionTaken === 'ITEM_REMOVIDO' ? 'ITEM REMOVIDO' :
-                                                                                entry.actionTaken}
+                                                                                entry.actionTaken)}
                                             </span>
                                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-main)' }}>
                                                 ➡ {entry.newStatusName}

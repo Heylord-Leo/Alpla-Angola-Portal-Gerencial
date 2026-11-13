@@ -460,13 +460,16 @@ function CarouselCard({ order, onView, onDuplicate, onQuotationClick, onReceivin
                         fontWeight: 800,
                         letterSpacing: '0.02em',
                         margin: 0,
-                    }}>Valor ({order.currencyCode || 'AOA'})</p>
+                    }}>{order.hasMultipleCurrencies && order.amountsByCurrency?.length ? 'Valor (por moeda)' : `Valor (${order.currencyCode || 'AOA'})`}</p>
                     <p style={{
                         fontWeight: 800,
                         color: 'var(--color-text-main)',
                         fontSize: '0.9rem',
                         margin: '2px 0 0',
-                    }}>{(order.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        whiteSpace: 'nowrap',
+                    }}>{order.hasMultipleCurrencies && order.amountsByCurrency?.length
+                        ? order.amountsByCurrency.map(a => <span key={a.currency} style={{ display: 'block' }}>{a.currency} {a.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>)
+                        : (order.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
             </div>
         </div>

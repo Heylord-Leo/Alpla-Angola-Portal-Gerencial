@@ -4,7 +4,61 @@ All notable changes to the Alpla Angola - Portal Gerencial project will be docum
 
 ## Current Version
 
-v2.249.9
+v2.250.0
+
+## [v2.250.0] - 2026-11-13 — Supplier account credit on P.O. groups, Stage 1 ("Créditos em conta corrente"): accounts and ledger on the supplier ficha, credit reservation in the P.O. wizards, Finance application and reversal, explorer totals per currency, read-only migration preflight
+
+MINOR, backend + frontend, **one additive migration** `20261109150614_AddSupplierCreditAccounts` (3 new tables `SupplierCreditAccounts`,
+`SupplierCreditReservations`, `SupplierCreditEntries`; 4 nullable / defaulted columns on `RequestPoGroups` and `RequestPayments`; no data
+migration) — **not yet applied in `Portal-Gerencial-Test`**: run `Preflight TEST Migrations` (new, read-only) and then `Apply TEST Migrations`
+before `Deploy to TEST`. New configuration key `SupplierCredit:NewReservationsEnabled`, **committed default `false`** (TEST activation is a
+server-side change of the preserved `appsettings.Test.json`; PROD stays `false`). Not for PROD in this step. DEV validation (two rounds,
+accepted by the owner on 2026-11-13) and the TEST plan: `docs/SUPPLIER_CREDIT_PO_COVERAGE.md` (§10), `docs/SUPPLIER_CREDIT_TEST_DEPLOYMENT_PLAN.md`.
+
+- **Supplier ficha — "Conta corrente de crédito".** One account per supplier × buying company × currency (Viana 1 and Viana 2 share the
+  AlplaPLASTICO account; AlplaSOPRO has its own); `CCS-nnnnnn` numbers from `SystemCounters`; append-only ledger (`CREDIT_IN`,
+  `ADJUSTMENT_IN` / `ADJUSTMENT_OUT` with mandatory reference and justification, `APPLICATION`, `REVERSAL`); balance, reserved and
+  available are always derived (`SupplierCreditPolicy`). Purchasing (`Contracts`) manages; Finance, Local Manager and the request-scoped
+  Buyer read only (`SupplierCapabilityEvaluator`). Endpoints `GET/POST api/v1/lookups/suppliers/{id}/credit-accounts[/{accountId}/entries|/movements]`.
+- **P.O. wizards (registration and correction).** "Utilizar crédito em conta corrente nesta P.O" for QUOTATION requests with Pós-Pago or
+  100 % Antecipado terms: partial or full coverage, near-full normalisation, a hold on the account (never a ledger movement), owed rows
+  `SUPPLIER_CREDIT` + the exact bank part; correction decisions Manter / Alterar / Remover; responsible-Buyer rule enforced server-side
+  (`PoGroupBuyerAuthorization`, 403 `NOT_RESPONSIBLE_BUYER`); insufficient balance → 409 `INSUFFICIENT_SUPPLIER_CREDIT` with nothing
+  written; `GET …/po-groups/{groupId}/credit-eligibility`; `POST …/credit-reservation/release` for a parked group. The 100 % Antecipado
+  notice states the total advance, the credit coverage and the real bank advance.
+- **Finance.** Queue chip "Crédito reservado / integral / aplicado" with tooltip Valor da P.O · Crédito · Pago por banco · Saldo pendente
+  (banco); `POST api/v1/finance/{id}/apply-credit` settles a fully covered group (Pós-Pago → PAYMENT_COMPLETED, 100 % Antecipado →
+  WAITING_SUPPLIER_DELIVERY) exactly once (idempotency key + filtered unique index); `schedule` / `pay` / `b2p/*` refuse a fully covered
+  group with 409 `CREDIT_APPLICATION_REQUIRED`; a partial coverage is settled by paying **exactly** the bank part (400
+  `PAYMENT_AMOUNT_MISMATCH` otherwise) and the credit is applied atomically; `POST api/v1/finance/{id}/reverse-credit` (D7) reverses a
+  FULL_COVERAGE application by a **different** active, plant-scoped Finance user before any receiving / invoice / reconciliation
+  evidence and reopens the bank obligation; partial-coverage reversal is 409 `CREDIT_REVERSAL_PARTIAL_UNSUPPORTED` (Stage 2). Group
+  cancellation releases a hold (no ledger entry). Legacy scalar settlement endpoints refuse credit-touched requests (409). Modals show
+  the obligation's own currency. Finanças → Histórico, the request history and the Print View label the five `SUPPLIER_CREDIT_*` events in
+  Portuguese (codes preserved). Workflow events `SupplierCreditReserved / Applied / Reversed / Released` notify Finance and AP recipients
+  through the existing e-mail policy (TEST redirection applies).
+- **Request explorer.** Rows show the approved currency (a candidate-based approval in RND no longer printed as AOA); multi-currency
+  approvals print one line per currency; **"Total Filtrado" is one total per currency over the whole filtered scope** (all pages),
+  computed in the database by `RequestFilteredTotals` (selected quotation joined, never a subquery inside `SUM` — the SQL Server error 130
+  found in DEV is covered by an executed LocalDB regression); cancelled / rejected requests contribute nothing; a failed load shows
+  "Falha ao carregar os pedidos" with "Tentar novamente". The settled 100 % Antecipado lot shows Pagamento completed and only
+  Recebimento / Execução current. The home "vs mês anterior" trend keeps its previous amount rule (unchanged).
+- **Operations — read-only migration preflight.** `scripts/db/preflight-migrations.ps1` and the workflow `Preflight TEST Migrations
+  (read-only)`: assert the exact database identity, that `__EFMigrationsHistory` is an exact prefix of the repository list, and that the
+  pending set equals the owner-typed list; SELECT only, nothing written. To be dispatched before `Apply TEST Migrations`.
+- **Tests.** Backend: `SupplierCreditPolicyTests`, `SupplierCreditSettlementServiceTests`, `SupplierCreditWorkflowEndpointTests`,
+  `SupplierCreditStage1ClosureEndpointTests`, `FinanceSupplierCreditEligibilityAndProjectionTests`, `RequestsExplorerFilteredTotalsTests`,
+  `RequestLotTimelineBuilderTests` (+4) and the LocalDB-executed `SupplierCreditRelationalTests` (lock path, concurrent reservations,
+  concurrent registrations of one group, concurrent applications + idempotency index, account isolation) and
+  `RequestsExplorerFilteredTotalsRelationalTests`. Frontend: `advanceObligationNotice.test.ts`, `workflowEventLabels.test.ts`,
+  `requestsFilteredTotals.test.ts`, `financePaymentsView.test.mjs` (+6). Known pre-existing failures, unchanged by this release:
+  backend `PoDocumentSupersessionMigrationRehearsalTests.Applying_the_migration_to_a_pre_migration_database…` (stale newest-migration
+  expectation); frontend source-level assertions in `requestWorkflowSnapshot.test.ts`, `workspaceQuotationActions.test.ts`,
+  `v2458ClassificationFlow.test.ts`.
+- **Rollback.** Schema additive; the application is rolled back by restoring the preserved file backup of the previous deploy after the
+  synthetic credit movements are released / reversed / cancelled; a settled partial coverage can only be removed by restoring the
+  pre-smoke database backup (plan §6). `Down` is never run.
+- Guided Tour impact: existing tour reviewed, no changes needed (no tour covers the supplier ficha credit section or the Finance queue).
 
 ## [v2.249.9] - 2026-11-06 — Viana 3 Production Monitor (public TV screens, layout editor, machine-card design editor) and HR Directory mapping Phase 1 (mapping state, fail-closed plant suggestion, company consistency)
 

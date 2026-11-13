@@ -60,6 +60,8 @@ public sealed class SupplierCapabilityEvaluator : ISupplierCapabilityEvaluator
                 CanUploadDocuments = true, CanDeleteDocuments = true,
                 CanEditGeneralIdentity = true, CanEditTaxLegal = true, CanEditBanking = true, CanEditCommercialTerms = true,
                 CanChangeStatus = true, CanSubmitForApproval = true,
+                // Supplier account credit: Purchasing (Contracts) manages; Finance (without Contracts) reads only.
+                CanViewSupplierCredit = true, CanManageSupplierCredit = Has(RoleConstants.Contracts),
             };
 
         if (localManager)
@@ -70,6 +72,7 @@ public sealed class SupplierCapabilityEvaluator : ISupplierCapabilityEvaluator
                 CanUploadDocuments = true, CanDeleteDocuments = true,
                 CanEditGeneralIdentity = true, CanEditTaxLegal = true, CanEditBanking = true, CanEditCommercialTerms = true,
                 CanChangeStatus = false, CanSubmitForApproval = true,
+                CanViewSupplierCredit = true, CanManageSupplierCredit = false,
             };
 
         if (buyerOperational)
@@ -81,6 +84,7 @@ public sealed class SupplierCapabilityEvaluator : ISupplierCapabilityEvaluator
                 CanDeleteDocuments = false,  // …but NOT delete them (approved decision).
                 CanSubmitForApproval = false, // Buyer may NOT submit for approval (approved decision).
                 // identity / tax / banking / commercial / status / approve / reject all remain FALSE.
+                CanViewSupplierCredit = true, CanManageSupplierCredit = false, // read-only view of the credit the Buyer may reserve
             };
 
         // Any other authenticated role (or a Buyer not involved with this supplier) gets no access.
@@ -114,5 +118,6 @@ public sealed class SupplierCapabilityEvaluator : ISupplierCapabilityEvaluator
         CanEditGeneralIdentity = true, CanEditTaxLegal = true, CanEditBanking = true, CanEditCommercialTerms = true,
         CanUploadDocuments = true, CanDeleteDocuments = true,
         CanChangeStatus = true, CanSubmitForApproval = true, CanApprove = true, CanReject = true,
+        CanViewSupplierCredit = true, CanManageSupplierCredit = true,
     };
 }

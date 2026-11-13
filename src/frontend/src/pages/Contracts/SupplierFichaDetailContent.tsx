@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Pencil, Save, Download, Trash2, RefreshCw, AlertTriangle, CheckCircle, Clock, ArrowLeft } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Feedback, FeedbackType } from '../../components/ui/Feedback';
+import SupplierCreditSection from './SupplierCreditSection';
 import {
   SupplierFichaCapabilities, readCapabilities, fieldEditability, isFichaDirty,
 } from './supplierFichaContent';
@@ -690,6 +691,9 @@ const SupplierFichaDetailContent: React.FC<SupplierFichaDetailContentProps> = ({
             <p className="ficha-notes-text">{ficha.notes || 'Sem observações.'}</p>
           )}
         </div>
+
+        {/* Supplier account credit ("Créditos em conta corrente") — visible to every ficha viewer; writes for Purchasing only (backend capability). */}
+        <SupplierCreditSection supplierId={supplierId} onToast={showToast} />
 
         {/* Documents Section */}
         <div className="ficha-section ficha-section--full ficha-section--docs">

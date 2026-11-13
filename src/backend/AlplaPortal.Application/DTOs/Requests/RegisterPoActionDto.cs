@@ -57,4 +57,12 @@ public class RegisterPoActionDto
     public bool DocumentTypeConfirmed { get; set; }
     /// <summary>EXTRACTED | MANUAL | CURRENT — audit only (how the submitted number was obtained).</summary>
     public string? PurchaseOrderNumberSource { get; set; }
+
+    // ── Supplier account credit ("Utilizar crédito em conta corrente") — separate from the payment condition ──
+    /// <summary>First registration: reserve supplier account credit on this group (stage 1: Pós-Pago / 100 % Antecipado).</summary>
+    public bool UseSupplierCredit { get; set; }
+    /// <summary>Requested coverage (0 &lt; amount ≤ group total). Near-full amounts normalise to full coverage when the account allows.</summary>
+    public decimal? SupplierCreditAmount { get; set; }
+    /// <summary>Correction with an existing hold: KEEP (default) | CHANGE (with SupplierCreditAmount) | REMOVE.</summary>
+    public string? SupplierCreditCorrectionAction { get; set; }
 }

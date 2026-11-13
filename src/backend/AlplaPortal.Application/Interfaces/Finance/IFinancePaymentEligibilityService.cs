@@ -52,6 +52,14 @@ public interface IFinancePaymentEligibilityService
     IReadOnlyList<string> EvaluateGroupActions(string requestTypeCode, string requestStatusCode, string? groupStatus);
 
     /// <summary>
+    /// Credit-aware per-group actions (supplier account credit). Same status rules as the plain overload, then:
+    /// a group whose current stage owes NO bank amount and holds a PLANNED SUPPLIER_CREDIT row loses SCHEDULE / PAY
+    /// and gains APPLY_CREDIT; a group whose credit is APPLIED with no completed cash row and no post-settlement
+    /// evidence gains REVERSE_CREDIT (stage 1: full coverage only). Null facts = the plain overload.
+    /// </summary>
+    IReadOnlyList<string> EvaluateGroupActions(string requestTypeCode, string requestStatusCode, string? groupStatus, FinanceGroupCreditFacts? credit);
+
+    /// <summary>
     /// Mirrors FinanceController.CancelSchedule's guard exactly. Eligible only for a group whose
     /// OWN status is currently PAYMENT_SCHEDULED or ADVANCE_PAYMENT_SCHEDULED — never derived from
     /// the parent request status. No type-branching is needed: unlike CanSchedule's legacy-PENDING
@@ -66,6 +74,26 @@ public class FinancePoGroupEligibilityInput
 {
     public System.Guid GroupId { get; init; }
     public string GroupStatus { get; init; } = string.Empty;
+    /// <summary>Supplier account credit facts of the group (null = never used credit).</summary>
+    public FinanceGroupCreditFacts? Credit { get; init; }
+}
+
+/// <summary>
+/// The supplier-credit facts of ONE group that decide its Finance actions, read from the group's own rows (never a
+/// sibling's): credit-touched = a reservation pointer exists; whether a PLANNED SUPPLIER_CREDIT row waits for Finance;
+/// whether a PLANNED / SCHEDULED bank row (ADVANCE / FINAL_BALANCE) still exists for the current stage; the live
+/// reservation status; whether any cash row COMPLETED; whether post-settlement evidence exists (receiving / invoice /
+/// receipt — reversal blocked).
+/// </summary>
+public class FinanceGroupCreditFacts
+{
+    public bool IsCreditTouched { get; init; }
+    public decimal CreditCoverageAmount { get; init; }
+    public bool HasPlannedCreditRow { get; init; }
+    public bool HasPendingBankRow { get; init; }
+    public string? ReservationStatus { get; init; }
+    public bool HasCompletedCashRow { get; init; }
+    public bool HasPostSettlementEvidence { get; init; }
 }
 
 /// <summary>
@@ -108,6 +136,10 @@ public static class FinancePaymentActionCodes
     public const string AddNote = "ADD_NOTE";
     public const string AddProof = "ADD_PROOF";
     public const string CancelSchedule = "CANCEL_SCHEDULE";
+    /// <summary>Supplier account credit — POST api/v1/finance/{id}/apply-credit.</summary>
+    public const string ApplyCredit = "APPLY_CREDIT";
+    /// <summary>Supplier account credit — POST api/v1/finance/{id}/reverse-credit.</summary>
+    public const string ReverseCredit = "REVERSE_CREDIT";
 }
 
 /// <summary>Internal-only reason codes explaining why an action was omitted from AvailableFinanceActions.</summary>

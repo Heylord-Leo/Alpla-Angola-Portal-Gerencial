@@ -769,7 +769,9 @@ export const api = {
             if (!response.ok) return handleApiError(response, 'Falha ao solicitar ajuste no pedido (Aprovação Final).');
             return response.json();
         },
-        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string, poGroupId?: string, purchaseOrderNumber?: string, extractedSupplierName?: string, extractedTotalAmount?: number, extractedCurrencyCode?: string, overrideDuplicateConfirmed?: boolean, duplicateOverrideComment?: string, /** D15: the replacement P.O. intentionally reuses the number of a previous CANCELLED P.O. (400 PREVIOUS_PO_NUMBER_REUSED otherwise). */ previousPoNumberReuseConfirmed?: boolean, previousPoNumberReuseComment?: string }): Promise<{ message: string; statusCode: string }> => {
+        registerPo: async (id: string, payload: { comment?: string, hasMismatches?: boolean, overrideConfirmed?: boolean, mismatchDetails?: string, paymentConditionCode?: string, advancePaymentPercent?: number, paymentConditionSource?: string, poGroupId?: string, purchaseOrderNumber?: string, extractedSupplierName?: string, extractedTotalAmount?: number, extractedCurrencyCode?: string, overrideDuplicateConfirmed?: boolean, duplicateOverrideComment?: string, /** D15: the replacement P.O. intentionally reuses the number of a previous CANCELLED P.O. (400 PREVIOUS_PO_NUMBER_REUSED otherwise). */ previousPoNumberReuseConfirmed?: boolean, previousPoNumberReuseComment?: string,
+            /** Supplier account credit ("Utilizar crédito em conta corrente"): first registration. */ useSupplierCredit?: boolean, supplierCreditAmount?: number,
+            /** Correction with an existing hold: KEEP | CHANGE | REMOVE. */ supplierCreditCorrectionAction?: 'KEEP' | 'CHANGE' | 'REMOVE' }): Promise<{ message: string; statusCode: string }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/operational/register-po`, {
                 method: 'POST',
                 headers: { 
@@ -913,6 +915,23 @@ export const api = {
         },
 
         // ── Buy-to-Pay (Advance Payment Lifecycle) ──
+        /** Supplier account credit — what the P.O. wizard may offer for THIS group (flag, account, max coverage, current hold). */
+        getCreditEligibility: async (id: string, poGroupId: string, paymentConditionCode?: string): Promise<import('../types').SupplierCreditEligibilityDto> => {
+            const qs = paymentConditionCode ? `?paymentConditionCode=${encodeURIComponent(paymentConditionCode)}` : '';
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/po-groups/${poGroupId}/credit-eligibility${qs}`);
+            if (!response.ok) return handleApiError(response, 'Falha ao consultar crédito em conta corrente.');
+            return response.json();
+        },
+        /** Supplier account credit — release the unapplied hold of a group parked in WAITING_PO_CORRECTION / WAITING_PO. */
+        releaseCreditReservation: async (id: string, poGroupId: string, reason: string, expectedGroupRowVersion?: string | null): Promise<import('../types').SupplierCreditOperationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/po-groups/${poGroupId}/credit-reservation/release`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason, expectedGroupRowVersion: expectedGroupRowVersion ?? undefined }),
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao libertar a reserva de crédito.');
+            return response.json();
+        },
         scheduleAdvancePayment: async (id: string, payload: { requestPoGroupId: string, scheduledDate: string, comment?: string }): Promise<{ message: string; paymentId: number }> => {
             const response = await apiFetch(`${API_BASE_URL}/api/v1/requests/${id}/b2p/schedule-advance`, {
                 method: 'POST',
@@ -2012,6 +2031,31 @@ export const api = {
             if (!res.ok) return handleApiError(res, 'Falha ao devolver para reajuste (DG).');
             return res.json();
         },
+        // ─── Supplier account credit ("Créditos em conta corrente") ───
+        getSupplierCreditAccounts: async (supplierId: number): Promise<{ items: import('../types').SupplierCreditAccountDto[]; canManage: boolean }> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/credit-accounts`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar contas correntes de crédito.');
+            return res.json();
+        },
+        createSupplierCreditAccount: async (supplierId: number, data: { companyId: number; currencyCode: string; notes?: string }): Promise<import('../types').SupplierCreditAccountDto> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/credit-accounts`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao criar a conta corrente de crédito.');
+            return res.json();
+        },
+        addSupplierCreditEntry: async (supplierId: number, accountId: string, data: { entryType: string; amount: number; reference: string; reason: string; documentDateUtc?: string | null; clientKey?: string }): Promise<import('../types').SupplierCreditAccountDto> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/credit-accounts/${accountId}/entries`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+            });
+            if (!res.ok) return handleApiError(res, 'Falha ao registar o movimento de crédito.');
+            return res.json();
+        },
+        getSupplierCreditMovements: async (supplierId: number, accountId: string): Promise<import('../types').SupplierCreditMovementDto[]> => {
+            const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${supplierId}/credit-accounts/${accountId}/movements`);
+            if (!res.ok) return handleApiError(res, 'Falha ao carregar movimentos da conta corrente.');
+            return res.json();
+        },
         getSupplierCompleteness: async (id: number): Promise<any> => {
             const res = await apiFetch(`${API_BASE_URL}/api/v1/lookups/suppliers/${id}/completeness`);
             if (!res.ok) return handleApiError(res, 'Falha ao carregar checklist.');
@@ -2397,6 +2441,26 @@ export const api = {
                 body: JSON.stringify(payload),
             });
             if (!response.ok) return handleApiError(response, 'Não foi possível rejeitar a declaração.');
+            return response.json();
+        },
+        /** Supplier account credit — apply the reserved credit of a group whose current stage owes no bank part. */
+        applyCredit: async (id: string, requestPoGroupId: string, note?: string, stage?: string, expectedRowVersion?: string | null): Promise<import('../types').SupplierCreditOperationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/apply-credit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestPoGroupId, note, stage, expectedRowVersion: expectedRowVersion ?? undefined })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao aplicar o crédito em conta corrente.');
+            return response.json();
+        },
+        /** Supplier account credit — D7 reversal of an APPLIED credit (different Finance user, reason ≥ 20 chars). */
+        reverseCredit: async (id: string, requestPoGroupId: string, reason: string, expectedRowVersion?: string | null): Promise<import('../types').SupplierCreditOperationResultDto> => {
+            const response = await apiFetch(`${API_BASE_URL}/api/v1/finance/${id}/reverse-credit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestPoGroupId, reason, expectedRowVersion: expectedRowVersion ?? undefined })
+            });
+            if (!response.ok) return handleApiError(response, 'Falha ao reverter o crédito em conta corrente.');
             return response.json();
         },
         cancelSchedule: async (id: string, requestPoGroupId: string, reason: string): Promise<void> => {

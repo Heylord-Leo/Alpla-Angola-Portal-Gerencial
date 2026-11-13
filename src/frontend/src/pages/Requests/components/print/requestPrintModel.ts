@@ -4,6 +4,7 @@ import type {
 } from '../../../../types';
 import { formatCurrencyAO, formatCalendarDate, formatDate, formatDateTime } from '../../../../lib/utils';
 import { documentTypeLabel, isSelectableDocumentType } from '../../../../lib/sourceDocumentType';
+import { SUPPLIER_CREDIT_EVENT_LABELS } from '../../../../lib/workflowEventLabels';
 import { describeQuotationLifecycle } from '../../../../lib/quotationLifecycle';
 
 // v2.245.0 Request Print View — Phase 1. PURE mapping from the already-loaded RequestDetailsDto
@@ -69,6 +70,8 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   PO_CANCELLATION_REJECTED: 'Declaração da ECF rejeitada por Finanças',
   PO_CANCELLATION_NOTIFICATION_RESENT: 'Notificação de cancelamento reenviada',
   PO_NUMBER_REUSED_AFTER_CANCELLATION: 'Número de P.O. reutilizado após cancelamento',
+  // Supplier account credit (shared with the request page and Finanças → Histórico)
+  ...SUPPLIER_CREDIT_EVENT_LABELS,
   BATCH_CREATED: 'Lote de aprovação criado',
   BATCH_CANDIDATES_SUBMITTED: 'Candidatos submetidos',
   BATCH_AREA_APPROVED: 'Aprovação de área',

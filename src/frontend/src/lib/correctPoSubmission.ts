@@ -109,6 +109,8 @@ export interface CorrectPoSubmissionInput {
     duplicateOverrideComment?: string;
     /** The attachment id of the file already uploaded by a refused attempt (sent as poAttachmentId when the upload is skipped). */
     uploadedAttachmentId?: string | null;
+    /** Supplier account credit: the Buyer's decision on the corrected P.O. (existing hold keep / change / remove, or a new reservation). */
+    supplierCredit?: { useCredit: boolean; amount: number | null; correctionAction: 'KEEP' | 'CHANGE' | 'REMOVE' | null } | null;
 }
 
 export interface RegisterPoPayload {
@@ -131,6 +133,23 @@ export interface RegisterPoPayload {
     overrideDuplicateConfirmed?: boolean;
     duplicateOverrideComment?: string;
     poAttachmentId?: string;
+    // Supplier account credit
+    useSupplierCredit?: boolean;
+    supplierCreditAmount?: number;
+    supplierCreditCorrectionAction?: 'KEEP' | 'CHANGE' | 'REMOVE';
+}
+
+/** Supplier account credit — the payload fragment of the Buyer's decision (nothing when no decision was made). */
+export function buildSupplierCreditPayload(decision: CorrectPoSubmissionInput['supplierCredit']): Pick<RegisterPoPayload, 'useSupplierCredit' | 'supplierCreditAmount' | 'supplierCreditCorrectionAction'> {
+    if (!decision) return {};
+    if (decision.correctionAction) {
+        return {
+            supplierCreditCorrectionAction: decision.correctionAction,
+            ...(decision.correctionAction === 'CHANGE' && decision.amount != null ? { supplierCreditAmount: decision.amount } : {}),
+        };
+    }
+    if (decision.useCredit && decision.amount != null) return { useSupplierCredit: true, supplierCreditAmount: decision.amount };
+    return {};
 }
 
 export function validateCorrectPoSubmission(input: CorrectPoSubmissionInput): string | null {
@@ -181,6 +200,7 @@ export function buildRegisterPoPayload(input: CorrectPoSubmissionInput): Registe
         documentTypeConfirmed: !!input.documentTypeConfirmed,
         ...(input.overrideDuplicateConfirmed ? { overrideDuplicateConfirmed: true, duplicateOverrideComment: normalizeJustification(input.duplicateOverrideComment) } : {}),
         ...(input.uploadedAttachmentId ? { poAttachmentId: input.uploadedAttachmentId } : {}),
+        ...buildSupplierCreditPayload(input.supplierCredit),
     };
 }
 

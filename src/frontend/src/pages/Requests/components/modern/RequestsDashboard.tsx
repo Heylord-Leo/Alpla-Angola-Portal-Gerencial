@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, Pin, PinOff, ArrowUpRight } from 'lucide-react';
+import { Plus, Search, Filter, Pin, PinOff, ArrowUpRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../../../lib/api';
 import { RequestListItemDto, DashboardSummaryDto } from '../../../../types';
+import { formatFilteredTotalTokens } from '../../../../lib/requestsFilteredTotals';
 import { ParaMinhaAcaoV2 } from '../../../../components/ParaMinhaAcao/ParaMinhaAcaoV2';
 import { RequestsTableWidget } from './RequestsTableWidget';
 import { RequestDrawerPresentation } from './RequestDrawerPresentation';
@@ -19,6 +20,9 @@ export function RequestsDashboard() {
     // Core Data
     const [requests, setRequests] = useState<RequestListItemDto[]>([]);
     const [loading, setLoading] = useState(true);
+    // A failed GET /requests is a loading failure, never "Nenhum pedido encontrado": the empty-results message is reserved
+    // for a successful response with no matches, and the footer total shows no figure while the list is unavailable.
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -151,8 +155,13 @@ export function RequestsDashboard() {
                 setTotalCount((data as any).totalCount || 0);
             }
             if (summaryData) setSummary(summaryData);
-        } catch (err) {
+            setLoadError(null);
+        } catch (err: any) {
             console.error(err);
+            setRequests([]);
+            setTotalCount(0);
+            setSummary(null);
+            setLoadError(err?.message || 'Não foi possível carregar os pedidos.');
         } finally {
             setLoading(false);
         }
@@ -179,9 +188,20 @@ export function RequestsDashboard() {
         { id: 'PAYMENT', label: 'Pagamentos' },
     ];
 
-    const totalFilteredValue = requests
-        .filter(req => !['CANCELLED', 'REJECTED'].includes(req.statusCode))
-        .reduce((sum, req) => sum + (req.estimatedTotalAmount || 0), 0);
+    // "Total Filtrado": server totals over EVERY request matching the active filters (all pages), one per currency,
+    // with the row amount / currency rules (approved snapshot currency; multi-currency requests split per component;
+    // cancelled / rejected excluded). Recomputed with each loadData (filters, search, type tab) — never a page-only sum.
+    const filteredTotalTokens = loadError ? ['—'] : formatFilteredTotalTokens(summary?.filteredTotalsByCurrency);
+    const filteredTotalBlock = (
+        <div data-testid="requests-filtered-total" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: '10px', rowGap: '2px', maxWidth: 'min(70vw, 560px)' }}>
+            {filteredTotalTokens.map((token, i) => (
+                <span key={token} style={{ display: 'inline-flex', alignItems: 'baseline', gap: '10px', whiteSpace: 'nowrap', fontSize: filteredTotalTokens.length > 1 ? '1.05rem' : '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', fontVariantNumeric: 'tabular-nums' }}>
+                    {i > 0 && <span aria-hidden style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>·</span>}
+                    {token}
+                </span>
+            ))}
+        </div>
+    );
 
     const statusGroups = useMemo(() => {
         if (!lookups || !lookups.statuses) return undefined;
@@ -523,8 +543,22 @@ export function RequestsDashboard() {
                     </div>
                 )}
 
+                {/* Loading failure — distinct from "no matches"; retry re-runs the same filtered request */}
+                {loadError && !loading && (
+                    <div role="alert" data-testid="requests-load-error" style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', padding: '16px 20px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', borderRadius: 'var(--radius-lg)', color: '#b91c1c' }}>
+                        <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+                        <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, fontSize: '0.9rem' }}>Falha ao carregar os pedidos</div>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, opacity: 0.9, overflowWrap: 'anywhere' }}>{loadError}</div>
+                        </div>
+                        <button type="button" onClick={() => loadData()} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: 'var(--radius-md)', border: '1px solid #b91c1c', backgroundColor: '#fff', color: '#b91c1c', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', textTransform: 'uppercase' }}>
+                            <RefreshCw size={14} /> Tentar novamente
+                        </button>
+                    </div>
+                )}
+
                 {/* Table */}
-                <div data-tour="requests-table">
+                <div data-tour="requests-table" style={loadError ? { display: 'none' } : undefined}>
                 <RequestsTableWidget
                     requests={requests}
                     loading={loading}
@@ -555,9 +589,9 @@ export function RequestsDashboard() {
                             <div style={{ width: '40px', height: '40px', backgroundColor: '#ECFDF5', color: 'var(--color-status-emerald)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <ArrowUpRight size={20} />
                             </div>
-                            <div>
+                            <div style={{ minWidth: 0 }}>
                                 <p style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Total Filtrado</p>
-                                <p style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', margin: 0 }}>AOA {totalFilteredValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                {filteredTotalBlock}
                             </div>
                         </div>
                     </div>
@@ -586,9 +620,9 @@ export function RequestsDashboard() {
                                 <div style={{ width: '40px', height: '40px', backgroundColor: '#ECFDF5', color: 'var(--color-status-emerald)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <ArrowUpRight size={20} />
                                 </div>
-                                <div>
+                                <div style={{ minWidth: 0 }}>
                                     <p style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Total Filtrado</p>
-                                    <p style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', margin: 0 }}>AOA {totalFilteredValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    {filteredTotalBlock}
                                 </div>
                             </div>
                         </motion.div>

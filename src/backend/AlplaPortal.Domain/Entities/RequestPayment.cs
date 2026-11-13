@@ -74,6 +74,20 @@ public class RequestPayment
     // ── Notes ──
     public string? Notes { get; set; }
 
+    // ── Supplier account credit ──
+    /// <summary>
+    /// The credit reservation this row belongs to: set on SUPPLIER_CREDIT rows (the owed credit obligation
+    /// of a stage) and on the bank rows created beside them, so a reversal can find every row of the
+    /// reservation. Null for every pre-existing row.
+    /// </summary>
+    public Guid? SupplierCreditReservationId { get; set; }
+
+    /// <summary>
+    /// SINGLE | ADVANCE | BALANCE (SupplierCreditConstants.Stages) — which stage of the group's payment
+    /// schedule this owed row settles. Null for legacy rows created before supplier credit existed.
+    /// </summary>
+    public string? SettlementStage { get; set; }
+
     // ── Audit ──
     public Guid CreatedByUserId { get; set; }
     public User CreatedByUser { get; set; } = null!;
@@ -89,6 +103,13 @@ public class RequestPayment
         public const string Regularization = "REGULARIZATION";
         public const string Refund = "REFUND";
         public const string Other = "OTHER";
+        /// <summary>
+        /// Settlement of (part of) a group by supplier account credit. An OWED-MONEY row like ADVANCE /
+        /// FINAL_BALANCE for completion and reconciliation (PLANNED until Finance applies the credit,
+        /// then COMPLETED with ActualPaidAmount = applied amount), but NEVER cash: excluded from cash-flow,
+        /// AP e-mails, dashboard paid-cash and the Finance "Pagos" history.
+        /// </summary>
+        public const string SupplierCredit = "SUPPLIER_CREDIT";
     }
 
     public static class PaymentStatuses

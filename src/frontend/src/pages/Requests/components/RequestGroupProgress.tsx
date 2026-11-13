@@ -42,8 +42,12 @@ function buildStages(unit: WorkflowUnit): Stage[] {
         : unit.paymentState === 'SCHEDULED' || unit.paymentState === 'ADVANCE_IN_PROGRESS' ? 'current'
         : unit.paymentState === 'PENDING' && po === 'done' ? 'current'
         : 'pending';
+    // WAITING_SUPPLIER_DELIVERY is execution-phase work (the supplier owes delivery) — same semantics as the
+    // backend RequestLotTimelineBuilder; a settled 100 % Antecipado group then shows Pagamento done and
+    // Recebimento current, never two current stages.
     const receiving: StageState = unit.receivingState === 'COMPLETE' ? 'done'
         : unit.receivingState === 'IN_PROGRESS' ? 'current'
+        : unit.statusCode === 'WAITING_SUPPLIER_DELIVERY' ? 'current'
         : unit.receivingState === 'PENDING' && payment === 'done' ? 'current'
         : 'pending';
     const completion: StageState = unit.completionState === 'COMPLETE' ? 'done'

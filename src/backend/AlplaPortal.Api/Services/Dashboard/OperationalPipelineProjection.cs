@@ -190,7 +190,7 @@ public sealed class OperationalPipelineProjection
     // ── FINANÇAS: canonical eligibility ActionClass → flow position (no urgency, no money). ──
     private async Task<List<OperationalPipelineStageDto>> FinanceStagesAsync(IQueryable<Request> scoped, DateTime today)
     {
-        var built = await new FinanceObligationSummaryProjection(_eligibility).BuildAsync(scoped, null, null, null, today);
+        var built = await new FinanceObligationSummaryProjection(_eligibility, _context).BuildAsync(scoped, null, null, null, today);
 
         // Each obligation (one per non-cancelled group) has exactly one ActionClass → mutually exclusive.
         (int e, int r) Pos(string actionClass)

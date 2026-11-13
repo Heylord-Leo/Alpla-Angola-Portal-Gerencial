@@ -16,6 +16,8 @@ import {
 import { PoNumberFieldBlock, PoDocumentVerdictBlock } from './po/PoDocumentReviewBlocks';
 import { describeDivergenceControls, describePoNumberDivergence, withNumberDivergence } from '../lib/poDocumentIdentification';
 import { resolveOcrPaymentConditionProposal } from '../lib/poPaymentCondition';
+import { SupplierCreditCoverageBlock, EMPTY_CREDIT_DECISION, type SupplierCreditDecision } from './po/SupplierCreditCoverageBlock';
+import { describeAdvanceObligation, resolveDecisionCoverage } from '../lib/advanceObligationNotice';
 import { readUploadedAttachmentId } from '../lib/correctPoSubmission';
 import { cleanupTemporaryPoUpload } from '../lib/poEvidence';
 import { MIN_JUSTIFICATION_LENGTH } from '../lib/poGroupCancellation';
@@ -114,10 +116,13 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
     const [ocrDetectedPaymentCondition, setOcrDetectedPaymentCondition] = useState<string | null>(null);
     /** v2.249.6 — the document's payment-terms text when the extraction's proposal was NOT applied (shown under the selector). */
     const [paymentConditionHint, setPaymentConditionHint] = useState<string | null>(null);
+    // Supplier account credit ("Utilizar crédito em conta corrente") — separate from the payment condition; server re-validates.
+    const [creditDecision, setCreditDecision] = useState<SupplierCreditDecision>(EMPTY_CREDIT_DECISION);
 
     // Reset state on open/close
     useEffect(() => {
         if (!show) {
+            setCreditDecision(EMPTY_CREDIT_DECISION);
             setFile(null);
             setComment('');
             setOcrResult(null);
@@ -406,6 +411,8 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                 paymentConditionCode: paymentCondition,
                 advancePaymentPercent: paymentCondition === 'ADVANCE_PARTIAL' ? advancePercent : undefined,
                 paymentConditionSource: paymentConditionSource || 'USER_SELECTED',
+                // Supplier account credit: only when the Buyer ticked the option (amount validated server-side; near-full → full coverage).
+                ...(creditDecision.useCredit && creditDecision.amount != null ? { useSupplierCredit: true, supplierCreditAmount: creditDecision.amount } : {}),
                 purchaseOrderNumber: purchaseOrderNumber.trim(),
                 purchaseOrderNumberSource: poNumber.source,
                 extractedSupplierName: ocrResult?.extractedSupplier,
@@ -1110,12 +1117,22 @@ export function RegisterPoModal({ show, requestId, poGroupId, supplierId, reques
                             )}
 
                             {paymentCondition === 'ADVANCE_FULL' && (
-                                <div style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <AlertTriangle size={14} />
-                                    O valor total de {formatCurrencyAO(expectedTotalAmount)} {requestData.currencyCode} será exigido como adiantamento.
+                                // Total advance obligation · credit coverage · actual bank advance — consistent with the credit block below.
+                                <div data-testid="advance-full-notice" style={{ marginTop: '12px', fontSize: '0.8rem', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                                    <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <span>{describeAdvanceObligation(expectedTotalAmount, resolveDecisionCoverage(creditDecision), requestData.currencyCode).text}</span>
                                 </div>
                             )}
                         </div>
+
+                        {/* ── Supplier account credit — BELOW the payment condition, never a fourth condition (stage 1: Pós-Pago / 100% Antecipado) ── */}
+                        {poGroupId && paymentCondition && paymentCondition !== 'ADVANCE_PARTIAL' && (
+                            <SupplierCreditCoverageBlock
+                                requestId={requestId} poGroupId={poGroupId} paymentCondition={paymentCondition}
+                                totalAmount={expectedTotalAmount} currencyCode={requestData.currencyCode} mode="register"
+                                value={creditDecision} onChange={(next) => setCreditDecision(next)} disabled={processing}
+                            />
+                        )}
 
                         <div style={{ marginBottom: '32px' }}>
                             <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>

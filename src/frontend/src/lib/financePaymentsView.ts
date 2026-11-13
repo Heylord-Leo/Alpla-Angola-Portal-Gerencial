@@ -185,10 +185,10 @@ export function resolveNoteTooltip(container: { hasNotes?: boolean; noteCount?: 
     };
 }
 
-export type ObligationActionCode = 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE' | 'DETAILS';
+export type ObligationActionCode = 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE' | 'DETAILS' | 'APPLY_CREDIT' | 'REVERSE_CREDIT';
 export interface ObligationActionPlan {
     /** The single inline primary Finance mutation (or null when there is none, e.g. paid/WAITING_PO). */
-    primary: { action: 'SCHEDULE' | 'PAY'; label: string } | null;
+    primary: { action: 'SCHEDULE' | 'PAY' | 'APPLY_CREDIT'; label: string } | null;
     /** Kebab menu items, in the canonical order: Detalhes, Adicionar observação, secondary finance
      *  actions, correction/destructive last. */
     menu: ObligationActionCode[];
@@ -204,12 +204,16 @@ export function resolveObligationActionPlan(o: { groupStatusCode?: string | null
     const advance = isAdvanceObligation(o);
 
     let primary: ObligationActionPlan['primary'] = null;
-    if (acts.includes('SCHEDULE')) primary = { action: 'SCHEDULE', label: advance ? 'Agendar adiantamento' : 'Agendar pagamento' };
+    // Supplier account credit: a current stage owing no bank part is settled ONLY by applying the credit (server flow CREDIT).
+    if (acts.includes('APPLY_CREDIT') && !acts.includes('SCHEDULE') && !acts.includes('PAY')) primary = { action: 'APPLY_CREDIT', label: 'Aplicar crédito' };
+    else if (acts.includes('SCHEDULE')) primary = { action: 'SCHEDULE', label: advance ? 'Agendar adiantamento' : 'Agendar pagamento' };
     else if (acts.includes('PAY')) primary = { action: 'PAY', label: advance ? 'Pagar adiantamento' : 'Pagar' };
 
     const menu: ObligationActionCode[] = ['DETAILS', 'NOTE'];
     if (acts.includes('PAY') && primary?.action !== 'PAY') menu.push('PAY');   // Pagar available but not primary (PO_ISSUED / advance)
+    if (acts.includes('APPLY_CREDIT') && primary?.action !== 'APPLY_CREDIT') menu.push('APPLY_CREDIT');
     if (acts.includes('CANCEL_SCHEDULE')) menu.push('CANCEL_SCHEDULE');
+    if (acts.includes('REVERSE_CREDIT')) menu.push('REVERSE_CREDIT');          // D7 — Finance, different user, reason
     if (acts.includes('RETURN')) menu.push('RETURN');                          // correction — always last
     return { primary, menu };
 }
@@ -223,8 +227,43 @@ export function obligationActionLabel(code: ObligationActionCode, advance: boole
         case 'SCHEDULE': return advance ? 'Agendar adiantamento' : 'Agendar pagamento';
         case 'CANCEL_SCHEDULE': return 'Cancelar agendamento';
         case 'RETURN': return 'Devolver para ajuste';
+        case 'APPLY_CREDIT': return 'Aplicar crédito em conta corrente';
+        case 'REVERSE_CREDIT': return 'Reverter crédito aplicado';
     }
 }
+
+/**
+ * Supplier account credit — the "Valor da P.O · Crédito · banco" chip of an obligation row (null when the group never used credit).
+ *
+ * Bank figures (DEV round 2 closure, 2026-11-13 — label clarification only, no financial rule changed):
+ *  • `bankPayable` = the bank amount STILL OWED on the group (server `bankPayableAmount` = total − live coverage − completed cash;
+ *    0 once the bank part is paid, 0 for a full coverage). Printed as "Saldo pendente (banco)".
+ *  • `bankPaid` = the bank amount ALREADY PAID = total − live coverage − bankPayable (0 before any payment, 0 for a full
+ *    coverage; after a reversal the live coverage is 0 so the reopened obligation reports its own paid part). Printed as
+ *    "Pago por banco". Derived only when the server supplied `bankPayableAmount`; 0 otherwise.
+ *  • `noBankPart` = the live coverage equals the group total (full coverage): there is no bank instalment at all.
+ */
+export function resolveCreditChip(o: { groupAmount?: number | null; creditCoverageAmount?: number | null; creditAppliedAmount?: number | null; creditReservedAmount?: number | null; creditReservationStatus?: string | null; bankPayableAmount?: number | null; actionClass?: string | null }):
+    { coverage: number; applied: number; reserved: number; bankPayable: number; bankPaid: number; noBankPart: boolean; status: string; label: string } | null {
+    if (!o.creditReservationStatus && !(o.creditCoverageAmount && o.creditCoverageAmount > 0)) return null;
+    const total = o.groupAmount ?? 0;
+    const coverage = o.creditCoverageAmount ?? 0;
+    const applied = o.creditAppliedAmount ?? 0;
+    const reserved = o.creditReservedAmount ?? 0;
+    const status = o.creditReservationStatus ?? 'RESERVED';
+    const label = status === 'APPLIED' ? 'Crédito aplicado'
+        : status === 'PARTIALLY_APPLIED' ? 'Crédito parcialmente aplicado'
+        : status === 'REVERSED' ? 'Crédito revertido — saldo em aberto'
+        : status === 'RELEASED' ? 'Reserva de crédito libertada'
+        : (coverage > 0 && total > 0 && coverage >= total) ? 'Crédito integral' : 'Crédito reservado';
+    const hasServerBankPayable = typeof o.bankPayableAmount === 'number' && isFinite(o.bankPayableAmount);
+    const bankPayable = hasServerBankPayable ? Math.max(0, o.bankPayableAmount as number) : Math.max(0, total - coverage);
+    const bankPaid = hasServerBankPayable ? Math.max(0, round2(total - coverage - bankPayable)) : 0;
+    const noBankPart = coverage > 0 && total > 0 && coverage >= total;
+    return { coverage, applied, reserved, bankPayable, bankPaid, noBankPart, status, label };
+}
+
+function round2(v: number): number { return Math.round(v * 100) / 100; }
 
 /**
  * Visual flags for one Finance obligation row (Phase 4): paid/post-payment rows are de-emphasized

@@ -75,7 +75,13 @@ public class RequestListItemDto
     public string? SupplierPortalCode { get; set; }
 
     public decimal EstimatedTotalAmount { get; set; }
+    /// <summary>Currency of <see cref="EstimatedTotalAmount"/>: the approved snapshot currency when the amount is the
+    /// approved figure, otherwise the selected quotation / request currency.</summary>
     public string? CurrencyCode { get; set; }
+    /// <summary>True when the approved P.O. groups are in more than one currency; the scalar is then NOT a meaningful
+    /// figure and <see cref="AmountsByCurrency"/> carries one amount per currency (never summed together).</summary>
+    public bool HasMultipleCurrencies { get; set; }
+    public List<CurrencyAmountDto>? AmountsByCurrency { get; set; }
 
     // ── Authoritative "actionable amount" for the Approval Center queue (ApprovalQueueAmountResolver) ──
     // The single monetary rule used by the card, the queue-total KPI and value sort/filter. Resolved

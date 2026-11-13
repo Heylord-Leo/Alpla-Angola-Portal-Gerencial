@@ -401,6 +401,12 @@ public class RequestPoGroupConfiguration : IEntityTypeConfiguration<RequestPoGro
         builder.Property(g => g.ExpectedOperationInvoiceCurrency).HasMaxLength(10);
         builder.Property(g => g.ExpectedTotalJustification).HasMaxLength(2000);
 
+        // ── Supplier account credit: live coverage (0 = none) and pointer to the latest reservation ──
+        builder.Property(g => g.CreditCoverageAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+        builder.HasIndex(g => g.SupplierCreditReservationId)
+               .HasFilter("[SupplierCreditReservationId] IS NOT NULL")
+               .HasDatabaseName("IX_RequestPoGroups_SupplierCreditReservationId");
+
         builder.HasOne(g => g.Plant)
                .WithMany()
                .HasForeignKey(g => g.PlantId)

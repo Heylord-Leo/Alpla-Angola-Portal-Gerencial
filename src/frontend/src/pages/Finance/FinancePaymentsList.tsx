@@ -13,7 +13,9 @@ import { KPICard } from '../../components/ui/KPICard';
 import { KebabMenu, KebabOption } from '../../components/ui/KebabMenu';
 import { ModernTooltip } from '../../components/ui/ModernTooltip';
 import { RequestDrawerPresentation } from '../Requests/components/modern/RequestDrawerPresentation';
-import { isAdvanceObligation, resolveAttachmentUploadParams, resolveObligationRowFlags, resolveObligationActionPlan, obligationActionLabel, ObligationActionCode, FINANCE_DEFAULT_SORT, FINANCE_SORT_OPTIONS, FINANCE_CLEAR_KEYS, resolveNoteTooltip, countAdvancedFilters } from '../../lib/financePaymentsView';
+import { isAdvanceObligation, resolveAttachmentUploadParams, resolveObligationRowFlags, resolveObligationActionPlan, obligationActionLabel, ObligationActionCode, FINANCE_DEFAULT_SORT, FINANCE_SORT_OPTIONS, FINANCE_CLEAR_KEYS, resolveNoteTooltip, countAdvancedFilters, resolveCreditChip } from '../../lib/financePaymentsView';
+import { Wallet } from 'lucide-react';
+import './FinancePayments.css';
 
 // ── Card → filter mapping (work queues) ──
 type CardKey = 'needsScheduling' | 'needsPayment' | 'dueToday' | 'overdue' | 'paidWaitingReceiving';
@@ -50,7 +52,7 @@ export default function FinancePaymentsList() {
     const departmentId = searchParams.get('departmentId') ? parseInt(searchParams.get('departmentId')!) : undefined;
 
     const [drawerRequestId, setDrawerRequestId] = useState<string | null>(null);
-    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null; groupId: string | null; expectedAmount?: number; obligation?: FinanceObligationDto }>({ show: false, action: null, requestId: null, groupId: null });
+    const [actionModal, setActionModal] = useState<{ show: boolean; action: FinanceActionType; requestId: string | null; groupId: string | null; expectedAmount?: number; currencyCode?: string | null; obligation?: FinanceObligationDto }>({ show: false, action: null, requestId: null, groupId: null });
     const [processing, setProcessing] = useState(false);
     const [feedback, setFeedback] = useState<{ type: FeedbackType; message: string | null }>({ type: 'success', message: null });
     const [searchInput, setSearchInput] = useState(search || '');
@@ -132,9 +134,12 @@ export default function FinancePaymentsList() {
     // ── Action dispatcher — Detalhes opens the drawer; every mutation (incl. NOTE) opens the modal ──
     const onObligationAction = (o: FinanceObligationDto, code: ObligationActionCode) => {
         if (code === 'DETAILS') { setDrawerRequestId(o.requestId); return; }
-        const action = code as FinanceActionType; // 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE'
-        const expectedAmount = (o.plannedAmount && o.plannedAmount > 0 ? o.plannedAmount : o.groupAmount) || undefined;
-        setActionModal({ show: true, action, requestId: o.requestId, groupId: o.requestPoGroupId, expectedAmount, obligation: o });
+        const action = code as FinanceActionType; // 'SCHEDULE' | 'PAY' | 'CANCEL_SCHEDULE' | 'RETURN' | 'NOTE' | 'APPLY_CREDIT' | 'REVERSE_CREDIT'
+        // Supplier account credit: the expected cash of a credit-touched group is the bank part (server bankPayableAmount), never the total.
+        const creditTouched = !!o.creditReservationStatus || (o.creditCoverageAmount ?? 0) > 0;
+        const expectedAmount = (o.plannedAmount && o.plannedAmount > 0 ? o.plannedAmount : (creditTouched ? (o.bankPayableAmount ?? o.groupAmount) : o.groupAmount)) || undefined;
+        // The modal's expected amount is shown in the obligation's own currency (DEV round 1: a RND advance read "AOA").
+        setActionModal({ show: true, action, requestId: o.requestId, groupId: o.requestPoGroupId, expectedAmount, currencyCode: o.currencyCode, obligation: o });
         setFeedback({ type: 'success', message: null });
     };
 
@@ -171,6 +176,13 @@ export default function FinancePaymentsList() {
                 await api.finance.addNote(actionModal.requestId, payload.notes);
             } else if (action === 'CANCEL_SCHEDULE' && payload.notes) {
                 await api.finance.cancelSchedule(actionModal.requestId, actionModal.groupId!, payload.notes);
+            } else if (action === 'APPLY_CREDIT') {
+                // Supplier account credit — settlement by credit (server flow CREDIT); never a cash payment.
+                const result = await api.finance.applyCredit(actionModal.requestId, actionModal.groupId!, payload.notes || undefined);
+                setFeedback({ type: 'success', message: result?.message || 'Crédito em conta corrente aplicado.' });
+            } else if (action === 'REVERSE_CREDIT' && payload.notes) {
+                const result = await api.finance.reverseCredit(actionModal.requestId, actionModal.groupId!, payload.notes);
+                setFeedback({ type: 'success', message: result?.message || 'Crédito revertido; obrigação bancária reaberta.' });
             }
             setActionModal({ show: false, action: null, requestId: null, groupId: null });
             loadData();
@@ -332,6 +344,15 @@ export default function FinancePaymentsList() {
                 processing={processing}
                 feedback={feedback}
                 expectedAmount={actionModal.expectedAmount}
+                currencyCode={actionModal.currencyCode}
+                creditContext={actionModal.obligation && (actionModal.action === 'APPLY_CREDIT' || actionModal.action === 'REVERSE_CREDIT') ? {
+                    supplierName: actionModal.obligation.supplierName || '—',
+                    currencyCode: actionModal.obligation.currencyCode || 'AOA',
+                    groupAmount: actionModal.obligation.groupAmount,
+                    creditAmount: actionModal.action === 'APPLY_CREDIT' ? (actionModal.obligation.creditReservedAmount ?? actionModal.obligation.creditCoverageAmount ?? 0) : (actionModal.obligation.creditAppliedAmount ?? 0),
+                    bankPayable: actionModal.obligation.bankPayableAmount ?? Math.max(0, actionModal.obligation.groupAmount - (actionModal.obligation.creditCoverageAmount ?? 0)),
+                    accountNumber: actionModal.obligation.creditAccountNumber,
+                } : undefined}
                 cancelScheduleContext={actionModal.obligation ? {
                     supplierName: actionModal.obligation.supplierName || '—',
                     amount: actionModal.obligation.plannedAmount ?? actionModal.obligation.obligationAmount ?? 0,
@@ -419,6 +440,8 @@ function ObligationRow({ o, onAction }: { o: FinanceObligationDto; onAction: (o:
             case 'PAY': return <Check size={14} />;
             case 'CANCEL_SCHEDULE': return <XCircle size={14} />;
             case 'RETURN': return <RotateCcw size={14} />;
+            case 'APPLY_CREDIT': return <Wallet size={14} />;
+            case 'REVERSE_CREDIT': return <RotateCcw size={14} />;
             default: return null;
         }
     };
@@ -429,27 +452,26 @@ function ObligationRow({ o, onAction }: { o: FinanceObligationDto; onAction: (o:
     }));
 
     return (
-        <div style={{
-            display: 'grid', gridTemplateColumns: 'minmax(0, 1.7fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.7fr) auto', gap: '12px', alignItems: 'center',
+        <div className="finance-obligation-row" data-testid="finance-obligation-row" style={{
             padding: '12px 16px', borderBottom: '1px solid var(--color-border)',
             borderLeft: overdue ? '3px solid var(--color-status-red)' : '3px solid transparent',
             opacity: paid ? 0.68 : 1,
             backgroundColor: overdue ? 'rgba(var(--color-status-rejected-rgb), 0.05)' : 'transparent'
         }}>
             {/* 1 · Supplier (+ secondary status chip) */}
-            <div style={{ minWidth: 0 }}>
+            <div className="finance-obligation-cell">
                 <ModernTooltip content={o.supplierName || 'Fornecedor não definido'}>
                     <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {paid && <Check size={13} style={{ color: 'var(--color-status-green)', marginRight: 4, verticalAlign: '-2px' }} />}
                         {o.supplierName || 'Fornecedor não definido'}
                     </div>
                 </ModernTooltip>
-                <span style={{ display: 'inline-block', marginTop: '3px', fontSize: '0.66rem', fontWeight: 600, color: overdue ? 'var(--color-status-red)' : 'var(--color-text-muted)', backgroundColor: overdue ? 'rgba(var(--color-status-rejected-rgb), 0.1)' : 'rgba(0,0,0,0.04)', padding: '1px 7px', borderRadius: 'var(--radius-full)' }}>
+                <span title={o.operationalStateLabel} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom', marginTop: '3px', fontSize: '0.66rem', fontWeight: 600, color: overdue ? 'var(--color-status-red)' : 'var(--color-text-muted)', backgroundColor: overdue ? 'rgba(var(--color-status-rejected-rgb), 0.1)' : 'rgba(0,0,0,0.04)', padding: '1px 7px', borderRadius: 'var(--radius-full)' }}>
                     {o.operationalStateLabel}
                 </span>
             </div>
             {/* 2 · PO */}
-            <div style={{ fontSize: '0.8rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div className="finance-obligation-cell" title={o.purchaseOrderNumber || undefined} style={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {o.purchaseOrderNumber
                     ? <span style={{ fontWeight: 600 }}><FileText size={12} style={{ opacity: 0.5, marginRight: 4, verticalAlign: '-1px' }} />{o.purchaseOrderNumber}</span>
                     : <span style={{ color: 'var(--color-text-muted)' }}>Sem P.O.</span>}
@@ -465,22 +487,50 @@ function ObligationRow({ o, onAction }: { o: FinanceObligationDto; onAction: (o:
                       </span>
                     : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
             </div>
-            {/* 4 · Amount */}
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)', whiteSpace: 'nowrap' }}>{formatMoney(o.obligationAmount, o.currencyCode)}</div>
-            {/* 5 · NEXT ACTION (primary semantic field) */}
-            <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: overdue ? 'var(--color-status-red)' : (paid || noFinance ? 'var(--color-text-muted)' : 'var(--color-text-main)'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* 4 · Amount (+ supplier credit chip: Valor da P.O · Crédito · Valor a pagar) */}
+            <div className="finance-obligation-cell" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
+                <span className="finance-obligation-amount">{formatMoney(o.obligationAmount, o.currencyCode)}</span>
+                {(() => {
+                    const chip = resolveCreditChip(o);
+                    if (!chip) return null;
+                    return (
+                        <ModernTooltip content={
+                            <div style={{ fontSize: '0.8rem', lineHeight: 1.5 }}>
+                                <div><b>Valor da P.O:</b> {formatMoney(o.groupAmount, o.currencyCode)}</div>
+                                <div><b>Crédito {chip.status === 'APPLIED' ? 'aplicado' : 'reservado'}:</b> {formatMoney(chip.status === 'APPLIED' ? chip.applied : chip.coverage, o.currencyCode)}</div>
+                                {chip.noBankPart
+                                    ? <div><b>Parcela bancária:</b> nenhuma (cobertura integral)</div>
+                                    : <>
+                                        {chip.bankPaid > 0 && <div><b>Pago por banco:</b> {formatMoney(chip.bankPaid, o.currencyCode)}</div>}
+                                        <div><b>Saldo pendente (banco):</b> {formatMoney(chip.bankPayable, o.currencyCode)}</div>
+                                    </>}
+                                {o.creditAccountNumber && <div><b>Conta corrente:</b> {o.creditAccountNumber}</div>}
+                            </div>
+                        }>
+                            <span data-testid="finance-credit-chip" className="finance-credit-chip" style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--color-primary)', backgroundColor: 'rgba(var(--color-primary-rgb), 0.08)', padding: '1px 7px', borderRadius: 'var(--radius-md)' }}>
+                                <span><Wallet size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />{chip.label}</span>
+                                {chip.status !== 'APPLIED' && chip.status !== 'REVERSED' && chip.status !== 'RELEASED' && (
+                                    <span>· banco {formatMoney(chip.bankPayable, o.currencyCode)}</span>
+                                )}
+                            </span>
+                        </ModernTooltip>
+                    );
+                })()}
+            </div>
+            {/* 5 · NEXT ACTION (primary semantic field) — up to two lines, never clipped mid-word */}
+            <div className="finance-obligation-cell">
+                <div className="finance-next-action" title={o.nextActionLabel || undefined} style={{ fontSize: '0.82rem', fontWeight: 700, color: overdue ? 'var(--color-status-red)' : (paid || noFinance ? 'var(--color-text-muted)' : 'var(--color-text-main)') }}>
                     {noFinance && <AlertTriangle size={13} style={{ color: 'var(--color-status-amber)', marginRight: 4, verticalAlign: '-2px' }} />}
                     {o.nextActionLabel || '—'}
                 </div>
                 <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>{o.responsibleRole}</div>
             </div>
             {/* 6 · Actions — one primary inline, the rest in the kebab */}
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div className="finance-obligation-actions">
                 {plan.primary && (
                     <button onClick={() => onAction(o, plan.primary!.action)}
                         style={{ padding: '7px 14px', borderRadius: 'var(--radius-md)', border: 'none', backgroundColor: 'var(--color-primary)', color: '#fff', fontWeight: 600, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        {plan.primary.action === 'SCHEDULE' ? <Clock size={14} /> : <CreditCard size={14} />} {plan.primary.label}
+                        {plan.primary.action === 'SCHEDULE' ? <Clock size={14} /> : plan.primary.action === 'APPLY_CREDIT' ? <Wallet size={14} /> : <CreditCard size={14} />} {plan.primary.label}
                     </button>
                 )}
                 <KebabMenu options={menuOptions} />

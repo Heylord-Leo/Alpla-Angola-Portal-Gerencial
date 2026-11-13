@@ -228,8 +228,10 @@ function ReceivingScalarWorkspace() {
                                     {req.statusName}
                                 </span>
                             </td>
-                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', textAlign: 'right', fontWeight: 800, fontSize: '0.85rem' }}>
-                                {req.currencyCode} {formatCurrencyAO(req.estimatedTotalAmount)}
+                            <td style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)', textAlign: 'right', fontWeight: 800, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                                {req.hasMultipleCurrencies && req.amountsByCurrency && req.amountsByCurrency.length > 0
+                                    ? req.amountsByCurrency.map(a => <span key={a.currency} style={{ display: 'block' }}>{a.currency} {formatCurrencyAO(a.amount)}</span>)
+                                    : <>{req.currencyCode} {formatCurrencyAO(req.estimatedTotalAmount)}</>}
                             </td>
                         </tr>
                     ))}

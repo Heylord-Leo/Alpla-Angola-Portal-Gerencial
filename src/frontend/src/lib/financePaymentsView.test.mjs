@@ -20,6 +20,7 @@ import {
     FINANCE_SORT_OPTIONS,
     countAdvancedFilters,
     isAdvanceGroupStatus,
+    resolveCreditChip,
     isAdvanceObligation,
     resolveAttachmentUploadParams,
     resolveParentDisplayStatus,
@@ -719,5 +720,56 @@ describe('countAdvancedFilters (Mais filtros badge)', () => {
     test('does NOT count primary-toolbar controls (search/situação/ordenar are not passed here)', () => {
         // Only advanced fields are inputs; actionClass/search/sort are excluded by construction.
         assert.equal(countAdvancedFilters({ actionableOnly: false, overdueOnly: false }), 0);
+    });
+});
+
+// ─── Supplier account credit chip: bank "paid" vs "still owed" (DEV round 2 closure, 2026-11-13) ───
+// The server's bankPayableAmount is the bank amount STILL OWED (total − live coverage − completed cash). The tooltip must
+// never present it as "valor a pagar" on a settled group: 684 (15 840 RND, credit 10 000, bank 5 840 paid) showed 0,00.
+describe('resolveCreditChip — bank paid vs pending', () => {
+    test('settled partial coverage (request 684): bank paid 5 840, nothing pending', () => {
+        const chip = resolveCreditChip({ groupAmount: 15840, creditCoverageAmount: 10000, creditAppliedAmount: 10000, creditReservedAmount: 0, creditReservationStatus: 'APPLIED', bankPayableAmount: 0 });
+        assert.equal(chip.bankPaid, 5840);
+        assert.equal(chip.bankPayable, 0);
+        assert.equal(chip.noBankPart, false);
+        assert.equal(chip.label, 'Crédito aplicado');
+    });
+
+    // Synthetic shape using the AMOUNTS of request 685 as they were before its settlement. The live DEV 685 is already
+    // settled (10 000 RND credit applied + 2 450 RND bank paid, PAYMENT_COMPLETED) — see the settled case above.
+    test('pending partial coverage (synthetic, 685 amounts before payment): nothing paid, 2 450 pending', () => {
+        const chip = resolveCreditChip({ groupAmount: 12450, creditCoverageAmount: 10000, creditAppliedAmount: 0, creditReservedAmount: 10000, creditReservationStatus: 'RESERVED', bankPayableAmount: 2450 });
+        assert.equal(chip.bankPaid, 0);
+        assert.equal(chip.bankPayable, 2450);
+        assert.equal(chip.noBankPart, false);
+    });
+
+    test('full coverage: no bank instalment at all, pending and paid both 0', () => {
+        for (const status of ['RESERVED', 'APPLIED']) {
+            const chip = resolveCreditChip({ groupAmount: 100000, creditCoverageAmount: 100000, creditAppliedAmount: status === 'APPLIED' ? 100000 : 0, creditReservedAmount: status === 'APPLIED' ? 0 : 100000, creditReservationStatus: status, bankPayableAmount: 0 });
+            assert.equal(chip.noBankPart, true, status);
+            assert.equal(chip.bankPaid, 0, status);
+            assert.equal(chip.bankPayable, 0, status);
+        }
+    });
+
+    test('reversed full coverage: the reopened bank obligation is pending in full, then paid in full', () => {
+        const reopened = resolveCreditChip({ groupAmount: 11274.23, creditCoverageAmount: 0, creditAppliedAmount: 0, creditReservedAmount: 0, creditReservationStatus: 'REVERSED', bankPayableAmount: 11274.23 });
+        assert.equal(reopened.bankPaid, 0);
+        assert.equal(reopened.bankPayable, 11274.23);
+        assert.equal(reopened.noBankPart, false);
+        const paid = resolveCreditChip({ groupAmount: 11274.23, creditCoverageAmount: 0, creditAppliedAmount: 0, creditReservedAmount: 0, creditReservationStatus: 'REVERSED', bankPayableAmount: 0 });
+        assert.equal(paid.bankPaid, 11274.23);
+        assert.equal(paid.bankPayable, 0);
+    });
+
+    test('without a server figure the chip falls back to total − coverage and never invents a paid amount', () => {
+        const chip = resolveCreditChip({ groupAmount: 500, creditCoverageAmount: 350, creditReservationStatus: 'RESERVED' });
+        assert.equal(chip.bankPayable, 150);
+        assert.equal(chip.bankPaid, 0);
+    });
+
+    test('a group that never used credit has no chip', () => {
+        assert.equal(resolveCreditChip({ groupAmount: 500, creditCoverageAmount: 0, creditReservationStatus: null, bankPayableAmount: 500 }), null);
     });
 });

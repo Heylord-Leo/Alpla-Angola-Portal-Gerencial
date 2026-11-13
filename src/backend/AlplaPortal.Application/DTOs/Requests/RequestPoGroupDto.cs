@@ -46,6 +46,12 @@ public class RequestPoGroupDto
 
     public List<RequestPaymentDto> Payments { get; set; } = new();
 
+    // ── Supplier account credit ──
+    /// <summary>C — live credit coverage reserved on this group (0 = none). Bank owed = TotalAmount − CreditCoverageAmount.</summary>
+    public decimal CreditCoverageAmount { get; set; }
+    /// <summary>The group's latest credit reservation (status, amounts, hold), or null when credit was never used.</summary>
+    public AlplaPortal.Application.DTOs.SupplierCredit.SupplierCreditReservationSummaryDto? SupplierCredit { get; set; }
+
     /// <summary>
     /// Finance mutation actions available for THIS group, derived from its own status only
     /// (SCHEDULE / PAY / CANCEL_SCHEDULE / RETURN). Populated by the Finance payments list; the
@@ -75,6 +81,9 @@ public class RequestPaymentDto
     public DateTime? PaidDateUtc { get; set; }
     public string? CurrencyCode { get; set; }
     public bool HasDivergence { get; set; }
+    /// <summary>SINGLE | ADVANCE | BALANCE — the stage this owed row settles (null on legacy rows).</summary>
+    public string? SettlementStage { get; set; }
+    public Guid? SupplierCreditReservationId { get; set; }
 }
 
 

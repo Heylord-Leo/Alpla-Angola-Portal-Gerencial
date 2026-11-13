@@ -34,6 +34,10 @@ using AlplaPortal.Application.Interfaces.Requests;
 using AlplaPortal.Application.Validation;
 using AlplaPortal.Domain.Configuration;
 using Microsoft.Extensions.Options;
+using AlplaPortal.Api.Authorization;
+using AlplaPortal.Application.DTOs.SupplierCredit;
+using AlplaPortal.Application.Interfaces.Suppliers;
+using SC = AlplaPortal.Domain.Constants.SupplierCreditConstants;
 
 
 [Authorize]
@@ -57,6 +61,17 @@ public class RequestsController : BaseController
     private readonly PostPaymentCompletionOptions _postPaymentOptions;
 
     private readonly IInternalCompanyGuard _internalCompanies;
+    /// <summary>Supplier account credit (optional-by-default for direct constructions in tests; DI always supplies them).</summary>
+    private readonly ISupplierCreditSettlementService? _supplierCredit;
+    private readonly SupplierCreditOptions _supplierCreditOptions;
+
+    private static ObjectResult CreditProblem<T>(SupplierCreditOperationOutcome<T> outcome)
+    {
+        var pd = new ProblemDetails { Title = outcome.Title, Detail = outcome.Detail, Status = outcome.StatusCode };
+        pd.Extensions["code"] = outcome.Code;
+        foreach (var kv in outcome.Extensions) pd.Extensions[kv.Key] = kv.Value;
+        return new ObjectResult(pd) { StatusCode = outcome.StatusCode };
+    }
 
     public RequestsController(
         ApplicationDbContext context,
@@ -74,8 +89,12 @@ public class RequestsController : BaseController
         IQuotationItemEligibilityService quotationEligibility,
         IBatchExtraItemDecisionService extraItemDecisionService,
         IInternalCompanyGuard internalCompanies,
-        IOptions<PostPaymentCompletionOptions> postPaymentOptions) : base(context)
+        IOptions<PostPaymentCompletionOptions> postPaymentOptions,
+        ISupplierCreditSettlementService? supplierCredit = null,
+        IOptions<SupplierCreditOptions>? supplierCreditOptions = null) : base(context)
     {
+        _supplierCredit = supplierCredit;
+        _supplierCreditOptions = supplierCreditOptions?.Value ?? new SupplierCreditOptions();
         _internalCompanies = internalCompanies;
         _postPaymentOptions = postPaymentOptions?.Value ?? new PostPaymentCompletionOptions();
         _extractionService = extractionService;
@@ -518,31 +537,41 @@ public class RequestsController : BaseController
             query = query.Where(myTasksCriteria);
         }
 
-        // 3a. Calculate Filtered Total (Monetary Total)
-        // Opting for SelectMany / DefaultIfEmpty to compute sum on database-side without N+1 or local evaluation
+        // 3a. "Total Filtrado" — one total per currency over EVERY request matching the active filters (all pages),
+        // with the SAME amount / currency source rules as the rows (approved snapshot + ApprovedCurrencyCode, else the
+        // selected quotation, else the requester's estimate). Cancelled / rejected requests contribute nothing (the rows
+        // print "-----"). Grouped in the database; only the few "MULTIPLE"-currency approvals are reduced in memory from
+        // their live groups so each component counts once in its own currency (RequestFilteredTotals).
         _sw.Restart();
-        var filteredTotal = await query
-            .SelectMany(
-                r => r.Quotations.Where(q => q.Id == r.SelectedQuotationId).DefaultIfEmpty(),
-                (r, q) => q != null ? q.TotalAmount : r.EstimatedTotalAmount
-            )
-            .SumAsync();
+        var totalsExcludedStatuses = RequestFilteredTotals.ExcludedStatusCodes;
+        var totalsScope = query.Where(r => !totalsExcludedStatuses.Contains(r.Status!.Code));
 
-        // 3b. Retrieve Distinct Currency Codes for Multi-currency Protection
-        // Running as a separate query ensures EF can safely translate the Distinct/ToList projection
-        var filteredCurrencyCodes = await query
-            .Select(r => r.SelectedQuotationId.HasValue 
-                ? r.Quotations.Where(q => q.Id == r.SelectedQuotationId).Select(q => q.Currency).FirstOrDefault() 
-                : (r.Currency != null ? r.Currency.Code : null))
-            .Where(c => c != null)
-            .Select(c => c!)
-            .Distinct()
+        var singleCurrencyBuckets = await RequestFilteredTotals.GroupSingleCurrency(
+                totalsScope.Where(RequestFilteredTotals.IsMultiCurrency.Not()))
             .ToListAsync();
 
-        _logger.LogInformation("[PERF GetRequests] 4-FilteredTotalAndCurrencies: {Elapsed}ms", _sw.ElapsedMilliseconds);
+        var multiCurrencyIds = await totalsScope
+            .Where(RequestFilteredTotals.IsMultiCurrency)
+            .Select(r => r.Id)
+            .ToListAsync();
+        var multiCurrencyRequests = multiCurrencyIds.Count == 0
+            ? new List<Request>()
+            : await _context.Requests.AsNoTracking()
+                .Where(r => multiCurrencyIds.Contains(r.Id))
+                .Include(r => r.PoGroups)
+                .Include(r => r.ApprovalBatches)
+                .ToListAsync();
 
-        summary.FilteredTotal = filteredTotal;
-        summary.FilteredCurrencyCodes = filteredCurrencyCodes ?? new List<string>();
+        var filteredTotalsByCurrency = RequestFilteredTotals.Merge(singleCurrencyBuckets, multiCurrencyRequests);
+
+        _logger.LogInformation("[PERF GetRequests] 4-FilteredTotalsByCurrency: {Elapsed}ms", _sw.ElapsedMilliseconds);
+
+        summary.FilteredTotalsByCurrency = filteredTotalsByCurrency
+            .Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount })
+            .ToList();
+        summary.FilteredCurrencyCodes = filteredTotalsByCurrency.Select(t => t.Currency).ToList();
+        // Legacy scalar kept for the home KPI (which shows "Múltiplas moedas" when more than one currency is involved).
+        summary.FilteredTotal = filteredTotalsByCurrency.Sum(t => t.Amount);
 
         // 3c. Calculate Filtered Trend (MTD vs PMTD)
         _sw.Restart();
@@ -734,9 +763,20 @@ public class RequestsController : BaseController
                         ? (x.SelectedQ != null ? (decimal?)x.SelectedQ.TotalAmount : 0) ?? 0
                         : x.r.EstimatedTotalAmount,
                 CurrencyId = x.r.CurrencyId,
-                CurrencyCode = x.r.SelectedQuotationId.HasValue 
-                    ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
-                    : (x.r.Currency != null ? x.r.Currency.Code : null),
+                // The currency MUST follow the amount's source: when the figure is the approved snapshot
+                // (ApprovedTotalAmount, taken from the P.O. groups at final approval) its currency is
+                // ApprovedCurrencyCode — never the requester's estimate currency (candidate-based approvals
+                // leave SelectedQuotationId null, so a RND approval used to be labelled AOA). "MULTIPLE" is
+                // resolved below into per-currency figures (AmountsByCurrency); the scalar keeps the
+                // selected-quotation / request currency only as a fallback for legacy rows.
+                CurrencyCode = (x.r.ApprovedTotalAmount.HasValue && x.r.ApprovedTotalAmount.Value > 0
+                                && x.r.ApprovedCurrencyCode != null && x.r.ApprovedCurrencyCode != "MULTIPLE")
+                    ? x.r.ApprovedCurrencyCode
+                    : x.r.SelectedQuotationId.HasValue
+                        ? (x.SelectedQ != null ? x.SelectedQ.Currency : null)
+                        : (x.r.Currency != null ? x.r.Currency.Code : null),
+                HasMultipleCurrencies = x.r.ApprovedTotalAmount.HasValue && x.r.ApprovedTotalAmount.Value > 0
+                                        && x.r.ApprovedCurrencyCode == "MULTIPLE",
                 RequestedDateUtc = x.r.RequestedDateUtc,
                 NeedByDateUtc = x.r.NeedByDateUtc,
                 CreatedAtUtc = x.r.CreatedAtUtc,
@@ -807,6 +847,17 @@ public class RequestsController : BaseController
                     // UnitSummary, keeping their current appearance.
                     var projection = RequestWorkflowProjectionBuilder.Build(data, item.DisplayWorkflowState ?? "");
                     item.ActiveUnitCount = projection.Units.Count;
+
+                    // Groups in different currencies are never summed into one figure: the row carries one
+                    // amount per currency (same page-scoped PoGroups/ApprovalBatches — no extra query) and the
+                    // list renders one line per currency. Single-currency rows keep the scalar untouched.
+                    if (item.HasMultipleCurrencies)
+                    {
+                        item.AmountsByCurrency = ActiveApprovedTotals
+                            .ForRequest(data.PoGroups, data.ApprovalBatches)
+                            .Select(t => new CurrencyAmountDto { Currency = t.Currency, Amount = t.Amount })
+                            .ToList();
+                    }
                     item.UnitSummary = RequestWorkflowProjectionBuilder.BuildUnitSummary(projection);
                     item.ResponsibleRoles = projection.Responsibilities.Select(rr => rr.Role).ToList();
 
@@ -1136,7 +1187,9 @@ public class RequestsController : BaseController
                     LineItemCount = g.LineItems.Count,
                     AttachmentCount = g.PoAttachments.Count(a => !a.IsDeleted),
                     // v2.249.4 — raw pointer stamped by RegisterPo; resolved (fallback for pre-version groups) after materialization.
-                    CurrentPoAttachmentId = g.CurrentPoAttachmentId
+                    CurrentPoAttachmentId = g.CurrentPoAttachmentId,
+                    // Supplier account credit: live coverage; the reservation summary is attached after materialization.
+                    CreditCoverageAmount = g.CreditCoverageAmount
                 }).OrderBy(g => g.CreatedAtUtc).ToList(),
 
                 Attachments = r.Attachments.Where(a => !a.IsDeleted).Select(a => new RequestAttachmentDto
@@ -1558,6 +1611,22 @@ public class RequestsController : BaseController
         }
         var currentPoIds = request.PoGroups.Where(g => g.CurrentPoAttachmentId.HasValue).Select(g => g.CurrentPoAttachmentId!.Value).ToHashSet();
         foreach (var aDto in request.Attachments) aDto.IsCurrentPo = currentPoIds.Contains(aDto.Id);
+
+        // ── Supplier account credit: the latest reservation of every credit-touched group (one query). ──
+        var creditGroupIds = request.PoGroups.Where(g => g.CreditCoverageAmount > 0m).Select(g => g.Id).ToList();
+        var creditTouchedIds = await _context.RequestPoGroups.AsNoTracking()
+            .Where(g => g.RequestId == id && g.SupplierCreditReservationId != null).Select(g => g.Id).ToListAsync();
+        var creditIds = creditGroupIds.Union(creditTouchedIds).ToList();
+        if (creditIds.Count > 0)
+        {
+            var reservations = await _context.SupplierCreditReservations.AsNoTracking().Include(x => x.Account)
+                .Where(x => creditIds.Contains(x.RequestPoGroupId)).ToListAsync();
+            foreach (var gDto in request.PoGroups)
+            {
+                var latest = reservations.Where(x => x.RequestPoGroupId == gDto.Id).OrderByDescending(x => x.ReservedAtUtc).FirstOrDefault();
+                if (latest != null) gDto.SupplierCredit = AlplaPortal.Infrastructure.Services.Finance.SupplierCreditSettlementService.ToSummary(latest, latest.Account);
+            }
+        }
 
         // v2.249.5 — registered P.O. evidence flag (same rule the delete endpoint enforces: PoEvidenceProtection), so no UI
         // offers a "remove" action the server will refuse. Legacy groups (no pointer) are covered by the registration history.
@@ -8052,6 +8121,39 @@ public class RequestsController : BaseController
         var isCorrection = poGroup.Status == RequestConstants.Statuses.WaitingPoCorrection || isLegacyReturnCorrection;
         var actionCode = isCorrection ? "REREGISTER_PO" : "REGISTER_PO";
 
+        // ── Supplier account credit ("Utilizar crédito em conta corrente"): the credit path — a new reservation, or a
+        // correction decision on an existing hold — requires the responsible Buyer (role → scope → ownership), a QUOTATION
+        // request and stage-1 terms (Pós-Pago / 100 % Antecipado). Refused BEFORE the transaction; nothing is written. The
+        // standard registration without credit keeps today's role-only check. ──
+        var creditTouchedGroup = poGroup.SupplierCreditReservationId != null && poGroup.CreditCoverageAmount > 0m;
+        var creditRequested = dto.UseSupplierCredit || !string.IsNullOrWhiteSpace(dto.SupplierCreditCorrectionAction) || creditTouchedGroup;
+        if (creditRequested)
+        {
+            if (_supplierCredit == null)
+                return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+            var buyerAuth = await PoGroupBuyerAuthorization.EvaluateAsync(_context, request, poGroup, CurrentUserId, roles);
+            if (!buyerAuth.Allowed) return buyerAuth.ToResult();
+            if (!SupplierCreditPolicy.IsRequestTypeSupported(request.RequestType?.Code))
+            {
+                var pd = new ProblemDetails { Title = "Crédito não suportado", Detail = "Nesta fase o crédito em conta corrente aplica-se apenas a pedidos de cotação.", Status = 400 };
+                pd.Extensions["code"] = SC.ErrorCodes.UnsupportedRequestType;
+                return BadRequest(pd);
+            }
+            var removing = string.Equals(dto.SupplierCreditCorrectionAction?.Trim(), SC.CorrectionActions.Remove, StringComparison.OrdinalIgnoreCase);
+            if (!removing && !SupplierCreditPolicy.IsPaymentConditionSupported(paymentCondition))
+            {
+                var pd = new ProblemDetails { Title = "Condição de pagamento não suportada com crédito", Detail = "Nesta fase o crédito em conta corrente aplica-se apenas a Pós-Pago e 100 % Antecipado. Remova a reserva de crédito ou escolha uma condição suportada.", Status = 400 };
+                pd.Extensions["code"] = SC.ErrorCodes.UnsupportedTerms;
+                return BadRequest(pd);
+            }
+            if (dto.UseSupplierCredit && !isCorrection && !_supplierCreditOptions.NewReservationsEnabled)
+            {
+                var pd = new ProblemDetails { Title = "Crédito em conta corrente desativado", Detail = "A utilização de crédito em conta corrente em novas P.O. não está ativa neste ambiente.", Status = 400 };
+                pd.Extensions["code"] = SC.ErrorCodes.Disabled;
+                return BadRequest(pd);
+            }
+        }
+
         // v2.249.4 — a correction always states the P.O. number it confirms (the current one or the replacement): the old
         // correction modal sent none, so the number of the returned P.O. silently survived every correction (REQ-628:
         // the quotation number TEST-MAQSIS-2026-9003 stayed as the group's P.O. after the real ECF was uploaded).
@@ -8172,7 +8274,52 @@ public class RequestsController : BaseController
         string targetGroupStatusCode;
         string successMsg;
 
-        if (isAdvancePayment)
+        // ── Supplier account credit: reserve (first registration) or apply the correction decision (keep / change /
+        // remove) INSIDE the registration transaction — lock order group → account → reservations. On success with a live
+        // reservation the owed rows (bank part + SUPPLIER_CREDIT) are materialised by the service; the legacy advance-row
+        // creation below is skipped. Returning here rolls everything back. ──
+        ReservationOutcome? creditOutcome = null;
+        if (creditRequested)
+        {
+            var creditCmd = new ReserveSupplierCreditCommand
+            {
+                Request = request, Group = poGroup, PaymentConditionCode = paymentCondition, AdvancePercent = advancePercent ?? 0m,
+                UseSupplierCredit = dto.UseSupplierCredit, RequestedAmount = dto.SupplierCreditAmount,
+                CorrectionAction = dto.SupplierCreditCorrectionAction, IsCorrection = isCorrection,
+                NewReservationsEnabled = _supplierCreditOptions.NewReservationsEnabled, ActorUserId = CurrentUserId,
+            };
+            var creditResult = await _supplierCredit!.ReserveOrCorrectAsync(creditCmd);
+            if (!creditResult.Succeeded) return CreditProblem(creditResult);
+            creditOutcome = creditResult.Value!;
+            if (creditOutcome.HistoryAction != null)
+            {
+                var reservationForKey = creditOutcome.Reservation?.Id ?? poGroup.SupplierCreditReservationId ?? Guid.Empty;
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    RequestId = request.Id, ActorUserId = CurrentUserId, ActionTaken = creditOutcome.HistoryAction,
+                    PreviousStatusId = request.StatusId, NewStatusId = request.StatusId, CreatedAtUtc = DateTime.UtcNow,
+                    IdempotencyKey = creditOutcome.HistoryAction == SC.HistoryActions.Reserved ? SupplierCreditPolicy.Keys.HistoryReserved(reservationForKey)
+                        : creditOutcome.HistoryAction == SC.HistoryActions.ReservationChanged ? SupplierCreditPolicy.Keys.HistoryChanged(reservationForKey)
+                        : null,
+                    Comment = $"[Grupo P.O.: {poGroup.Supplier?.Name} | GroupId: {poGroup.Id.ToString().Substring(0, 8)}] {creditOutcome.HistoryText}"
+                });
+            }
+            if (!string.IsNullOrWhiteSpace(creditOutcome.HistoryText)) finalComment += creditOutcome.HistoryText + " ";
+        }
+
+        if (creditOutcome?.Reservation != null)
+        {
+            // Credit-backed registration: the owed rows exist (bank part when > 0, SUPPLIER_CREDIT always). 100 % Antecipado
+            // stays ADVANCE_PAYMENT_REQUIRED (Finance confirms the bank part and/or applies the credit); Pós-Pago → PO_ISSUED.
+            targetGroupStatusCode = isAdvancePayment ? RequestConstants.Statuses.AdvancePaymentRequired : RequestConstants.Statuses.PoIssued;
+            var bank = poGroup.TotalAmount - creditOutcome.Coverage;
+            successMsg = (isCorrection ? "P.O corrigida e re-registrada com sucesso. " : "P.O registrada com sucesso. ")
+                + (creditOutcome.IsFullCoverage
+                    ? "Cobertura integral por crédito em conta corrente — Finanças aplica o crédito."
+                    : $"Crédito em conta corrente de {creditOutcome.Coverage:N2} reservado; parcela bancária de {bank:N2}" + (isAdvancePayment ? " como adiantamento." : "."));
+            finalComment += $"\n[Condição de Pagamento: {paymentCondition}" + (isAdvancePayment ? $" — {advancePercent}%" : string.Empty) + $" | Crédito em conta corrente: {creditOutcome.Coverage:N2}]";
+        }
+        else if (isAdvancePayment)
         {
             // v2.242.0 — duplicate-advance guard. A correct correction return cancels the group's
             // active advance before the Buyer re-registers, so exactly ZERO active advance rows are
@@ -8363,16 +8510,153 @@ public class RequestsController : BaseController
             _logger.LogWarning(notifyEx, "PO registration notification failed for Request {RequestId} ({Action}). The registration itself is committed.", request.Id, actionCode);
         }
 
+        // Supplier account credit: a hold released during the correction (REMOVE / CHANGE) is notified to plant-scoped Finance.
+        if (creditOutcome?.HistoryAction == SC.HistoryActions.Released)
+        {
+            try
+            {
+                await _orchestrator.EmitAsync(new WorkflowEvent
+                {
+                    EventCode = WorkflowEventCodes.SupplierCreditReleased, RequestId = request.Id, RequestNumber = request.RequestNumber ?? "S/N", RequestTitle = request.Title ?? "",
+                    ActionTaken = SC.HistoryActions.Released, TargetStatusCode = request.Status!.Code, ActorUserId = CurrentUserId, CorrelationId = history.Id,
+                    Comment = creditOutcome.HistoryText, RequesterId = request.RequesterId, BuyerId = request.BuyerId, DepartmentId = request.DepartmentId,
+                    PlantId = request.PlantId, CompanyId = request.CompanyId, PoGroupId = poGroup.Id
+                });
+            }
+            catch (Exception notifyEx) { _logger.LogWarning(notifyEx, "Supplier credit release notification failed for Request {RequestId}.", request.Id); }
+        }
+
         // Phase 2 strictly post-save; never fails the registration.
         await EvaluateCompletionPhaseTwoAsync(id);
 
         return Ok(new { message = successMsg });
     }
 
+    // ═════════════════════════════════════════ Supplier account credit — P.O. group endpoints ═════════════════════════════════════════
+
+    /// <summary>
+    /// What the P.O. wizard may offer for THIS group: flag, supported terms, the account (supplier × request company × group
+    /// currency) with its figures, the maximum coverage and the group's current hold (correction keep / change / remove).
+    /// Responsible-Buyer rule applied server-side; read-only.
+    /// </summary>
+    [HttpGet("{id}/po-groups/{groupId}/credit-eligibility")]
+    public async Task<IActionResult> GetSupplierCreditEligibility(Guid id, Guid groupId, [FromQuery] string? paymentConditionCode = null)
+    {
+        if (_supplierCredit == null)
+            return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+        var request = await _context.Requests.AsNoTracking().Include(r => r.RequestType).Include(r => r.Currency)
+            .Include(r => r.PoGroups).ThenInclude(g => g.Currency)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound();
+        var group = request.PoGroups.FirstOrDefault(g => g.Id == groupId);
+        if (group == null) return NotFound(new ProblemDetails { Title = "Grupo P.O não encontrado", Detail = "O grupo P.O não pertence a este pedido.", Status = 404 });
+        var auth = await PoGroupBuyerAuthorization.EvaluateAsync(_context, request, group, CurrentUserId, CurrentUserRoles);
+        if (!auth.Allowed && auth.Status != 403) return auth.ToResult();
+        var dto = await _supplierCredit.EvaluateEligibilityAsync(request, group, paymentConditionCode, auth.Allowed);
+        return Ok(dto);
+    }
+
+    /// <summary>
+    /// Release the unapplied (RESERVED) hold of a group parked in WAITING_PO_CORRECTION / WAITING_PO — the fallback when the
+    /// request is abandoned after a Finance return (a PAYMENT request cannot be cancelled once a P.O. exists; for QUOTATION
+    /// the cancellation path remains the normal route). Responsible Buyer or a coordinator (System Administrator, Local
+    /// Manager). No ledger entry (a hold is not a movement); audited; plant-scoped Finance notified.
+    /// </summary>
+    [HttpPost("{id}/po-groups/{groupId}/credit-reservation/release")]
+    public async Task<IActionResult> ReleaseSupplierCreditReservation(Guid id, Guid groupId, [FromBody] ReleaseSupplierCreditReservationDto dto)
+    {
+        if (_supplierCredit == null)
+            return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+        var reason = dto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < SC.MinReversalReasonLength || reason.Length > SC.MaxReasonLength)
+        {
+            var pd = new ProblemDetails { Title = "Motivo obrigatório", Detail = $"O motivo da libertação é obrigatório e deve ter entre {SC.MinReversalReasonLength} e {SC.MaxReasonLength} caracteres.", Status = 400 };
+            pd.Extensions["code"] = SC.ErrorCodes.InvalidAmount;
+            return BadRequest(pd);
+        }
+        var request = await _context.Requests.Include(r => r.RequestType).Include(r => r.Status)
+            .Include(r => r.PoGroups).ThenInclude(g => g.Supplier)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound();
+        var group = request.PoGroups.FirstOrDefault(g => g.Id == groupId);
+        if (group == null) return NotFound(new ProblemDetails { Title = "Grupo P.O não encontrado", Detail = "O grupo P.O não pertence a este pedido.", Status = 404 });
+        var auth = await PoGroupBuyerAuthorization.EvaluateAsync(_context, request, group, CurrentUserId, CurrentUserRoles, allowCoordinators: true);
+        if (!auth.Allowed) return auth.ToResult();
+        if (!string.IsNullOrWhiteSpace(dto.ExpectedGroupRowVersion)
+            && !string.Equals(dto.ExpectedGroupRowVersion, Convert.ToBase64String(group.RowVersion ?? Array.Empty<byte>()), StringComparison.Ordinal))
+        {
+            var pd = new ProblemDetails { Title = "Dados desatualizados", Detail = "O grupo P.O foi alterado por outra operação. Atualize a página e verifique o estado atual antes de repetir.", Status = 409 };
+            pd.Extensions["code"] = SC.ErrorCodes.ConcurrentChange;
+            return Conflict(pd);
+        }
+        if (group.Status != RequestConstants.PoGroupStatuses.WaitingPoCorrection && group.Status != RequestConstants.PoGroupStatuses.WaitingPo)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Libertação não permitida neste estado",
+                Detail = $"A reserva só pode ser libertada enquanto o grupo aguarda P.O ou correção da P.O (estado atual: {group.Status}). Em estados financeiros peça a devolução por Finanças; crédito já aplicado só é revertido por Finanças.",
+                Status = 409
+            };
+            pd.Extensions["code"] = SC.ErrorCodes.ReleaseNotAllowed;
+            return Conflict(pd);
+        }
+
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        var outcome = await _supplierCredit.ReleaseAsync(group, SC.ReleaseReasons.AbandonedRequest, reason, CurrentUserId);
+        if (!outcome.Succeeded) return CreditProblem(outcome);
+        var rel = outcome.Value!;
+        group.UpdatedAtUtc = DateTime.UtcNow; group.UpdatedByUserId = CurrentUserId;
+        var history = new RequestStatusHistory
+        {
+            RequestId = request.Id, ActorUserId = CurrentUserId, ActionTaken = SC.HistoryActions.Released,
+            PreviousStatusId = request.StatusId, NewStatusId = request.StatusId, CreatedAtUtc = DateTime.UtcNow,
+            IdempotencyKey = SupplierCreditPolicy.Keys.HistoryReleased(rel.Reservation.Id),
+            Comment = $"[Grupo P.O.: {group.Supplier?.Name ?? group.SupplierNameSnapshot} | GroupId: {group.Id.ToString().Substring(0, 8)}] {rel.HistoryText} Motivo: {reason}"
+        };
+        _context.RequestStatusHistories.Add(history);
+        await _context.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        try
+        {
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.SupplierCreditReleased, RequestId = request.Id, RequestNumber = request.RequestNumber ?? "S/N", RequestTitle = request.Title ?? "",
+                ActionTaken = SC.HistoryActions.Released, TargetStatusCode = request.Status?.Code ?? string.Empty, ActorUserId = CurrentUserId, CorrelationId = history.Id,
+                Comment = reason, RequesterId = request.RequesterId, BuyerId = request.BuyerId, DepartmentId = request.DepartmentId, PlantId = request.PlantId, CompanyId = request.CompanyId, PoGroupId = group.Id
+            });
+        }
+        catch (Exception notifyEx) { _logger.LogWarning(notifyEx, "Supplier credit release notification failed for Request {RequestId}.", request.Id); }
+
+        return Ok(new SupplierCreditOperationResultDto
+        {
+            Message = "Reserva de crédito libertada.", ReservationId = rel.Reservation.Id, ReservationStatus = rel.Reservation.Status,
+            ReleasedHoldAmount = rel.ReleasedHoldAmount, AccountAvailable = rel.AccountAvailableAfter, GroupStatus = group.Status
+        });
+    }
+
+    /// <summary>409 when any live group of the request is credit-touched — the legacy scalar endpoints cannot settle credit.</summary>
+    private async Task<IActionResult?> RefuseLegacySettlementForCreditGroupsAsync(Guid requestId, string endpoint)
+    {
+        var touched = await _context.RequestPoGroups.AsNoTracking()
+            .AnyAsync(g => g.RequestId == requestId && g.SupplierCreditReservationId != null && g.Status != RequestConstants.PoGroupStatuses.Cancelled);
+        if (!touched) return null;
+        var pd = new ProblemDetails
+        {
+            Title = "Liquidação por grupo obrigatória",
+            Detail = $"Este pedido tem grupo(s) P.O com crédito em conta corrente. O endpoint legado {endpoint} não liquida crédito; utilize as ações de Finanças por grupo (agendar / pagar / aplicar crédito).",
+            Status = 409
+        };
+        pd.Extensions["code"] = SC.ErrorCodes.LegacySettlementBlocked;
+        return Conflict(pd);
+    }
+
     [HttpPost("{id}/operational/schedule-payment")]
     public async Task<IActionResult> SchedulePayment(Guid id, [FromBody] ApprovalActionDto dto)
     {
         _logger.LogWarning("[DEPRECATED] Legacy schedule-payment called for Request {RequestId}. Use FinanceController.SchedulePayment instead.", id);
+        var creditGuard = await RefuseLegacySettlementForCreditGroupsAsync(id, "operational/schedule-payment");
+        if (creditGuard != null) return creditGuard;
         if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PAYMENT_SCHEDULE))
         {
             return BadRequest(new ProblemDetails
@@ -8390,6 +8674,8 @@ public class RequestsController : BaseController
     public async Task<IActionResult> CompletePayment(Guid id, [FromBody] ApprovalActionDto dto)
     {
         _logger.LogWarning("[DEPRECATED] Legacy complete-payment called for Request {RequestId}. Use FinanceController.MarkAsPaid instead.", id);
+        var creditGuard = await RefuseLegacySettlementForCreditGroupsAsync(id, "operational/complete-payment");
+        if (creditGuard != null) return creditGuard;
         if (!await HasAttachmentAsync(id, RequestAttachment.TYPE_PAYMENT_PROOF))
         {
             return BadRequest(new ProblemDetails
@@ -8459,7 +8745,19 @@ public class RequestsController : BaseController
             .FirstOrDefault(p => p.RequestPoGroupId == group.Id && p.PaymentType == RequestPayment.PaymentTypes.Advance && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
 
         if (advancePayment == null)
+        {
+            // Supplier account credit: a 100 % Antecipado group fully covered by credit has no bank advance row — only a
+            // PLANNED SUPPLIER_CREDIT row that Finance applies through finance/{id}/apply-credit.
+            if (group.SupplierCreditReservationId != null && request.Payments.Any(p => p.RequestPoGroupId == group.Id
+                    && p.PaymentType == RequestPayment.PaymentTypes.SupplierCredit && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned))
+            {
+                var creditPd = new ProblemDetails { Title = "Liquidação por crédito em conta corrente", Detail = "Este adiantamento está integralmente coberto por crédito em conta corrente do fornecedor: não existe parcela bancária a agendar. Utilize \"Aplicar crédito\".", Status = 409 };
+                creditPd.Extensions["code"] = SC.ErrorCodes.ApplicationRequired;
+                creditPd.Extensions["paymentFlow"] = FinancePaymentFlows.Credit;
+                return Conflict(creditPd);
+            }
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado planejado para este grupo.", Status = 400 });
+        }
 
         // Update payment status
         advancePayment.PaymentStatus = RequestPayment.PaymentStatuses.Scheduled;
@@ -8556,12 +8854,43 @@ public class RequestsController : BaseController
             .OrderByDescending(p => p.PaymentSequence)
             .FirstOrDefault();
 
+        var advanceCreditTouched = group.SupplierCreditReservationId != null;
+        var advancePlannedCredit = advanceCreditTouched
+            ? request.Payments.FirstOrDefault(p => p.RequestPoGroupId == group.Id && p.PaymentType == RequestPayment.PaymentTypes.SupplierCredit && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned)
+            : null;
         if (advancePayment == null)
+        {
+            if (advancePlannedCredit != null)
+            {
+                var creditPd = new ProblemDetails { Title = "Liquidação por crédito em conta corrente", Detail = "Este adiantamento está integralmente coberto por crédito em conta corrente do fornecedor: não existe parcela bancária a confirmar. Utilize \"Aplicar crédito\".", Status = 409 };
+                creditPd.Extensions["code"] = SC.ErrorCodes.ApplicationRequired;
+                creditPd.Extensions["paymentFlow"] = FinancePaymentFlows.Credit;
+                return Conflict(creditPd);
+            }
             return BadRequest(new ProblemDetails { Title = "Ação Inválida", Detail = "Não existe pagamento adiantado pendente para este grupo.", Status = 400 });
+        }
 
         // Validate actual paid amount
         if (dto.ActualPaidAmount <= 0)
             return BadRequest(new ProblemDetails { Title = "Valor Inválido", Detail = "O valor pago deve ser maior que zero.", Status = 400 });
+
+        // ── Supplier account credit: the bank advance of a credit-touched group is settled EXACTLY (its PlannedAmount is
+        // already the bank part); the PLANNED credit row is applied atomically below. No tolerance either way. ──
+        if (advanceCreditTouched && !SupplierCreditPolicy.CashMatchesRow(dto.ActualPaidAmount, advancePayment.PlannedAmount))
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Montante divergente da parcela bancária",
+                Detail = $"Este grupo P.O tem crédito em conta corrente de {group.CreditCoverageAmount:N2}; o adiantamento bancário a confirmar é exatamente {advancePayment.PlannedAmount:N2} {group.CurrencyCode}. Montante informado: {dto.ActualPaidAmount:N2}. Nenhuma alteração foi efetuada.",
+                Status = 400
+            };
+            pd.Extensions["code"] = SC.ErrorCodes.PaymentAmountMismatch;
+            pd.Extensions["stage"] = advancePayment.SettlementStage ?? SC.Stages.Single;
+            pd.Extensions["due"] = advancePayment.PlannedAmount;
+            pd.Extensions["credit"] = group.CreditCoverageAmount;
+            pd.Extensions["total"] = group.TotalAmount;
+            return BadRequest(pd);
+        }
 
         // ── Minimum-Amount Guard: reject amounts below the required advance amount already
         // calculated by the domain (PlannedAmount) — partial advance payments are not supported
@@ -8587,6 +8916,9 @@ public class RequestsController : BaseController
 
         if (attachment.AttachmentTypeCode != AttachmentConstants.Types.PaymentProof)
             return BadRequest(new ProblemDetails { Title = "Anexo Inválido", Detail = "O ficheiro enviado não é um comprovativo de pagamento válido.", Status = 400 });
+
+        // Credit-touched groups: one transaction for the bank row, the credit application and the group status.
+        await using var advanceCreditTx = advanceCreditTouched ? await _context.Database.BeginTransactionAsync() : null;
 
         advancePayment.PaymentProofAttachmentId = dto.PaymentProofAttachmentId;
         attachment.RequestPoGroupId = group.Id; // link attachment to group
@@ -8635,6 +8967,23 @@ public class RequestsController : BaseController
             CreatedAtUtc = DateTime.UtcNow
         });
         
+        // ── Supplier account credit: apply the PLANNED credit row of the same stage atomically with the bank advance ──
+        if (advanceCreditTouched && advancePlannedCredit != null)
+        {
+            if (_supplierCredit == null)
+                return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+            var creditStage = advancePayment.SettlementStage ?? SC.Stages.Single;
+            var apply = await _supplierCredit.ApplyStageAsync(request, group, creditStage, actorId, $"Aplicado com o adiantamento bancário de {dto.ActualPaidAmount:N2} em {dto.PaidDate:dd/MM/yyyy}.");
+            if (!apply.Succeeded) return CreditProblem(apply); // disposes advanceCreditTx → rollback; nothing saved
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(), RequestId = request.Id, ActorUserId = actorId, ActionTaken = SC.HistoryActions.Applied,
+                PreviousStatusId = prevStatusId, NewStatusId = prevStatusId, CreatedAtUtc = DateTime.UtcNow,
+                IdempotencyKey = SupplierCreditPolicy.Keys.HistoryApplied(apply.Value!.Reservation.Id, creditStage),
+                Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Crédito", apply.Value.AppliedAmount) + " " + apply.Value.HistoryText
+            });
+        }
+
         request.UpdatedAtUtc = DateTime.UtcNow;
         request.UpdatedByUserId = actorId;
 
@@ -8647,6 +8996,7 @@ public class RequestsController : BaseController
         // Aggregate to update parent status
         var _statusAggregationService = HttpContext.RequestServices.GetRequiredService<IStatusAggregationService>();
         await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
+        if (advanceCreditTx != null) await advanceCreditTx.CommitAsync();
 
         // Phase 2 strictly post-save; never fails the confirmation.
         await EvaluateCompletionPhaseTwoAsync(id);
@@ -8674,6 +9024,15 @@ public class RequestsController : BaseController
 
         if (request.Status!.Code != "WAITING_RECONCILIATION")
             return StatusCode(400, "O pedido não está aguardando reconciliação.");
+
+        // Supplier account credit: the request-level reconciliation sums every group and would create a group-less balance
+        // row beside the group-level owed rows of a credit-touched group — refused (plan D18); group settlement is the path.
+        if (await _context.RequestPoGroups.AsNoTracking().AnyAsync(g => g.RequestId == id && g.SupplierCreditReservationId != null))
+        {
+            var creditPd = new ProblemDetails { Title = "Reconciliação não suportada", Detail = "Este pedido tem grupo(s) P.O com crédito em conta corrente; a reconciliação ao nível do pedido não é suportada. Utilize a liquidação por grupo.", Status = 409 };
+            creditPd.Extensions["code"] = SC.ErrorCodes.ReconciliationNotSupported;
+            return Conflict(creditPd);
+        }
 
         var activeReconciliation = request.Reconciliations
             .Where(r => r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.Draft || r.ReconciliationStatus == RequestReconciliation.ReconciliationStatuses.InProgress)

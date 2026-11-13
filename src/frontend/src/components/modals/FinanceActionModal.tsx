@@ -8,7 +8,7 @@ import { CurrencyInput } from '../CurrencyInput';
 import { formatBusinessDateOnly } from '../../lib/financePaymentsView';
 import { FINANCE_RETURN_KIND_LABELS, FINANCE_RETURN_REASON_CODES, FINANCE_RETURN_REASON_LABELS } from '../../lib/poGroupCancellation';
 
-export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | 'CANCEL_SCHEDULE' | null;
+export type FinanceActionType = 'SCHEDULE' | 'PAY' | 'RETURN' | 'NOTE' | 'CANCEL_SCHEDULE' | 'APPLY_CREDIT' | 'REVERSE_CREDIT' | null;
 
 /** Phase 1 P.O. cancellation: classification of a Finance return (PO_CORRECTION default | ORDER_CANCELLATION_REQUESTED). */
 export type FinanceReturnKindOption = 'PO_CORRECTION' | 'ORDER_CANCELLATION_REQUESTED';
@@ -22,11 +22,24 @@ export interface CancelScheduleContext {
     scheduledDateUtc: string | null;
 }
 
+/** Supplier account credit context shown by APPLY_CREDIT / REVERSE_CREDIT. */
+export interface CreditActionContext {
+    supplierName: string;
+    currencyCode: string;
+    groupAmount: number;
+    creditAmount: number;
+    bankPayable: number;
+    accountNumber?: string | null;
+}
+
 interface FinanceActionModalProps {
     show: boolean;
     action: FinanceActionType;
     isAdvance?: boolean;
     expectedAmount?: number;
+    /** Currency of the selected obligation (group / payment row). The expected amount is never assumed to be AOA. */
+    currencyCode?: string | null;
+    creditContext?: CreditActionContext;
     cancelScheduleContext?: CancelScheduleContext;
     onClose: () => void;
     onConfirm: (action: FinanceActionType, payload: FinanceActionPayload) => void;
@@ -42,6 +55,8 @@ export function FinanceActionModal({
     action,
     isAdvance = false,
     expectedAmount,
+    currencyCode,
+    creditContext,
     cancelScheduleContext,
     onClose,
     onConfirm,
@@ -87,6 +102,8 @@ export function FinanceActionModal({
             case 'RETURN': return 'Devolver Pedido para Ajuste';
             case 'NOTE': return 'Adicionar Observação';
             case 'CANCEL_SCHEDULE': return isAdvance ? 'Cancelar Agendamento de Adiantamento' : 'Cancelar Agendamento';
+            case 'APPLY_CREDIT': return 'Confirmar Utilização do Crédito';
+            case 'REVERSE_CREDIT': return 'Reverter Crédito em Conta Corrente';
             default: return '';
         }
     };
@@ -102,18 +119,21 @@ export function FinanceActionModal({
                     : 'Descreva o motivo da devolução para que o setor de Compras possa realizar os ajustes necessários na P.O.';
             case 'NOTE': return 'Registre uma observação financeira sobre este pedido. Esta nota ficará visível no histórico de auditoria.';
             case 'CANCEL_SCHEDULE': return 'Esta ação cancela o agendamento atual deste grupo. O documento de cronograma anexado será marcado como sem efeito.';
+            case 'APPLY_CREDIT': return 'O crédito reservado em conta corrente do fornecedor é aplicado a este grupo P.O. Não é um pagamento bancário: debita o saldo de crédito do fornecedor e liquida a obrigação.';
+            case 'REVERSE_CREDIT': return 'Reverte o crédito aplicado a este grupo: o valor volta ao saldo do fornecedor e a P.O. passa a ter pagamento bancário em aberto. Só é possível antes de qualquer receção, fatura ou reconciliação, e por um utilizador de Finanças diferente de quem aplicou o crédito.';
             default: return '';
         }
     };
 
-    const isCommentRequired = action === 'RETURN' || action === 'NOTE' || action === 'CANCEL_SCHEDULE';
-    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE' || action === 'NOTE' || action === 'CANCEL_SCHEDULE';
+    const isCommentRequired = action === 'RETURN' || action === 'NOTE' || action === 'CANCEL_SCHEDULE' || action === 'REVERSE_CREDIT';
+    const showCommentField = action === 'RETURN' || action === 'PAY' || action === 'SCHEDULE' || action === 'NOTE' || action === 'CANCEL_SCHEDULE' || action === 'APPLY_CREDIT' || action === 'REVERSE_CREDIT';
 
     // Determine button disabled state
     const isConfirmDisabled = processing ||
         (action === 'SCHEDULE' && !date) ||
         (action === 'PAY' && (!file || !amount || parseFloat(amount) <= 0 || !date)) ||
         (action === 'CANCEL_SCHEDULE' && notes.trim().length < CANCEL_SCHEDULE_MIN_REASON_LENGTH) ||
+        (action === 'REVERSE_CREDIT' && notes.trim().length < CANCEL_SCHEDULE_MIN_REASON_LENGTH) ||
         (isCommentRequired && !notes.trim());
 
     const inputStyle = {
@@ -283,7 +303,7 @@ export function FinanceActionModal({
                                 />
                                 {expectedAmount && expectedAmount > 0 && (
                                     <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
-                                        Valor esperado/agendado: {expectedAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} AOA
+                                        Valor esperado/agendado: {expectedAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currencyCode || 'AOA'}
                                     </div>
                                 )}
                             </div>
@@ -363,6 +383,29 @@ export function FinanceActionModal({
                             </div>
                         )}
 
+                        {(action === 'APPLY_CREDIT' || action === 'REVERSE_CREDIT') && creditContext && (
+                            <div data-testid="finance-credit-context" style={{ marginBottom: '24px', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Fornecedor</span><span>{creditContext.supplierName}</span>
+                                </div>
+                                {creditContext.accountNumber && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                        <span style={{ color: 'var(--color-text-muted)' }}>Conta corrente</span><span>{creditContext.accountNumber}</span>
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Valor da P.O</span><span>{creditContext.groupAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {creditContext.currencyCode}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>{action === 'APPLY_CREDIT' ? 'Crédito a aplicar' : 'Crédito a reverter'}</span><span>{creditContext.creditAmount.toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {creditContext.currencyCode}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>{action === 'APPLY_CREDIT' ? 'Saldo pendente (banco)' : 'Valor a pagar após reversão'}</span>
+                                    <span>{(action === 'APPLY_CREDIT' ? creditContext.bankPayable : creditContext.groupAmount).toLocaleString('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {creditContext.currencyCode}</span>
+                                </div>
+                            </div>
+                        )}
+
                         {action === 'CANCEL_SCHEDULE' && cancelScheduleContext && (
                             <div style={{ marginBottom: '24px', padding: '16px 20px', backgroundColor: 'var(--color-bg-page)', border: '2px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700 }}>
@@ -395,6 +438,7 @@ export function FinanceActionModal({
                                 <label style={{ display: 'block', marginBottom: '12px', fontWeight: 800, fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
                                     {action === 'NOTE' ? 'Observação (obrigatório)'
                                         : action === 'CANCEL_SCHEDULE' ? `Motivo do Cancelamento (obrigatório, mínimo ${CANCEL_SCHEDULE_MIN_REASON_LENGTH} caracteres)`
+                                        : action === 'REVERSE_CREDIT' ? `Motivo da Reversão (obrigatório, mínimo ${CANCEL_SCHEDULE_MIN_REASON_LENGTH} caracteres)`
                                         : isCommentRequired ? 'Motivo da Devolução (obrigatório)' : 'Observações (opcional)'}
                                 </label>
                                 <textarea
@@ -408,7 +452,7 @@ export function FinanceActionModal({
                                         padding: '16px'
                                     }}
                                 />
-                                {action === 'CANCEL_SCHEDULE' && (
+                                {(action === 'CANCEL_SCHEDULE' || action === 'REVERSE_CREDIT') && (
                                     <div style={{ marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: notes.trim().length < CANCEL_SCHEDULE_MIN_REASON_LENGTH ? '#dc2626' : 'var(--color-text-muted)' }}>
                                         {notes.trim().length}/{CANCEL_SCHEDULE_MIN_REASON_LENGTH} caracteres mínimos
                                     </div>
@@ -441,7 +485,7 @@ export function FinanceActionModal({
                                 style={{
                                     height: '48px',
                                     padding: '0 40px',
-                                    backgroundColor: (action === 'RETURN' || action === 'CANCEL_SCHEDULE') ? 'var(--color-status-red)' : 'var(--color-primary)',
+                                    backgroundColor: (action === 'RETURN' || action === 'CANCEL_SCHEDULE' || action === 'REVERSE_CREDIT') ? 'var(--color-status-red)' : 'var(--color-primary)',
                                     color: '#fff',
                                     border: 'none',
                                     cursor: isConfirmDisabled ? 'not-allowed' : 'pointer',

@@ -173,7 +173,8 @@ describe('Finance obligations row for a PAYMENT-type scheduled advance', () => {
     expect(isAdvanceObligation(advance)).toBe(true);
     expect(isAdvanceObligation(standard)).toBe(false);
     // The DTO carries the field and the list page dispatches on it.
-    expect(typesSource).toMatch(/paymentFlow\?: 'ADVANCE' \| 'STANDARD' \| string \| null;/);
+    // Supplier account credit added the CREDIT flow (finance apply-credit) to the same server-authoritative field.
+    expect(typesSource).toMatch(/paymentFlow\?: 'ADVANCE' \| 'STANDARD' \| 'CREDIT' \| string \| null;/);
     expect(financeListSource).toMatch(/const isAdvance = isAdvanceObligation\(actionModal\.obligation\);/);
     expect(financeListSource).toMatch(/if \(isAdvance\) await api\.requests\.confirmAdvancePayment\(/);
     expect(financeListSource).toMatch(/else await api\.finance\.markAsPaid\(/);

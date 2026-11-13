@@ -39,7 +39,17 @@ public static class FinanceObligationProjectionBuilder
         System.Collections.Generic.IReadOnlyList<string> FinanceActions,
         System.Collections.Generic.IReadOnlyList<PaymentInput> Payments,
         // v2.249.2 — RequestPoGroup.LastFinanceReturnKind of a WAITING_PO_CORRECTION group (null = legacy, unclassified).
-        string? LastFinanceReturnKind = null);
+        string? LastFinanceReturnKind = null,
+        // Supplier account credit (null = never used credit on this group).
+        CreditInput? Credit = null);
+
+    /// <summary>Supplier account credit facts of the group as the Finance queue needs them.</summary>
+    public sealed record CreditInput(
+        decimal CoverageAmount,
+        decimal AppliedAmount,
+        decimal HoldAmount,
+        string? ReservationStatus,
+        string? AccountNumber);
 
     public sealed record RequestInput(
         System.Guid RequestId,
@@ -79,7 +89,7 @@ public static class FinanceObligationProjectionBuilder
         bool HasPaymentProof,
         // Action
         System.Collections.Generic.IReadOnlyList<string> FinanceActions,
-        /// <summary>v2.245.11 — FinancePaymentFlows.Advance | Standard: which endpoints settle this obligation.</summary>
+        /// <summary>v2.245.11 — FinancePaymentFlows.Advance | Standard | Credit: which endpoints settle this obligation.</summary>
         string PaymentFlow,
         string ActionClass,
         string ActionClassLabel,
@@ -91,7 +101,15 @@ public static class FinanceObligationProjectionBuilder
         int OverdueDays,
         bool IsDueToday,
         // Display
-        decimal ObligationAmount);
+        decimal ObligationAmount,
+        // Supplier account credit (all 0 / null when the group never used credit)
+        decimal CreditCoverageAmount,
+        decimal CreditAppliedAmount,
+        decimal CreditReservedAmount,
+        string? CreditReservationStatus,
+        string? CreditAccountNumber,
+        /// <summary>Bank amount still owed on the group: TotalAmount − coverage − completed cash (never negative).</summary>
+        decimal BankPayableAmount);
 
     // Group-status → action class (deterministic). Uses the Statuses.* values, which are string-
     // identical to the PoGroupStatuses.* values the groups actually carry.
@@ -129,11 +147,12 @@ public static class FinanceObligationProjectionBuilder
         _ => FinanceResponsibleRoles.Buyer // NO_FINANCE_ACTION: PENDING/WAITING_PO(_CORRECTION) are Buyer's
     };
 
-    /// <summary>The active (non-cancelled) payment row relevant to this group's current state:
-    /// the scheduled one if scheduled, else the completed one, else the latest planned.</summary>
+    /// <summary>The active (non-cancelled) CASH payment row relevant to this group's current state:
+    /// the scheduled one if scheduled, else the completed one, else the latest planned. SUPPLIER_CREDIT
+    /// rows are settlement, never cash — they never feed the cash columns of the obligation.</summary>
     private static PaymentInput? RelevantPayment(GroupInput group)
     {
-        var live = group.Payments.Where(p => p.PaymentStatus != "CANCELLED").ToList();
+        var live = group.Payments.Where(p => p.PaymentStatus != "CANCELLED" && p.PaymentType != "SUPPLIER_CREDIT").ToList();
         if (live.Count == 0) return null;
         return live.FirstOrDefault(p => p.PaymentStatus == "SCHEDULED")
             ?? live.FirstOrDefault(p => p.PaymentStatus == "COMPLETED")
@@ -162,20 +181,37 @@ public static class FinanceObligationProjectionBuilder
             else if (due == today) { isDueToday = true; }
         }
 
-        // Amount: unscheduled → group total; scheduled → planned payment amount; paid → actual paid.
+        // Supplier account credit: the bank part of the obligation is the group total minus the live coverage.
+        var credit = group.Credit;
+        var coverage = credit?.CoverageAmount ?? 0m;
+        var completedCash = group.Payments
+            .Where(p => p.PaymentStatus == "COMPLETED" && p.PaymentType != "SUPPLIER_CREDIT" && p.PaymentType != "REFUND" && p.PaymentType != "OTHER")
+            .Sum(p => p.ActualPaidAmount ?? 0m);
+        var bankPayable = System.Math.Max(0m, group.TotalAmount - coverage - completedCash);
+        var creditTouched = credit != null;
+
+        // Amount: unscheduled → group total (bank part for credit-touched groups); scheduled → planned payment amount; paid → actual paid.
         decimal obligationAmount = actionClass switch
         {
-            FinanceActionClasses.NeedsPayment => payment?.PlannedAmount ?? group.TotalAmount,
-            FinanceActionClasses.PaidWaitingReceiving => payment?.ActualPaidAmount ?? payment?.PlannedAmount ?? group.TotalAmount,
+            FinanceActionClasses.NeedsPayment => payment?.PlannedAmount ?? (creditTouched ? bankPayable : group.TotalAmount),
+            FinanceActionClasses.PaidWaitingReceiving => payment?.ActualPaidAmount ?? payment?.PlannedAmount ?? (creditTouched ? completedCash : group.TotalAmount),
+            FinanceActionClasses.NeedsScheduling => creditTouched ? bankPayable : group.TotalAmount,
             _ => group.TotalAmount
         };
 
         var advance = group.GroupStatus is RequestConstants.Statuses.AdvancePaymentRequired
             or RequestConstants.Statuses.AdvancePaymentScheduled;
         // Server-authoritative execution flow (same rule MarkAsPaid enforces) — never inferred by the client.
-        var paymentFlow = FinancePaymentFlows.Resolve(group.GroupStatus,
-            group.Payments.Select(p => (p.PaymentType, p.PaymentStatus)));
-        var nextAction = NextActionLabel(actionClass, group.GroupStatus, advance, group.LastFinanceReturnKind);
+        // Supplier credit: when the per-group actions say APPLY_CREDIT and no bank action remains, the flow is CREDIT
+        // (POST finance/{id}/apply-credit); schedule / pay / confirm-advance refuse such a group with 409.
+        var creditOnly = group.FinanceActions.Contains("APPLY_CREDIT")
+            && !group.FinanceActions.Contains("SCHEDULE") && !group.FinanceActions.Contains("PAY");
+        var paymentFlow = creditOnly
+            ? FinancePaymentFlows.Credit
+            : FinancePaymentFlows.Resolve(group.GroupStatus, group.Payments.Select(p => (p.PaymentType, p.PaymentStatus)));
+        var nextAction = creditOnly && FinanceActionClasses.IsFinanceActionable(actionClass)
+            ? "Aplicar crédito em conta corrente"
+            : NextActionLabel(actionClass, group.GroupStatus, advance, group.LastFinanceReturnKind);
         var operationalState = OperationalStateLabel(actionClass, group.GroupStatus, advance, isOverdue);
 
         return new FinanceObligation(
@@ -213,7 +249,13 @@ public static class FinanceObligationProjectionBuilder
             IsOverdue: isOverdue,
             OverdueDays: overdueDays,
             IsDueToday: isDueToday,
-            ObligationAmount: obligationAmount);
+            ObligationAmount: obligationAmount,
+            CreditCoverageAmount: coverage,
+            CreditAppliedAmount: credit?.AppliedAmount ?? 0m,
+            CreditReservedAmount: credit?.HoldAmount ?? 0m,
+            CreditReservationStatus: credit?.ReservationStatus,
+            CreditAccountNumber: credit?.AccountNumber,
+            BankPayableAmount: creditTouched ? bankPayable : System.Math.Max(0m, group.TotalAmount - completedCash));
     }
 
     /// <summary>PT display label for a group status code (secondary chip on the obligation row).</summary>

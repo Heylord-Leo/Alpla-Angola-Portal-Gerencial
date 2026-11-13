@@ -153,6 +153,14 @@ builder.Services.AddScoped<ISupplierCreationService, SupplierCreationService>();
 // Phase 3D — centralized Supplier Sheet authorization (capability + request-scoped Buyer access).
 builder.Services.AddScoped<ISupplierCapabilityEvaluator, SupplierCapabilityEvaluator>();
 
+// Supplier account credit ("Créditos em conta corrente") applied to P.O. groups — docs/SUPPLIER_CREDIT_PO_COVERAGE.md.
+// The flag governs ONLY new/changed reservations (committed default false); settlement, caps, release and reversal of
+// credit-touched groups stay active regardless of it.
+builder.Services.Configure<AlplaPortal.Domain.Configuration.SupplierCreditOptions>(
+    builder.Configuration.GetSection(AlplaPortal.Domain.Configuration.SupplierCreditOptions.SectionName));
+builder.Services.AddScoped<AlplaPortal.Application.Interfaces.Suppliers.ISupplierCreditLedgerService, AlplaPortal.Infrastructure.Services.Suppliers.SupplierCreditLedgerService>();
+builder.Services.AddScoped<AlplaPortal.Application.Interfaces.Suppliers.ISupplierCreditSettlementService, AlplaPortal.Infrastructure.Services.Finance.SupplierCreditSettlementService>();
+
 // Post-Payment Completion Workflow — Release 1 foundation.
 // The options bind to a section that ships with Enabled=false in every environment; when the
 // section is absent the class defaults (Enabled=false, EffectiveDateUtc=MaxValue) apply, so an

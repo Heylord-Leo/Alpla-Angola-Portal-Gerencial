@@ -3,6 +3,9 @@ namespace AlplaPortal.Api.Controllers;
 using AlplaPortal.Application.DTOs.Finance;
 using AlplaPortal.Application.DTOs.Common;
 using AlplaPortal.Application.DTOs.Requests;
+using AlplaPortal.Application.DTOs.SupplierCredit;
+using AlplaPortal.Application.Interfaces.Suppliers;
+using SC = AlplaPortal.Domain.Constants.SupplierCreditConstants;
 using AlplaPortal.Application.Interfaces;
 using AlplaPortal.Application.Interfaces.Purchasing;
 using AlplaPortal.Application.Interfaces.Finance;
@@ -37,13 +40,35 @@ public class FinanceController : BaseController
         ILogger<FinanceController> logger,
         IStatusAggregationService statusAggregationService,
         IFinancePaymentEligibilityService eligibility,
-        AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? completionService = null) : base(context)
+        AlplaPortal.Application.Interfaces.Requests.IRequestCompletionService? completionService = null,
+        ISupplierCreditSettlementService? supplierCredit = null) : base(context)
     {
         _orchestrator = orchestrator;
         _logger = logger;
         _statusAggregationService = statusAggregationService;
         _eligibility = eligibility;
         _completionService = completionService;
+        _supplierCredit = supplierCredit;
+    }
+
+    /// <summary>Supplier account credit settlement (optional-by-default for direct constructions in tests; DI always supplies it).</summary>
+    private readonly ISupplierCreditSettlementService? _supplierCredit;
+
+    /// <summary>Latest credit reservation per group id, for the groups of one page (one query; empty when none is credit-touched).</summary>
+    private async Task<Dictionary<Guid, SupplierCreditReservation>> LoadReservationsAsync(IEnumerable<RequestPoGroup> groups)
+    {
+        var ids = groups.Where(g => g.SupplierCreditReservationId != null).Select(g => g.Id).Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, SupplierCreditReservation>();
+        var rows = await _context.SupplierCreditReservations.AsNoTracking().Include(r => r.Account).Where(r => ids.Contains(r.RequestPoGroupId)).ToListAsync();
+        return rows.GroupBy(r => r.RequestPoGroupId).ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.ReservedAtUtc).First());
+    }
+
+    private static ObjectResult CreditProblem<T>(SupplierCreditOperationOutcome<T> outcome)
+    {
+        var pd = new ProblemDetails { Title = outcome.Title, Detail = outcome.Detail, Status = outcome.StatusCode };
+        pd.Extensions["code"] = outcome.Code;
+        foreach (var kv in outcome.Extensions) pd.Extensions[kv.Key] = kv.Value;
+        return new ObjectResult(pd) { StatusCode = outcome.StatusCode };
     }
 
     /// <summary>
@@ -133,9 +158,13 @@ public class FinanceController : BaseController
                         : r.EstimatedTotalAmount,
                 ActualPaidAmount = r.ActualPaidAmount,
                 ActualPaidAtUtc = r.ActualPaidAtUtc,
-                CurrencyCode = r.SelectedQuotationId.HasValue 
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
-                    : r.Currency != null ? r.Currency.Code : "---",
+                // Currency follows the amount's source: approved snapshot → ApprovedCurrencyCode (see RequestsController list).
+                CurrencyCode = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0
+                                && r.ApprovedCurrencyCode != null && r.ApprovedCurrencyCode != "MULTIPLE")
+                    ? r.ApprovedCurrencyCode
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
+                        : r.Currency != null ? r.Currency.Code : "---",
                 SupplierName = r.SelectedQuotationId.HasValue 
                     ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.SupplierNameSnapshot
                     : r.Supplier != null ? r.Supplier.Name : "---",
@@ -384,9 +413,12 @@ public class FinanceController : BaseController
             {
                 ScheduledDateUtc = r.ScheduledDateUtc,
                 NeedByDateUtc = r.NeedByDateUtc,
-                CurrencyCode = r.SelectedQuotationId.HasValue
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
-                    : r.Currency != null ? r.Currency.Code : "---",
+                CurrencyCode = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0
+                                && r.ApprovedCurrencyCode != null && r.ApprovedCurrencyCode != "MULTIPLE")
+                    ? r.ApprovedCurrencyCode
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)!.Currency
+                        : r.Currency != null ? r.Currency.Code : "---",
                 Amount = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0)
                     ? r.ApprovedTotalAmount.Value
                     : r.SelectedQuotationId.HasValue
@@ -649,6 +681,8 @@ public class FinanceController : BaseController
                 legacyReturnIds.Add(candidate.Request.Id);
         }
         var dtoList = new List<FinanceListItemDto>();
+        // Supplier account credit: latest reservation of every credit-touched group on this page (one query).
+        var pageReservations = await LoadReservationsAsync(items.SelectMany(i => i.Request.PoGroups));
 
         foreach (var item in items)
         {
@@ -678,7 +712,8 @@ public class FinanceController : BaseController
                 PoGroups = r.PoGroups.Select(g => new FinancePoGroupEligibilityInput
                 {
                     GroupId = g.Id,
-                    GroupStatus = g.Status
+                    GroupStatus = g.Status,
+                    Credit = SupplierCreditFactsBuilder.Build(g, pageReservations.TryGetValue(g.Id, out var res0) ? res0 : null)
                 }).ToList()
             };
             var actions = _eligibility.Evaluate(eligibilityInput).Actions.ToList();
@@ -698,9 +733,12 @@ public class FinanceController : BaseController
                     : r.SelectedQuotationId.HasValue
                         ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.TotalAmount ?? 0
                         : r.EstimatedTotalAmount,
-                CurrencyCode = r.SelectedQuotationId.HasValue
-                    ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency
-                    : r.Currency != null ? r.Currency.Code : null,
+                CurrencyCode = (r.ApprovedTotalAmount.HasValue && r.ApprovedTotalAmount.Value > 0
+                                && r.ApprovedCurrencyCode != null && r.ApprovedCurrencyCode != "MULTIPLE")
+                    ? r.ApprovedCurrencyCode
+                    : r.SelectedQuotationId.HasValue
+                        ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency
+                        : r.Currency != null ? r.Currency.Code : null,
                 NeedByDateUtc = r.NeedByDateUtc,
                 ScheduledDateUtc = r.ScheduledDateUtc,
                 PaidDateUtc = item.PaidHistory?.CreatedAtUtc,
@@ -754,8 +792,10 @@ public class FinanceController : BaseController
                     // multi-group UI gates each card's buttons here (never on the request-level
                     // AvailableFinanceActions). A paid sibling can no longer suppress this group.
                     FinanceActions = legacyReturnIds.Contains(r.Id)
-                        ? _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).Where(a => a != FinancePaymentActionCodes.Schedule && a != FinancePaymentActionCodes.Pay).ToList()
-                        : _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status).ToList(),
+                        ? _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status, SupplierCreditFactsBuilder.Build(g, pageReservations.TryGetValue(g.Id, out var res1) ? res1 : null)).Where(a => a != FinancePaymentActionCodes.Schedule && a != FinancePaymentActionCodes.Pay).ToList()
+                        : _eligibility.EvaluateGroupActions(r.RequestType!.Code, r.Status.Code, g.Status, SupplierCreditFactsBuilder.Build(g, pageReservations.TryGetValue(g.Id, out var res2) ? res2 : null)).ToList(),
+                    CreditCoverageAmount = g.CreditCoverageAmount,
+                    SupplierCredit = pageReservations.TryGetValue(g.Id, out var res3) ? SupplierCreditSettlementService.ToSummary(res3, res3.Account) : null,
                     Payments = g.Payments.Select(p => new RequestPaymentDto
                     {
                         Id = p.Id,
@@ -766,7 +806,9 @@ public class FinanceController : BaseController
                         ScheduledDateUtc = p.ScheduledDateUtc,
                         PaidDateUtc = p.PaidDateUtc,
                         CurrencyCode = p.CurrencyCode,
-                        HasDivergence = p.HasDivergence
+                        HasDivergence = p.HasDivergence,
+                        SettlementStage = p.SettlementStage,
+                        SupplierCreditReservationId = p.SupplierCreditReservationId
                     }).ToList()
                 }).ToList()
             });
@@ -833,7 +875,7 @@ public class FinanceController : BaseController
         var today = DateTime.UtcNow.Date;
 
         // Build obligations + containers via the shared projection (same computation the Dashboard uses).
-        var built = await new FinanceObligationSummaryProjection(_eligibility)
+        var built = await new FinanceObligationSummaryProjection(_eligibility, _context)
             .BuildAsync(scopedQuery, plantId, departmentId, companyId, today);
         var containersById = built.Containers;
 
@@ -979,7 +1021,8 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" }
+            .Concat(SC.HistoryActions.All).ToArray(); // supplier credit events keep their own labels — never counted as "Pagos" (cash)
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -1177,7 +1220,8 @@ public class FinanceController : BaseController
         var scopedQuery = await GetScopedRequestsQuery();
         var requestIds = await scopedQuery.Select(r => r.Id).ToListAsync();
 
-        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" };
+        var financeActionCodes = new[] { "PAYMENT_SCHEDULED", "PAYMENT_COMPLETED", "ADVANCE_PAYMENT_COMPLETED", "DOCUMENTO ADICIONADO", "NOTA_FINANCEIRA", "FINANCE_RETURN_ADJUSTMENT", "PAYMENT_DIVERGENCE_DETECTED", "PAYMENT_SCHEDULE_CANCELLED", "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" }
+            .Concat(SC.HistoryActions.All).ToArray(); // supplier credit events keep their own labels — never counted as "Pagos" (cash)
         var financeStatusCodes = new[] { RequestConstants.Statuses.PaymentScheduled, RequestConstants.Statuses.Paid, RequestConstants.Statuses.PaymentCompleted };
 
         var query = _context.RequestStatusHistories
@@ -1256,6 +1300,11 @@ public class FinanceController : BaseController
                 "PAYMENT_DIVERGENCE_DETECTED" => "Divergência",
                 "PAYMENT_SCHEDULE_CANCELLED" => "Agendamento Cancelado",
                 "ADVANCE_PAYMENT_SCHEDULE_CANCELLED" => "Adiantamento Cancelado",
+                SC.HistoryActions.Reserved => "Crédito Reservado",
+                SC.HistoryActions.ReservationChanged => "Reserva de Crédito Alterada",
+                SC.HistoryActions.Released => "Reserva de Crédito Libertada",
+                SC.HistoryActions.Applied => "Crédito Aplicado",
+                SC.HistoryActions.Reversed => "Crédito Revertido",
                 _ => item.ActionTaken
             };
             csv.AppendLine($"{item.CreatedAtUtc:yyyy-MM-dd HH:mm:ss};{actionStr};{item.ActorName};{item.RequestNumber};{item.RequestTitle};{item.CurrencyCode};{item.Amount};{item.PaymentCondition};{item.AdvancePaymentPercent};{comment}");
@@ -1324,29 +1373,65 @@ public class FinanceController : BaseController
             : RequestConstants.Statuses.PaymentScheduled;
 
         var paymentType = group.Status == RequestConstants.Statuses.AdvancePaymentRequired ? RequestPayment.PaymentTypes.Advance : RequestPayment.PaymentTypes.FinalBalance;
-        // REQUEST-scoped sequence via the canonical allocator (the unique index is
-        // (RequestId, PaymentType, PaymentSequence)). A per-group Max() would restart at 1 for each
-        // sibling group and collide; the allocator also counts group-less payments (e.g. a
-        // reconciliation remaining-balance row) and preserves CANCELLED sequences without reuse.
-        var nextSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
-            .NextSequenceAsync(_context, r.Id, paymentType);
 
-        var payment = new RequestPayment
+        RequestPayment payment;
+        if (group.SupplierCreditReservationId != null)
         {
-            RequestId = r.Id,
-            RequestPoGroupId = group.Id,
-            PlannedAmount = group.TotalAmount,
-            PaymentType = paymentType,
-            PaymentSequence = nextSequence,
-            ScheduledDateUtc = requestDto.ScheduledDate,
-            ScheduledByUserId = CurrentUserId,
-            PaymentStatus = RequestPayment.PaymentStatuses.Scheduled,
-            CurrencyCode = group.CurrencyCode ?? "---",
-            Notes = requestDto.Comment,
-            CreatedByUserId = CurrentUserId,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        _context.RequestPayments.Add(payment);
+            // ── Supplier account credit: the owed rows were materialised at registration. Schedule the PLANNED bank row of
+            // the current stage (its PlannedAmount is already the bank part, total − credit); never plan the full total.
+            // Full coverage (no bank row, a PLANNED credit row) is settled only by apply-credit → 409.
+            var pendingCredit = group.Payments.Any(p => p.PaymentType == RequestPayment.PaymentTypes.SupplierCredit && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
+            var bankRow = group.Payments
+                .Where(p => p.PaymentType == paymentType && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned)
+                .OrderByDescending(p => p.PaymentSequence).FirstOrDefault();
+            if (bankRow == null)
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = pendingCredit ? "Liquidação por crédito em conta corrente" : "Nada a agendar",
+                    Detail = pendingCredit
+                        ? "Este grupo P.O está integralmente coberto por crédito em conta corrente do fornecedor: não existe parcela bancária a agendar. Utilize \"Aplicar crédito\"."
+                        : "Este grupo P.O não tem parcela bancária planeada para agendar.",
+                    Status = 409
+                };
+                pd.Extensions["code"] = pendingCredit ? SC.ErrorCodes.ApplicationRequired : SC.ErrorCodes.NothingToSettle;
+                pd.Extensions["paymentFlow"] = pendingCredit ? FinancePaymentFlows.Credit : FinancePaymentFlows.Standard;
+                return Conflict(pd);
+            }
+            bankRow.PaymentStatus = RequestPayment.PaymentStatuses.Scheduled;
+            bankRow.ScheduledDateUtc = requestDto.ScheduledDate;
+            bankRow.ScheduledByUserId = CurrentUserId;
+            bankRow.UpdatedByUserId = CurrentUserId;
+            bankRow.UpdatedAtUtc = DateTime.UtcNow;
+            if (!string.IsNullOrWhiteSpace(requestDto.Comment)) bankRow.Notes = $"{bankRow.Notes} {requestDto.Comment}".Trim();
+            payment = bankRow;
+        }
+        else
+        {
+            // REQUEST-scoped sequence via the canonical allocator (the unique index is
+            // (RequestId, PaymentType, PaymentSequence)). A per-group Max() would restart at 1 for each
+            // sibling group and collide; the allocator also counts group-less payments (e.g. a
+            // reconciliation remaining-balance row) and preserves CANCELLED sequences without reuse.
+            var nextSequence = await AlplaPortal.Api.Services.PaymentSequenceAllocator
+                .NextSequenceAsync(_context, r.Id, paymentType);
+
+            payment = new RequestPayment
+            {
+                RequestId = r.Id,
+                RequestPoGroupId = group.Id,
+                PlannedAmount = group.TotalAmount,
+                PaymentType = paymentType,
+                PaymentSequence = nextSequence,
+                ScheduledDateUtc = requestDto.ScheduledDate,
+                ScheduledByUserId = CurrentUserId,
+                PaymentStatus = RequestPayment.PaymentStatuses.Scheduled,
+                CurrencyCode = group.CurrencyCode ?? "---",
+                Notes = requestDto.Comment,
+                CreatedByUserId = CurrentUserId,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _context.RequestPayments.Add(payment);
+        }
 
         // Legacy PAYMENT-type auto-created groups can carry a null SupplierNameSnapshot/CurrencyCode
         // (never actively synced) even though the parent request always knows its own supplier/
@@ -1586,11 +1671,56 @@ public class FinanceController : BaseController
             });
         }
 
+        // ── Supplier account credit: a credit-touched group settles its PLANNED/SCHEDULED bank row EXACTLY (no tolerance),
+        // and the PLANNED credit row of the same stage is applied atomically in the same transaction. Full coverage (no bank
+        // row) is refused here: Finance applies the credit through apply-credit. Runs before any mutation. ──
+        var creditTouched = group.SupplierCreditReservationId != null;
+        RequestPayment? creditBankRow = null;
+        RequestPayment? creditPlannedRow = null;
+        if (creditTouched)
+        {
+            var creditRows = await _context.RequestPayments.AsNoTracking().Where(p => p.RequestPoGroupId == group.Id).ToListAsync();
+            creditPlannedRow = creditRows.FirstOrDefault(p => p.PaymentType == RequestPayment.PaymentTypes.SupplierCredit && p.PaymentStatus == RequestPayment.PaymentStatuses.Planned);
+            creditBankRow = creditRows
+                .Where(p => p.PaymentType == RequestPayment.PaymentTypes.FinalBalance
+                    && (p.PaymentStatus == RequestPayment.PaymentStatuses.Planned || p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled))
+                .OrderByDescending(p => p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled).ThenByDescending(p => p.PaymentSequence)
+                .FirstOrDefault();
+            if (creditBankRow == null)
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = creditPlannedRow != null ? "Liquidação por crédito em conta corrente" : "Nada a liquidar",
+                    Detail = creditPlannedRow != null
+                        ? "Este grupo P.O está integralmente coberto por crédito em conta corrente do fornecedor: não existe parcela bancária a pagar. Utilize \"Aplicar crédito\"."
+                        : "Este grupo P.O não tem parcela bancária pendente.",
+                    Status = 409
+                };
+                pd.Extensions["code"] = creditPlannedRow != null ? SC.ErrorCodes.ApplicationRequired : SC.ErrorCodes.NothingToSettle;
+                pd.Extensions["paymentFlow"] = creditPlannedRow != null ? FinancePaymentFlows.Credit : FinancePaymentFlows.Standard;
+                return Conflict(pd);
+            }
+            if (!SupplierCreditPolicy.CashMatchesRow(requestDto.ActualPaidAmount, creditBankRow.PlannedAmount))
+            {
+                var pd = new ProblemDetails
+                {
+                    Title = "Montante divergente da parcela bancária",
+                    Detail = $"Este grupo P.O tem crédito em conta corrente de {group.CreditCoverageAmount:N2}; a parcela bancária a pagar é exatamente {creditBankRow.PlannedAmount:N2} {group.CurrencyCode}. Montante informado: {requestDto.ActualPaidAmount:N2}. Nenhuma alteração foi efetuada.",
+                    Status = 400
+                };
+                pd.Extensions["code"] = SC.ErrorCodes.PaymentAmountMismatch;
+                pd.Extensions["stage"] = creditBankRow.SettlementStage ?? SC.Stages.Single;
+                pd.Extensions["due"] = creditBankRow.PlannedAmount;
+                pd.Extensions["credit"] = group.CreditCoverageAmount;
+                pd.Extensions["total"] = group.TotalAmount;
+                return BadRequest(pd);
+            }
+        }
         // ── Minimum-Amount Guard: partial payments are not supported by this action — a group
         // must never be silently closed as fully paid for less than the required amount. This
         // check runs before any mutation. Overpayment remains allowed (existing divergence
-        // detection further below still applies to it). ──
-        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+        // detection further below still applies to it). Credit-touched groups use the strict row rule above instead. ──
+        else if (r.RequestType?.Code == RequestConstants.Types.Quotation)
         {
             var requiredAmount = group.TotalAmount;
             if (requestDto.ActualPaidAmount < requiredAmount)
@@ -1603,6 +1733,10 @@ public class FinanceController : BaseController
                 });
             }
         }
+
+        // Credit-touched groups: one transaction covers the bank row, the credit application (ledger + reservation +
+        // credit row) and the group status; the row locks taken by the settlement service need it.
+        await using var creditTx = creditTouched ? await _context.Database.BeginTransactionAsync() : null;
 
         var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(s => s.Code == RequestConstants.Statuses.PaymentCompleted || s.Code == RequestConstants.Statuses.Paid);
         if (paidStatus == null) return BadRequest("Status PAID não configurado.");
@@ -1678,11 +1812,29 @@ public class FinanceController : BaseController
 
         r.UpdatedAtUtc = DateTime.UtcNow;
 
-        // ── DEC-110: Actual Payment Capture ──────────────────────────────────
+        // ── DEC-110: Actual Payment Capture (cash only — credit never enters this figure) ──
         r.ActualPaidAmount = requestDto.ActualPaidAmount;
         r.ActualPaidAtUtc = requestDto.PaidDate;
 
         _context.RequestStatusHistories.Add(history);
+
+        // ── Supplier account credit: apply the PLANNED credit row of the same stage atomically with the bank payment ──
+        if (creditTouched && creditPlannedRow != null)
+        {
+            if (_supplierCredit == null)
+                return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+            var stage = creditBankRow!.SettlementStage ?? SC.Stages.Single;
+            var apply = await _supplierCredit.ApplyStageAsync(r, group, stage, CurrentUserId, $"Aplicado com o pagamento bancário de {requestDto.ActualPaidAmount:N2} em {requestDto.PaidDate:dd/MM/yyyy}.");
+            if (!apply.Succeeded) return CreditProblem(apply); // returning disposes creditTx → rollback; nothing was saved
+            _context.RequestStatusHistories.Add(new RequestStatusHistory
+            {
+                Id = Guid.NewGuid(), RequestId = id, ActorUserId = CurrentUserId, ActionTaken = SC.HistoryActions.Applied,
+                PreviousStatusId = r.StatusId, NewStatusId = paidStatus.Id, CreatedAtUtc = DateTime.UtcNow,
+                IdempotencyKey = SupplierCreditPolicy.Keys.HistoryApplied(apply.Value!.Reservation.Id, stage),
+                Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Crédito", apply.Value.AppliedAmount)
+                    + " " + apply.Value.HistoryText
+            });
+        }
 
         // Phase 4C: the actual-payment fact (never SCHEDULED) may satisfy the group's payment
         // dimension — Phase 1 runs on the freshly tracked paid state, in this same save.
@@ -1699,11 +1851,18 @@ public class FinanceController : BaseController
         {
             await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
         }
+        if (creditTx != null) await creditTx.CommitAsync();
 
         // ── Divergence Detection: group-first for QUOTATION, request-level for PAYMENT ──
         decimal? comparisonAmount;
         string comparisonLabel;
-        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+        if (creditTouched && creditBankRow != null)
+        {
+            // Credit-touched: the expected cash is the bank part (total − credit), never the group total.
+            comparisonAmount = creditBankRow.PlannedAmount;
+            comparisonLabel = "Parcela bancária (após crédito em conta corrente)";
+        }
+        else if (r.RequestType?.Code == RequestConstants.Types.Quotation)
         {
             // QUOTATION: compare against group amount (operational source of truth)
             comparisonAmount = group.TotalAmount;
@@ -1799,6 +1958,276 @@ public class FinanceController : BaseController
         }
 
         return Ok();
+    }
+
+    // ═════════════════════════════════════════ Supplier account credit ═════════════════════════════════════════
+
+    /// <summary>
+    /// Apply the reserved supplier account credit of ONE P.O. group stage (stage 1: SINGLE). Allowed only when the
+    /// current stage owes no bank part (full coverage, or the bank part already settled); a group that still owes a bank
+    /// part has its credit applied atomically by pay / confirm-advance (409 CREDIT_APPLIES_WITH_BANK_PAYMENT).
+    /// Pós-Pago → PAYMENT_COMPLETED; 100 % Antecipado → WAITING_SUPPLIER_DELIVERY. Idempotent: 409 on a second call.
+    /// </summary>
+    [HttpPost("{id:guid}/apply-credit")]
+    public async Task<IActionResult> ApplyCredit(Guid id, [FromBody] ApplySupplierCreditDto requestDto)
+    {
+        if (_supplierCredit == null)
+            return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+
+        var r = await _context.Requests
+            .Include(req => req.PoGroups).ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.PoGroups).ThenInclude(g => g.Payments)
+            .Include(req => req.Status).Include(req => req.RequestType)
+            .FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
+
+        var group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId);
+        if (group == null)
+            return BadRequest(new ProblemDetails { Title = "Grupo P.O Não Encontrado", Detail = "Grupo da P.O não encontrado para este pedido.", Status = 400 });
+        if (group.SupplierCreditReservationId == null)
+        {
+            var pd = new ProblemDetails { Title = "Sem crédito reservado", Detail = "Este grupo P.O não utiliza crédito em conta corrente.", Status = 409 };
+            pd.Extensions["code"] = SC.ErrorCodes.NothingToApply;
+            return Conflict(pd);
+        }
+
+        var legacyBlock = await LegacyFinanceReturnShape.EvaluateFinancialBlockAsync(_context, id);
+        if (legacyBlock.Blocked)
+        {
+            var legacyPd = new ProblemDetails { Title = "Devolução pendente de correção", Detail = $"Este pedido foi devolvido por Finanças para correção da P.O. ao nível do pedido e ainda não foi corrigido. Nenhuma ação financeira é permitida até à correção. ({legacyBlock.Reason})", Status = 409 };
+            legacyPd.Extensions["code"] = LegacyFinanceReturnEvaluator.ReasonCode;
+            return Conflict(legacyPd);
+        }
+
+        var applicableStatuses = new[]
+        {
+            RequestConstants.Statuses.PoIssued, RequestConstants.Statuses.PaymentRequestSent, RequestConstants.Statuses.PaymentScheduled,
+            RequestConstants.Statuses.AdvancePaymentRequired, RequestConstants.Statuses.AdvancePaymentScheduled
+        };
+        if (!applicableStatuses.Contains(group.Status))
+        {
+            var pd = new ProblemDetails { Title = "Status não permite aplicar crédito", Detail = $"O crédito só pode ser aplicado nos status: {string.Join(", ", applicableStatuses)}. Status atual do grupo: {group.Status}.", Status = 400 };
+            pd.Extensions["code"] = SC.ErrorCodes.NothingToApply;
+            return BadRequest(pd);
+        }
+        if (!string.IsNullOrWhiteSpace(requestDto.ExpectedRowVersion)
+            && !string.Equals(requestDto.ExpectedRowVersion, Convert.ToBase64String(group.RowVersion ?? Array.Empty<byte>()), StringComparison.Ordinal))
+        {
+            var pd = new ProblemDetails { Title = "Dados desatualizados", Detail = "O grupo P.O foi alterado por outra operação. Atualize a página e verifique o estado atual antes de repetir.", Status = 409 };
+            pd.Extensions["code"] = SC.ErrorCodes.ConcurrentChange;
+            return Conflict(pd);
+        }
+
+        var stage = string.IsNullOrWhiteSpace(requestDto.Stage) ? SC.Stages.Single : requestDto.Stage.Trim().ToUpperInvariant();
+        var pendingBank = group.Payments.Any(p =>
+            (p.PaymentType == RequestPayment.PaymentTypes.Advance || p.PaymentType == RequestPayment.PaymentTypes.FinalBalance)
+            && (p.PaymentStatus == RequestPayment.PaymentStatuses.Planned || p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled)
+            && (p.SettlementStage ?? SC.Stages.Single) == stage);
+        if (pendingBank)
+        {
+            var pd = new ProblemDetails
+            {
+                Title = "Parcela bancária pendente",
+                Detail = "Este grupo P.O ainda tem uma parcela bancária a pagar nesta fase. O crédito reservado é aplicado automaticamente ao confirmar esse pagamento (pagar / confirmar adiantamento); não pode ser aplicado isoladamente.",
+                Status = 409
+            };
+            pd.Extensions["code"] = SC.ErrorCodes.AppliesWithBankPayment;
+            return Conflict(pd);
+        }
+
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        var outcome = await _supplierCredit.ApplyStageAsync(r, group, stage, CurrentUserId, requestDto.Note);
+        if (!outcome.Succeeded) return CreditProblem(outcome);
+        var applied = outcome.Value!;
+
+        // Stage 1 (single stage): Pós-Pago → PAYMENT_COMPLETED (same lookup MarkAsPaid uses); 100 % Antecipado → WAITING_SUPPLIER_DELIVERY.
+        string targetStatus;
+        string actionLabel;
+        if (group.PaymentConditionCode == RequestConstants.PaymentConditions.AdvanceFull || group.Status is RequestConstants.Statuses.AdvancePaymentRequired or RequestConstants.Statuses.AdvancePaymentScheduled)
+        {
+            targetStatus = RequestConstants.Statuses.WaitingSupplierDelivery;
+            actionLabel = "Adiantamento liquidado por crédito em conta corrente. Grupo encaminhado para Ag. Entrega/Serviço.";
+        }
+        else
+        {
+            var paidStatus = await _context.RequestStatuses.FirstOrDefaultAsync(st => st.Code == RequestConstants.Statuses.PaymentCompleted || st.Code == RequestConstants.Statuses.Paid);
+            targetStatus = paidStatus?.Code ?? RequestConstants.Statuses.PaymentCompleted;
+            actionLabel = "Pagamento liquidado por crédito em conta corrente.";
+        }
+        var targetStatusRow = await _context.RequestStatuses.FirstOrDefaultAsync(st => st.Code == targetStatus);
+
+        group.Status = targetStatus;
+        group.UpdatedAtUtc = DateTime.UtcNow;
+        group.UpdatedByUserId = CurrentUserId;
+        r.UpdatedAtUtc = DateTime.UtcNow;
+
+        var history = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(), RequestId = id, ActorUserId = CurrentUserId, ActionTaken = SC.HistoryActions.Applied,
+            PreviousStatusId = r.StatusId, NewStatusId = targetStatusRow?.Id ?? r.StatusId, CreatedAtUtc = DateTime.UtcNow,
+            IdempotencyKey = SupplierCreditPolicy.Keys.HistoryApplied(applied.Reservation.Id, stage),
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Crédito", applied.AppliedAmount)
+                + " " + applied.HistoryText + " " + actionLabel + (string.IsNullOrWhiteSpace(requestDto.Note) ? string.Empty : $" Nota: {requestDto.Note.Trim()}")
+        };
+        _context.RequestStatusHistories.Add(history);
+
+        if (_completionService != null)
+            await _completionService.EvaluateGroupCompletionAsync(id, group.Id, CurrentUserId);
+
+        await _context.SaveChangesAsync();
+        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+            await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
+        await tx.CommitAsync();
+
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.SupplierCreditApplied, RequestId = id, RequestNumber = r.RequestNumber ?? "S/N", RequestTitle = r.Title ?? "",
+                TargetStatusCode = targetStatus, ActionTaken = SC.HistoryActions.Applied, ActorUserId = CurrentUserId, ActorName = actor?.FullName ?? "Sistema",
+                Comment = requestDto.Note, CorrelationId = history.Id, RequesterId = r.RequesterId, BuyerId = r.BuyerId,
+                AreaApproverId = r.AreaApproverId, FinalApproverId = r.FinalApproverId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = r.CompanyId,
+                PoGroupId = group.Id, PaymentId = applied.CreditRow.Id
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for ApplyCredit on Request {RequestId}", id);
+        }
+
+        if (_completionService != null)
+        {
+            try { await _completionService.EvaluateParentCompletionAsync(id, CurrentUserId); }
+            catch (Exception ex) { _logger.LogError(ex, "Non-critical: parent completion evaluation failed after ApplyCredit on Request {RequestId}.", id); }
+        }
+
+        return Ok(new SupplierCreditOperationResultDto
+        {
+            Message = "Crédito em conta corrente aplicado.", ReservationId = applied.Reservation.Id, ReservationStatus = applied.Reservation.Status,
+            AppliedAmount = applied.AppliedAmount, LedgerAmount = applied.Entry.SignedAmount, ReleasedHoldAmount = applied.ReleasedHoldAmount,
+            AccountBalance = applied.AccountBalanceAfter, AccountAvailable = applied.AccountAvailableAfter, GroupStatus = group.Status, CompletedPaymentId = applied.CreditRow.Id
+        });
+    }
+
+    /// <summary>
+    /// D7 — reverse an APPLIED supplier credit (stage 1: FULL_COVERAGE only) before any receiving / invoice / reconciliation
+    /// evidence. A DIFFERENT, active, plant-scoped Finance user than the one who applied it; reason mandatory. The applied
+    /// amount returns to the account (REVERSAL entry), the credit rows are CANCELLED and the bank obligation is reopened as a
+    /// PLANNED row of the registered terms (Pós-Pago → PO_ISSUED; 100 % Antecipado → ADVANCE_PAYMENT_REQUIRED).
+    /// </summary>
+    [HttpPost("{id:guid}/reverse-credit")]
+    public async Task<IActionResult> ReverseCredit(Guid id, [FromBody] ReverseSupplierCreditDto requestDto)
+    {
+        if (_supplierCredit == null)
+            return StatusCode(500, new ProblemDetails { Title = "Serviço indisponível", Detail = "O serviço de crédito em conta corrente não está registado.", Status = 500 });
+        var reason = requestDto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < SC.MinReversalReasonLength || reason.Length > SC.MaxReasonLength)
+        {
+            var pd = new ProblemDetails { Title = "Motivo obrigatório", Detail = $"O motivo da reversão é obrigatório e deve ter entre {SC.MinReversalReasonLength} e {SC.MaxReasonLength} caracteres.", Status = 400 };
+            pd.Extensions["code"] = SC.ErrorCodes.InvalidAmount;
+            return BadRequest(pd);
+        }
+
+        var r = await _context.Requests
+            .Include(req => req.PoGroups).ThenInclude(g => g.ApprovalBatch)
+            .Include(req => req.PoGroups).ThenInclude(g => g.Payments)
+            .Include(req => req.Status).Include(req => req.RequestType)
+            .FirstOrDefaultAsync(req => req.Id == id);
+        if (r == null || !await (await GetScopedRequestsQuery()).AnyAsync(req => req.Id == id)) return NotFound();
+        var group = r.PoGroups.FirstOrDefault(g => g.Id == requestDto.RequestPoGroupId);
+        if (group == null)
+            return BadRequest(new ProblemDetails { Title = "Grupo P.O Não Encontrado", Detail = "Grupo da P.O não encontrado para este pedido.", Status = 400 });
+        if (group.SupplierCreditReservationId == null)
+        {
+            var pd = new ProblemDetails { Title = "Sem crédito aplicado", Detail = "Este grupo P.O não utiliza crédito em conta corrente.", Status = 409 };
+            pd.Extensions["code"] = SC.ErrorCodes.ReversalNotApplied;
+            return Conflict(pd);
+        }
+        if (!string.IsNullOrWhiteSpace(requestDto.ExpectedRowVersion)
+            && !string.Equals(requestDto.ExpectedRowVersion, Convert.ToBase64String(group.RowVersion ?? Array.Empty<byte>()), StringComparison.Ordinal))
+        {
+            var pd = new ProblemDetails { Title = "Dados desatualizados", Detail = "O grupo P.O foi alterado por outra operação. Atualize a página e verifique o estado atual antes de repetir.", Status = 409 };
+            pd.Extensions["code"] = SC.ErrorCodes.ConcurrentChange;
+            return Conflict(pd);
+        }
+
+        // D12-style Finance authorization: active Finance role in the database (SysAdmin alone is not enough), plant scope,
+        // and a different person from the one who applied the credit.
+        var user = await _context.Users.AsNoTracking().Where(u => u.Id == CurrentUserId).Select(u => new { u.IsActive }).FirstOrDefaultAsync();
+        var hasFinanceRole = await _context.UserRoleAssignments.AsNoTracking().AnyAsync(ura => ura.UserId == CurrentUserId && ura.Role.RoleName == RoleConstants.Finance);
+        if (user == null || !user.IsActive || !hasFinanceRole)
+        {
+            var pd = new ProblemDetails { Title = "Perfil Finanças necessário", Detail = "Apenas utilizadores ativos com o perfil Finanças podem reverter crédito em conta corrente. O perfil de administrador, por si só, não concede esta permissão.", Status = 403 };
+            pd.Extensions["code"] = SC.ErrorCodes.FinanceScopeRequired;
+            return StatusCode(403, pd);
+        }
+        var plantId = group.PlantId ?? r.PlantId;
+        if (plantId.HasValue && !await _context.UserPlantScopes.AsNoTracking().AnyAsync(sc => sc.UserId == CurrentUserId && sc.PlantId == plantId.Value)
+            && await _context.UserPlantScopes.AsNoTracking().AnyAsync(sc => sc.UserId == CurrentUserId))
+        {
+            var pd = new ProblemDetails { Title = "Planta fora do seu âmbito", Detail = "O grupo P.O pertence a uma planta fora do seu âmbito de acesso.", Status = 403 };
+            pd.Extensions["code"] = SC.ErrorCodes.FinanceScopeRequired;
+            return StatusCode(403, pd);
+        }
+        var live = await _supplierCredit.GetLiveReservationAsync(group.Id);
+        if (live?.AppliedByUserId == CurrentUserId)
+        {
+            var pd = new ProblemDetails { Title = "Reversão pela mesma pessoa", Detail = "A reversão tem de ser feita por um utilizador de Finanças diferente de quem aplicou o crédito.", Status = 403 };
+            pd.Extensions["code"] = SC.ErrorCodes.SelfReversalForbidden;
+            return StatusCode(403, pd);
+        }
+
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        var outcome = await _supplierCredit.ReverseAsync(r, group, CurrentUserId, reason);
+        if (!outcome.Succeeded) return CreditProblem(outcome);
+        var rev = outcome.Value!;
+
+        var previousStatus = group.Status;
+        group.Status = rev.ReopenedGroupStatus;
+        group.UpdatedAtUtc = DateTime.UtcNow; group.UpdatedByUserId = CurrentUserId;
+        r.UpdatedAtUtc = DateTime.UtcNow;
+        var targetStatusRow = await _context.RequestStatuses.FirstOrDefaultAsync(st => st.Code == rev.ReopenedGroupStatus);
+        var history = new RequestStatusHistory
+        {
+            Id = Guid.NewGuid(), RequestId = id, ActorUserId = CurrentUserId, ActionTaken = SC.HistoryActions.Reversed,
+            PreviousStatusId = r.StatusId, NewStatusId = targetStatusRow?.Id ?? r.StatusId, CreatedAtUtc = DateTime.UtcNow,
+            IdempotencyKey = SupplierCreditPolicy.Keys.HistoryReversed(rev.Reservation.Id),
+            Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, group.SupplierNameSnapshot, group.CurrencyCode, "Revertido", rev.ReversedAmount)
+                + " " + rev.HistoryText + $" Grupo: {previousStatus} → {rev.ReopenedGroupStatus}."
+        };
+        _context.RequestStatusHistories.Add(history);
+        await _context.SaveChangesAsync();
+        rev.Reservation.ReopenedAdvancePaymentId = rev.ReopenedRows.FirstOrDefault(p => p.PaymentType == RequestPayment.PaymentTypes.Advance)?.Id;
+        rev.Reservation.ReopenedBalancePaymentId = rev.ReopenedRows.FirstOrDefault(p => p.PaymentType == RequestPayment.PaymentTypes.FinalBalance)?.Id;
+        await _context.SaveChangesAsync();
+        if (r.RequestType?.Code == RequestConstants.Types.Quotation)
+            await _statusAggregationService.AggregateRequestStatusAsync(id, CurrentUserId);
+        await tx.CommitAsync();
+
+        try
+        {
+            var actor = await _context.Users.FindAsync(CurrentUserId);
+            await _orchestrator.EmitAsync(new WorkflowEvent
+            {
+                EventCode = WorkflowEventCodes.SupplierCreditReversed, RequestId = id, RequestNumber = r.RequestNumber ?? "S/N", RequestTitle = r.Title ?? "",
+                TargetStatusCode = rev.ReopenedGroupStatus, ActionTaken = SC.HistoryActions.Reversed, ActorUserId = CurrentUserId, ActorName = actor?.FullName ?? "Sistema",
+                Comment = reason, CorrelationId = history.Id, RequesterId = r.RequesterId, BuyerId = r.BuyerId ?? group.PoResponsibleBuyerId,
+                AreaApproverId = r.AreaApproverId, FinalApproverId = r.FinalApproverId, DepartmentId = r.DepartmentId, PlantId = r.PlantId, CompanyId = r.CompanyId,
+                PoGroupId = group.Id
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Non-critical: notification dispatch failed for ReverseCredit on Request {RequestId}", id);
+        }
+
+        return Ok(new SupplierCreditOperationResultDto
+        {
+            Message = "Crédito em conta corrente revertido; obrigação bancária reaberta.", ReservationId = rev.Reservation.Id, ReservationStatus = rev.Reservation.Status,
+            AppliedAmount = rev.Reservation.AppliedAmount, LedgerAmount = rev.Entry.SignedAmount, ReleasedHoldAmount = rev.ReleasedHoldAmount,
+            AccountAvailable = rev.AccountAvailableAfter, GroupStatus = group.Status, ReopenedPaymentIds = rev.ReopenedRows.Select(p => p.Id).ToList()
+        });
     }
 
     [HttpPost("{id:guid}/note")]
@@ -1987,6 +2416,34 @@ public class FinanceController : BaseController
             }
         }
 
+        // ── Supplier account credit: a credit-touched group has its owed rows (bank + SUPPLIER_CREDIT) materialised at
+        // registration. The return cancels every PLANNED / SCHEDULED one (audit kept) and KEEPS the hold RESERVED; the
+        // Buyer decides keep / change / remove in the correction wizard and re-registration recreates the rows. ──
+        if (group.SupplierCreditReservationId != null)
+        {
+            var owedRows = group.Payments.Where(p =>
+                    (p.PaymentType == RequestPayment.PaymentTypes.SupplierCredit || p.PaymentType == RequestPayment.PaymentTypes.FinalBalance || p.PaymentType == RequestPayment.PaymentTypes.Advance)
+                    && (p.PaymentStatus == RequestPayment.PaymentStatuses.Planned || p.PaymentStatus == RequestPayment.PaymentStatuses.Scheduled))
+                .ToList();
+            foreach (var p in owedRows)
+            {
+                p.PaymentStatus = RequestPayment.PaymentStatuses.Cancelled;
+                p.ScheduledDateUtc = null; p.ScheduledByUserId = null;
+                p.UpdatedByUserId = CurrentUserId; p.UpdatedAtUtc = DateTime.UtcNow;
+                p.Notes = $"{p.Notes} Cancelado em {DateTime.UtcNow:dd/MM/yyyy HH:mm} UTC: grupo devolvido para correção da P.O (reserva de crédito mantida).".Trim();
+            }
+            if (owedRows.Count > 0)
+            {
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    Id = Guid.NewGuid(), RequestId = id, ActorUserId = CurrentUserId, ActionTaken = "OWED_ROWS_CANCELLED_FOR_PO_CORRECTION",
+                    PreviousStatusId = r.StatusId, NewStatusId = r.StatusId, CreatedAtUtc = DateTime.UtcNow,
+                    Comment = FinanceHistoryCommentFormatter.FormatGroupPrefix(group.ApprovalBatch?.BatchNumber, displaySupplierName, displayCurrencyCode, "Total", group.TotalAmount)
+                        + $" Linhas devidas canceladas ({owedRows.Count}: {string.Join(", ", owedRows.Select(p => $"{p.PaymentType} #{p.PaymentSequence}"))}) pela devolução para correção; reserva de crédito em conta corrente de {group.CreditCoverageAmount:N2} mantida.",
+                });
+            }
+        }
+
         // Change ONLY the target group; the request scalar is derived by aggregation afterwards
         // (no scalar-only manual override, so siblings are never masked or regressed).
         // v2.242.0 — deliberately DO NOT touch group.PoResponsibleBuyerId here: the return must
@@ -2135,7 +2592,9 @@ public class FinanceController : BaseController
         var previousScheduledDateUtc = payment.ScheduledDateUtc;
 
         // ── Mutate the RequestPayment: normal vs. advance diverge here — never identical ──
-        if (isAdvance)
+        // Supplier account credit: the owed bank row of a credit-touched group was materialised at registration, so it
+        // returns to PLANNED like an advance (cancelling it would lose the owed bank part).
+        if (isAdvance || group.SupplierCreditReservationId != null)
         {
             // This row originated as the pre-existing PLANNED advance record created at PO
             // registration (RegisterPo). Returning it to PLANNED (not CANCELLED) — rather than

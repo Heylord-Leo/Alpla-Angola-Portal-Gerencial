@@ -36,19 +36,22 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
     private readonly IWorkflowNotificationOrchestrator _orchestrator;
     private readonly AdminLogWriter _adminLog;
     private readonly ILogger<PoGroupCancellationService> _logger;
+    private readonly AlplaPortal.Application.Interfaces.Suppliers.ISupplierCreditSettlementService? _supplierCredit;
 
     public PoGroupCancellationService(
         ApplicationDbContext context,
         IRequestStatusSyncService statusSync,
         IWorkflowNotificationOrchestrator orchestrator,
         AdminLogWriter adminLog,
-        ILogger<PoGroupCancellationService> logger)
+        ILogger<PoGroupCancellationService> logger,
+        AlplaPortal.Application.Interfaces.Suppliers.ISupplierCreditSettlementService? supplierCredit = null)
     {
         _context = context;
         _statusSync = statusSync;
         _orchestrator = orchestrator;
         _adminLog = adminLog;
         _logger = logger;
+        _supplierCredit = supplierCredit;
     }
 
     private static readonly string[] RegisterPoActions = { "REGISTER_PO", "REREGISTER_PO" };
@@ -170,6 +173,26 @@ public sealed class PoGroupCancellationService : IPoGroupCancellationService
                 p.UpdatedByUserId = cmd.Actor.UserId; p.UpdatedAtUtc = now;
                 p.Notes = Trunc($"{p.Notes} Cancelado em {now:dd/MM/yyyy HH:mm} UTC: grupo P.O cancelado ({C.ReasonCodes.Label(reasonCode)}).".Trim(), 2000);
                 cancelledPayments++;
+            }
+
+            // 3b. Supplier account credit: a RESERVED hold on the cancelled group is released (no ledger entry; the
+            //     credit returns to the supplier's available balance). An applied hold cannot exist here — the
+            //     evaluator refused the group on its COMPLETED credit row (PAYMENT_OR_RECEIPT_EVIDENCE).
+            string? creditReleaseText = null;
+            if (group.SupplierCreditReservationId != null && group.CreditCoverageAmount > 0m && _supplierCredit != null)
+            {
+                var release = await _supplierCredit.ReleaseAsync(group, SupplierCreditConstants.ReleaseReasons.GroupCancelled,
+                    $"Grupo P.O cancelado ({C.ReasonCodes.Label(reasonCode)}).", cmd.Actor.UserId);
+                if (!release.Succeeded)
+                    return Fail(release.StatusCode, release.Code ?? SupplierCreditConstants.ErrorCodes.ReleaseNotAllowed, release.Title ?? "Crédito não libertado", release.Detail ?? "A reserva de crédito não pôde ser libertada.");
+                creditReleaseText = release.Value!.HistoryText;
+                _context.RequestStatusHistories.Add(new RequestStatusHistory
+                {
+                    RequestId = r.Id, ActorUserId = cmd.Actor.UserId, ActionTaken = SupplierCreditConstants.HistoryActions.Released,
+                    PreviousStatusId = r.StatusId, NewStatusId = r.StatusId, CreatedAtUtc = now,
+                    IdempotencyKey = SupplierCreditPolicy.Keys.HistoryReleased(release.Value.Reservation.Id),
+                    Comment = Trunc($"{FinanceHistoryCommentFormatter.FormatGroupPrefix(batch?.BatchNumber, group.Supplier?.Name ?? group.SupplierNameSnapshot, group.CurrencyCode, "Total", group.TotalAmount)} {creditReleaseText} (GroupId: {group.Id})", 4000),
+                });
             }
 
             // 4. P.O. documents: VOIDED, never deleted — they stay downloadable and visibly "Sem efeito" (DEC-150).

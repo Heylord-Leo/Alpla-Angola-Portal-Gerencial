@@ -7,6 +7,7 @@ using AlplaPortal.Application.Interfaces.Finance;
 using AlplaPortal.Domain.Constants;
 using AlplaPortal.Domain.Entities;
 using AlplaPortal.Domain.Services;
+using AlplaPortal.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace AlplaPortal.Infrastructure.Services.Finance;
@@ -24,9 +25,15 @@ namespace AlplaPortal.Infrastructure.Services.Finance;
 public sealed class FinanceObligationSummaryProjection
 {
     private readonly IFinancePaymentEligibilityService _eligibility;
+    private readonly ApplicationDbContext? _context;
 
-    public FinanceObligationSummaryProjection(IFinancePaymentEligibilityService eligibility)
-        => _eligibility = eligibility;
+    /// <param name="context">Needed to read the supplier-credit reservations of credit-touched groups; when null the
+    /// credit facts fall back to the group columns and payment rows only (no reservation status).</param>
+    public FinanceObligationSummaryProjection(IFinancePaymentEligibilityService eligibility, ApplicationDbContext? context = null)
+    {
+        _eligibility = eligibility;
+        _context = context;
+    }
 
     public sealed record BuildResult(
         List<FinanceObligationDto> Obligations,
@@ -87,6 +94,15 @@ public sealed class FinanceObligationSummaryProjection
         var obligations = new List<FinanceObligationDto>();
         var containersById = new Dictionary<Guid, FinanceObligationContainerDto>();
 
+        // Supplier account credit: the latest reservation of every credit-touched group on this page (one query).
+        var creditGroupIds = loaded.SelectMany(r => r.PoGroups).Where(g => g.SupplierCreditReservationId != null).Select(g => g.Id).ToList();
+        var reservationsByGroup = creditGroupIds.Count == 0 || _context == null
+            ? new Dictionary<Guid, SupplierCreditReservation>()
+            : (await _context.SupplierCreditReservations.AsNoTracking().Include(x => x.Account)
+                .Where(x => creditGroupIds.Contains(x.RequestPoGroupId)).ToListAsync())
+                .GroupBy(x => x.RequestPoGroupId)
+                .ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.ReservedAtUtc).First());
+
         foreach (var r in loaded)
         {
             var activeGroups = r.PoGroups.Where(g => g.Status != RequestConstants.PoGroupStatuses.Cancelled).ToList();
@@ -119,14 +135,23 @@ public sealed class FinanceObligationSummaryProjection
                     r.SelectedQuotationId.HasValue ? r.Quotations.FirstOrDefault(q => q.Id == r.SelectedQuotationId.Value)?.Currency : null,
                     r.Currency?.Code);
 
+                reservationsByGroup.TryGetValue(g.Id, out var reservation);
+                var creditFacts = SupplierCreditFactsBuilder.Build(g, reservation);
+                var creditInput = reservation == null && g.SupplierCreditReservationId == null ? null
+                    : new FinanceObligationProjectionBuilder.CreditInput(
+                        g.CreditCoverageAmount, reservation?.AppliedAmount ?? 0m,
+                        reservation == null ? 0m : SupplierCreditPolicy.Hold(reservation.Status, reservation.Amount, reservation.AppliedAmount),
+                        reservation?.Status, reservation?.Account?.AccountNumber);
+
                 var groupInput = new FinanceObligationProjectionBuilder.GroupInput(
                     g.Id, g.SupplierId, supplierName, g.SupplierNifSnapshot, g.Supplier?.TaxId, g.Status,
                     g.PurchaseOrderNumber, currency, g.TotalAmount,
-                    _eligibility.EvaluateGroupActions(r.RequestType.Code, r.Status!.Code, g.Status),
+                    _eligibility.EvaluateGroupActions(r.RequestType.Code, r.Status!.Code, g.Status, creditFacts),
                     g.Payments.Select(p => new FinanceObligationProjectionBuilder.PaymentInput(
                         p.Id, p.PaymentType, p.PaymentStatus, p.PlannedAmount, p.ActualPaidAmount,
                         p.ScheduledDateUtc, p.PaidDateUtc, p.PaymentProofAttachmentId.HasValue, p.CurrencyCode)).ToList(),
-                    g.LastFinanceReturnKind); // v2.249.2 — stored return kind drives the "Devolvido…" wording
+                    g.LastFinanceReturnKind, // v2.249.2 — stored return kind drives the "Devolvido…" wording
+                    creditInput);
 
                 var o = FinanceObligationProjectionBuilder.Build(reqInput, groupInput, today);
                 var dto = new FinanceObligationDto
@@ -142,7 +167,10 @@ public sealed class FinanceObligationSummaryProjection
                     HasPaymentProof = o.HasPaymentProof, FinanceActions = o.FinanceActions.ToList(),
                     PaymentFlow = o.PaymentFlow, ActionClass = o.ActionClass, ActionClassLabel = o.ActionClassLabel, NextActionLabel = o.NextActionLabel,
                     ResponsibleRole = o.ResponsibleRole, DueDate = o.DueDate, IsOverdue = o.IsOverdue,
-                    OverdueDays = o.OverdueDays, IsDueToday = o.IsDueToday, ObligationAmount = o.ObligationAmount
+                    OverdueDays = o.OverdueDays, IsDueToday = o.IsDueToday, ObligationAmount = o.ObligationAmount,
+                    CreditCoverageAmount = o.CreditCoverageAmount, CreditAppliedAmount = o.CreditAppliedAmount,
+                    CreditReservedAmount = o.CreditReservedAmount, CreditReservationStatus = o.CreditReservationStatus,
+                    CreditAccountNumber = o.CreditAccountNumber, BankPayableAmount = o.BankPayableAmount
                 };
                 container.Obligations.Add(dto);
                 obligations.Add(dto);

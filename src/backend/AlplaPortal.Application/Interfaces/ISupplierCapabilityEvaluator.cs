@@ -47,6 +47,12 @@ public sealed class SupplierSheetCapabilities
     /// <summary>May return / reject a supplier registration.</summary>
     public bool CanReject { get; init; }
 
+    // ─── Supplier account credit ("Créditos em conta corrente") ───
+    /// <summary>May see the supplier's credit accounts, balances and movements (every ficha viewer).</summary>
+    public bool CanViewSupplierCredit { get; init; }
+    /// <summary>May create credit accounts and record Purchasing ledger entries — Contracts (Purchasing) and System Administrator only.</summary>
+    public bool CanManageSupplierCredit { get; init; }
+
     /// <summary>True when the user may write at least one ficha field group.</summary>
     public bool CanEditAnyField =>
         CanEditContacts || CanEditAddress || CanEditObservations ||

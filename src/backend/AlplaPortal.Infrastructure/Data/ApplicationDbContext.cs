@@ -182,6 +182,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<DocumentClassificationOverride> DocumentClassificationOverrides =>
         Set<DocumentClassificationOverride>();
 
+    // ── Supplier account credit ("Créditos em conta corrente") applied to P.O. groups ──
+    public DbSet<SupplierCreditAccount> SupplierCreditAccounts => Set<SupplierCreditAccount>();
+    public DbSet<SupplierCreditEntry> SupplierCreditEntries => Set<SupplierCreditEntry>();
+    public DbSet<SupplierCreditReservation> SupplierCreditReservations => Set<SupplierCreditReservation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -851,6 +856,11 @@ public class ApplicationDbContext : DbContext
             entity.Property(p => p.PlannedAmount).HasColumnType("decimal(18,2)");
             entity.Property(p => p.ActualPaidAmount).HasColumnType("decimal(18,2)");
             entity.Property(p => p.DivergenceAmount).HasColumnType("decimal(18,2)");
+            // Supplier account credit: which stage a row settles and the reservation it belongs to (null on legacy rows).
+            entity.Property(p => p.SettlementStage).HasMaxLength(10);
+            entity.HasIndex(p => p.SupplierCreditReservationId)
+                .HasFilter("[SupplierCreditReservationId] IS NOT NULL")
+                .HasDatabaseName("IX_RequestPayments_SupplierCreditReservationId");
             entity.Property(p => p.PaymentType).HasMaxLength(32).IsRequired();
             entity.Property(p => p.PaymentStatus).HasMaxLength(32).IsRequired();
             entity.Property(p => p.CurrencyCode).HasMaxLength(10).IsRequired();

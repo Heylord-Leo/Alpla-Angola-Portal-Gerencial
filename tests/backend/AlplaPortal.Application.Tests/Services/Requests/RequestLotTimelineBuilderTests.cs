@@ -24,7 +24,7 @@ public class RequestLotTimelineBuilderTests
             RequestType = new RequestType { Id = 1, Code = RequestConstants.Types.Quotation, Name = "QUOTATION" }
         };
 
-    private static RequestPoGroup Group(string status, string supplier = "FORN A", string? po = null, Guid? batchId = null) =>
+    private static RequestPoGroup Group(string status, string supplier = "FORN A", string? po = null, Guid? batchId = null, string? paymentCondition = null) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -33,17 +33,18 @@ public class RequestLotTimelineBuilderTests
             PurchaseOrderNumber = po,
             TotalAmount = 100m,
             CurrencyCode = "AOA",
-            ApprovalBatchId = batchId
+            ApprovalBatchId = batchId,
+            PaymentConditionCode = paymentCondition
         };
 
     private static string StageState(System.Collections.Generic.IReadOnlyList<LotTimelineStep> steps, string label) =>
         steps.Single(s => s.Label == label).State;
 
     /// <summary>Builds a single-group request and returns the mapped stages for that group status.</summary>
-    private static System.Collections.Generic.IReadOnlyList<LotTimelineStep> StagesFor(string groupStatus, string? po = "ECF10 2026/1")
+    private static System.Collections.Generic.IReadOnlyList<LotTimelineStep> StagesFor(string groupStatus, string? po = "ECF10 2026/1", string? paymentCondition = null)
     {
         var request = MakeRequest("PO_ISSUED");
-        request.PoGroups.Add(Group(groupStatus, po: po));
+        request.PoGroups.Add(Group(groupStatus, po: po, paymentCondition: paymentCondition));
         var unit = RequestWorkflowProjectionBuilder.Build(request, "PO_ISSUED").Units.Single();
         return RequestLotTimelineBuilder.MapStages(request, unit);
     }
@@ -487,6 +488,48 @@ public class RequestLotTimelineBuilderTests
         var steps = StagesFor(RequestConstants.PoGroupStatuses.WaitingSupplierDelivery, po: "ECF11 2026/3");
         Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StageReceiving));
         Assert.Equal("completed", StageState(steps, RequestLotTimelineBuilder.StagePo));
+    }
+
+    // ── DEV round 1 feedback (2026-11-12): a settled 100 % Antecipado group (bank advance, supplier credit,
+    // or both) showed BOTH "Pagamento" and "Recebimento / Execução" as current. Once the advance is settled
+    // the group owes nothing before delivery: Pagamento is completed and only the delivery wait is current. ──
+    [Fact]
+    public void WaitingSupplierDelivery_AdvanceFull_PaymentCompleted_OnlyReceivingCurrent()
+    {
+        var steps = StagesFor(RequestConstants.PoGroupStatuses.WaitingSupplierDelivery, po: "ECF10 2026/9633",
+            paymentCondition: RequestConstants.PaymentConditions.AdvanceFull);
+        Assert.Equal("completed", StageState(steps, RequestLotTimelineBuilder.StagePo));
+        Assert.Equal("completed", StageState(steps, RequestLotTimelineBuilder.StagePayment));
+        Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StageReceiving));
+        Assert.Single(steps.Where(s => s.State == "current"));
+    }
+
+    [Fact]
+    public void WaitingSupplierDelivery_AdvancePartial_BalanceStillOwed_PaymentStaysCurrent()
+    {
+        // A partial advance still owes the balance after delivery: the payment stage is factually open.
+        var steps = StagesFor(RequestConstants.PoGroupStatuses.WaitingSupplierDelivery, po: "ECF10 2026/9640",
+            paymentCondition: RequestConstants.PaymentConditions.AdvancePartial);
+        Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StagePayment));
+        Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StageReceiving));
+    }
+
+    [Fact]
+    public void AdvancePaymentCompleted_AdvanceFull_PaymentCompleted()
+    {
+        var steps = StagesFor(RequestConstants.PoGroupStatuses.AdvancePaymentCompleted, po: "ECF10 2026/9634",
+            paymentCondition: RequestConstants.PaymentConditions.AdvanceFull);
+        Assert.Equal("completed", StageState(steps, RequestLotTimelineBuilder.StagePayment));
+    }
+
+    [Fact]
+    public void AdvancePaymentRequired_AdvanceFull_PaymentStillCurrent()
+    {
+        // Not yet settled: the advance is owed, so the payment stage is current regardless of the condition.
+        var steps = StagesFor(RequestConstants.PoGroupStatuses.AdvancePaymentRequired, po: "ECF10 2026/9641",
+            paymentCondition: RequestConstants.PaymentConditions.AdvanceFull);
+        Assert.Equal("current", StageState(steps, RequestLotTimelineBuilder.StagePayment));
+        Assert.NotEqual("completed", StageState(steps, RequestLotTimelineBuilder.StageReceiving));
     }
 
     // ── Batch adjustment keeps blocked/attention semantics ──

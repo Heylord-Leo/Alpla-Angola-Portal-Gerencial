@@ -349,12 +349,18 @@ public static class RequestWorkflowProjectionBuilder
                 => string.IsNullOrWhiteSpace(group.PurchaseOrderNumber) ? "PENDING" : "ISSUED",
             _ => "ISSUED",
         };
+        // Once the advance is settled (bank, supplier credit, or both) a 100 % Antecipado group owes nothing
+        // more before delivery: its payment is COMPLETE and the delivery wait is the only current stage.
+        // A partial advance still owes the balance after delivery, so it stays ADVANCE_IN_PROGRESS.
+        var advanceSettled = group.PaymentConditionCode == RequestConstants.PaymentConditions.AdvanceFull
+            ? "COMPLETE"
+            : "ADVANCE_IN_PROGRESS";
         var paymentState = s switch
         {
             RequestConstants.PoGroupStatuses.AdvancePaymentRequired or
             RequestConstants.PoGroupStatuses.AdvancePaymentScheduled => "ADVANCE_IN_PROGRESS",
             RequestConstants.PoGroupStatuses.AdvancePaymentCompleted or
-            RequestConstants.PoGroupStatuses.WaitingSupplierDelivery => "ADVANCE_IN_PROGRESS",
+            RequestConstants.PoGroupStatuses.WaitingSupplierDelivery => advanceSettled,
             RequestConstants.PoGroupStatuses.PoIssued or
             RequestConstants.PoGroupStatuses.PaymentRequestSent => "PENDING",
             RequestConstants.PoGroupStatuses.PaymentScheduled => "SCHEDULED",

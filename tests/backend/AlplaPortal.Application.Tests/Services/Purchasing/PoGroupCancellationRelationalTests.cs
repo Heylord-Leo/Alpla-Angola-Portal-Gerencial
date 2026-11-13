@@ -56,7 +56,7 @@ public class PoGroupCancellationRelationalTests
             if (ctx.Database.CanConnect())
             {
                 // Drift-aware bootstrap: the sandbox predates this feature's tables → rebuild it (EnsureCreated is a no-op on an existing DB).
-                var has = ctx.Database.SqlQueryRaw<int>("SELECT CAST(CASE WHEN COL_LENGTH('dbo.RequestPoGroupCancellations', 'FinanceEmailPolicyOutcome') IS NULL OR COL_LENGTH('dbo.RequestPoGroups', 'CurrentPoAttachmentId') IS NULL OR OBJECT_ID('dbo.PoDocumentExtractions') IS NULL THEN 0 ELSE 1 END AS int) AS [Value]").AsEnumerable().First();   // v2.249.4 drift
+                var has = ctx.Database.SqlQueryRaw<int>("SELECT CAST(CASE WHEN COL_LENGTH('dbo.RequestPoGroupCancellations', 'FinanceEmailPolicyOutcome') IS NULL OR COL_LENGTH('dbo.RequestPoGroups', 'CurrentPoAttachmentId') IS NULL OR OBJECT_ID('dbo.PoDocumentExtractions') IS NULL OR COL_LENGTH('dbo.RequestPoGroups', 'CreditCoverageAmount') IS NULL OR OBJECT_ID('dbo.SupplierCreditReservations') IS NULL THEN 0 ELSE 1 END AS int) AS [Value]").AsEnumerable().First();   // v2.249.4 drift + supplier credit drift
                 if (has == 0)
                 {
                     Microsoft.Data.SqlClient.SqlConnection.ClearAllPools();

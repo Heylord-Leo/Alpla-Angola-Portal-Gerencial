@@ -39,6 +39,10 @@ export interface RequestListItemDto {
     supplierName: string | null;
     supplierPortalCode: string | null;
     estimatedTotalAmount: number;
+    /** True when the approved P.O. groups are in more than one currency: the scalar is not a meaningful figure and
+     *  amountsByCurrency carries one amount per currency (never summed together) — the list renders one line each. */
+    hasMultipleCurrencies?: boolean;
+    amountsByCurrency?: { currency: string; amount: number }[] | null;
     /** Authoritative actionable amount for the Approval Center queue (backend ApprovalQueueAmountResolver).
      *  null = amount could not be resolved — render "Valor ainda não definido", never 0. */
     actionableAmount?: number | null;
@@ -376,6 +380,106 @@ export interface RequestPoGroupDto {
     /** D4: unconfirmed prior ECF cancellations that block a replacement P.O. on this group. */
     priorEcfConfirmation?: PriorEcfConfirmationDto | null;
     rowVersion?: string | null;
+    // ── Supplier account credit ("Créditos em conta corrente") ──
+    /** C — live credit coverage reserved on this group (0 = none). Bank owed = totalAmount − creditCoverageAmount. */
+    creditCoverageAmount?: number;
+    /** Latest credit reservation of the group (status, amounts, hold), or null when credit was never used. */
+    supplierCredit?: SupplierCreditReservationSummaryDto | null;
+}
+
+// ── Supplier account credit — TS mirror of SupplierCreditDtos.cs ──
+export type SupplierCreditReservationStatus = 'RESERVED' | 'PARTIALLY_APPLIED' | 'APPLIED' | 'RELEASED' | 'REVERSED';
+export type SupplierCreditEntryType = 'CREDIT_IN' | 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT' | 'APPLICATION' | 'REVERSAL' | 'CLOSE_OUT';
+
+export interface SupplierCreditAccountDto {
+    id: string;
+    supplierId: number;
+    companyId: number;
+    companyName: string;
+    companyCode?: string | null;
+    currencyCode: string;
+    accountNumber: string;
+    status: 'ACTIVE' | 'CLOSED' | string;
+    notes?: string | null;
+    balance: number;
+    reserved: number;
+    available: number;
+    liveReservationCount: number;
+    createdAtUtc: string;
+    createdByName?: string | null;
+    updatedAtUtc?: string | null;
+    rowVersion: string;
+}
+
+export interface SupplierCreditMovementDto {
+    id: string;
+    kind: 'ENTRY' | 'RESERVATION' | string;
+    type: string;
+    typeLabel: string;
+    signedAmount?: number | null;
+    holdAmount?: number | null;
+    appliedAmount?: number | null;
+    balanceAfter?: number | null;
+    reference?: string | null;
+    reason?: string | null;
+    stage?: string | null;
+    requestId?: string | null;
+    requestNumber?: string | null;
+    requestPoGroupId?: string | null;
+    purchaseOrderNumber?: string | null;
+    plantName?: string | null;
+    occurredAtUtc: string;
+    actorName?: string | null;
+}
+
+export interface SupplierCreditReservationSummaryDto {
+    id: string;
+    accountId: string;
+    accountNumber: string;
+    currencyCode: string;
+    amount: number;
+    advanceCreditAmount: number;
+    balanceCreditAmount: number;
+    appliedAmount: number;
+    holdAmount: number;
+    status: SupplierCreditReservationStatus | string;
+    statusLabel: string;
+    reservedAtUtc: string;
+    appliedAtUtc?: string | null;
+    releasedAtUtc?: string | null;
+    reversedAtUtc?: string | null;
+    reversalKind?: string | null;
+    releaseReason?: string | null;
+    rowVersion: string;
+}
+
+export interface SupplierCreditEligibilityDto {
+    enabled: boolean;
+    canReserve: boolean;
+    reasonCode?: string | null;
+    reasonMessage?: string | null;
+    supportedPaymentConditions: string[];
+    groupTotalAmount: number;
+    currencyCode?: string | null;
+    companyId: number;
+    account?: SupplierCreditAccountDto | null;
+    availableForGroup: number;
+    maxCoverage: number;
+    currentReservation?: SupplierCreditReservationSummaryDto | null;
+}
+
+export interface SupplierCreditOperationResultDto {
+    message: string;
+    reservationId: string;
+    reservationStatus: string;
+    appliedAmount: number;
+    ledgerAmount?: number | null;
+    releasedHoldAmount?: number | null;
+    accountBalance: number;
+    accountAvailable: number;
+    groupStatus: string;
+    completedPaymentId?: number | null;
+    reopenedPaymentIds: number[];
 }
 
 // ── Phase 1 P.O. group cancellation / return to quotation — TS mirror of PoGroupCancellationDtos.cs ──
@@ -669,9 +773,10 @@ export interface FinanceObligationDto {
     paidDateUtc?: string | null;
     hasPaymentProof: boolean;
     financeActions: string[];
-    /** v2.245.11 — server-authoritative execution route: 'ADVANCE' (b2p/schedule-advance + b2p/confirm-advance)
-     *  or 'STANDARD' (finance schedule + pay). Optional only for older payloads. */
-    paymentFlow?: 'ADVANCE' | 'STANDARD' | string | null;
+    /** v2.245.11 — server-authoritative execution route: 'ADVANCE' (b2p/schedule-advance + b2p/confirm-advance),
+     *  'STANDARD' (finance schedule + pay) or 'CREDIT' (finance apply-credit — supplier account credit covers the
+     *  whole current stage). Optional only for older payloads. */
+    paymentFlow?: 'ADVANCE' | 'STANDARD' | 'CREDIT' | string | null;
     actionClass: string;
     actionClassLabel: string;
     nextActionLabel?: string | null;
@@ -681,6 +786,14 @@ export interface FinanceObligationDto {
     overdueDays: number;
     isDueToday: boolean;
     obligationAmount: number;
+    // ── Supplier account credit (0 / null when the group never used credit) ──
+    creditCoverageAmount?: number;
+    creditAppliedAmount?: number;
+    creditReservedAmount?: number;
+    creditReservationStatus?: string | null;
+    creditAccountNumber?: string | null;
+    /** Bank amount still owed: group total − coverage − completed cash ("Valor a pagar"). */
+    bankPayableAmount?: number;
 }
 export interface FinanceObligationContainerDto {
     requestId: string;
@@ -1417,6 +1530,8 @@ export interface DashboardSummaryDto {
 
     filteredTotal: number;
     filteredCurrencyCodes: string[];
+    /** Explorer "Total Filtrado": one total per currency over every request matching the active filters (all pages). */
+    filteredTotalsByCurrency?: { currency: string; amount: number }[];
     filteredTotalTrend: number | null;
     filteredTotalTrendLabel: string | null;
 }
@@ -2061,6 +2176,9 @@ export interface RequestPaymentDto {
     paidDateUtc: string | null;
     currencyCode: string | null;
     hasDivergence: boolean;
+    /** SINGLE | ADVANCE | BALANCE — the stage this owed row settles (null on legacy rows). */
+    settlementStage?: string | null;
+    supplierCreditReservationId?: string | null;
 }
 
 

@@ -465,7 +465,12 @@ export function RequestsTableWidget({
                                                         margin: 0,
                                                         whiteSpace: 'nowrap',
                                                     }}>
-                                                        {req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        {req.hasMultipleCurrencies && req.amountsByCurrency && req.amountsByCurrency.length > 0
+                                                            // Groups in different currencies: one line per currency, never one summed figure.
+                                                            ? req.amountsByCurrency.map(a => (
+                                                                <span key={a.currency} style={{ display: 'block' }}>{a.currency} {a.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                            ))
+                                                            : <>{req.currencyCode || 'AOA'} {(req.estimatedTotalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</>}
                                                     </p>
                                                 )}
                                             </td>
